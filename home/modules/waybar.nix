@@ -72,7 +72,6 @@
         };
         cpu = {
           format = "󰍛 {usage}%";
-          tooltip = false;
         };
         memory = {
           format = "󰟂 {}%";

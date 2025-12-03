@@ -3,7 +3,6 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    nixpkgs-unstable.url = "github:nixos/nixpkgs/nixos-25.05";
 
     home-manager = {
       url = "github:nix-community/home-manager";
@@ -21,7 +20,8 @@
     };
 
     hyprland = {
-      url = "git+https://github.com/hyprwm/Hyprland?submodules=1&ref=refs/tags/v0.47.1";
+      url = "git+https://github.com/hyprwm/Hyprland?submodules=1&ref=refs/tags/v0.52.1";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
@@ -29,7 +29,6 @@
     {
       self,
       nixpkgs,
-      nixpkgs-unstable,
       ...
     }@inputs:
     let
@@ -39,11 +38,6 @@
         inherit inputs;
         inherit vars;
         extraLibs = import ./libs { inherit lib; };
-        pkgsUnstable = import nixpkgs-unstable {
-          system = "x86_64-linux";
-          config.allowUnfree = true;
-          overlays = [ inputs.nur.overlays.default ];
-        };
       };
     in
     {

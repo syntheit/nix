@@ -122,31 +122,32 @@
       # Use nwg-displays to configure monitor settings
       # Will automatically reload from this file
       source = "~/.config/hypr/monitors.conf";
-      windowrule = [
-        "float,^(Rofi)$"
-      ];
-      # ### FLOATING WINDOW RULES ###
       windowrulev2 = [
-        # Clipboard manager (CopyQ)
-        "float,class:^(com.github.hluk.copyq)$"
-        "center,class:^(com.github.hluk.copyq)$"
-        "size 689 911,class:^(com.github.hluk.copyq)$"
-        "dimaround,class:^(com.github.hluk.copyq)$"
-        # Bluetooth manager (Blueman)
-        "float,class:^(\\.blueman-manager-wrapped)$"
-        "center,class:^(\\.blueman-manager-wrapped)$"
-        "size 800 600,class:^(\\.blueman-manager-wrapped)$"
-        "dimaround,class:^(\\.blueman-manager-wrapped)$"
-        # Network manager (NetworkManager Connection Editor)
-        "float,class:^(nm-connection-editor)$"
-        "center,class:^(nm-connection-editor)$"
-        "size 800 600,class:^(nm-connection-editor)$"
-        "dimaround,class:^(nm-connection-editor)$"
-        # Volume control (PulseAudio Volume Control)
-        "float,class:^(org.pulseaudio.pavucontrol)$"
-        "center,class:^(org.pulseaudio.pavucontrol)$"
-        "size 800 600,class:^(org.pulseaudio.pavucontrol)$"
-        "dimaround,class:^(org.pulseaudio.pavucontrol)$"
+        "float, class:^(Rofi)$"
+
+        # CopyQ
+        "float, class:^(com.github.hluk.copyq)$"
+        "center, class:^(com.github.hluk.copyq)$"
+        "size 689 911, class:^(com.github.hluk.copyq)$"
+        "dimaround, class:^(com.github.hluk.copyq)$"
+
+        # Bluetooth Manager
+        "float, class:^(\\.blueman-manager-wrapped)$"
+        "center, class:^(\\.blueman-manager-wrapped)$"
+        "size 800 600, class:^(\\.blueman-manager-wrapped)$"
+        "dimaround, class:^(\\.blueman-manager-wrapped)$"
+
+        # Network Manager
+        "float, class:^(nm-connection-editor)$"
+        "center, class:^(nm-connection-editor)$"
+        "size 800 600, class:^(nm-connection-editor)$"
+        "dimaround, class:^(nm-connection-editor)$"
+
+        # PulseAudio Volume Control
+        "float, class:^(org.pulseaudio.pavucontrol)$"
+        "center, class:^(org.pulseaudio.pavucontrol)$"
+        "size 800 600, class:^(org.pulseaudio.pavucontrol)$"
+        "dimaround, class:^(org.pulseaudio.pavucontrol)$"
       ];
       env = [
         "LIBVA_DRIVER_NAME,nvidia"
