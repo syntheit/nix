@@ -8,4 +8,6 @@ with pkgs; [
   anki
   ghostscript
   pdftk
+  loupe
+  baobab
 ]
