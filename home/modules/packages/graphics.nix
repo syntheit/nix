@@ -8,5 +8,4 @@ with pkgs; [
   anki
   ghostscript
   pdftk
-  qalculate-gtk
 ]

@@ -24,4 +24,5 @@ with pkgs; [
   mission-center
   resources
   gnome-2048
+  gnome-calculator
 ]
