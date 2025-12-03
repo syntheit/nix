@@ -11,9 +11,21 @@
   # Enable Wayland (no X11 needed for Hyprland)
   services.xserver.enable = false;
 
-  # Enable display manager for Wayland
-  services.displayManager.sddm.enable = true;
-  services.displayManager.sddm.wayland.enable = true;
+  # Enable greetd with tuigreet for minimalist login experience
+  services.greetd = {
+    enable = true;
+    settings = {
+      default_session = {
+        # Use tuigreet.
+        # --time: Display the date/time.
+        # --asterisks: Mask the password.
+        # --remember: Remember the last logged-in username.
+        # --cmd Hyprland: Automatically start Hyprland after login.
+        command = "${pkgs.greetd.tuigreet}/bin/tuigreet --time --asterisks --remember --cmd Hyprland";
+        user = "greeter";
+      };
+    };
+  };
 
   # Enable Hyprland (REQUIRED: NixOS module)
   # This enables critical components needed to run Hyprland properly, such as:
