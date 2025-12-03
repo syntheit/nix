@@ -10,5 +10,4 @@ with pkgs; [
   vlc
   transmission_4
   qbittorrent
-  webcamoid
 ]

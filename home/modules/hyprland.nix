@@ -105,6 +105,7 @@
         "nm-applet"
         "blueman-applet"
         "${pkgs.copyq}/bin/copyq --start-server"
+        "systemctl --user start hyprpolkitagent"
       ];
       binds = {
         movefocus_cycles_fullscreen = true;

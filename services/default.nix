@@ -69,7 +69,7 @@
   '';
 
   security.pam.services = {
-    "sddm".enableGnomeKeyring = true;
+    "greetd".enableGnomeKeyring = true;
     "login".enableGnomeKeyring = true;
   };
 

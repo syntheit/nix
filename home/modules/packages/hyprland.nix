@@ -4,6 +4,7 @@ with pkgs; [
   hyprpaper
   hypridle
   hyprpicker
+  hyprpolkitagent
   grimblast
   pavucontrol
   pamixer

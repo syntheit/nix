@@ -27,4 +27,6 @@ with pkgs; [
   gnome-calculator
   gparted
   papers
+  snapshot
+  zathura
 ]
