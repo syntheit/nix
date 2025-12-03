@@ -25,4 +25,6 @@ with pkgs; [
   resources
   gnome-2048
   gnome-calculator
+  gparted
+  papers
 ]
