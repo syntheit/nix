@@ -1,0 +1,39 @@
+{ pkgs, ... }:
+
+with pkgs; [
+  htop
+  btop
+  fastfetch
+  tldr
+  bat
+  eza
+  wget
+  tree
+  ripgrep
+  fd
+  fzf
+  zoxide
+  unzip
+  cowsay
+  dig
+  bc
+  openssl
+  traceroute
+  usbutils
+  pv
+  inetutils
+  sshfs
+  libarchive
+  ack
+  pciutils
+  hwinfo
+  lsof
+  e2fsprogs
+  smartmontools
+  gnumake
+  duf
+  plocate
+  nixfmt-rfc-style
+  nix-output-monitor
+  ookla-speedtest
+]
