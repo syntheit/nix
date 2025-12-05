@@ -25,12 +25,6 @@
     #jack.enable = true;
   };
 
-  # Enable touchpad support (enabled default in most desktopManager).
-  # services.xserver.libinput.enable = true;
-
-  # Bluetooth
-  services.blueman.enable = true;
-
   # Docker
   virtualisation.docker = {
     enable = true;

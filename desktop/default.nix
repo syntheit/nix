@@ -21,7 +21,7 @@
         # --asterisks: Mask the password.
         # --remember: Remember the last logged-in username.
         # --cmd Hyprland: Automatically start Hyprland after login.
-        command = "${pkgs.greetd.tuigreet}/bin/tuigreet --time --asterisks --remember --cmd Hyprland";
+        command = "${pkgs.tuigreet}/bin/tuigreet --time --asterisks --remember --cmd Hyprland";
         user = "greeter";
       };
     };

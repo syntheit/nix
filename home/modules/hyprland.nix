@@ -1,5 +1,30 @@
-{ pkgs, inputs, ... }:
+{ pkgs, inputs, lib, config, ... }:
+let
+  # Script to handle Escape key behavior
+  # 1. If Rofi is running, kill it (handles layer surface case)
+  # 2. If active window is a TUI app/CopyQ, kill it
+  # 3. Otherwise do nothing (and let bindn pass the key to the app)
+  handleEscapeScript = pkgs.writeShellScript "handle-escape" ''
+    # Check if Rofi is running and kill it
+    if ${pkgs.procps}/bin/pgrep -x rofi >/dev/null; then
+      ${pkgs.procps}/bin/pkill -x rofi
+      exit 0
+    fi
 
+    # Get active window class
+    hyprctl=${config.wayland.windowManager.hyprland.package}/bin/hyprctl
+    jq=${pkgs.jq}/bin/jq
+    
+    if active_window=$($hyprctl activewindow -j); then
+      class=$(echo "$active_window" | $jq -r ".class")
+      
+      # Check if it matches our TUI list (case-insensitive)
+      if echo "$class" | grep -qEi "^(tui-network|tui-bluetooth|tui-speedtest|com.github.hluk.copyq)$"; then
+        $hyprctl dispatch killactive
+      fi
+    fi
+  '';
+in
 {
   # Hyprland configuration
   wayland.windowManager.hyprland = {
@@ -14,9 +39,9 @@
         no_border_on_floating = true;
         gaps_in = 0;
         gaps_out = 0;
-        border_size = 0;
-        "col.active_border" = "rgba(00000000)";
-        "col.inactive_border" = "rgba(00000000)";
+        # FORCE: Override Stylix's default border size (2) to keep borders invisible
+        border_size = lib.mkForce 0;
+        # col.active_border and col.inactive_border are managed by Stylix
       };
 
       dwindle = {
@@ -32,12 +57,18 @@
       };
 
       "$mod" = "SUPER";
+      
+      # Non-consuming bind for Escape (allows key to pass to apps like Vim)
+      bindn = [
+        ", escape, exec, ${handleEscapeScript}"
+      ];
+
       bind = [
-        "$mod, R, exec, rofi -modes drun -show drun"
+        "$mod, R, exec, rofi -show drun"
         "$mod, Space, togglefloating"
         "$mod, T, exec, kitty"
         "$mod, B, exec, zen"
-        "$mod, E, exec, nemo"
+        "$mod, E, exec, nautilus"
         "$mod, C, exec, ${pkgs.copyq}/bin/copyq toggle"
         "$mod SHIFT, L, exec, hyprlock"
         "$mod, Q, killactive"
@@ -47,8 +78,8 @@
         "$mod, j, movefocus, d"
         "$mod, k, movefocus, u"
         # Screenshot keybindings  
-        "$mod SHIFT, S, exec, grimblast copy area"
-        "$mod SHIFT, A, exec, grimblast --cursor copy screen"
+        "$mod SHIFT, S, exec, grimblast --freeze copy area"
+        "$mod SHIFT, A, exec, grimblast --freeze --cursor copy screen"
         # Active window screenshots
         "$mod SHIFT, W, exec, grimblast copysave active"
         "$mod, W, exec, grimblast copy active"
@@ -102,8 +133,6 @@
       ];
       exec-once = [
         "hyprpaper"
-        "nm-applet"
-        "blueman-applet"
         "${pkgs.copyq}/bin/copyq --start-server"
         "systemctl --user start hyprpolkitagent"
       ];
@@ -132,12 +161,6 @@
         "size 689 911, class:^(com.github.hluk.copyq)$"
         "dimaround, class:^(com.github.hluk.copyq)$"
 
-        # Bluetooth Manager
-        "float, class:^(\\.blueman-manager-wrapped)$"
-        "center, class:^(\\.blueman-manager-wrapped)$"
-        "size 800 600, class:^(\\.blueman-manager-wrapped)$"
-        "dimaround, class:^(\\.blueman-manager-wrapped)$"
-
         # Network Manager
         "float, class:^(nm-connection-editor)$"
         "center, class:^(nm-connection-editor)$"
@@ -149,6 +172,24 @@
         "center, class:^(org.pulseaudio.pavucontrol)$"
         "size 800 600, class:^(org.pulseaudio.pavucontrol)$"
         "dimaround, class:^(org.pulseaudio.pavucontrol)$"
+
+        # Network Manager TUI
+        "float, class:^(tui-network)$"
+        "center, class:^(tui-network)$"
+        "size 600 900, class:^(tui-network)$"
+        "dimaround, class:^(tui-network)$"
+
+        # Bluetooth TUI
+        "float, class:^(tui-bluetooth)$"
+        "center, class:^(tui-bluetooth)$"
+        "size 1104 580, class:^(tui-bluetooth)$"
+        "dimaround, class:^(tui-bluetooth)$"
+
+        # Speedtest TUI
+        "float, class:^(tui-speedtest)$"
+        "center, class:^(tui-speedtest)$"
+        "size 800 400, class:^(tui-speedtest)$"
+        "dimaround, class:^(tui-speedtest)$"
       ];
       env = [
         "LIBVA_DRIVER_NAME,nvidia"
@@ -158,6 +199,8 @@
         "NVD_BACKEND,direct"
         "ELECTRON_OZONE_PLATFORM_HINT,auto"
         "NIXOS_OZONE_WL,1"
+        "QT_QPA_PLATFORMTHEME,qtct"
+        "QT_WAYLAND_DISABLE_WINDOWDECORATION,1"
       ];
       cursor = {
         no_hardware_cursors = true;

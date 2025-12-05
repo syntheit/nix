@@ -1,4 +1,4 @@
-{ pkgs, config, ... }:
+{ pkgs, config, lib, ... }:
 
 {
   programs.rofi = {
@@ -13,8 +13,8 @@
     yoffset = -150;
     extraConfig = {
       show-icons = true;
-      kb-cancel = "Escape,Super+space";
-      modi = "window,run,ssh,emoji,calc,systemd";
+      kb-cancel = "Escape";
+      modi = "window,run,ssh,emoji,calc";
       sort = true;
       drun-display-format = "{name}";
       prompt = "";
@@ -22,20 +22,23 @@
     theme =
       let
         inherit (config.lib.formats.rasi) mkLiteral;
+        inherit (config.lib.stylix.colors) base00 base01 base02 base03 base04 base05 base07 base0D;
       in
       {
         "*" = {
-          bg0 = mkLiteral "#212121F2";
-          bg1 = mkLiteral "#2A2A2A";
-          bg2 = mkLiteral "#3D3D3D80";
-          bg3 = mkLiteral "#1A73E8F2";
-          fg0 = mkLiteral "#E6E6E6";
-          fg1 = mkLiteral "#FFFFFF";
-          fg2 = mkLiteral "#969696";
-          fg3 = mkLiteral "#3D3D3D";
+          bg0 = mkLiteral "#${base00}F2";  # base00 with opacity
+          bg1 = mkLiteral "#${base01}";    # Lighter background
+          bg2 = mkLiteral "#${base02}80";  # Selection background with opacity
+          bg3 = mkLiteral "#${base0D}F2";  # Accent color (functions/methods) with opacity
+          bg4 = mkLiteral "#${base00}";    # Darkest selection background
+          fg0 = mkLiteral "#${base05}";    # Default foreground
+          fg1 = mkLiteral "#${base07}";    # Lightest foreground
+          fg2 = mkLiteral "#${base04}";    # Darker foreground
+          fg3 = mkLiteral "#${base03}";    # Darkest foreground
+          fg4 = mkLiteral "#${base0D}";    # Accent color for selected text (no opacity)
           font = "JetBrains Mono Nerd Font 12";
-          background-color = mkLiteral "transparent";
-          text-color = mkLiteral "@fg0";
+          background-color = lib.mkForce (mkLiteral "transparent");
+          text-color = lib.mkForce (mkLiteral "@fg0");
           margin = mkLiteral "0px";
           padding = mkLiteral "0px";
           spacing = mkLiteral "0px";
@@ -46,7 +49,7 @@
           width = 864;
           height = 432;
           border-radius = mkLiteral "0px";
-          background-color = mkLiteral "@bg0";
+          background-color = lib.mkForce (mkLiteral "@bg0");
         };
 
         "mainbox" = {
@@ -54,8 +57,8 @@
         };
 
         "inputbar" = {
-          background-color = mkLiteral "@bg1";
-          border-color = mkLiteral "@bg3";
+          background-color = lib.mkForce (mkLiteral "@bg1");
+          border-color = lib.mkForce (mkLiteral "@bg3");
           border = mkLiteral "2px";
           border-radius = mkLiteral "0px";
           padding = mkLiteral "8px 16px";
@@ -66,19 +69,19 @@
         };
 
         "prompt" = {
-          text-color = mkLiteral "@fg2";
+          text-color = lib.mkForce (mkLiteral "@fg2");
         };
 
         "entry" = {
           placeholder = "Search";
-          placeholder-color = mkLiteral "@fg3";
+          placeholder-color = lib.mkForce (mkLiteral "@fg3");
         };
 
         "message" = {
           margin = mkLiteral "12px 0 0";
           border-radius = mkLiteral "0px";
-          border-color = mkLiteral "@bg2";
-          background-color = mkLiteral "@bg2";
+          border-color = lib.mkForce (mkLiteral "@bg2");
+          background-color = lib.mkForce (mkLiteral "@bg2");
         };
 
         "textbox" = {
@@ -86,7 +89,7 @@
         };
 
         "listview" = {
-          background-color = mkLiteral "transparent";
+          background-color = lib.mkForce (mkLiteral "transparent");
           margin = mkLiteral "12px 0 0";
           lines = 8;
           columns = 1;
@@ -100,11 +103,11 @@
         };
 
         "element normal active" = {
-          text-color = mkLiteral "@bg3";
+          text-color = lib.mkForce (mkLiteral "@bg3");
         };
 
         "element selected normal, element selected active" = {
-          background-color = mkLiteral "@bg3";
+          background-color = lib.mkForce (mkLiteral "transparent");
         };
 
         "element-icon" = {
@@ -113,48 +116,48 @@
         };
 
         "element-text" = {
-          text-color = mkLiteral "inherit";
+          text-color = lib.mkForce (mkLiteral "inherit");
         };
 
 
         "element selected.urgent" = {
-          background-color = mkLiteral "@bg3";
+          background-color = lib.mkForce (mkLiteral "transparent");
         };
 
         "element-text selected" = {
-          text-color = mkLiteral "@fg1";
+          text-color = lib.mkForce (mkLiteral "#FFFFFF");
         };
 
         "element-icon selected" = {
-          text-color = mkLiteral "@fg1";
+          text-color = lib.mkForce (mkLiteral "#FFFFFF");
         };
 
         "element selected" = {
-          background-color = mkLiteral "@bg3";
+          background-color = lib.mkForce (mkLiteral "transparent");
         };
 
         "element alternate.normal" = {
-          background-color = mkLiteral "transparent";
+          background-color = lib.mkForce (mkLiteral "transparent");
         };
 
         "element alternate.active" = {
-          background-color = mkLiteral "transparent";
+          background-color = lib.mkForce (mkLiteral "transparent");
         };
 
         "element alternate.urgent" = {
-          background-color = mkLiteral "transparent";
+          background-color = lib.mkForce (mkLiteral "transparent");
         };
 
         "element alternate.selected.normal" = {
-          background-color = mkLiteral "@bg3";
+          background-color = lib.mkForce (mkLiteral "transparent");
         };
 
         "element alternate.selected.active" = {
-          background-color = mkLiteral "@bg3";
+          background-color = lib.mkForce (mkLiteral "transparent");
         };
 
         "element alternate.selected.urgent" = {
-          background-color = mkLiteral "@bg3";
+          background-color = lib.mkForce (mkLiteral "transparent");
         };
       };
   };

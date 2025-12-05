@@ -20,7 +20,6 @@ with pkgs; [
   gvfs
   nemo
   nautilus
-  # GNOME applications
   mission-center
   resources
   gnome-2048
@@ -29,4 +28,12 @@ with pkgs; [
   papers
   snapshot
   zathura
+  bluetuith
+  libnotify
+  kdePackages.qt6ct
+  libsForQt5.qt5ct
+  kdePackages.qtwayland
+  libsForQt5.qtwayland
+  kdePackages.qtstyleplugin-kvantum
+  libsForQt5.qtstyleplugin-kvantum
 ]

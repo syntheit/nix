@@ -16,5 +16,22 @@
     "text/calendar" = "thunderbird.desktop";
     "text/x-vcalendar" = "thunderbird.desktop";
     "application/ics" = "thunderbird.desktop";
+    # Set Loupe as default image viewer
+    "image/png" = "loupe.desktop";
+    "image/jpeg" = "loupe.desktop";
+    "image/jpg" = "loupe.desktop";
+    "image/gif" = "loupe.desktop";
+    "image/bmp" = "loupe.desktop";
+    "image/webp" = "loupe.desktop";
+    "image/svg+xml" = "loupe.desktop";
+    "image/tiff" = "loupe.desktop";
+    "image/x-icon" = "loupe.desktop";
+    "image/vnd.microsoft.icon" = "loupe.desktop";
+    "image/x-ico" = "loupe.desktop";
+    "image/ico" = "loupe.desktop";
+    "image/heic" = "loupe.desktop";
+    "image/heif" = "loupe.desktop";
+    # Set Papers as default PDF viewer
+    "application/pdf" = "papers.desktop";
   };
 }

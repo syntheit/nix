@@ -9,6 +9,8 @@
 }:
 {
   imports = [
+    inputs.stylix.homeModules.stylix  # Load Stylix library
+    ./modules/stylix.nix              # Load Stylix configuration
     ./modules/ssh.nix
     ./modules/git.nix
     ./modules/packages
@@ -17,10 +19,12 @@
     ./modules/rofi.nix
     ./modules/kitty.nix
     ./modules/thunderbird.nix
-    ./modules/gtk.nix
     ./modules/mime-apps.nix
     ./modules/services.nix
     ./modules/files.nix
+    ./modules/zen.nix
+    ./modules/dunst.nix
+    ./modules/wallpaper.nix
     ./shell.nix
   ];
 
