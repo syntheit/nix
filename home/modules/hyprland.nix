@@ -79,7 +79,7 @@ in
         "$mod, k, movefocus, u"
         # Screenshot keybindings  
         "$mod SHIFT, S, exec, grimblast --freeze copy area"
-        "$mod SHIFT, A, exec, grimblast --freeze --cursor copy screen"
+        "$mod SHIFT, A, exec, grimblast --freeze copy screen"
         # Active window screenshots
         "$mod SHIFT, W, exec, grimblast copysave active"
         "$mod, W, exec, grimblast copy active"

@@ -97,7 +97,7 @@ The media player module in Waybar (displayed on the left, next to workspaces) sh
 | Keybinding | Action |
 |------------|--------|
 | `SUPER + Shift + S` | Screenshot **selected area** (freeze, copy to clipboard) |
-| `SUPER + Shift + A` | Screenshot **entire screen** (with cursor, copy to clipboard) |
+| `SUPER + Shift + A` | Screenshot **entire screen** (copy to clipboard) |
 | `SUPER + W` | Screenshot **active window** (copy to clipboard) |
 | `SUPER + Shift + W` | Screenshot **active window** (save to file) |
 | `SUPER + O` | Screenshot **current monitor/output** (copy to clipboard) |
