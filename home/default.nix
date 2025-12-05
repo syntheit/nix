@@ -21,7 +21,6 @@
     ./modules/thunderbird.nix
     ./modules/mime-apps.nix
     ./modules/services.nix
-    ./modules/files.nix
     ./modules/zen.nix
     ./modules/dunst.nix
     ./modules/wallpaper.nix
