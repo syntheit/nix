@@ -1,10 +1,6 @@
 { ... }:
 
 {
-  services.swaync = {
-    enable = true;
-  };
-
   # Enable gnome-keyring for storing WiFi passwords and other secrets
   # NetworkManager uses the secret service component to store WiFi passwords
   services.gnome-keyring = {

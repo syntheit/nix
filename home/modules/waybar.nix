@@ -7,10 +7,11 @@
     settings = {
       mainBar = {
         modules-left = [ "hyprland/workspaces" "mpris" ];
-        modules-center = [ "clock" ];
+        modules-center = [ "clock" "custom/dnd" ];
         modules-right = [
           "custom/network-activity"
-          "tray"
+          "custom/network-status"
+          "bluetooth"
           "custom/weather"
           "pulseaudio"
           "custom/temperature"
@@ -77,9 +78,68 @@
           format = "󰟂 {}%";
           tooltip-format = "RAM: {used}GiB / {total}GiB\nSwap: {swapUsed}GiB / {swapTotal}GiB";
         };
-        tray = {
-          icon-size = 15;
-          spacing = 10;
+        "custom/network-status" = {
+          exec = ''
+            ${pkgs.bash}/bin/bash -c '
+            # Check if connected
+            if ! ${pkgs.networkmanager}/bin/nmcli -t -f STATE g | grep -q connected; then
+              echo "{\"text\": \"󰤭\", \"tooltip\": \"Disconnected\", \"class\": \"disconnected\"}"
+              exit 0
+            fi
+
+            # Get connection info
+            device=$(${pkgs.networkmanager}/bin/nmcli -t -f DEVICE,TYPE,STATE d | grep "connected" | head -1)
+            ifname=$(echo "$device" | cut -d: -f1)
+            type=$(echo "$device" | cut -d: -f2)
+
+            # Get Local IP
+            local_ip=$(${pkgs.iproute2}/bin/ip -4 addr show "$ifname" | grep -oP "(?<=inet\s)\d+(\.\d+){3}")
+
+            # Get Global IP (cache for 1 hour)
+            cache="/tmp/waybar_global_ip"
+            if [ ! -f "$cache" ] || [ $(($(date +%s) - $(stat -c %Y "$cache"))) -gt 3600 ]; then
+              ${pkgs.curl}/bin/curl -s --max-time 2 https://api.ipify.org > "$cache" &
+            fi
+            global_ip=$(cat "$cache" 2>/dev/null || echo "Fetching...")
+
+            if [ "$type" = "wifi" ]; then
+              ssid=$(${pkgs.networkmanager}/bin/nmcli -t -f ACTIVE,SSID dev wifi | grep "^yes" | cut -d: -f2)
+              signal=$(${pkgs.networkmanager}/bin/nmcli -t -f ACTIVE,SIGNAL dev wifi | grep "^yes" | cut -d: -f2)
+              
+              # Select icon
+              if [ "$signal" -gt 80 ]; then icon="󰤨"
+              elif [ "$signal" -gt 60 ]; then icon="󰤥"
+              elif [ "$signal" -gt 40 ]; then icon="󰤢"
+              elif [ "$signal" -gt 20 ]; then icon="󰤟"
+              else icon="󰤯"
+              fi
+              
+              text="$icon"
+              tooltip="$ssid\nLocal IP: $local_ip\nGlobal IP: $global_ip"
+            else
+              text="󰈀 Connected"
+              tooltip="$ifname\nLocal IP: $local_ip\nGlobal IP: $global_ip"
+            fi
+
+            echo "{\"text\": \"$text\", \"tooltip\": \"$tooltip\", \"class\": \"connected\"}"
+            '
+          '';
+          return-type = "json";
+          interval = 10;
+          on-click = "kitty --class tui-network --override confirm_os_window_close=0 -e nmtui";
+          on-click-right = "kitty --class tui-speedtest -e sh -c 'speedtest; read -p \"Press Enter to close...\"'";
+        };
+        bluetooth = {
+          format = "󰂯";
+          format-disabled = "󰂯";
+          format-off = "󰂯";
+          format-on = "󰂯";
+          format-connected = "󰂯";
+          tooltip-format = "{controller_alias}\t{controller_address}\n\n{num_connections} connected";
+          tooltip-format-connected = "{controller_alias}\t{controller_address}\n\n{num_connections} connected\n\n{device_enumerate}";
+          tooltip-format-enumerate-connected = "{device_alias}\t{device_address}";
+          tooltip-format-enumerate-connected-battery = "{device_alias}\t{device_address}\t{device_battery_percentage}%";
+          on-click = "kitty --class tui-bluetooth --override confirm_os_window_close=0 -e bluetuith";
         };
         battery = {
           format = "{capacity}% {icon}";
@@ -91,13 +151,33 @@
             ""
           ];
         };
+        "custom/dnd" = {
+          format = "{}";
+          interval = 1;
+          tooltip = false;
+          exec = ''
+            ${pkgs.bash}/bin/bash -c '
+            result=$(${pkgs.dunst}/bin/dunstctl is-paused 2>/dev/null)
+            if [ "$result" = "true" ]; then
+              echo "󰂛"
+            else
+              echo ""
+            fi
+            '
+          '';
+          on-click-right = ''
+            ${pkgs.dunst}/bin/dunstctl set-paused toggle
+          '';
+        };
         clock = {
           format = "{:%R %A, %B %d}";
           format-alt = "{:%R}";
           timezone = "America/Argentina/Buenos_Aires";
           tooltip = false;
+          on-click-right = ''
+            ${pkgs.dunst}/bin/dunstctl set-paused toggle
+          '';
           actions = {
-            on-click-right = "mode";
             on-click-forward = "tz_up";
             on-click-backward = "tz_down";
             on-scroll-up = "shift_up";
@@ -110,6 +190,7 @@
           ellipsize = true;
           dynamic-order = [ "title" "artist" ];
           tooltip = false;
+          cursor = 60; # GDK cursor type 60 = HAND2 (pointer)
           status-icons = {
             paused = "⏸";
           };
@@ -167,41 +248,60 @@
         .modules-left > *,
         .modules-center > *,
         .modules-right > * {
+            padding: 2px 6px;
+        }
+
+        #custom-network-activity,
+        #custom-network-status,
+        #bluetooth,
+        #custom-weather,
+        #pulseaudio,
+        #custom-temperature,
+        #cpu,
+        #memory {
+            padding: 2px 6px;
+            margin: 0 2px;
+        }
+        
+        #custom-dnd {
             padding: 2px 10px;
         }
         
+        /* Force no borders/margins on all workspace button states to prevent shifting */
         #workspaces button {
-            padding: 2px 5px;
+            padding: 4px;
+            min-width: 20px;
+            min-height: 20px;
             background-color: transparent;
+            box-shadow: none;
+            border: none;
+            border-radius: 50%;
+            margin: 0;
+            transition: background-color 0.3s ease-in-out;
         }
-        #workspaces button:hover {
-            box-shadow: inherit;
-          background-color: transparent;
+
+        #workspaces button:hover,
+        #workspaces button.active:hover,
+        #workspaces button.focused:hover {
+            box-shadow: none;
+            background-color: rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            border: none;
+            text-shadow: none;
         }
         
+        #workspaces button.active,
         #workspaces button.focused {
           background-color: transparent;
+          box-shadow: none;
+          text-shadow: none;
+          border: none;
+          padding: 4px;
+          min-width: 20px;
+          min-height: 20px;
+          margin: 0;
         }
         
-        #memory {
-            padding: 2px 0 2px 10px;
-        }
-        #cpu {
-            padding: 2px 0 2px 10px;
-        }
-        #custom-temperature {
-            padding: 2px 0 2px 10px;
-        }
-        #pulseaudio {
-            padding: 2px 0 2px 10px;
-        }
-        #tray {
-            padding: 2px 0 2px 10px;
-        }
-        #custom-weather {
-            padding: 2px 0 2px 10px;
-            margin-left: 0;
-        }
         #custom-copyq:hover {
             background-color: rgba(255, 255, 255, 0.1);
         }
@@ -250,7 +350,7 @@
   systemd.user.services.waybar = {
     Service = {
       # Pass through Wayland environment variables from user session
-      PassEnvironment = [ "WAYLAND_DISPLAY" "XDG_SESSION_TYPE" ];
+      PassEnvironment = [ "WAYLAND_DISPLAY" "XDG_SESSION_TYPE" "PATH" "DBUS_SESSION_BUS_ADDRESS" ];
       Environment = [
         "XDG_SESSION_TYPE=wayland"
       ];

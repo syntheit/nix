@@ -23,6 +23,11 @@
       url = "git+https://github.com/hyprwm/Hyprland?submodules=1&ref=refs/tags/v0.52.1";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    stylix = {
+      url = "github:danth/stylix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =

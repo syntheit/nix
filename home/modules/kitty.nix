@@ -1,12 +1,13 @@
-{ pkgs, ... }:
+{ pkgs, lib, ... }:
 
 {
   programs.kitty = {
     enable = true;
     shellIntegration.enableZshIntegration = true;
-    themeFile = "Tomorrow_Night";
+    # themeFile is managed by Stylix (via stylix.targets.kitty.enable)
     settings = {
-      background_opacity = "0.8";
+      # FORCE: Override Stylix's default opacity to use my preferred value
+      background_opacity = lib.mkForce "0.8";
       dynamic_background_opacity = true;
       shell = "${pkgs.zsh}/bin/zsh"; # Set zsh as the default shell for kitty
       cursor_shape = "underline"; # Use underline cursor instead of thin line

@@ -1,14 +1,8 @@
 { ... }:
 
 {
-  # Create hyprpaper config file
-  home.file.".config/hypr/hyprpaper.conf".text = ''
-    preload = ~/Pictures/Wallpapers/DSC_9467.jpg
-    preload = ~/Pictures/Wallpapers/DSC_1485.jpg
-
-    wallpaper = DP-1, ~/Pictures/Wallpapers/DSC_9467.jpg
-    wallpaper = DP-3, ~/Pictures/Wallpapers/DSC_1485.jpg
-  '';
+  # Wallpaper is managed by Stylix (via stylix.image and stylix.targets.hyprland.enable)
+  # hyprpaper config removed - Stylix handles wallpaper configuration
 
   # Create hyprlock config file
   home.file.".config/hypr/hyprlock.conf".text = ''
