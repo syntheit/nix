@@ -132,7 +132,6 @@ in
         "$mod, mouse:273, resizewindow"
       ];
       exec-once = [
-        "hyprpaper"
         "${pkgs.copyq}/bin/copyq --start-server"
         "systemctl --user start hyprpolkitagent"
       ];

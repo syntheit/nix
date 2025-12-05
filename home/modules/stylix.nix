@@ -15,7 +15,7 @@
   stylix.base16Scheme = "${pkgs.base16-schemes}/share/themes/tokyodark.yaml";
   stylix.image = pkgs.fetchurl {
     url = "https://raw.githubusercontent.com/zhichaoh/catppuccin-wallpapers/main/os/nix-black-4k.png";
-    sha256 = "sha256-MakeSureToReplaceThisWithTheHashFromErrorMessage";
+    sha256 = "144mz3nf6mwq7pmbmd3s9xq7rx2sildngpxxj5vhwz76l1w5h5hx";
   };
 
   # Cursors & Fonts
