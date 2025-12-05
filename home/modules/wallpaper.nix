@@ -18,8 +18,11 @@ let
       STATE_FILE="$HOME/.cache/wallpaper_history"
 
       # Ensure swww-daemon is running
-      if ! pgrep -x swww-daemon > /dev/null; then
-        swww-daemon &
+      # Check if swww-daemon is already running by trying to query it
+      if ! swww query &>/dev/null; then
+        # If query fails, try to start swww-daemon
+        # Suppress error if it's already running (started by another process)
+        swww-daemon &>/dev/null || true
         sleep 1
       fi
 
@@ -75,7 +78,7 @@ let
       MONITORS=$(hyprctl monitors -j | jq -r '.[].name')
 
       for MON in $MONITORS; do
-        swww img -o "$MON" "$FULL_PATH" --transition-type grow
+        swww img -o "$MON" "$FULL_PATH" --transition-type fade
       done
 
       # Update State: Append the chosen filename to STATE_FILE
@@ -96,6 +99,9 @@ in
       Type = "oneshot";
       ExecStart = "${wallpaper-cycle}/bin/wallpaper-cycle";
     };
+    Install = {
+      WantedBy = [ "graphical-session.target" ];
+    };
   };
 
   systemd.user.timers.wallpaper-cycle = {
@@ -105,7 +111,7 @@ in
     Timer = {
       OnCalendar = "daily";
       Persistent = true;
-      OnBootSec = "1m";
+      OnBootSec = "10s";
     };
     Install = {
       WantedBy = [ "timers.target" ];
