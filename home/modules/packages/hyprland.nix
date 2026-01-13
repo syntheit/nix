@@ -5,6 +5,7 @@ with pkgs; [
   hypridle
   hyprpicker
   hyprpolkitagent
+  hyprsunset
   grimblast
   pavucontrol
   pamixer
