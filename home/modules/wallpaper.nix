@@ -106,12 +106,15 @@ in
 
   systemd.user.timers.wallpaper-cycle = {
     Unit = {
-      Description = "Cycle wallpaper daily and on login";
+      Description = "Cycle wallpaper every 24 hours";
     };
     Timer = {
-      OnCalendar = "daily";
-      Persistent = true;
+      # Run every 24 hours after the last activation
+      OnUnitActiveSec = "24h";
+      # Run 10 seconds after boot to set initial wallpaper
       OnBootSec = "10s";
+      # If system was off when timer should have fired, run it on boot
+      Persistent = true;
     };
     Install = {
       WantedBy = [ "timers.target" ];
