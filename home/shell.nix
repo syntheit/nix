@@ -45,6 +45,12 @@
     '';
   };
 
+  programs.direnv = {
+    enable = true;
+    nix-direnv.enable = true; # Esto acelera muchísimo la carga haciendo caché
+    enableZshIntegration = true; # La clave para que funcione en tu shell
+  };
+
   # Starship prompt - simple and clean
   programs.starship = {
     enable = true;
@@ -132,28 +138,28 @@
       python = {
         format = "[py $version]($style) ";
         style = "bright-blue";
-        version_format = "v$${raw}";
+        version_format = ''v''${raw}'';
       };
       
       # Node.js version
       nodejs = {
         format = "[node $version]($style) ";
         style = "bright-blue";
-        version_format = "v$${raw}";
+        version_format = ''v''${raw}'';
       };
       
       # Rust version
       rust = {
         format = "[rust $version]($style) ";
         style = "bright-blue";
-        version_format = "v$${raw}";
+        version_format = ''v''${raw}'';
       };
       
       # Go version
       golang = {
         format = "[go $version]($style) ";
         style = "bright-blue";
-        version_format = "v$${raw}";
+        version_format = ''v''${raw}'';
       };
       
       # Disable other modules to keep prompt clean
