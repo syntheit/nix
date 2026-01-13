@@ -1,6 +1,7 @@
 { pkgs, ... }:
 
-with pkgs; [
+with pkgs;
+[
   htop
   btop
   fastfetch
@@ -33,7 +34,7 @@ with pkgs; [
   gnumake
   duf
   plocate
-  nixfmt-rfc-style
+  nixfmt
   nix-output-monitor
   ookla-speedtest
 ]
