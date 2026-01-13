@@ -1,6 +1,7 @@
 { pkgs, ... }:
 
-with pkgs; [
+with pkgs;
+[
   direnv
   typst
   jq
@@ -10,4 +11,8 @@ with pkgs; [
   devenv
   distrobox
   code-cursor
+  antigravity
+  google-chrome
+  dbeaver-bin
+  vscode
 ]
