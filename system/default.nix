@@ -77,15 +77,16 @@
     git
     smartmontools
     iw
-    libsecret  # Required for NetworkManager to use secret service (gnome-keyring)
+    libsecret # Required for NetworkManager to use secret service (gnome-keyring)
     # Thumbnailer packages for Nemo file previews
-    gdk-pixbuf  # Basic image formats (PNG, JPEG, BMP, GIF, TIFF, etc.)
-    libheif  # HEIF and AVIF image formats
-    libheif.out  # HEIF output plugin
-    nufraw  # RAW image format support
-    nufraw-thumbnailer  # RAW image thumbnailer
-    ffmpegthumbnailer  # Video thumbnail generation
-    poppler-utils  # PDF thumbnail generation
+    gdk-pixbuf # Basic image formats (PNG, JPEG, BMP, GIF, TIFF, etc.)
+    libheif # HEIF and AVIF image formats
+    libheif.out # HEIF output plugin
+    nufraw # RAW image format support
+    nufraw-thumbnailer # RAW image thumbnailer
+    ffmpegthumbnailer # Video thumbnail generation
+    poppler-utils # PDF thumbnail generation
+    android-tools
     # Affinity Suite
     inputs.affinity-nix.packages.x86_64-linux.v3
   ];
@@ -99,7 +100,6 @@
   # started in user sessions.
   programs.nix-ld.enable = true;
   programs.zsh.enable = true;
-  programs.adb.enable = true;
   programs.ssh = {
     startAgent = true;
     enableAskPassword = true;
@@ -121,7 +121,7 @@
   users.users."${vars.user.name}" = {
     isNormalUser = true;
     description = "${vars.user.fullname}";
-    shell = pkgs.zsh;  # Explicitly set zsh as the user's shell
+    shell = pkgs.zsh; # Explicitly set zsh as the user's shell
     extraGroups = [
       "networkmanager"
       "wheel"
@@ -129,7 +129,6 @@
       "docker"
       "video"
       "libvirtd"
-      "adbusers"
     ];
   };
 
@@ -141,4 +140,3 @@
   # (e.g. man configuration.nix or on https://nixos.org/nixos/options.html).
   system.stateVersion = "25.05"; # Did you read the comment?
 }
-
