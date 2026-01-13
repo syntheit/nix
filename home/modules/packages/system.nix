@@ -6,6 +6,7 @@ with pkgs; [
   inputs.zen-browser.packages.${pkgs.stdenv.hostPlatform.system}.default
   signal-desktop
   telegram-desktop
+  slack
   nextcloud-client
   virt-manager
   papirus-icon-theme
