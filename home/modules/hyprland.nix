@@ -134,6 +134,7 @@ in
       exec-once = [
         "${pkgs.copyq}/bin/copyq --start-server"
         "systemctl --user start hyprpolkitagent"
+        "hyprsunset"
       ];
       binds = {
         movefocus_cycles_fullscreen = true;
@@ -208,4 +209,22 @@ in
       };
     };
   };
+
+  # Hyprsunset configuration
+  # Blue light filter that turns on from 9:30pm to 5am
+  xdg.configFile."hypr/hyprsunset.conf".text = ''
+    max-gamma = 150
+
+    # Normal mode (daytime) - turns off blue light filter at 5am
+    profile {
+        time = 5:00
+        identity = true
+    }
+
+    # Night mode - turns on blue light filter at 9:30pm
+    profile {
+        time = 21:30
+        temperature = 5500
+    }
+  '';
 }
