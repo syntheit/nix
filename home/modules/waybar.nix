@@ -170,8 +170,8 @@
           '';
         };
         clock = {
-          format = "{:%R %A, %B %d}";
-          format-alt = "{:%R}";
+          format = "{:%R}";
+          format-alt = "{:%R %A, %B %d}";
           timezone = "America/Argentina/Buenos_Aires";
           tooltip = false;
           on-click-right = ''
