@@ -9,6 +9,9 @@
     enable = true;
     enableDefaultConfig = false;
     matchBlocks = {
+      "*" = {
+        identityFile = "~/.ssh/mainkey";
+      };
       "admin.matv.io" = {
         hostname = "admin.matv.io";
         identityFile = "~/.ssh/mainkey"; # Points to the manual file
