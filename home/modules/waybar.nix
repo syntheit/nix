@@ -1,4 +1,9 @@
-{ pkgs, ... }:
+{
+  pkgs,
+  lib,
+  hostName,
+  ...
+}:
 
 {
   programs.waybar = {
@@ -6,8 +11,14 @@
     systemd.enable = true;
     settings = {
       mainBar = {
-        modules-left = [ "hyprland/workspaces" "mpris" ];
-        modules-center = [ "clock" "custom/dnd" ];
+        modules-left = [
+          "hyprland/workspaces"
+          "mpris"
+        ];
+        modules-center = [
+          "clock"
+          "custom/dnd"
+        ];
         modules-right = [
           "custom/network-activity"
           "custom/network-status"
@@ -17,7 +28,7 @@
           "custom/temperature"
           "cpu"
           "memory"
-        ];
+        ] ++ lib.optionals (hostName == "ionian") [ "battery" ];
         pulseaudio = {
           format = "󰕾 {volume}%";
           format-bluetooth = "󰕾 {volume}%";
