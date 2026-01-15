@@ -1,4 +1,10 @@
-{ pkgs, inputs, lib, config, ... }:
+{
+  pkgs,
+  inputs,
+  lib,
+  config,
+  ...
+}:
 let
   # Script to handle Escape key behavior
   # 1. If Rofi is running, kill it (handles layer surface case)
@@ -14,7 +20,7 @@ let
     # Get active window class
     hyprctl=${config.wayland.windowManager.hyprland.package}/bin/hyprctl
     jq=${pkgs.jq}/bin/jq
-    
+
     if active_window=$($hyprctl activewindow -j); then
       class=$(echo "$active_window" | $jq -r ".class")
       
@@ -36,7 +42,6 @@ in
 
     settings = {
       general = {
-        no_border_on_floating = true;
         gaps_in = 0;
         gaps_out = 0;
         # FORCE: Override Stylix's default border size (2) to keep borders invisible
@@ -57,7 +62,7 @@ in
       };
 
       "$mod" = "SUPER";
-      
+
       # Non-consuming bind for Escape (allows key to pass to apps like Vim)
       bindn = [
         ", escape, exec, ${handleEscapeScript}"
@@ -77,7 +82,7 @@ in
         "$mod, l, movefocus, r"
         "$mod, j, movefocus, d"
         "$mod, k, movefocus, u"
-        # Screenshot keybindings  
+        # Screenshot keybindings
         "$mod SHIFT, S, exec, grimblast --freeze copy area"
         "$mod SHIFT, A, exec, grimblast --freeze copy screen"
         # Active window screenshots
@@ -156,40 +161,40 @@ in
         "float, class:^(Rofi)$"
 
         # CopyQ
-        "float, class:^(com.github.hluk.copyq)$"
-        "center, class:^(com.github.hluk.copyq)$"
-        "size 689 911, class:^(com.github.hluk.copyq)$"
-        "dimaround, class:^(com.github.hluk.copyq)$"
+        "float, initialClass:^(com.github.hluk.copyq)$"
+        "center, initialClass:^(com.github.hluk.copyq)$"
+        "size 689 911, initialClass:^(com.github.hluk.copyq)$"
+        "dimaround, initialClass:^(com.github.hluk.copyq)$"
 
         # Network Manager
-        "float, class:^(nm-connection-editor)$"
-        "center, class:^(nm-connection-editor)$"
-        "size 800 600, class:^(nm-connection-editor)$"
-        "dimaround, class:^(nm-connection-editor)$"
+        "float, initialClass:^(nm-connection-editor)$"
+        "center, initialClass:^(nm-connection-editor)$"
+        "size 800 600, initialClass:^(nm-connection-editor)$"
+        "dimaround, initialClass:^(nm-connection-editor)$"
 
         # PulseAudio Volume Control
-        "float, class:^(org.pulseaudio.pavucontrol)$"
-        "center, class:^(org.pulseaudio.pavucontrol)$"
-        "size 800 600, class:^(org.pulseaudio.pavucontrol)$"
-        "dimaround, class:^(org.pulseaudio.pavucontrol)$"
+        "float, initialClass:^(org.pulseaudio.pavucontrol)$"
+        "center, initialClass:^(org.pulseaudio.pavucontrol)$"
+        "size 800 600, initialClass:^(org.pulseaudio.pavucontrol)$"
+        "dimaround, initialClass:^(org.pulseaudio.pavucontrol)$"
 
         # Network Manager TUI
-        "float, class:^(tui-network)$"
-        "center, class:^(tui-network)$"
-        "size 600 900, class:^(tui-network)$"
-        "dimaround, class:^(tui-network)$"
+        "float, initialClass:^(tui-network)$"
+        "center, initialClass:^(tui-network)$"
+        "size 600 900, initialClass:^(tui-network)$"
+        "dimaround, initialClass:^(tui-network)$"
 
         # Bluetooth TUI
-        "float, class:^(tui-bluetooth)$"
-        "center, class:^(tui-bluetooth)$"
-        "size 1104 580, class:^(tui-bluetooth)$"
-        "dimaround, class:^(tui-bluetooth)$"
+        "float, initialClass:^(tui-bluetooth)$"
+        "center, initialClass:^(tui-bluetooth)$"
+        "size 1104 580, initialClass:^(tui-bluetooth)$"
+        "dimaround, initialClass:^(tui-bluetooth)$"
 
         # Speedtest TUI
-        "float, class:^(tui-speedtest)$"
-        "center, class:^(tui-speedtest)$"
-        "size 800 400, class:^(tui-speedtest)$"
-        "dimaround, class:^(tui-speedtest)$"
+        "float, initialClass:^(tui-speedtest)$"
+        "center, initialClass:^(tui-speedtest)$"
+        "size 800 400, initialClass:^(tui-speedtest)$"
+        "dimaround, initialClass:^(tui-speedtest)$"
       ];
       env = [
         "LIBVA_DRIVER_NAME,nvidia"

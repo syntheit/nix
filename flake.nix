@@ -52,27 +52,48 @@
       };
     in
     {
-      nixosConfigurations."${vars.network.hostname}" = nixpkgs.lib.nixosSystem {
-        system = "x86_64-linux";
-        specialArgs = specialArgs;
-        modules = [
-          ./system
-          ./services
-          ./desktop
-          inputs.home-manager.nixosModules.home-manager
-          {
-            nixpkgs.overlays = [
-              inputs.nur.overlays.default
-              (import ./overlays { inherit inputs lib; }).modifications
-              (import ./overlays { inherit inputs lib; }).additions
-            ];
-            home-manager.useGlobalPkgs = true;
-            home-manager.useUserPackages = true;
-            home-manager.backupFileExtension = "bkp";
-            home-manager.extraSpecialArgs = specialArgs;
-            home-manager.users."${vars.user.name}" = import ./home;
-          }
-        ];
+      nixosConfigurations = {
+        caspian = nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          specialArgs = specialArgs // { hostName = "caspian"; };
+          modules = [
+            ./hosts/caspian
+            inputs.home-manager.nixosModules.home-manager
+            {
+              nixpkgs.overlays = [
+                inputs.nur.overlays.default
+                (import ./overlays { inherit inputs lib; }).modifications
+                (import ./overlays { inherit inputs lib; }).additions
+              ];
+              home-manager.useGlobalPkgs = true;
+              home-manager.useUserPackages = true;
+              home-manager.backupFileExtension = "bkp";
+              home-manager.extraSpecialArgs = specialArgs // { hostName = "caspian"; };
+              home-manager.users."${vars.user.name}" = import ./home;
+            }
+          ];
+        };
+
+        ionian = nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          specialArgs = specialArgs // { hostName = "ionian"; };
+          modules = [
+            ./hosts/ionian
+            inputs.home-manager.nixosModules.home-manager
+            {
+              nixpkgs.overlays = [
+                inputs.nur.overlays.default
+                (import ./overlays { inherit inputs lib; }).modifications
+                (import ./overlays { inherit inputs lib; }).additions
+              ];
+              home-manager.useGlobalPkgs = true;
+              home-manager.useUserPackages = true;
+              home-manager.backupFileExtension = "bkp";
+              home-manager.extraSpecialArgs = specialArgs // { hostName = "ionian"; };
+              home-manager.users."${vars.user.name}" = import ./home;
+            }
+          ];
+        };
       };
     };
 }

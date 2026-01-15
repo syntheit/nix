@@ -10,7 +10,6 @@
   imports = extraLibs.scanPaths ./.;
 
   networking = {
-    hostName = "${vars.network.hostname}";
     networkmanager = {
       enable = true;
       # Ensure NetworkManager uses the secret service for storing WiFi passwords
