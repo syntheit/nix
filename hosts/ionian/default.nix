@@ -1,7 +1,8 @@
-{ ... }:
+{ pkgs, ... }:
 {
   imports = [
     ./hardware-configuration.nix
+    ./hardware.nix
     ../../system
     ../../services
     ../../desktop
@@ -9,8 +10,7 @@
 
   networking.hostName = "ionian";
 
-  # Laptop specific settings
-  # services.thermald.enable = true;
-  # services.tlp.enable = true;
+  environment.systemPackages = with pkgs; [
+    brightnessctl
+  ];
 }
-
