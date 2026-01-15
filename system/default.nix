@@ -75,6 +75,7 @@
     vim
     git
     smartmontools
+    lm_sensors
     iw
     libsecret # Required for NetworkManager to use secret service (gnome-keyring)
     # Thumbnailer packages for Nemo file previews
