@@ -38,9 +38,9 @@ in
     enable = true;
     package = inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.hyprland;
     xwayland.enable = true;
-    # Disable systemd integration when using greetd to launch Hyprland directly
-    # This prevents the "Hyprland was started without start-hyprland" warning
-    systemd.enable = false;
+    # Enable systemd integration to ensure graphical-session.target is reached
+    # This is required for Waybar and wallpaper services to start correctly.
+    systemd.enable = true;
 
     settings = {
       general = {
