@@ -33,5 +33,14 @@
   #   # Memory
   #   "transparent_hugepage=always"  # Enable transparent huge pages
   # ];
-}
 
+  # Enable filesystem support (read and write)
+  boot.supportedFilesystems = [
+    "ntfs"
+    "exfat"
+    "f2fs"
+    "xfs"
+    "nfs"
+    "cifs"
+  ];
+}
