@@ -137,6 +137,9 @@ in
         ", XF86AudioPlay, exec, playerctl play-pause"
         ", XF86AudioNext, exec, playerctl next"
         ", XF86AudioPrev, exec, playerctl previous"
+      ]
+      ++ lib.optionals (hostName == "ionian") [
+        ", switch:off:Lid Switch, exec, hyprlock"
       ];
       bindm = [
         "$mod, mouse:272, movewindow"

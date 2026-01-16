@@ -49,5 +49,11 @@
     };
   };
 
+  # Firmware updates
+  services.fwupd.enable = true;
+
+  # Fingerprint reader
+  services.fprintd.enable = true;
+
   zramSwap.enable = true;
 }

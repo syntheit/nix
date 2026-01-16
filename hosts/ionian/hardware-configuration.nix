@@ -28,7 +28,11 @@
   fileSystems."/" = {
     device = "/dev/mapper/luks-33a241fd-d641-4fff-aeb2-ede1cd20b72d";
     fsType = "btrfs";
-    options = [ "subvol=@" ];
+    options = [
+      "subvol=@"
+      "compress=zstd"
+      "space_cache=v2"
+    ];
   };
 
   boot.initrd.luks.devices."luks-33a241fd-d641-4fff-aeb2-ede1cd20b72d".device =
@@ -37,7 +41,11 @@
   fileSystems."/home" = {
     device = "/dev/mapper/luks-33a241fd-d641-4fff-aeb2-ede1cd20b72d";
     fsType = "btrfs";
-    options = [ "subvol=@home" ];
+    options = [
+      "subvol=@home"
+      "compress=zstd"
+      "space_cache=v2"
+    ];
   };
 
   fileSystems."/boot" = {
