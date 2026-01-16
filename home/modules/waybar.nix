@@ -28,7 +28,8 @@
           "custom/temperature"
           "cpu"
           "memory"
-        ] ++ lib.optionals (hostName == "ionian") [ "battery" ];
+        ]
+        ++ lib.optionals (hostName == "ionian") [ "battery" ];
         pulseaudio = {
           format = "󰕾 {volume}%";
           format-bluetooth = "󰕾 {volume}%";
@@ -68,19 +69,37 @@
           format = "󰔏 {}°";
           tooltip-format = "CPU Temp: {}°";
           interval = 5;
-          exec = ''
-            ${pkgs.bash}/bin/bash -c '
-            temp=$(sensors 2>/dev/null | grep -i "core 0" | grep -oE "[0-9]+\.[0-9]+|[0-9]+" | head -1)
-            if [ -z "$temp" ]; then
-              temp=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null | awk "{printf \"%.0f\", \$1/1000}")
-            fi
-            if [ -z "$temp" ]; then
-              echo "N/A"
+          exec =
+            if hostName == "ionian" then
+              ''
+                ${pkgs.bash}/bin/bash -c '
+                # For ionian, prefer Package id from coretemp or CPU from thinkpad sensor
+                temp=$(sensors 2>/dev/null | grep -E "Package id 0:|CPU:" | grep -oE "\+[0-9]+\.[0-9]+" | head -1 | tr -d "+")
+                if [ -z "$temp" ]; then
+                  temp=$(sensors 2>/dev/null | grep -i "core 0" | grep -oE "[0-9]+\.[0-9]+|[0-9]+" | head -1)
+                fi
+                if [ -z "$temp" ]; then
+                  echo "N/A"
+                else
+                  # Remove decimal part for cleaner display
+                  echo "$temp" | awk "{printf \"%.0f\", \$1}"
+                fi
+                '
+              ''
             else
-              echo "$temp"
-            fi
-            '
-          '';
+              ''
+                ${pkgs.bash}/bin/bash -c '
+                temp=$(sensors 2>/dev/null | grep -i "core 0" | grep -oE "[0-9]+\.[0-9]+|[0-9]+" | head -1)
+                if [ -z "$temp" ]; then
+                  temp=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null | awk "{printf \"%.0f\", \$1/1000}")
+                fi
+                if [ -z "$temp" ]; then
+                  echo "N/A"
+                else
+                  echo "$temp"
+                fi
+                '
+              '';
         };
         cpu = {
           format = "󰍛 {usage}%";
@@ -153,7 +172,8 @@
           on-click = "kitty --class tui-bluetooth --override confirm_os_window_close=0 -e bluetuith";
         };
         battery = {
-          format = "{capacity}% {icon}";
+          format = "{icon} {capacity}%";
+          format-charging = "󱐋 {capacity}%";
           format-icons = [
             ""
             ""
@@ -161,6 +181,9 @@
             ""
             ""
           ];
+          tooltip-format = "{time}";
+          tooltip-format-charging = "{time} until fully charged";
+          tooltip-format-discharging = "{time} until empty";
         };
         "custom/dnd" = {
           format = "{}";
@@ -199,7 +222,10 @@
           format = "{dynamic}";
           max-length = 75;
           ellipsize = true;
-          dynamic-order = [ "title" "artist" ];
+          dynamic-order = [
+            "title"
+            "artist"
+          ];
           tooltip = false;
           cursor = 60; # GDK cursor type 60 = HAND2 (pointer)
           status-icons = {
@@ -269,7 +295,8 @@
         #pulseaudio,
         #custom-temperature,
         #cpu,
-        #memory {
+        #memory,
+        #battery {
             padding: 2px 6px;
             margin: 0 2px;
         }
@@ -327,6 +354,9 @@
           padding: 0 6px 0 0;
         }
         /*-----Indicators----*/
+        #battery {
+            letter-spacing: 0.1em;
+        }
         #idle_inhibitor.activated {
             color: #2dcc36;
         }
@@ -361,7 +391,12 @@
   systemd.user.services.waybar = {
     Service = {
       # Pass through Wayland environment variables from user session
-      PassEnvironment = [ "WAYLAND_DISPLAY" "XDG_SESSION_TYPE" "PATH" "DBUS_SESSION_BUS_ADDRESS" ];
+      PassEnvironment = [
+        "WAYLAND_DISPLAY"
+        "XDG_SESSION_TYPE"
+        "PATH"
+        "DBUS_SESSION_BUS_ADDRESS"
+      ];
       Environment = [
         "XDG_SESSION_TYPE=wayland"
       ];
