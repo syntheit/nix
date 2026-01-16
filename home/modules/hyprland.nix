@@ -38,8 +38,9 @@ in
     enable = true;
     package = inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.hyprland;
     xwayland.enable = true;
-    systemd.enable = true;
-    systemd.enableXdgAutostart = true;
+    # Disable systemd integration when using greetd to launch Hyprland directly
+    # This prevents the "Hyprland was started without start-hyprland" warning
+    systemd.enable = false;
 
     settings = {
       general = {
@@ -159,6 +160,12 @@ in
         # Enable compose key on right Alt for typing accents
         kb_options = "compose:ralt";
       };
+      # Trackpad gestures
+      gesture = [
+        "3, horizontal, workspace"
+        "3, up, special"
+        "4, horizontal, workspace"
+      ];
       # Use nwg-displays to configure monitor settings
       # Will automatically reload from this file
       source = "~/.config/hypr/monitors.conf";

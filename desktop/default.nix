@@ -36,7 +36,8 @@
     # Set the flake package (using development version from flake)
     package = inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.hyprland;
     # Make sure to also set the portal package, so that they are in sync
-    portalPackage = inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.xdg-desktop-portal-hyprland;
+    portalPackage =
+      inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.xdg-desktop-portal-hyprland;
   };
 
   programs.steam.enable = true;
@@ -62,7 +63,7 @@
     nerd-fonts.ubuntu-mono
     nerd-fonts.victor-mono
     nerd-fonts.ubuntu
-    
+
     # System and UI fonts
     dejavu_fonts
     liberation_ttf
@@ -71,19 +72,19 @@
     noto-fonts-cjk-serif
     noto-fonts-color-emoji
     noto-fonts-lgc-plus
-    
+
     # Popular sans-serif fonts
     inter
     roboto
     open-sans
     source-sans-pro
     source-sans
-    
+
     # Popular serif fonts
     source-serif-pro
     libertinus
     eb-garamond
-    
+
     # Monospace coding fonts
     fira-code
     fira-code-symbols
@@ -96,11 +97,10 @@
     proggyfonts
     inconsolata
     terminus_font
-    
+
     # Icon fonts
     font-awesome
     material-icons
     material-design-icons
   ];
 }
-
