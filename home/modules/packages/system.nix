@@ -1,6 +1,7 @@
 { pkgs, inputs, ... }:
 
-with pkgs; [
+with pkgs;
+[
   tor-browser
   brave
   inputs.zen-browser.packages.${pkgs.stdenv.hostPlatform.system}.default
@@ -26,6 +27,7 @@ with pkgs; [
   gnome-2048
   gnome-calculator
   gparted
+  gnome-disk-utility
   papers
   snapshot
   zathura
