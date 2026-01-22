@@ -39,4 +39,5 @@ with pkgs;
   libsForQt5.qtwayland
   kdePackages.qtstyleplugin-kvantum
   libsForQt5.qtstyleplugin-kvantum
+  ladybird
 ]
