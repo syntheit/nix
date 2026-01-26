@@ -33,6 +33,15 @@
       url = "github:mrshmllow/affinity-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    nix-darwin = {
+      url = "github:LnL7/nix-darwin";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    nix-homebrew = {
+      url = "github:zhaofengli-wip/nix-homebrew";
+    };
   };
 
   outputs =
@@ -91,6 +100,29 @@
               home-manager.backupFileExtension = "bkp";
               home-manager.extraSpecialArgs = specialArgs // { hostName = "ionian"; };
               home-manager.users."${vars.user.name}" = import ./home;
+            }
+          ];
+        };
+      };
+
+      darwinConfigurations = {
+        aegean = inputs.nix-darwin.lib.darwinSystem {
+          system = "aarch64-darwin";
+          specialArgs = specialArgs // { hostName = "aegean"; };
+          modules = [
+            ./hosts/aegean
+            inputs.nix-homebrew.darwinModules.nix-homebrew
+            inputs.home-manager.darwinModules.home-manager
+            {
+              nixpkgs.overlays = [
+                (import ./overlays { inherit inputs lib; }).modifications
+                (import ./overlays { inherit inputs lib; }).additions
+              ];
+              home-manager.useGlobalPkgs = true;
+              home-manager.useUserPackages = true;
+              home-manager.backupFileExtension = "bkp";
+              home-manager.extraSpecialArgs = specialArgs // { hostName = "aegean"; };
+              home-manager.users."${vars.user.name}" = import ./hosts/aegean/home.nix;
             }
           ];
         };

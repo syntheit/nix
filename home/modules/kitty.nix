@@ -15,6 +15,11 @@
       shell_integration = "no-cursor"; # Prevent shell integration from overriding cursor shape
       # Use xterm-256color for SSH sessions to avoid terminfo errors
       term = "xterm-256color";
+    }
+    // lib.optionalAttrs pkgs.stdenv.isDarwin {
+      hide_window_decorations = "yes"; # Remove title bar
+      window_margin_width = 0;
+      window_padding_width = 0;
     };
   };
 }
