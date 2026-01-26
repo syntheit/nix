@@ -11,6 +11,7 @@
     # Cross-platform modules (work on both Linux and Darwin)
     ../../home/modules/kitty.nix
     ../../home/modules/git.nix
+    ../../home/modules/ssh.nix
     ../../home/shell.nix
 
     # macOS-specific modules
