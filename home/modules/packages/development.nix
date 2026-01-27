@@ -15,4 +15,5 @@ with pkgs;
   google-chrome
   dbeaver-bin
   vscode
+  opencode
 ]
