@@ -32,10 +32,14 @@
 
   services.resolved = {
     enable = true;
-    dnssec = "false";
-    domains = [ "~." ];
-    fallbackDns = [ ];
-    dnsovertls = "true";
+    settings = {
+      Resolve = {
+        DNSSEC = "false";
+        Domains = [ "~." ];
+        FallbackDNS = [ ];
+        DNSOverTLS = "true";
+      };
+    };
   };
   # Configure NextDNS servers via systemd-resolved
   # These will be used by systemd-resolved
