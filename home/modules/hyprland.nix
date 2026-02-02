@@ -36,7 +36,8 @@ in
   # Hyprland configuration
   wayland.windowManager.hyprland = {
     enable = true;
-    package = inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.hyprland;
+    # Use hyprland from nixpkgs (more stable build)
+    package = pkgs.hyprland;
     xwayland.enable = true;
     # Enable systemd integration to ensure graphical-session.target is reached
     # This is required for Waybar and wallpaper services to start correctly.
