@@ -33,11 +33,10 @@
   # and adds a proper Desktop Entry to the Display Manager.
   programs.hyprland = {
     enable = true;
-    # Set the flake package (using development version from flake)
-    package = inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.hyprland;
-    # Make sure to also set the portal package, so that they are in sync
-    portalPackage =
-      inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.xdg-desktop-portal-hyprland;
+    # Use hyprland from nixpkgs (more stable build)
+    package = pkgs.hyprland;
+    # Use matching portal package from nixpkgs
+    portalPackage = pkgs.xdg-desktop-portal-hyprland;
   };
 
   programs.steam.enable = true;
