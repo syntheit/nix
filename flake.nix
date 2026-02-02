@@ -20,7 +20,7 @@
     };
 
     hyprland = {
-      url = "git+https://github.com/hyprwm/Hyprland?submodules=1&ref=refs/tags/v0.53.1";
+      url = "git+https://github.com/hyprwm/Hyprland?submodules=1&ref=refs/tags/v0.53.3";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -64,7 +64,9 @@
       nixosConfigurations = {
         caspian = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
-          specialArgs = specialArgs // { hostName = "caspian"; };
+          specialArgs = specialArgs // {
+            hostName = "caspian";
+          };
           modules = [
             ./hosts/caspian
             inputs.home-manager.nixosModules.home-manager
@@ -77,7 +79,9 @@
               home-manager.useGlobalPkgs = true;
               home-manager.useUserPackages = true;
               home-manager.backupFileExtension = "bkp";
-              home-manager.extraSpecialArgs = specialArgs // { hostName = "caspian"; };
+              home-manager.extraSpecialArgs = specialArgs // {
+                hostName = "caspian";
+              };
               home-manager.users."${vars.user.name}" = import ./home;
             }
           ];
@@ -85,7 +89,9 @@
 
         ionian = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
-          specialArgs = specialArgs // { hostName = "ionian"; };
+          specialArgs = specialArgs // {
+            hostName = "ionian";
+          };
           modules = [
             ./hosts/ionian
             inputs.home-manager.nixosModules.home-manager
@@ -98,7 +104,9 @@
               home-manager.useGlobalPkgs = true;
               home-manager.useUserPackages = true;
               home-manager.backupFileExtension = "bkp";
-              home-manager.extraSpecialArgs = specialArgs // { hostName = "ionian"; };
+              home-manager.extraSpecialArgs = specialArgs // {
+                hostName = "ionian";
+              };
               home-manager.users."${vars.user.name}" = import ./home;
             }
           ];
@@ -108,7 +116,9 @@
       darwinConfigurations = {
         aegean = inputs.nix-darwin.lib.darwinSystem {
           system = "aarch64-darwin";
-          specialArgs = specialArgs // { hostName = "aegean"; };
+          specialArgs = specialArgs // {
+            hostName = "aegean";
+          };
           modules = [
             ./hosts/aegean
             inputs.nix-homebrew.darwinModules.nix-homebrew
@@ -121,7 +131,9 @@
               home-manager.useGlobalPkgs = true;
               home-manager.useUserPackages = true;
               home-manager.backupFileExtension = "bkp";
-              home-manager.extraSpecialArgs = specialArgs // { hostName = "aegean"; };
+              home-manager.extraSpecialArgs = specialArgs // {
+                hostName = "aegean";
+              };
               home-manager.users."${vars.user.name}" = import ./hosts/aegean/home.nix;
             }
           ];
