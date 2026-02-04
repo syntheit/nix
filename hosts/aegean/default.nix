@@ -89,6 +89,7 @@ in
       "windscribe"
       "orbstack"
       "karabiner-elements"
+      "eqmac"
     ];
     brews = [
       "mas"
