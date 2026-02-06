@@ -90,6 +90,7 @@ in
       "orbstack"
       "karabiner-elements"
       "eqmac"
+      "macwhisper"
     ];
     brews = [
       "mas"
