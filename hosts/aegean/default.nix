@@ -91,6 +91,7 @@ in
       "karabiner-elements"
       "eqmac"
       "macwhisper"
+      "obsidian"
     ];
     brews = [
       "mas"
