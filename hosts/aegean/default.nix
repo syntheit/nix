@@ -92,6 +92,7 @@ in
       "eqmac"
       "macwhisper"
       "obsidian"
+      "dbeaver-community"
     ];
     brews = [
       "mas"
