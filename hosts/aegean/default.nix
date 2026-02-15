@@ -70,7 +70,7 @@ in
     };
     casks = [
       "kitty"
-      "zen-browser"
+      "zen"
       "spotify"
       "raycast"
       "font-jetbrains-mono-nerd-font"
@@ -78,7 +78,7 @@ in
       "cursor"
       "arc"
       "nextcloud"
-      "syncthing"
+      "syncthing-app"
       "visual-studio-code"
       "transmission"
       "whatsapp"
@@ -93,6 +93,7 @@ in
       "macwhisper"
       "obsidian"
       "dbeaver-community"
+      "kiro"
     ];
     brews = [
       "mas"
