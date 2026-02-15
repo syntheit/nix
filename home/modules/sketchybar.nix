@@ -9,6 +9,7 @@ lib.mkIf pkgs.stdenv.isDarwin {
   home.packages = [
     pkgs.sketchybar
     pkgs.blueutil
+    pkgs.macmon
   ];
 
   xdg.configFile."sketchybar/sketchybarrc" = {
@@ -345,33 +346,14 @@ lib.mkIf pkgs.stdenv.isDarwin {
     executable = true;
     text = ''
       #!/bin/bash
-      # On Apple Silicon, getting exact temperature without specialized tools is complex.
-      # We use a rough approximation based on thermal pressure.
+      # Use macmon to get actual CPU temperature on Apple Silicon
+      TEMP=$(macmon pipe --interval 100 2>/dev/null | head -n 1 | jq -r '.temp.cpu_temp_avg | round' 2>/dev/null)
 
-      TEMP="N/A"
-      # Check if smc tool exists and works
-      if which smc >/dev/null 2>&1; then
-         TEMP_VAL=$(smc -k Tp09 -r | grep -o "bytes.*" | awk '{print $2$3}' | xxd -r -p | xxd -e -g4 | awk '{print $2}' | xargs printf "%.0f" 2>/dev/null)
-         if [ -n "$TEMP_VAL" ]; then
-            TEMP="''${TEMP_VAL}°C"
-         fi
+      if [ -n "$TEMP" ] && [ "$TEMP" != "null" ]; then
+        sketchybar --set $NAME label="''${TEMP}°C"
+      else
+        sketchybar --set $NAME label="N/A"
       fi
-
-      # Fallback if smc failed or not found (common on Apple Silicon without kexts)
-      if [ "$TEMP" = "N/A" ]; then
-         LEVEL=$(sysctl -n machdep.xcpm.cpu_thermal_level 2>/dev/null)
-         # Map thermal levels to rough temperatures
-         case "$LEVEL" in
-           0) TEMP="40°C";;
-           1) TEMP="60°C";;
-           2) TEMP="80°C";;
-           3) TEMP="95°C";;
-           *) TEMP="45°C";; # Default assumption if reading fails but script acts
-         esac
-      fi
-
-      sketchybar --set $NAME label="$TEMP"
-
     '';
   };
 
@@ -382,7 +364,7 @@ lib.mkIf pkgs.stdenv.isDarwin {
       KeepAlive = true;
       RunAtLoad = true;
       EnvironmentVariables = {
-        PATH = "${pkgs.sketchybar}/bin:${pkgs.yabai}/bin:${pkgs.jq}/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+        PATH = "${pkgs.sketchybar}/bin:${pkgs.yabai}/bin:${pkgs.jq}/bin:${pkgs.macmon}/bin:/usr/bin:/bin:/usr/sbin:/sbin";
         CONFIG_DIR = "${config.home.homeDirectory}/.config/sketchybar";
       };
     };
