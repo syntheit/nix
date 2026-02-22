@@ -93,7 +93,7 @@
     android-tools
     # Affinity Suite
     inputs.affinity-nix.packages.x86_64-linux.v3
-    xorg.xhost # Required for GParted access to display on Wayland
+    xhost # Required for GParted access to display on Wayland
     ntfs3g # NTFS read/write support and utilities
     cifs-utils # Samba/Windows network shares
     nfs-utils # NFS network shares
