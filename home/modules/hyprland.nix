@@ -173,44 +173,44 @@ in
       # Use nwg-displays to configure monitor settings
       # Will automatically reload from this file
       source = "~/.config/hypr/monitors.conf";
-      windowrulev2 = [
-        "float, class:^(Rofi)$"
+      windowrule = [
+        "float 1, match:class ^(Rofi)$"
 
         # CopyQ
-        "float, initialClass:^(com.github.hluk.copyq)$"
-        "center, initialClass:^(com.github.hluk.copyq)$"
-        "size 689 911, initialClass:^(com.github.hluk.copyq)$"
-        "dimaround, initialClass:^(com.github.hluk.copyq)$"
+        "float 1, match:initial_class ^(com.github.hluk.copyq)$"
+        "center 1, match:initial_class ^(com.github.hluk.copyq)$"
+        "size 689 911, match:initial_class ^(com.github.hluk.copyq)$"
+        "dim_around 1, match:initial_class ^(com.github.hluk.copyq)$"
 
         # Network Manager
-        "float, initialClass:^(nm-connection-editor)$"
-        "center, initialClass:^(nm-connection-editor)$"
-        "size 800 600, initialClass:^(nm-connection-editor)$"
-        "dimaround, initialClass:^(nm-connection-editor)$"
+        "float 1, match:initial_class ^(nm-connection-editor)$"
+        "center 1, match:initial_class ^(nm-connection-editor)$"
+        "size 800 600, match:initial_class ^(nm-connection-editor)$"
+        "dim_around 1, match:initial_class ^(nm-connection-editor)$"
 
         # PulseAudio Volume Control
-        "float, initialClass:^(org.pulseaudio.pavucontrol)$"
-        "center, initialClass:^(org.pulseaudio.pavucontrol)$"
-        "size 800 600, initialClass:^(org.pulseaudio.pavucontrol)$"
-        "dimaround, initialClass:^(org.pulseaudio.pavucontrol)$"
+        "float 1, match:initial_class ^(org.pulseaudio.pavucontrol)$"
+        "center 1, match:initial_class ^(org.pulseaudio.pavucontrol)$"
+        "size 800 600, match:initial_class ^(org.pulseaudio.pavucontrol)$"
+        "dim_around 1, match:initial_class ^(org.pulseaudio.pavucontrol)$"
 
         # Network Manager TUI
-        "float, initialClass:^(tui-network)$"
-        "center, initialClass:^(tui-network)$"
-        "size 600 900, initialClass:^(tui-network)$"
-        "dimaround, initialClass:^(tui-network)$"
+        "float 1, match:initial_class ^(tui-network)$"
+        "center 1, match:initial_class ^(tui-network)$"
+        "size 600 900, match:initial_class ^(tui-network)$"
+        "dim_around 1, match:initial_class ^(tui-network)$"
 
         # Bluetooth TUI
-        "float, initialClass:^(tui-bluetooth)$"
-        "center, initialClass:^(tui-bluetooth)$"
-        "size 1104 580, initialClass:^(tui-bluetooth)$"
-        "dimaround, initialClass:^(tui-bluetooth)$"
+        "float 1, match:initial_class ^(tui-bluetooth)$"
+        "center 1, match:initial_class ^(tui-bluetooth)$"
+        "size 1104 580, match:initial_class ^(tui-bluetooth)$"
+        "dim_around 1, match:initial_class ^(tui-bluetooth)$"
 
         # Speedtest TUI
-        "float, initialClass:^(tui-speedtest)$"
-        "center, initialClass:^(tui-speedtest)$"
-        "size 800 400, initialClass:^(tui-speedtest)$"
-        "dimaround, initialClass:^(tui-speedtest)$"
+        "float 1, match:initial_class ^(tui-speedtest)$"
+        "center 1, match:initial_class ^(tui-speedtest)$"
+        "size 800 400, match:initial_class ^(tui-speedtest)$"
+        "dim_around 1, match:initial_class ^(tui-speedtest)$"
       ];
       env = [
         "LIBVA_DRIVER_NAME,nvidia"
