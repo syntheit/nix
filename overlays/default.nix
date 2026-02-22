@@ -7,11 +7,7 @@
 let
   overlays = {
     modifications = final: prev: {
-      antigravity =
-        (import inputs.nixpkgs-unstable {
-          system = final.system;
-          config.allowUnfree = true;
-        }).antigravity;
+      antigravity = inputs.antigravity.packages.${final.stdenv.hostPlatform.system}.default;
     };
     additions =
       final: _prev:
