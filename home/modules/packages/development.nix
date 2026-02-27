@@ -16,4 +16,8 @@ with pkgs;
   dbeaver-bin
   vscode
   opencode
+  awscli2
+  zip
+  aws-sam-cli
+  claude-code
 ]
