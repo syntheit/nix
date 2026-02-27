@@ -1,4 +1,4 @@
-{ ... }:
+{ pkgs, ... }:
 {
   imports = [
     ./hardware-configuration.nix
@@ -9,4 +9,9 @@
   ];
 
   networking.hostName = "caspian";
+
+  services.ollama = {
+    enable = true;
+    package = pkgs.ollama-cuda;
+  };
 }
