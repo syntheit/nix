@@ -31,6 +31,9 @@
     # Note: Using default storage driver (not ZFS since user has Btrfs)
   };
 
+  # Enable NVIDIA container support (replacement for deprecated virtualisation.docker.enableNvidia)
+  hardware.nvidia-container-toolkit.enable = true;
+
   virtualisation.oci-containers.backend = "docker";
 
   # Virtualization
@@ -102,4 +105,3 @@
     };
   };
 }
-
