@@ -94,6 +94,7 @@ in
       "obsidian"
       "dbeaver-community"
       "kiro"
+      "claude-code"
     ];
     brews = [
       "mas"
