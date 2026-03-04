@@ -103,6 +103,9 @@ in
       "blueutil"
       "wifi-password"
       "opencode"
+      "ollama"
+      "awscli-local"
+      "aws-sam-cli"
     ];
   };
 
