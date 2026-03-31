@@ -213,18 +213,20 @@ in
         "dim_around 1, match:initial_class ^(tui-speedtest)$"
       ];
       env = [
-        "LIBVA_DRIVER_NAME,nvidia"
         "XDG_SESSION_TYPE,wayland"
-        "GBM_BACKEND,nvidia-drm"
-        "__GLX_VENDOR_LIBRARY_NAME,nvidia"
-        "NVD_BACKEND,direct"
         "ELECTRON_OZONE_PLATFORM_HINT,auto"
         "NIXOS_OZONE_WL,1"
         "QT_QPA_PLATFORMTHEME,qtct"
         "QT_WAYLAND_DISABLE_WINDOWDECORATION,1"
+      ]
+      ++ lib.optionals (hostName == "caspian") [
+        "LIBVA_DRIVER_NAME,nvidia"
+        "GBM_BACKEND,nvidia-drm"
+        "__GLX_VENDOR_LIBRARY_NAME,nvidia"
+        "NVD_BACKEND,direct"
       ];
       cursor = {
-        no_hardware_cursors = true;
+        no_hardware_cursors = hostName == "caspian";
         warp_on_change_workspace = false;
         no_warps = true;
       };
@@ -236,16 +238,22 @@ in
   xdg.configFile."hypr/hyprsunset.conf".text = ''
     max-gamma = 150
 
-    # Normal mode (daytime) - turns off blue light filter at 5am
+    # Night mode (Late night)
     profile {
-        time = 5:00
-        identity = true
+        time = 0:00
+        temperature = 5500
     }
 
-    # Night mode - turns on blue light filter at 9:30pm
+    # Night mode (Evening)
     profile {
         time = 21:30
         temperature = 5500
+    }
+
+    # Normal mode (Daytime)
+    profile {
+        time = 5:00
+        identity = true
     }
   '';
 }

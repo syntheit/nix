@@ -69,7 +69,7 @@
   };
 
   nixpkgs = {
-    hostPlatform = lib.mkDefault "x86_64-linux";
+    # hostPlatform is set per-host in hardware-configuration.nix
     config.allowUnfree = true;
   };
 
@@ -78,7 +78,6 @@
   environment.systemPackages = with pkgs; [
     vim
     git
-    smartmontools
     lm_sensors
     iw
     libsecret # Required for NetworkManager to use secret service (gnome-keyring)
@@ -143,8 +142,7 @@
   };
 
   # Fingerprint authentication for sudo and login
-  security.pam.services.sudo.fprintAuth = true;
-  security.pam.services.login.fprintAuth = true;
+  # Only enabled per-host where fprintd is available (see hosts/ionian/hardware.nix)
 
   # This value determines the NixOS release from which the default
   # settings for stateful data, like file locations and database versions

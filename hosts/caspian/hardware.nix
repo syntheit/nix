@@ -15,6 +15,9 @@
     package = config.boot.kernelPackages.nvidiaPackages.stable;
   };
 
+  # NVIDIA container support for Docker
+  hardware.nvidia-container-toolkit.enable = true;
+
   # Bluetooth
   hardware.bluetooth = {
     enable = true;

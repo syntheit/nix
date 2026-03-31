@@ -239,7 +239,7 @@
           format = "{}";
           interval = 1800; # Update every 30 minutes
           exec = ''
-            curl -s "wttr.in?format=%t" | head -1
+            ${pkgs.curl}/bin/curl -s "wttr.in?format=%t" | head -1
           '';
           tooltip = true;
           on-click = "zen 'https://www.accuweather.com/en/ar/buenos-aires/7894/weather-forecast/7894'";

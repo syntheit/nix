@@ -1,10 +1,11 @@
-{ pkgs, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 
 {
-  home.packages = [
-    pkgs.cloudflared
-  ];
-
   programs.ssh = {
     enable = true;
     enableDefaultConfig = false;
@@ -26,5 +27,17 @@
       };
     };
   };
-}
 
+  # SSH refuses to read a config file that is a symlink to a file owned by someone else.
+  # In some Nix environments (like this one), the nix store is owned by 'nobody',
+  # which makes SSH complain. This activation script replaces the symlink with a real copy.
+  home.activation.fixSshConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    SSH_CONFIG="$HOME/.ssh/config"
+    if [ -L "$SSH_CONFIG" ]; then
+      SRC=$(readlink -f "$SSH_CONFIG")
+      $DRY_RUN_CMD rm -f "$SSH_CONFIG"
+      $DRY_RUN_CMD cp "$SRC" "$SSH_CONFIG"
+      $DRY_RUN_CMD chmod 600 "$SSH_CONFIG"
+    fi
+  '';
+}

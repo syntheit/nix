@@ -1,11 +1,11 @@
-{ ... }:
+{ vars, ... }:
 
 {
   programs.git = {
     enable = true;
     settings = {
-      user.name = "Daniel Miller";
-      user.email = "daniel@matv.io";
+      user.name = vars.user.fullname;
+      user.email = vars.user.email;
     };
   };
 }

@@ -31,8 +31,7 @@
     # Note: Using default storage driver (not ZFS since user has Btrfs)
   };
 
-  # Enable NVIDIA container support (replacement for deprecated virtualisation.docker.enableNvidia)
-  hardware.nvidia-container-toolkit.enable = true;
+  # NVIDIA container support is enabled per-host (see hosts/caspian/hardware.nix)
 
   virtualisation.oci-containers.backend = "docker";
 
