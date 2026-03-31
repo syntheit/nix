@@ -7,82 +7,204 @@ let
     runtimeInputs = with pkgs; [
       swww
       jq
-      findutils
+      curl
       coreutils
-      gawk
+      file
       hyprland
     ];
 
     text = ''
-      WALLPAPER_DIR="$HOME/Pictures/Wallpapers"
-      STATE_FILE="$HOME/.cache/wallpaper_history"
+      CACHE_DIR="$HOME/.cache/wallpapers"
+      STATE_FILE="$CACHE_DIR/current"
+      LOCAL_DIR="$HOME/Pictures/Wallpapers"
+      mkdir -p "$CACHE_DIR" "$LOCAL_DIR"
 
-      # Ensure swww-daemon is running
-      # Check if swww-daemon is already running by trying to query it
-      if ! swww query &>/dev/null; then
-        # If query fails, try to start swww-daemon
-        # Suppress error if it's already running (started by another process)
-        swww-daemon &>/dev/null || true
-        sleep 1
-      fi
+      save_state() {
+        # Save current wallpaper info: path, source url (if any)
+        local path="$1" url="''${2:-}"
+        printf '%s\n%s\n' "$path" "$url" > "$STATE_FILE"
+      }
 
-      # Ensure wallpaper directory exists
-      if [ ! -d "$WALLPAPER_DIR" ]; then
-        echo "Error: Wallpaper directory $WALLPAPER_DIR not found."
-        exit 1
-      fi
+      get_current_path() {
+        [ -f "$STATE_FILE" ] && sed -n '1p' "$STATE_FILE"
+      }
 
-      # Get list of ALL .jpg files (basenames only)
-      # We use find to get just filenames (-printf "%f\n") and sort them for comm
-      mapfile -t ALL_FILES < <(find "$WALLPAPER_DIR" -maxdepth 1 -name "*.jpg" -printf "%f\n" | sort)
+      get_current_url() {
+        [ -f "$STATE_FILE" ] && sed -n '2p' "$STATE_FILE"
+      }
 
-      if [ ''${#ALL_FILES[@]} -eq 0 ]; then
-        echo "Error: No .jpg files found in $WALLPAPER_DIR"
-        exit 1
-      fi
+      apply_wallpaper() {
+        local wallpaper="$1"
+        # Ensure swww-daemon is running
+        if ! swww query &>/dev/null; then
+          setsid swww-daemon &>/dev/null &
+          disown
+          sleep 1
+        fi
+        MONITORS=$(hyprctl monitors -j | jq -r '.[].name')
+        for MON in $MONITORS; do
+          swww img -o "$MON" "$wallpaper" --transition-type fade
+        done
+      }
 
-      # Create state file if it doesn't exist
-      if [ ! -f "$STATE_FILE" ]; then
-        touch "$STATE_FILE"
-      fi
+      fetch_wallpaper() {
+        local timestamp fetch_file api_response img_url page_url
+        timestamp=$(date +%Y%m%d%H%M%S)
 
-      # Get list of HISTORY from STATE_FILE
-      # Ensure history is sorted for comm
-      mapfile -t HISTORY < <(sort "$STATE_FILE")
+        # Query Wallhaven API for a random high-res wallpaper
+        api_response=$(curl -sf --max-time 10 \
+          "https://wallhaven.cc/api/v1/search?categories=100&purity=100&sorting=random&atleast=2560x1440&ratios=16x9,16x10&q=nature+landscape") || return 1
 
-      # Calculate REMAINING = ALL - HISTORY
-      # comm -23 produces lines in file 1 (ALL) that are not in file 2 (HISTORY)
-      REMAINING=$(comm -23 <(printf "%s\n" "''${ALL_FILES[@]}") <(printf "%s\n" "''${HISTORY[@]}"))
+        img_url=$(echo "$api_response" | jq -r '.data[0].path // empty')
+        page_url=$(echo "$api_response" | jq -r '.data[0].url // empty')
 
-      # Reset Condition: If REMAINING is empty, clear STATE_FILE, and set REMAINING = ALL
-      if [ -z "$REMAINING" ]; then
-        echo "All wallpapers cycled. Resetting history."
-        : > "$STATE_FILE"
-        REMAINING=$(printf "%s\n" "''${ALL_FILES[@]}")
-      fi
+        if [ -z "$img_url" ]; then
+          echo "Wallhaven returned no results" >&2
+          return 1
+        fi
 
-      # Selection: Randomly pick one file from REMAINING
-      CHOSEN=$(echo "$REMAINING" | shuf -n 1)
+        # Determine extension from URL
+        local ext
+        ext="''${img_url##*.}"
+        fetch_file="$CACHE_DIR/wallhaven_$timestamp.$ext"
 
-      if [ -z "$CHOSEN" ]; then
-        echo "Error: Failed to select a wallpaper."
-        exit 1
-      fi
+        if ! curl -sfL -o "$fetch_file" --max-time 20 "$img_url"; then
+          rm -f "$fetch_file"
+          return 1
+        fi
 
-      echo "Selected: $CHOSEN"
+        file_size=$(stat -c%s "$fetch_file" 2>/dev/null || echo 0)
+        if [ "$file_size" -lt 50000 ]; then
+          rm -f "$fetch_file"
+          return 1
+        fi
 
-      # Apply: Use hyprctl monitors -j to loop through active monitors and apply the image
-      FULL_PATH="$WALLPAPER_DIR/$CHOSEN"
-      
-      # Get monitor names
-      MONITORS=$(hyprctl monitors -j | jq -r '.[].name')
+        # Clean up old cached wallpapers (keep last 10)
+        find "$CACHE_DIR" -name "wallhaven_*" -type f | sort -r | tail -n +11 | xargs rm -f 2>/dev/null || true
 
-      for MON in $MONITORS; do
-        swww img -o "$MON" "$FULL_PATH" --transition-type fade
-      done
+        save_state "$fetch_file" "$page_url"
+        echo "Fetched wallpaper from Wallhaven ($file_size bytes)"
+        echo "$fetch_file"
+      }
 
-      # Update State: Append the chosen filename to STATE_FILE
-      echo "$CHOSEN" >> "$STATE_FILE"
+      pick_local() {
+        local history_file="$CACHE_DIR/local_history"
+        touch "$history_file"
+
+        shopt -s nullglob
+        local files=()
+        for f in "$LOCAL_DIR"/*.{jpg,jpeg,png,webp}; do
+          files+=("$(basename "$f")")
+        done
+        shopt -u nullglob
+
+        if [ ''${#files[@]} -eq 0 ]; then
+          echo "No local wallpapers in $LOCAL_DIR" >&2
+          return 1
+        fi
+
+        mapfile -t history < <(sort "$history_file")
+        remaining=$(comm -23 <(printf "%s\n" "''${files[@]}" | sort) <(printf "%s\n" "''${history[@]}"))
+
+        if [ -z "$remaining" ]; then
+          : > "$history_file"
+          remaining=$(printf "%s\n" "''${files[@]}")
+        fi
+
+        chosen=$(echo "$remaining" | shuf -n 1)
+        echo "$chosen" >> "$history_file"
+        local full_path="$LOCAL_DIR/$chosen"
+        save_state "$full_path" ""
+        echo "Selected local wallpaper: $chosen"
+        echo "$full_path"
+      }
+
+      cmd_next() {
+        local wallpaper
+        if wallpaper=$(fetch_wallpaper); then
+          wallpaper=$(echo "$wallpaper" | tail -1)
+        elif wallpaper=$(pick_local); then
+          wallpaper=$(echo "$wallpaper" | tail -1)
+        else
+          echo "No wallpapers available (Wallhaven failed and no local files)" >&2
+          exit 1
+        fi
+        apply_wallpaper "$wallpaper"
+      }
+
+      cmd_current() {
+        local path url
+        path=$(get_current_path)
+        if [ -z "$path" ]; then
+          echo "No wallpaper has been set yet"
+          exit 1
+        fi
+        echo "$path"
+      }
+
+      cmd_info() {
+        local path url
+        path=$(get_current_path)
+        url=$(get_current_url)
+        if [ -z "$path" ]; then
+          echo "No wallpaper has been set yet"
+          exit 1
+        fi
+        echo "Path: $path"
+        if [ -n "$url" ]; then
+          echo "URL:  $url"
+        else
+          echo "URL:  (local file)"
+        fi
+        if [ -f "$path" ]; then
+          echo "Size: $(du -h "$path" | cut -f1)"
+          echo "Type: $(file --brief "$path")"
+        else
+          echo "(file no longer exists)"
+        fi
+      }
+
+      cmd_open() {
+        local url
+        url=$(get_current_url)
+        if [ -z "$url" ]; then
+          local path
+          path=$(get_current_path)
+          if [ -z "$path" ]; then
+            echo "No wallpaper has been set yet" >&2
+            exit 1
+          fi
+          echo "Current wallpaper is a local file, opening in file manager"
+          xdg-open "$(dirname "$path")" &
+        else
+          echo "Opening: $url"
+          xdg-open "$url" &
+        fi
+      }
+
+      cmd_help() {
+        echo "Usage: wallpaper-cycle [command]"
+        echo ""
+        echo "Commands:"
+        echo "  next     Fetch a new wallpaper and apply it (default)"
+        echo "  current  Print the current wallpaper path"
+        echo "  info     Show details (path, URL, size, type)"
+        echo "  open     Open the source URL in the browser (or folder for local files)"
+        echo "  help     Show this help"
+      }
+
+      case "''${1:-next}" in
+        next)    cmd_next ;;
+        current) cmd_current ;;
+        info)    cmd_info ;;
+        open)    cmd_open ;;
+        help|-h|--help) cmd_help ;;
+        *)
+          echo "Unknown command: $1" >&2
+          cmd_help >&2
+          exit 1
+          ;;
+      esac
     '';
   };
 in
@@ -91,16 +213,14 @@ in
 
   systemd.user.services.wallpaper-cycle = {
     Unit = {
-      Description = "Smart Shuffle Wallpaper Cycle";
+      Description = "Wallpaper cycle (Wallhaven + local fallback)";
       After = [ "graphical-session.target" ];
       PartOf = [ "graphical-session.target" ];
     };
     Service = {
       Type = "oneshot";
-      ExecStart = "${wallpaper-cycle}/bin/wallpaper-cycle";
-    };
-    Install = {
-      WantedBy = [ "graphical-session.target" ];
+      ExecStart = "${wallpaper-cycle}/bin/wallpaper-cycle next";
+      TimeoutStartSec = 30;
     };
   };
 
@@ -109,11 +229,8 @@ in
       Description = "Cycle wallpaper every 24 hours";
     };
     Timer = {
-      # Run every 24 hours after the last activation
       OnUnitActiveSec = "24h";
-      # Run 10 seconds after boot to set initial wallpaper
       OnBootSec = "10s";
-      # If system was off when timer should have fired, run it on boot
       Persistent = true;
     };
     Install = {
@@ -121,4 +238,3 @@ in
     };
   };
 }
-

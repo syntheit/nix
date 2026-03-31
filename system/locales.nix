@@ -18,7 +18,6 @@
     LC_TIME = "es_AR.UTF-8";
   };
 
-  # Enable compose key on right Alt for typing accents
-  services.xserver.xkb.options = "compose:ralt";
+  # Compose key on right Alt is configured in Hyprland (input.kb_options)
 }
 

@@ -13,7 +13,7 @@
     ./modules/stylix.nix              # Load Stylix configuration
     ./modules/ssh.nix
     ./modules/git.nix
-    ./modules/packages
+    ./modules/packages.nix
     ./modules/hyprland.nix
     ./modules/waybar.nix
     ./modules/rofi.nix
