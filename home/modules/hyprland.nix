@@ -70,6 +70,7 @@ in
         "$mod, E, exec, nautilus"
         "$mod, C, exec, ${pkgs.copyq}/bin/copyq toggle"
         "$mod SHIFT, L, exec, ${pkgs.hyprlock}/bin/hyprlock"
+        "$mod, X, exec, rofi -show powermenu -modi \"powermenu:rofi-power-menu --choices=suspend/reboot/shutdown --confirm=reboot/shutdown\""
         "$mod, Q, killactive"
         "$mod, F, fullscreen"
         "$mod, h, movefocus, l"
@@ -140,7 +141,7 @@ in
       exec-once = [
         "${pkgs.copyq}/bin/copyq --start-server"
         "${pkgs.hyprpolkitagent}/libexec/hyprpolkitagent"
-        "${pkgs.hyprsunset}/bin/hyprsunset"
+        # hyprsunset is managed by systemd (see below)
       ];
       binds = {
         movefocus_cycles_fullscreen = true;
@@ -247,4 +248,21 @@ in
         identity = true
     }
   '';
+
+  # Hyprsunset systemd service with auto-restart on crash
+  systemd.user.services.hyprsunset = {
+    Unit = {
+      Description = "Hyprsunset blue light filter";
+      After = [ "graphical-session.target" ];
+      PartOf = [ "graphical-session.target" ];
+    };
+    Service = {
+      ExecStart = "${pkgs.hyprsunset}/bin/hyprsunset";
+      Restart = "on-failure";
+      RestartSec = 5;
+    };
+    Install = {
+      WantedBy = [ "graphical-session.target" ];
+    };
+  };
 }
