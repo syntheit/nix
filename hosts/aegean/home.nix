@@ -24,7 +24,6 @@
 
   home.stateVersion = "24.11";
 
-  # Common shell aliases
   home.shellAliases = {
     btw = "${pkgs.fastfetch}/bin/fastfetch";
     igrep = "grep -i";
@@ -32,11 +31,34 @@
     highlight = "grep --color=always -e \"^\"";
   };
 
-  # Ensure PATH includes Homebrew and Nix paths
   home.sessionPath = [
+    # GNU coreutils unprefixed (override BSD tools with GNU versions)
+    "${pkgs.coreutils}/libexec/gnubin"
+    "${pkgs.findutils}/libexec/gnubin"
+    "${pkgs.gnugrep}/libexec/gnubin"
+    "${pkgs.gnused}/libexec/gnubin"
+    "${pkgs.gawk}/libexec/gnubin"
     "/opt/homebrew/bin"
     "/opt/homebrew/sbin"
     "/run/current-system/sw/bin"
+  ];
+
+  home.packages = with pkgs; [
+    awscli2
+    aws-sam-cli
+    btop
+    coreutils
+    fastfetch
+    fd
+    ffmpeg-full
+    findutils
+    gawk
+    gnugrep
+    gnused
+    go
+    nodejs
+    pnpm
+    ripgrep
   ];
 
   programs.home-manager.enable = true;

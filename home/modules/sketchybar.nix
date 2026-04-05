@@ -40,10 +40,11 @@ lib.mkIf pkgs.stdenv.isDarwin {
       sketchybar --default \
         icon.font="JetBrainsMono Nerd Font:Bold:14.0" \
         icon.color=$WHITE \
+        icon.padding_right=6 \
         label.font="JetBrainsMono Nerd Font:Bold:13.0" \
         label.color=$WHITE \
-        padding_left=7 \
-        padding_right=7
+        padding_left=9 \
+        padding_right=9
 
 
       for i in {1..10}; do
@@ -57,20 +58,25 @@ lib.mkIf pkgs.stdenv.isDarwin {
             background.corner_radius=5 \
             background.height=24 \
             background.drawing=on \
-            script="$CONFIG_DIR/plugins/space.sh" \
-          --subscribe space.$i space_change space_windows_change
+            click_script="yabai -m space --focus $i"
       done
+
+      sketchybar --add item space_observer left \
+        --set space_observer \
+          drawing=off \
+          script="$CONFIG_DIR/plugins/space.sh" \
+        --subscribe space_observer space_change space_windows_change
 
       sketchybar --add item spotify left \
         --set spotify \
           update_freq=5 \
           icon.drawing=off \
-          script="$CONFIG_DIR/plugins/spotify.sh"
-      sketchybar --remove clock network bluetooth volume cpu_temp cpu ram battery >/dev/null 2>&1 || true
-
+          script="$CONFIG_DIR/plugins/spotify.sh" \
+          click_script="open -a Spotify"
       sketchybar --add item battery right \
         --set battery \
           update_freq=120 \
+          icon.padding_right=0 \
           script="$CONFIG_DIR/plugins/battery.sh" \
         --subscribe battery system_woke power_source_change
 
@@ -88,7 +94,7 @@ lib.mkIf pkgs.stdenv.isDarwin {
 
       sketchybar --add item cpu_temp right \
         --set cpu_temp \
-          update_freq=5 \
+          update_freq=15 \
           icon="" \
           script="$CONFIG_DIR/plugins/cpu_temp.sh"
 
@@ -101,14 +107,18 @@ lib.mkIf pkgs.stdenv.isDarwin {
 
       sketchybar --add item bluetooth right \
         --set bluetooth \
-          update_freq=5 \
+          update_freq=30 \
+          icon.padding_right=0 \
+          label.drawing=off \
           icon="" \
           script="$CONFIG_DIR/plugins/bluetooth.sh" \
           click_script="open 'x-apple.systempreferences:com.apple.BluetoothSettings'"
 
       sketchybar --add item network right \
         --set network \
-          update_freq=5 \
+          update_freq=15 \
+          icon.padding_right=0 \
+          label.drawing=off \
           icon="󰤨" \
           script="$CONFIG_DIR/plugins/network.sh" \
           click_script="open 'x-apple.systempreferences:com.apple.wifi-settings-extension'"
@@ -129,32 +139,24 @@ lib.mkIf pkgs.stdenv.isDarwin {
     text = ''
       #!/bin/bash
 
-      # Get the space number from the item name (e.g., space.1 -> 1)
-      SPACE_NUM=''${NAME#*.}
+      # Single observer updates all space items atomically
+      CURRENT_SPACE=$(yabai -m query --spaces --space 2>/dev/null | jq -r '.index')
+      WINDOWS=$(yabai -m query --windows 2>/dev/null)
 
-      # Query yabai to check if this space has any windows
-      WINDOW_COUNT=$(yabai -m query --windows --space "$SPACE_NUM" 2>/dev/null | jq -e 'length' || echo "0")
+      ARGS=()
+      for i in {1..10}; do
+        WINDOW_COUNT=$(echo "$WINDOWS" | jq "[.[] | select(.space == $i)] | length")
 
-      # Show space if it has windows OR if it's currently selected
-      if [ "$WINDOW_COUNT" -gt 0 ] || [ "$SELECTED" = "true" ]; then
-        # This space should be visible
-        if [ "$SELECTED" = "true" ]; then
-          # Selected space: highlighted background
-          sketchybar --set $NAME \
-            background.color=0xff7aa2f7 \
-            icon.color=0xff1a1b26 \
-            drawing=on
+        if [ "$i" = "$CURRENT_SPACE" ]; then
+          ARGS+=(--set space.$i background.color=0xff7aa2f7 icon.color=0xff1a1b26 drawing=on)
+        elif [ "$WINDOW_COUNT" -gt 0 ]; then
+          ARGS+=(--set space.$i background.color=0x00000000 icon.color=0xffa9b1d6 drawing=on)
         else
-          # Has windows but not selected: normal colors
-          sketchybar --set $NAME \
-            background.color=0x00000000 \
-            icon.color=0xffa9b1d6 \
-            drawing=on
+          ARGS+=(--set space.$i drawing=off)
         fi
-      else
-        # No windows and not selected: hide
-        sketchybar --set $NAME drawing=off
-      fi
+      done
+
+      sketchybar "''${ARGS[@]}"
     '';
   };
 
@@ -162,7 +164,7 @@ lib.mkIf pkgs.stdenv.isDarwin {
     executable = true;
     text = ''
       #!/bin/bash
-      sketchybar --set $NAME label="$(date '+%H:%M')"
+      sketchybar --set $NAME label="$(date '+%a %-d %b %H:%M')"
     '';
   };
 
@@ -195,7 +197,8 @@ lib.mkIf pkgs.stdenv.isDarwin {
     executable = true;
     text = ''
       #!/bin/bash
-      CPU=$(top -l 1 | grep -E "^CPU" | awk '{print $3}' | cut -d% -f1 | awk '{printf "%d", $1}')
+      NCPU=$(sysctl -n hw.logicalcpu)
+      CPU=$(ps -A -o %cpu | awk -v n="$NCPU" 'NR>1{s+=$1} END {printf "%d", s/n}')
       sketchybar --set $NAME label="''${CPU}%"
     '';
   };
@@ -225,10 +228,9 @@ lib.mkIf pkgs.stdenv.isDarwin {
     text = ''
       #!/bin/bash
       if pgrep -x "Spotify" > /dev/null; then
-        TRACK=$(osascript -e 'tell application "Spotify" to name of current track' 2>/dev/null)
-        ARTIST=$(osascript -e 'tell application "Spotify" to artist of current track' 2>/dev/null)
-        if [ -n "$TRACK" ] && [ -n "$ARTIST" ]; then
-          sketchybar --set $NAME label="$TRACK - $ARTIST"
+        INFO=$(osascript -e 'tell application "Spotify" to (name of current track) & " - " & (artist of current track)' 2>/dev/null)
+        if [ -n "$INFO" ]; then
+          sketchybar --set $NAME label="$INFO"
         else
           sketchybar --set $NAME label=""
         fi
@@ -243,8 +245,9 @@ lib.mkIf pkgs.stdenv.isDarwin {
     executable = true;
     text = ''
       #!/bin/bash
-      VOLUME=$(osascript -e "output volume of (get volume settings)")
-      MUTED=$(osascript -e "output muted of (get volume settings)")
+      SETTINGS=$(osascript -e 'get volume settings')
+      VOLUME=$(echo "$SETTINGS" | grep -o 'output volume:[0-9]*' | cut -d: -f2)
+      MUTED=$(echo "$SETTINGS" | grep -o 'output muted:[a-z]*' | cut -d: -f2)
 
       if [ "$MUTED" != "false" ]; then
         ICON="󰝟"
@@ -287,57 +290,17 @@ lib.mkIf pkgs.stdenv.isDarwin {
     executable = true;
     text = ''
       #!/bin/bash
-      PAGE_SIZE=$(sysctl -n hw.pagesize)
       TOTAL_RAM=$(sysctl -n hw.memsize)
+      VMSTAT=$(vm_stat)
 
-      # Get free, inactive and speculative pages
-      FREE_PAGES=$(vm_stat | grep "Pages free" | awk '{print $3}' | sed 's/\.//')
-      SPEC_PAGES=$(vm_stat | grep "Pages speculative" | awk '{print $3}' | sed 's/\.//')
-      INACTIVE_PAGES=$(vm_stat | grep "Pages inactive" | awk '{print $3}' | sed 's/\.//')
+      FREE_PAGES=$(echo "$VMSTAT" | awk '/Pages free/ {gsub(/\./,"",$3); print $3}')
+      SPEC_PAGES=$(echo "$VMSTAT" | awk '/Pages speculative/ {gsub(/\./,"",$3); print $3}')
+      INACTIVE_PAGES=$(echo "$VMSTAT" | awk '/Pages inactive/ {gsub(/\./,"",$3); print $3}')
 
-      FREE_MEM_BYTES=$(( (FREE_PAGES + SPEC_PAGES + INACTIVE_PAGES) * PAGE_SIZE ))
-      USED_MEM_BYTES=$(( TOTAL_RAM - FREE_MEM_BYTES ))
-
-      PERCENTAGE=$(echo "scale=0; ($USED_MEM_BYTES * 100) / $TOTAL_RAM" | bc)
+      FREE_MEM_BYTES=$(( (FREE_PAGES + SPEC_PAGES + INACTIVE_PAGES) * 16384 ))
+      PERCENTAGE=$(( (TOTAL_RAM - FREE_MEM_BYTES) * 100 / TOTAL_RAM ))
 
       sketchybar --set $NAME label="''${PERCENTAGE}%"
-    '';
-  };
-
-  # Traffic Plugin (placeholder removed from main config but keeping script for now)
-  xdg.configFile."sketchybar/plugins/traffic.sh" = {
-    executable = true;
-    text = ''
-      #!/bin/bash
-
-      function get_bytes {
-        netstat -w1 -I en0 -l 1 | awk 'NR==3 {print $3, $6}'
-      }
-
-      BYTES=$(get_bytes)
-      DOWN=$(echo $BYTES | awk '{print $1}')
-      UP=$(echo $BYTES | awk '{print $2}')
-
-      function format_speed {
-        local speed=$1
-        if [ -z "$speed" ]; then
-          echo "0 B/s"
-          return
-        fi
-        
-        if [ "$speed" -ge 1048576 ]; then
-          echo "$(echo "scale=1; $speed / 1048576" | bc) MB/s"
-        elif [ "$speed" -ge 1024 ]; then
-          echo "$(echo "scale=1; $speed / 1024" | bc) KB/s"
-        else
-          echo "$speed B/s"
-        fi
-      }
-
-      DOWN_FORMAT=$(format_speed $DOWN)
-      UP_FORMAT=$(format_speed $UP)
-
-      sketchybar --set $NAME label="↓ $DOWN_FORMAT ↑ $UP_FORMAT"
     '';
   };
 
@@ -356,6 +319,10 @@ lib.mkIf pkgs.stdenv.isDarwin {
       fi
     '';
   };
+
+  home.activation.reloadSketchybar = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    run ${pkgs.sketchybar}/bin/sketchybar --reload 2>/dev/null || true
+  '';
 
   launchd.agents.sketchybar = {
     enable = true;

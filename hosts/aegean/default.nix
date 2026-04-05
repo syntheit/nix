@@ -6,53 +6,12 @@
 }:
 
 let
-  menubarBlocker = pkgs.stdenv.mkDerivation {
-    name = "menubar-blocker";
-    src = pkgs.writeText "main.c" ''
-      #include <ApplicationServices/ApplicationServices.h>
-
-      CGEventRef callback(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *refcon) {
-          CGPoint location = CGEventGetLocation(event);
-          if (location.y <= 1.0) {
-              location.y = 2.0; 
-              CGEventSetLocation(event, location);
-          }
-          return event;
-      }
-
-      int main() {
-          CFMachPortRef eventTap = CGEventTapCreate(
-              kCGSessionEventTap, 
-              kCGHeadInsertEventTap, 
-              0, 
-              CGEventMaskBit(kCGEventMouseMoved) | CGEventMaskBit(kCGEventLeftMouseDragged), 
-              callback, 
-              NULL
-          );
-          
-          if (!eventTap) {
-              return 1;
-          }
-          
-          CFRunLoopSourceRef runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0);
-          CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, kCFRunLoopCommonModes);
-          CGEventTapEnable(eventTap, true);
-          CFRunLoopRun();
-          return 0;
-      }
-    '';
-
-    # Dependencies
-    buildInputs = [ ];
-
-    unpackPhase = "true";
-    buildPhase = "clang -framework ApplicationServices -O2 -o menubar-blocker $src";
-    installPhase = "mkdir -p $out/bin; cp menubar-blocker $out/bin/";
-  };
+  menubarBlocker = pkgs.callPackage ../../packages/menubar-blocker { };
 in
 {
   system.primaryUser = vars.user.name;
 
+  # Nix daemon managed by Determinate Systems installer
   nix.enable = false;
 
   nix-homebrew = {
@@ -65,51 +24,58 @@ in
     enable = true;
     onActivation = {
       autoUpdate = true;
-      cleanup = "zap"; # Remove unlisted packages
+      cleanup = "zap";
       upgrade = true;
     };
     casks = [
-      "kitty"
-      "zen"
-      "spotify"
-      "raycast"
-      "font-jetbrains-mono-nerd-font"
-      "thunderbird"
-      "cursor"
-      "arc"
-      "nextcloud"
-      "syncthing-app"
-      "visual-studio-code"
-      "transmission"
-      "whatsapp"
-      "iina"
-      "telegram"
       "affinity"
       "antigravity"
-      "windscribe"
-      "orbstack"
-      "karabiner-elements"
-      "eqmac"
-      "macwhisper"
-      "obsidian"
-      "dbeaver-community"
-      "kiro"
+      "arc"
+      "claude"
       "claude-code"
+      "cursor"
+      "dbeaver-community"
+      "eqmac"
+      "font-jetbrains-mono-nerd-font"
+      "iina"
+      "karabiner-elements"
+      "kiro"
+      "kitty"
+      "lulu"
+      "macwhisper"
+      "nextcloud"
+      "obsidian"
+      "orbstack"
+      "raycast"
+      "spotify"
+      "syncthing-app"
+      "telegram"
+      "thunderbird"
+      "transmission"
+      "visual-studio-code"
+      "whatsapp"
+      "windscribe"
+      "zen"
     ];
     brews = [
-      "mas"
-      "switchaudio-osx"
-      "fastfetch"
-      "blueutil"
-      "wifi-password"
-      "opencode"
-      "ollama"
       "awscli-local"
-      "aws-sam-cli"
+      "mas"
+      "ollama" # Kept in Homebrew for better macOS Metal/GPU integration
+      "switchaudio-osx"
+      "wifi-password"
+      "yt-dlp"
     ];
   };
 
   system.defaults = {
+    dock = {
+      autohide = true;
+      autohide-delay = 1000.0; # Effectively hide the dock permanently
+      autohide-time-modifier = 0.0;
+      static-only = true;
+      show-recents = false;
+    };
+
     finder = {
       AppleShowAllFiles = true;
       AppleShowAllExtensions = true;
@@ -120,8 +86,8 @@ in
     };
 
     NSGlobalDomain = {
-      KeyRepeat = 2; # Slower key repeat
-      InitialKeyRepeat = 10; # Short delay before repeat
+      KeyRepeat = 2;
+      InitialKeyRepeat = 10;
       ApplePressAndHoldEnabled = false;
       AppleInterfaceStyle = "Dark";
       AppleShowAllFiles = true;
@@ -135,7 +101,7 @@ in
     };
 
     trackpad = {
-      Clicking = true; # Tap to click
+      Clicking = true;
       TrackpadRightClick = true;
       TrackpadThreeFingerDrag = false;
     };
@@ -143,7 +109,47 @@ in
     WindowManager = {
       EnableStandardClickToShowDesktop = false;
     };
+
+    # Privacy & telemetry defaults
+    CustomUserPreferences = {
+      # Disable personalized ads
+      "com.apple.AdLib" = {
+        allowApplePersonalizedAdvertising = false;
+        allowIdentifierForAdvertising = false;
+      };
+      # Disable Siri
+      "com.apple.assistant.support" = {
+        "Assistant Enabled" = false;
+      };
+      "com.apple.Siri" = {
+        StatusMenuVisible = false;
+        UserHasDeclinedEnable = true;
+        VoiceTriggerUserEnabled = false;
+      };
+      # Crash reporter — don't send to Apple
+      "com.apple.CrashReporter" = {
+        DialogType = "none";
+      };
+      # Disable Safari search suggestions (sends queries to Apple)
+      "com.apple.Safari" = {
+        UniversalSearchEnabled = false;
+        SuppressSearchSuggestions = true;
+        SendDoNotTrackHTTPHeader = true;
+      };
+      # Disable Siri/Spotlight suggestions
+      "com.apple.lookup.shared" = {
+        LookupSuggestionsDisabled = true;
+      };
+      # Disable Game Center
+      "com.apple.gamed" = {
+        Disabled = true;
+      };
+    };
   };
+
+  # Firewall: block incoming, stealth mode (don't respond to probes)
+  networking.applicationFirewall.enable = true;
+  networking.applicationFirewall.enableStealthMode = true;
 
   system.keyboard = {
     enableKeyMapping = true;
@@ -152,6 +158,7 @@ in
   };
 
   security.pam.services.sudo_local.touchIdAuth = true;
+  security.pam.services.sudo_local.reattach = true;
 
   services.yabai = {
     enable = true;
@@ -164,13 +171,17 @@ in
       left_padding = 0;
       right_padding = 0;
       window_shadow = "off";
+      mouse_modifier = "fn";
+      mouse_action1 = "move";
+      mouse_action2 = "resize";
+      mouse_drop_action = "swap";
       mouse_follows_focus = "on";
       focus_follows_mouse = "autoraise";
       active_window_opacity = "1.0";
       normal_window_opacity = "1.0";
     };
     extraConfig = ''
-      # Load scripting addition (requires sudoers config)
+      # Load scripting addition (requires sudoers entry below)
       sudo yabai --load-sa
       yabai -m signal --add event=dock_did_restart action="sudo yabai --load-sa"
 
@@ -187,79 +198,7 @@ in
   services.skhd = {
     enable = true;
     package = pkgs.skhd;
-    skhdConfig = ''
-      # Application launchers
-      fn - return : open -na kitty
-      fn - t : open -na kitty
-      fn - r : open -a Raycast
-      fn - c : open -g "raycast://extensions/raycast/clipboard-history/clipboard-history"
-      cmd - space : open -a Raycast
-      fn - b : open -a "Zen Browser"
-      fn - e : open -a Finder
-
-      # Window management
-      fn - q : yabai -m window --close
-      fn - f : yabai -m window --toggle zoom-fullscreen
-      fn - space : yabai -m window --toggle float
-
-      # Focus window (vim-style navigation)
-      fn - h : yabai -m window --focus west
-      fn - j : yabai -m window --focus south
-      fn - k : yabai -m window --focus north
-      fn - l : yabai -m window --focus east
-
-      # Move window (with shift)
-      shift + fn - h : yabai -m window --swap west
-      shift + fn - j : yabai -m window --swap south
-      shift + fn - k : yabai -m window --swap north
-      shift + fn - l : yabai -m window --swap east
-
-      # Resize window
-      fn + alt - h : yabai -m window --resize left:-50:0
-      fn + alt - j : yabai -m window --resize bottom:0:50
-      fn + alt - k : yabai -m window --resize top:0:-50
-      fn + alt - l : yabai -m window --resize right:50:0
-
-      fn - 1 : yabai -m space --focus 1
-      fn - 2 : yabai -m space --focus 2
-      fn - 3 : yabai -m space --focus 3
-      fn - 4 : yabai -m space --focus 4
-      fn - 5 : yabai -m space --focus 5
-      fn - 6 : yabai -m space --focus 6
-      fn - 7 : yabai -m space --focus 7
-      fn - 8 : yabai -m space --focus 8
-      fn - 9 : yabai -m space --focus 9
-      fn - 0 : yabai -m space --focus 10
-
-      shift + fn - 1 : yabai -m window --space 1
-      shift + fn - 2 : yabai -m window --space 2
-      shift + fn - 3 : yabai -m window --space 3
-      shift + fn - 4 : yabai -m window --space 4
-      shift + fn - 5 : yabai -m window --space 5
-      shift + fn - 6 : yabai -m window --space 6
-      shift + fn - 7 : yabai -m window --space 7
-      shift + fn - 8 : yabai -m window --space 8
-      shift + fn - 9 : yabai -m window --space 9
-      shift + fn - 0 : yabai -m window --space 10
-
-      # Relative workspace movement
-      fn - 0x2F : yabai -m space --focus next  # cmd + .
-      fn - 0x2B : yabai -m space --focus prev  # cmd + ,
-      shift + fn - 0x2F : yabai -m window --space next  # shift + cmd + .
-      shift + fn - 0x2B : yabai -m window --space prev  # shift + cmd + ,
-
-      # Screenshots
-      shift + cmd - s : open -a Screenshot
-
-      # Lock screen
-      shift + fn - escape : pmset displaysleepnow
-
-      # Toggle layout
-      fn + alt - space : yabai -m space --layout $(yabai -m query --spaces --space | jq -r 'if .type == "bsp" then "float" else "bsp" end')
-
-      # Balance windows
-      fn + alt - b : yabai -m space --balance
-    '';
+    skhdConfig = builtins.readFile ./skhdrc;
   };
 
   environment.etc."sudoers.d/yabai".text = ''
@@ -280,22 +219,64 @@ in
       sudo -u ${vars.user.name} defaults write "$@"
     }
 
-    # Dock: Hide completely by setting a massive autohide delay
-    set_default com.apple.dock autohide -bool true
-    set_default com.apple.dock autohide-delay -float 1000
-    set_default com.apple.dock autohide-time-modifier -float 0
-    set_default com.apple.dock static-only -bool true
-    set_default com.apple.dock show-recents -bool false
-    killall Dock
+    # Hide menu bar (per-user defaults, must use activation script)
     set_default NSGlobalDomain _HIHideMenuBar -bool true
     set_default NSGlobalDomain AppleMenuBarVisibleInFullscreen -bool false
     killall SystemUIServer || true
     killall Finder || true
+
+    # Disable Spotlight shortcut (Cmd+Space) — complex nested dict not supported declaratively
     set_default com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 64 "{enabled = 0; value = { parameters = (32, 49, 1048576); type = 'standard'; }; }"
 
-    set_default com.apple.WindowManager EnableStandardClickToShowDesktop -bool false
+    # === Privacy & Telemetry (system-level) ===
+
+    # Disable Siri data sharing
+    set_default com.apple.assistant.support "Siri Data Sharing Opt-In Status" -int 2
+
+    # Disable diagnostic data submission to Apple
+    defaults write "/Library/Application Support/CrashReporter/DiagnosticMessagesHistory.plist" AutoSubmit -bool false 2>/dev/null || true
+    defaults write "/Library/Application Support/CrashReporter/DiagnosticMessagesHistory.plist" ThirdPartyDataSubmit -bool false 2>/dev/null || true
 
     /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
+
+    # Grant accessibility permissions (requires SIP disabled)
+    YABAI_BIN=$(readlink -f ${pkgs.yabai}/bin/yabai)
+    SKHD_BIN=$(readlink -f ${pkgs.skhd}/bin/skhd)
+    MENUBAR_BIN=$(readlink -f ${menubarBlocker}/bin/menubar-blocker)
+    TCC_DB="/Library/Application Support/com.apple.TCC/TCC.db"
+    for BIN in "$YABAI_BIN" "$SKHD_BIN" "$MENUBAR_BIN"; do
+      sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) VALUES ('kTCCServiceAccessibility', '$BIN', 1, 2, 4, 1);"
+    done
+
+    # Restart services after TCC permissions are granted to avoid race condition
+    GUI_UID="$(id -u "${vars.user.name}")"
+    launchctl bootout "gui/$GUI_UID/org.nixos.skhd" 2>/dev/null || true
+    launchctl bootout "gui/$GUI_UID/org.nixos.yabai" 2>/dev/null || true
+    launchctl bootout "gui/$GUI_UID/org.nixos.menubar-blocker" 2>/dev/null || true
+    sleep 1
+    launchctl bootstrap "gui/$GUI_UID" /Users/${vars.user.name}/Library/LaunchAgents/org.nixos.skhd.plist 2>/dev/null || true
+    launchctl bootstrap "gui/$GUI_UID" /Users/${vars.user.name}/Library/LaunchAgents/org.nixos.yabai.plist 2>/dev/null || true
+    launchctl bootstrap "gui/$GUI_UID" /Users/${vars.user.name}/Library/LaunchAgents/org.nixos.menubar-blocker.plist 2>/dev/null || true
+
+    # Disable Apple telemetry daemons (system-level)
+    for daemon in \
+      com.apple.analyticsd \
+      com.apple.assistantd \
+      com.apple.parsecd \
+      com.apple.tipsd; do
+      launchctl bootout system/"$daemon" 2>/dev/null || true
+      launchctl disable system/"$daemon" 2>/dev/null || true
+    done
+
+    # Disable Apple telemetry agents (user-level)
+    for agent in \
+      com.apple.ReportCrash \
+      com.apple.assistantd \
+      com.apple.parsecd \
+      com.apple.tipsd; do
+      launchctl bootout "gui/$GUI_UID/$agent" 2>/dev/null || true
+      launchctl disable "gui/$GUI_UID/$agent" 2>/dev/null || true
+    done
   '';
 
   launchd.user.agents.menubar-blocker = {
@@ -310,6 +291,7 @@ in
   fonts.packages = with pkgs; [
     nerd-fonts.jetbrains-mono
     inter
+    dm-sans
   ];
 
   environment.systemPackages = with pkgs; [

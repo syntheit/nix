@@ -1,0 +1,71 @@
+# Application launchers
+fn - return : open -na kitty
+fn - t : open -na kitty
+fn - r : open -a Raycast
+fn - c : open -g "raycast://extensions/raycast/clipboard-history/clipboard-history"
+cmd - space : open -a Raycast
+fn - b : open -a "Zen Browser"
+fn - e : open -a Finder
+
+# Window management
+fn - q : yabai -m window --close
+fn - f : yabai -m window --toggle zoom-fullscreen
+fn - space : yabai -m window --toggle float
+
+# Focus window (vim-style navigation)
+fn - h : yabai -m window --focus west
+fn - j : yabai -m window --focus south
+fn - k : yabai -m window --focus north
+fn - l : yabai -m window --focus east
+
+# Move window (with shift)
+shift + fn - h : yabai -m window --swap west
+shift + fn - j : yabai -m window --swap south
+shift + fn - k : yabai -m window --swap north
+shift + fn - l : yabai -m window --swap east
+
+# Resize window
+fn + alt - h : yabai -m window --resize left:-50:0
+fn + alt - j : yabai -m window --resize bottom:0:50
+fn + alt - k : yabai -m window --resize top:0:-50
+fn + alt - l : yabai -m window --resize right:50:0
+
+fn - 1 : yabai -m space --focus 1
+fn - 2 : yabai -m space --focus 2
+fn - 3 : yabai -m space --focus 3
+fn - 4 : yabai -m space --focus 4
+fn - 5 : yabai -m space --focus 5
+fn - 6 : yabai -m space --focus 6
+fn - 7 : yabai -m space --focus 7
+fn - 8 : yabai -m space --focus 8
+fn - 9 : yabai -m space --focus 9
+fn - 0 : yabai -m space --focus 10
+
+shift + fn - 1 : yabai -m window --space 1
+shift + fn - 2 : yabai -m window --space 2
+shift + fn - 3 : yabai -m window --space 3
+shift + fn - 4 : yabai -m window --space 4
+shift + fn - 5 : yabai -m window --space 5
+shift + fn - 6 : yabai -m window --space 6
+shift + fn - 7 : yabai -m window --space 7
+shift + fn - 8 : yabai -m window --space 8
+shift + fn - 9 : yabai -m window --space 9
+shift + fn - 0 : yabai -m window --space 10
+
+# Relative workspace movement
+fn - 0x2F : yabai -m space --focus next  # cmd + .
+fn - 0x2B : yabai -m space --focus prev  # cmd + ,
+shift + fn - 0x2F : yabai -m window --space next  # shift + cmd + .
+shift + fn - 0x2B : yabai -m window --space prev  # shift + cmd + ,
+
+# Screenshots
+shift + cmd - s : open -a Screenshot
+
+# Lock screen
+shift + fn - escape : pmset displaysleepnow
+
+# Toggle layout
+fn + alt - space : yabai -m space --layout $(yabai -m query --spaces --space | jq -r 'if .type == "bsp" then "float" else "bsp" end')
+
+# Balance windows
+fn + alt - b : yabai -m space --balance
