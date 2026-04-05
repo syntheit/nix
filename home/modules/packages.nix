@@ -1,6 +1,15 @@
 { pkgs, inputs, ... }:
 
 {
+  # Prisma engines - use nixpkgs engines system-wide instead of per-project flakes
+  home.sessionVariables = {
+    PRISMA_SCHEMA_ENGINE_BINARY = "${pkgs.prisma-engines}/bin/schema-engine";
+    PRISMA_QUERY_ENGINE_BINARY = "${pkgs.prisma-engines}/bin/query-engine";
+    PRISMA_QUERY_ENGINE_LIBRARY = "${pkgs.prisma-engines}/lib/libquery_engine.node";
+    PRISMA_FMT_BINARY = "${pkgs.prisma-engines}/bin/prisma-fmt";
+    PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING = "1";
+  };
+
   home.packages = with pkgs; [
     # CLI tools
     htop
@@ -36,6 +45,7 @@
     screen
 
     # Development
+    prisma-engines
     typst
     jq
     htmlq
