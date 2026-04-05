@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ ... }:
 {
   imports = [
     ./hardware-configuration.nix
@@ -9,4 +9,5 @@
   ];
 
   networking.hostName = "caspian";
+  system.stateVersion = "25.05";
 }

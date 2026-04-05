@@ -1,8 +1,6 @@
 {
   pkgs,
-  vars,
   extraLibs,
-  inputs,
   ...
 }:
 {
@@ -31,13 +29,7 @@
   # This enables critical components needed to run Hyprland properly, such as:
   # polkit, xdg-desktop-portal-hyprland, graphics drivers, fonts, dconf, xwayland,
   # and adds a proper Desktop Entry to the Display Manager.
-  programs.hyprland = {
-    enable = true;
-    # Use hyprland from nixpkgs (more stable build)
-    package = pkgs.hyprland;
-    # Use matching portal package from nixpkgs
-    portalPackage = pkgs.xdg-desktop-portal-hyprland;
-  };
+  programs.hyprland.enable = true;
 
   programs.steam.enable = true;
 

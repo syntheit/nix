@@ -36,8 +36,6 @@ in
   # Hyprland configuration
   wayland.windowManager.hyprland = {
     enable = true;
-    # Use hyprland from nixpkgs (more stable build)
-    package = pkgs.hyprland;
     xwayland.enable = true;
     # Enable systemd integration to ensure graphical-session.target is reached
     # This is required for Waybar and wallpaper services to start correctly.
@@ -50,13 +48,6 @@ in
         # FORCE: Override Stylix's default border size (2) to keep borders invisible
         border_size = lib.mkForce 0;
         # col.active_border and col.inactive_border are managed by Stylix
-      };
-
-      dwindle = {
-        # no_gaps_when_only = 2;
-      };
-      debug = {
-        #damage_tracking = 0;
       };
 
       decoration = {
@@ -78,7 +69,7 @@ in
         "$mod, B, exec, zen"
         "$mod, E, exec, nautilus"
         "$mod, C, exec, ${pkgs.copyq}/bin/copyq toggle"
-        "$mod SHIFT, L, exec, hyprlock"
+        "$mod SHIFT, L, exec, ${pkgs.hyprlock}/bin/hyprlock"
         "$mod, Q, killactive"
         "$mod, F, fullscreen"
         "$mod, h, movefocus, l"
@@ -140,7 +131,7 @@ in
         ", XF86AudioPrev, exec, playerctl previous"
       ]
       ++ lib.optionals (hostName == "ionian") [
-        ", switch:off:Lid Switch, exec, hyprlock"
+        ", switch:off:Lid Switch, exec, ${pkgs.hyprlock}/bin/hyprlock"
       ];
       bindm = [
         "$mod, mouse:272, movewindow"
@@ -148,8 +139,8 @@ in
       ];
       exec-once = [
         "${pkgs.copyq}/bin/copyq --start-server"
-        "systemctl --user start hyprpolkitagent"
-        "hyprsunset"
+        "${pkgs.hyprpolkitagent}/libexec/hyprpolkitagent"
+        "${pkgs.hyprsunset}/bin/hyprsunset"
       ];
       binds = {
         movefocus_cycles_fullscreen = true;

@@ -19,13 +19,5 @@
 
   colors = import ./colors.nix { inherit lib; };
   math = import ./math.nix;
-
-  allExceptThisDefault =
-    dir:
-      map (entry: "${toString dir}/${entry}") (
-        builtins.attrNames (
-          builtins.removeAttrs (builtins.readDir dir) [ "default.nix" ]
-        )
-      );
 }
 

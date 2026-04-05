@@ -9,6 +9,7 @@
   ];
 
   networking.hostName = "ionian";
+  system.stateVersion = "25.05";
 
   boot.kernelParams = [ "i915.enable_psr=0" ];
 

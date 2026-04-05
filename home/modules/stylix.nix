@@ -58,6 +58,8 @@
   stylix.targets.qt.platform = "qtct";
 
 
+  gtk.gtk4.theme = null;
+
   # Override icon theme to Papirus
   gtk.iconTheme = {
     name = "Papirus";

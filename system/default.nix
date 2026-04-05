@@ -16,11 +16,6 @@
       # This requires libsecret which is provided by gnome-keyring
       # NetworkManager will automatically use the secret service when available
     };
-    # Enables DHCP on each ethernet and wireless interface. In case of scripted networking
-    # (the default) this is the recommended approach. When using systemd-networkd it's
-    # still possible to use this option, but it's recommended to use it in conjunction
-    # with explicit per-interface declarations with `networking.interfaces.<interface>.useDHCP`.
-    useDHCP = lib.mkDefault true;
   };
 
   systemd.services.NetworkManager-wait-online.enable = false;
@@ -91,7 +86,7 @@
     poppler-utils # PDF thumbnail generation
     android-tools
     # Affinity Suite
-    inputs.affinity-nix.packages.x86_64-linux.v3
+    inputs.affinity-nix.packages.${pkgs.stdenv.hostPlatform.system}.v3
     xhost # Required for GParted access to display on Wayland
     ntfs3g # NTFS read/write support and utilities
     cifs-utils # Samba/Windows network shares
@@ -107,7 +102,12 @@
 
   # Some programs need SUID wrappers, can be configured further or are
   # started in user sessions.
-  programs.nix-ld.enable = true;
+  programs.nix-ld = {
+    enable = true;
+    libraries = with pkgs; [
+      openssl
+    ];
+  };
   programs.zsh.enable = true;
   programs.ssh = {
     startAgent = true;
@@ -118,13 +118,7 @@
   # Set zsh as the default shell for the system
   users.defaultUserShell = pkgs.zsh;
 
-  # Firewall configuration
-  # TODO: Configure firewall rules as needed
-  # networking.firewall.enable = true;
-  # networking.firewall.allowedTCPPorts = [ 22 80 443 ];
-  # networking.firewall.allowedUDPPorts = [ ];
-  # Or disable the firewall altogether.
-  networking.firewall.enable = false;
+  networking.firewall.enable = true;
 
   # Define a user account. Don't forget to set a password with 'passwd'.
   users.users."${vars.user.name}" = {
@@ -144,11 +138,8 @@
   # Fingerprint authentication for sudo and login
   # Only enabled per-host where fprintd is available (see hosts/ionian/hardware.nix)
 
-  # This value determines the NixOS release from which the default
-  # settings for stateful data, like file locations and database versions
-  # on your system were taken. It's perfectly fine and recommended to leave
-  # this value at the release version of the first install of this system.
-  # Before changing this value read the documentation for this option
-  # (e.g. man configuration.nix or on https://nixos.org/nixos/options.html).
-  system.stateVersion = "25.05"; # Did you read the comment?
+  services.locate = {
+    enable = true;
+    package = pkgs.plocate;
+  };
 }
