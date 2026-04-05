@@ -88,6 +88,7 @@ in
         "$mod, O, exec, grimblast copy output"
         "$mod, V, exec, ${pkgs.copyq}/bin/copyq toggle"
         "$mod SHIFT, V, exec, ${pkgs.copyq}/bin/copyq menu"
+        "$mod, S, togglespecialworkspace, spotify"
         "$mod, mouse:272, setfloating"
         # Relative workspace movement
         "$mod, period, workspace, +1"
@@ -203,6 +204,9 @@ in
         "center 1, match:initial_class ^(tui-speedtest)$"
         "size 800 400, match:initial_class ^(tui-speedtest)$"
         "dim_around 1, match:initial_class ^(tui-speedtest)$"
+
+        # Spotify → hidden special workspace (toggled with Super+S)
+        "workspace special:spotify silent, match:class (?i)^spotify$"
       ];
       env = [
         "XDG_SESSION_TYPE,wayland"
