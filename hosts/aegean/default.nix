@@ -151,6 +151,10 @@ in
   networking.applicationFirewall.enable = true;
   networking.applicationFirewall.enableStealthMode = true;
 
+  # Generic names for mDNS/Bonjour — hides real hostname from local network
+  networking.computerName = "Mac";
+  networking.localHostName = "Mac";
+
   system.keyboard = {
     enableKeyMapping = true;
     remapCapsLockToControl = false;
@@ -236,6 +240,10 @@ in
     # Disable diagnostic data submission to Apple
     defaults write "/Library/Application Support/CrashReporter/DiagnosticMessagesHistory.plist" AutoSubmit -bool false 2>/dev/null || true
     defaults write "/Library/Application Support/CrashReporter/DiagnosticMessagesHistory.plist" ThirdPartyDataSubmit -bool false 2>/dev/null || true
+
+    # Disable captive portal detection (stops Apple knowing when you join networks)
+    # Downside: hotel/airport WiFi login pages won't auto-popup — open a browser manually instead
+    defaults write /Library/Preferences/SystemConfiguration/com.apple.captive.control Active -bool false
 
     /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
 
