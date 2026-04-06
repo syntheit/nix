@@ -5,7 +5,7 @@ let
     name = "wallpaper-cycle";
 
     runtimeInputs = with pkgs; [
-      swww
+      awww
       jq
       curl
       coreutils
@@ -35,15 +35,15 @@ let
 
       apply_wallpaper() {
         local wallpaper="$1"
-        # Ensure swww-daemon is running
-        if ! swww query &>/dev/null; then
-          setsid swww-daemon &>/dev/null &
+        # Ensure awww-daemon is running
+        if ! awww query &>/dev/null; then
+          setsid awww-daemon &>/dev/null &
           disown
           sleep 1
         fi
         MONITORS=$(hyprctl monitors -j | jq -r '.[].name')
         for MON in $MONITORS; do
-          swww img -o "$MON" "$wallpaper" --transition-type fade
+          awww img -o "$MON" "$wallpaper" --transition-type fade
         done
       }
 
