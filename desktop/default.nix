@@ -76,13 +76,7 @@
     libertinus
     eb-garamond
 
-    # Monospace coding fonts
-    fira-code
-    fira-code-symbols
-    hack-font
-    iosevka
-    source-code-pro
-    victor-mono
+    # Monospace coding fonts (base variants covered by Nerd Fonts above)
     mplus-outline-fonts.githubRelease
     dina-font
     proggyfonts

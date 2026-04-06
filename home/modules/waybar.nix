@@ -39,29 +39,38 @@
         };
         "custom/network-activity" = {
           format = "{}";
-          interval = 1;
+          interval = 2;
           tooltip = false;
           exec = ''
             ${pkgs.bash}/bin/bash -c '
+            state="/tmp/waybar_net_activity"
             interface=$(ip route | grep default | awk "{print \$5}" | head -1)
             if [ -z "$interface" ]; then
               echo "⬇ 0 mb/s ⬆ 0 mb/s"
               exit 0
             fi
 
-            rx_old=$(cat /sys/class/net/$interface/statistics/rx_bytes 2>/dev/null || echo 0)
-            tx_old=$(cat /sys/class/net/$interface/statistics/tx_bytes 2>/dev/null || echo 0)
-            sleep 1
-            rx_new=$(cat /sys/class/net/$interface/statistics/rx_bytes 2>/dev/null || echo 0)
-            tx_new=$(cat /sys/class/net/$interface/statistics/tx_bytes 2>/dev/null || echo 0)
+            rx_now=$(cat /sys/class/net/$interface/statistics/rx_bytes 2>/dev/null || echo 0)
+            tx_now=$(cat /sys/class/net/$interface/statistics/tx_bytes 2>/dev/null || echo 0)
+            now=$(date +%s%N)
 
-            rx_diff=$((rx_new - rx_old))
-            tx_diff=$((tx_new - tx_old))
+            if [ -f "$state" ]; then
+              read -r rx_prev tx_prev ts_prev < "$state"
+              elapsed_ns=$((now - ts_prev))
+              if [ "$elapsed_ns" -gt 0 ]; then
+                rx_diff=$((rx_now - rx_prev))
+                tx_diff=$((tx_now - tx_prev))
+                elapsed_s=$(awk "BEGIN {printf \"%.6f\", $elapsed_ns / 1000000000}")
+                rx_mb=$(awk "BEGIN {printf \"%.2f\", $rx_diff / 1048576 / $elapsed_s}")
+                tx_mb=$(awk "BEGIN {printf \"%.2f\", $tx_diff / 1048576 / $elapsed_s}")
+                echo "⬇ $rx_mb mb/s ⬆ $tx_mb mb/s"
+                echo "$rx_now $tx_now $now" > "$state"
+                exit 0
+              fi
+            fi
 
-            rx_mb=$(awk "BEGIN {printf \"%.2f\", $rx_diff / 1048576}")
-            tx_mb=$(awk "BEGIN {printf \"%.2f\", $tx_diff / 1048576}")
-
-            echo "⬇ $rx_mb mb/s ⬆ $tx_mb mb/s"
+            echo "$rx_now $tx_now $now" > "$state"
+            echo "⬇ 0.00 mb/s ⬆ 0.00 mb/s"
             '
           '';
         };
@@ -187,7 +196,8 @@
         };
         "custom/dnd" = {
           format = "{}";
-          interval = 1;
+          interval = "once";
+          signal = 8;
           tooltip = false;
           exec = ''
             ${pkgs.bash}/bin/bash -c '
@@ -200,7 +210,7 @@
             '
           '';
           on-click-right = ''
-            ${pkgs.dunst}/bin/dunstctl set-paused toggle
+            ${pkgs.bash}/bin/bash -c '${pkgs.dunst}/bin/dunstctl set-paused toggle && pkill -SIGRTMIN+8 waybar'
           '';
         };
         clock = {
@@ -209,7 +219,7 @@
           timezone = "America/Argentina/Buenos_Aires";
           tooltip = false;
           on-click-right = ''
-            ${pkgs.dunst}/bin/dunstctl set-paused toggle
+            ${pkgs.bash}/bin/bash -c '${pkgs.dunst}/bin/dunstctl set-paused toggle && pkill -SIGRTMIN+8 waybar'
           '';
           actions = {
             on-click-forward = "tz_up";
@@ -239,7 +249,7 @@
           format = "{}";
           interval = 1800; # Update every 30 minutes
           exec = ''
-            ${pkgs.curl}/bin/curl -s "wttr.in?format=%t" | head -1
+            ${pkgs.curl}/bin/curl -s "wttr.in?format=%t" | head -1 | tr -d '+'
           '';
           tooltip = true;
           on-click = "zen 'https://www.accuweather.com/en/ar/buenos-aires/7894/weather-forecast/7894'";

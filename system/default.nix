@@ -76,7 +76,7 @@
     lm_sensors
     iw
     libsecret # Required for NetworkManager to use secret service (gnome-keyring)
-    # Thumbnailer packages for Nemo file previews
+    # Thumbnailer packages for file manager previews
     gdk-pixbuf # Basic image formats (PNG, JPEG, BMP, GIF, TIFF, etc.)
     libheif # HEIF and AVIF image formats
     libheif.out # HEIF output plugin
@@ -95,7 +95,7 @@
     apfs-fuse # APFS support (read-only)
   ];
 
-  # Link thumbnailer files so Nemo can find them
+  # Link thumbnailer files so file managers can find them
   environment.pathsToLink = [
     "share/thumbnailers"
   ];
@@ -118,7 +118,12 @@
   # Set zsh as the default shell for the system
   users.defaultUserShell = pkgs.zsh;
 
-  networking.firewall.enable = true;
+  networking.firewall = {
+    enable = true;
+    logRefusedConnections = true;
+    allowedTCPPorts = [ ];
+    allowedUDPPorts = [ ];
+  };
 
   # Define a user account. Don't forget to set a password with 'passwd'.
   users.users."${vars.user.name}" = {

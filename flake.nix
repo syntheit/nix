@@ -53,6 +53,11 @@
     nix-homebrew = {
       url = "github:zhaofengli-wip/nix-homebrew";
     };
+
+    windscribe = {
+      url = "github:syntheit/windscribe-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -81,12 +86,15 @@
           modules = [
             ./hosts/caspian
             inputs.home-manager.nixosModules.home-manager
+            inputs.windscribe.nixosModules.default
             {
               nixpkgs.overlays = [
                 inputs.nur.overlays.default
+                inputs.windscribe.overlays.default
                 (import ./overlays { inherit inputs lib; }).modifications
                 (import ./overlays { inherit inputs lib; }).additions
               ];
+              services.windscribe.enable = true;
               home-manager.useGlobalPkgs = true;
               home-manager.useUserPackages = true;
               home-manager.backupFileExtension = "bkp";
@@ -106,12 +114,15 @@
           modules = [
             ./hosts/ionian
             inputs.home-manager.nixosModules.home-manager
+            inputs.windscribe.nixosModules.default
             {
               nixpkgs.overlays = [
                 inputs.nur.overlays.default
+                inputs.windscribe.overlays.default
                 (import ./overlays { inherit inputs lib; }).modifications
                 (import ./overlays { inherit inputs lib; }).additions
               ];
+              services.windscribe.enable = true;
               home-manager.useGlobalPkgs = true;
               home-manager.useUserPackages = true;
               home-manager.backupFileExtension = "bkp";

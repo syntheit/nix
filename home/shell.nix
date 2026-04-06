@@ -244,6 +244,13 @@
   home.sessionVariables = {
     MANPAGER = "sh -c 'col -bx | bat -l man -p'";
     MANROFFOPT = "-c";
+    NIX_BUILD_SHELL = toString (pkgs.writeShellScript "nix-shell-zsh" ''
+      if [ "$1" = "--rcfile" ]; then
+        source "$2"
+        exec zsh
+      fi
+      exec zsh "$@"
+    '');
   };
 
   # Extra completion definitions for hundreds of commands

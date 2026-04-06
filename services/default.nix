@@ -9,9 +9,6 @@
 {
   imports = extraLibs.scanPaths ./.;
 
-  # Enable CUPS to print documents.
-  services.printing.enable = true;
-
   # Enable sound with pipewire.
   services.pulseaudio.enable = false;
   security.rtkit.enable = true;
@@ -25,45 +22,38 @@
     #jack.enable = true;
   };
 
-  # Docker
+  # Docker (socket-activated: starts on first use, not at boot)
   virtualisation.docker = {
     enable = true;
-    # Note: Using default storage driver (not ZFS since user has Btrfs)
+    enableOnBoot = false;
   };
 
   # NVIDIA container support is enabled per-host (see hosts/caspian/hardware.nix)
 
   virtualisation.oci-containers.backend = "docker";
 
-  # Virtualization
+  # Virtualization (socket-activated: libvirtd starts on first use, not at boot)
   programs.virt-manager.enable = true;
   virtualisation.libvirtd.enable = true;
   virtualisation.spiceUSBRedirection.enable = true;
+  systemd.services.libvirtd.wantedBy = lib.mkForce [ ];
+  systemd.sockets.libvirtd.wantedBy = [ "sockets.target" ];
+  systemd.sockets.libvirtd-admin.wantedBy = [ "sockets.target" ];
 
   # Services
   services.gvfs.enable = true;
-  # Enable tumbler for file thumbnail generation (used by Nemo)
-  services.tumbler.enable = true;
-  services.avahi = {
-    enable = true;
-    nssmdns4 = true;
-    openFirewall = true;
-  };
   services.smartd.enable = true;
   services.systembus-notify.enable = lib.mkForce true;
   services.gnome.gcr-ssh-agent.enable = false;
 
-  # GNOME Calendar and Contacts support
-  # Evolution Data Server provides calendar and contacts backend
-  services.gnome.evolution-data-server.enable = true;
-  # GNOME Online Accounts for Google/Nextcloud integration
-  services.gnome.gnome-online-accounts.enable = true;
-
   # Security
-  security.sudo.extraConfig = ''
-    Defaults lecture = never
-    Defaults timestamp_timeout=120
-  '';
+  security.sudo = {
+    execWheelOnly = true;
+    extraConfig = ''
+      Defaults lecture = never
+      Defaults timestamp_timeout=30
+    '';
+  };
 
   security.pam.services = {
     "greetd".enableGnomeKeyring = true;
