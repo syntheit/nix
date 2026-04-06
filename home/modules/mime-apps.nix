@@ -31,7 +31,24 @@
     "image/ico" = "loupe.desktop";
     "image/heic" = "loupe.desktop";
     "image/heif" = "loupe.desktop";
-    # Set Papers as default PDF viewer
+    # Set File Roller as default archive handler
+    "application/zip" = "org.gnome.FileRoller.desktop";
+    "application/x-tar" = "org.gnome.FileRoller.desktop";
+    "application/gzip" = "org.gnome.FileRoller.desktop";
+    "application/x-gzip" = "org.gnome.FileRoller.desktop";
+    "application/x-bzip2" = "org.gnome.FileRoller.desktop";
+    "application/x-xz" = "org.gnome.FileRoller.desktop";
+    "application/x-7z-compressed" = "org.gnome.FileRoller.desktop";
+    "application/x-rar" = "org.gnome.FileRoller.desktop";
+    "application/x-compressed-tar" = "org.gnome.FileRoller.desktop";
+    # Set Papers as default document viewer
     "application/pdf" = "papers.desktop";
+    "application/epub+zip" = "papers.desktop";
+    "image/vnd.djvu" = "papers.desktop";
+    "application/postscript" = "papers.desktop";
+    "application/oxps" = "papers.desktop";
+    "application/vnd.ms-xpsdocument" = "papers.desktop";
+    "application/x-cbz" = "papers.desktop";
+    "application/x-cbr" = "papers.desktop";
   };
 }
