@@ -50,6 +50,7 @@
     openFirewall = true;
   };
   services.smartd.enable = true;
+  services.systembus-notify.enable = lib.mkForce true;
   services.gnome.gcr-ssh-agent.enable = false;
 
   # GNOME Calendar and Contacts support
