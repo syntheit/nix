@@ -593,6 +593,7 @@
         "nixpkgs": "nixpkgs_3",
         "nur": "nur",
         "stylix": "stylix",
+        "windscribe": "windscribe",
         "zen-browser": "zen-browser"
       }
     },
@@ -738,6 +739,26 @@
       "original": {
         "owner": "numtide",
         "repo": "treefmt-nix",
+        "type": "github"
+      }
+    },
+    "windscribe": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1775516743,
+        "narHash": "sha256-ZJapxtHNFZvMe9qOPfW3w8MbArXhNsiAz6BEewBQRWU=",
+        "owner": "syntheit",
+        "repo": "windscribe-nix",
+        "rev": "298dd375ed0ad1a80e77bbf7d46c0cce40707cb8",
+        "type": "github"
+      },
+      "original": {
+        "owner": "syntheit",
+        "repo": "windscribe-nix",
         "type": "github"
       }
     },

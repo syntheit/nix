@@ -127,6 +127,7 @@ in
         ", XF86MonBrightnessDown, exec, brightnessctl s 5%-"
       ];
       bindl = [
+        ", code:198, togglespecialworkspace, spotify" # MX Vertical top button (F20 via logid, evdev 190 + 8 = xkb 198)
         ", XF86AudioMute, exec, wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
         ", XF86AudioPlay, exec, playerctl play-pause"
         ", XF86AudioNext, exec, playerctl next"
@@ -204,6 +205,12 @@ in
         "center 1, match:initial_class ^(tui-speedtest)$"
         "size 800 400, match:initial_class ^(tui-speedtest)$"
         "dim_around 1, match:initial_class ^(tui-speedtest)$"
+
+        # Windscribe VPN
+        "float 1, match:class ^(Windscribe)$"
+        "opaque on, match:class ^(Windscribe)$"
+        "no_blur on, match:class ^(Windscribe)$"
+        "no_shadow on, match:class ^(Windscribe)$"
 
         # Spotify → hidden special workspace (toggled with Super+S)
         "workspace special:spotify silent, match:class (?i)^spotify$"

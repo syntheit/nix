@@ -12,7 +12,6 @@
 
   home.packages = with pkgs; [
     # CLI tools
-    htop
     btop
     fastfetch
     tldr
@@ -55,7 +54,6 @@
     distrobox
     code-cursor
     antigravity
-    google-chrome
     dbeaver-bin
     vscode
     opencode
@@ -76,7 +74,6 @@
     spotify
     playerctl
     vlc
-    transmission_4
     qbittorrent
     mousai
 
@@ -120,7 +117,6 @@
     cpupower-gui
     jre8
     gvfs
-    nemo
     nautilus
     file-roller
     mission-center
