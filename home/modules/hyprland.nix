@@ -240,20 +240,21 @@ in
         temperature = 5500
     }
 
-    # Night mode (Evening)
-    profile {
-        time = 21:30
-        temperature = 5500
-    }
-
     # Normal mode (Daytime)
     profile {
         time = 5:00
         identity = true
     }
+
+    # Night mode (Evening)
+    profile {
+        time = 21:30
+        temperature = 5500
+    }
   '';
 
   # Hyprsunset systemd service with auto-restart on crash
+  # TZ is needed to work around hyprwm/hyprsunset#83 (defaults to UTC on NixOS)
   systemd.user.services.hyprsunset = {
     Unit = {
       Description = "Hyprsunset blue light filter";
@@ -261,6 +262,7 @@ in
       PartOf = [ "graphical-session.target" ];
     };
     Service = {
+      Environment = [ "TZ=America/Argentina/Buenos_Aires" ];
       ExecStart = "${pkgs.hyprsunset}/bin/hyprsunset";
       Restart = "on-failure";
       RestartSec = 5;

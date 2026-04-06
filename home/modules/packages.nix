@@ -122,6 +122,7 @@
     gvfs
     nemo
     nautilus
+    file-roller
     mission-center
     resources
     gnome-2048

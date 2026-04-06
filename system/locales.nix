@@ -3,6 +3,11 @@
   # Set time zone.
   time.timeZone = "America/Argentina/Buenos_Aires";
 
+  # Create /etc/timezone for C++ std::chrono::current_zone() detection
+  # NixOS only creates /etc/localtime by default, but libstdc++ can't resolve
+  # the nix store symlink chain to a timezone name. (hyprwm/hyprsunset#83)
+  environment.etc."timezone".text = "America/Argentina/Buenos_Aires\n";
+
   # Select internationalisation properties.
   i18n.defaultLocale = "en_US.UTF-8";
 
