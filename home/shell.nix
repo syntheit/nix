@@ -103,11 +103,12 @@
   };
 
 
-  # nix-index for command-not-found package suggestions
+  # nix-index for command-not-found package suggestions (uses pre-built database)
   programs.nix-index = {
     enable = true;
     enableZshIntegration = true;
   };
+  programs.nix-index-database.comma.enable = true;
 
   programs.direnv = {
     enable = true;

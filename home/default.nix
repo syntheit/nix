@@ -9,6 +9,7 @@
 }:
 {
   imports = [
+    inputs.nix-index-database.hmModules.nix-index
     inputs.stylix.homeModules.stylix  # Load Stylix library
     ./modules/stylix.nix              # Load Stylix configuration
     ./modules/ssh.nix
