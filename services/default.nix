@@ -17,7 +17,26 @@
     alsa.enable = true;
     alsa.support32Bit = true;
     pulse.enable = true;
-    wireplumber.enable = true;
+    wireplumber = {
+      enable = true;
+      extraConfig."51-disable-webcam-mic" = {
+        "monitor.alsa.rules" = [
+          {
+            matches = [
+              {
+                "device.vendor.id" = "0x328f";
+                "device.product.id" = "0x2013";
+              }
+            ];
+            actions = {
+              update-props = {
+                "device.disabled" = true;
+              };
+            };
+          }
+        ];
+      };
+    };
     # Enable JACK support for JACK applications
     #jack.enable = true;
   };

@@ -6,6 +6,56 @@
   inputs,
   ...
 }:
+let
+  usbToggle = pkgs.writeShellScriptBin "usb-toggle" ''
+    # Usage: usb-toggle <device> <action>
+    # Devices: mic (Blue Snowball), cam (eMeet C960)
+    # Actions: waybar, toggle
+    case "$1" in
+      mic) VENDOR="0d8c"; PRODUCT="0005"; ON_ICON="󰍬"; OFF_ICON="󰍭"; LABEL="Blue Snowball" ;;
+      cam) VENDOR="328f"; PRODUCT="2013"; ON_ICON="󰄀"; OFF_ICON="󰄁"; LABEL="eMeet C960" ;;
+      *) echo '{"text":"","tooltip":""}'; exit 1 ;;
+    esac
+
+    find_device() {
+      for dev in /sys/bus/usb/devices/*/; do
+        if [ -f "$dev/idVendor" ] && [ "$(cat "$dev/idVendor" 2>/dev/null)" = "$VENDOR" ] && \
+           [ "$(cat "$dev/idProduct" 2>/dev/null)" = "$PRODUCT" ]; then
+          echo "$dev"
+          return 0
+        fi
+      done
+      return 1
+    }
+
+    case "''${2:-waybar}" in
+      waybar)
+        dev=$(find_device)
+        if [ -n "$dev" ]; then
+          auth=$(cat "$dev/authorized" 2>/dev/null)
+          if [ "$auth" = "1" ]; then
+            echo "{\"text\":\"$ON_ICON\",\"tooltip\":\"$LABEL: ON\",\"class\":\"on\"}"
+          else
+            echo "{\"text\":\"$OFF_ICON\",\"tooltip\":\"$LABEL: OFF\",\"class\":\"off\"}"
+          fi
+        else
+          echo '{"text":"","tooltip":""}'
+        fi
+        ;;
+      toggle)
+        dev=$(find_device)
+        if [ -n "$dev" ]; then
+          auth=$(cat "$dev/authorized" 2>/dev/null)
+          if [ "$auth" = "1" ]; then
+            echo 0 > "$dev/authorized"
+          else
+            echo 1 > "$dev/authorized"
+          fi
+        fi
+        ;;
+    esac
+  '';
+in
 {
   imports = extraLibs.scanPaths ./.;
 
@@ -55,6 +105,8 @@
     settings.max-jobs = "auto";
     settings.cores = 0;
     settings.download-buffer-size = 134217728;
+    settings.min-free = 1073741824; # 1GB — auto-GC when free space drops below
+    settings.max-free = 3221225472; # 3GB — stop GC once this much space is free
     # Nix garbage collection
     gc = {
       automatic = true;
@@ -93,6 +145,7 @@
     nfs-utils # NFS network shares
     hfsprogs # HFS+ support
     apfs-fuse # APFS support (read-only)
+    usbToggle
   ];
 
   # Link thumbnailer files so file managers can find them
@@ -142,6 +195,24 @@
 
   # Fingerprint authentication for sudo and login
   # Only enabled per-host where fprintd is available (see hosts/ionian/hardware.nix)
+
+  # Allow user to toggle USB devices without password
+  security.sudo.extraRules = [
+    {
+      users = [ vars.user.name ];
+      commands = [
+        {
+          command = "/run/current-system/sw/bin/usb-toggle *";
+          options = [ "NOPASSWD" ];
+        }
+      ];
+    }
+  ];
+
+  # Deauthorize Blue Snowball on plug-in (off by default)
+  services.udev.extraRules = ''
+    ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="0d8c", ATTR{idProduct}=="0005", ATTR{authorized}="0"
+  '';
 
   services.locate = {
     enable = true;

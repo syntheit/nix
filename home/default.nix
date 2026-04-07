@@ -25,6 +25,7 @@
     ./modules/nextcloud.nix
     ./modules/zen.nix
     ./modules/dunst.nix
+    ./modules/copyq.nix
     ./modules/wallpaper.nix
     ./shell.nix
   ];

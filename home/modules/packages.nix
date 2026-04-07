@@ -14,6 +14,8 @@
     # CLI tools
     btop
     fastfetch
+    lazygit
+    yazi
     tldr
     wget
     tree
@@ -91,6 +93,9 @@
     hyprpolkitagent
     hyprsunset
     grimblast
+    satty
+    wf-recorder
+    slurp
     pavucontrol
     pamixer
     nwg-displays
