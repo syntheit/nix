@@ -5,6 +5,12 @@
     enable = true;
     shellIntegration.enableZshIntegration = true;
     # themeFile is managed by Stylix (via stylix.targets.kitty.enable)
+    keybindings = {
+      "ctrl+tab" = "next_tab";
+      "ctrl+shift+tab" = "previous_tab";
+      "ctrl+shift+t" = "new_tab";
+      "ctrl+shift+w" = "close_tab";
+    };
     settings = {
       # FORCE: Override Stylix's default opacity to use my preferred value
       background_opacity = lib.mkForce "0.8";
@@ -15,6 +21,7 @@
       shell_integration = "no-cursor"; # Prevent shell integration from overriding cursor shape
       # Use xterm-256color for SSH sessions to avoid terminfo errors
       term = "xterm-256color";
+      tab_bar_style = "hidden";
     }
     // lib.optionalAttrs pkgs.stdenv.isDarwin {
       hide_window_decorations = "yes"; # Remove title bar

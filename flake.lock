@@ -749,11 +749,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1775516743,
-        "narHash": "sha256-ZJapxtHNFZvMe9qOPfW3w8MbArXhNsiAz6BEewBQRWU=",
+        "lastModified": 1775529643,
+        "narHash": "sha256-e6toMgroHTK819frF3Jlzr5Rl635pfC65C8WCRVfbts=",
         "owner": "syntheit",
         "repo": "windscribe-nix",
-        "rev": "298dd375ed0ad1a80e77bbf7d46c0cce40707cb8",
+        "rev": "3caab8a37cd99d731f5caa37bc752ff6c0240886",
         "type": "github"
       },
       "original": {

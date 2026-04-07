@@ -11,6 +11,49 @@ let
   # 1. If Rofi is running, kill it (handles layer surface case)
   # 2. If active window is a TUI app/CopyQ, kill it
   # 3. Otherwise do nothing (and let bindn pass the key to the app)
+  toggleRecording = pkgs.writeShellScript "toggle-recording" ''
+    if ${pkgs.procps}/bin/pgrep -x wf-recorder > /dev/null; then
+      ${pkgs.procps}/bin/pkill -INT wf-recorder
+      ${pkgs.libnotify}/bin/notify-send "Recording stopped" "Saved to ~/Videos/"
+    else
+      area=$(${pkgs.slurp}/bin/slurp)
+      if [ -n "$area" ]; then
+        ${pkgs.wf-recorder}/bin/wf-recorder -g "$area" -f "$HOME/Videos/recording-$(date +%Y%m%d-%H%M%S).mp4" &
+        ${pkgs.libnotify}/bin/notify-send "Recording started"
+      fi
+    fi
+  '';
+
+  togglePip = pkgs.writeShellScript "toggle-pip" ''
+    hyprctl=${config.wayland.windowManager.hyprland.package}/bin/hyprctl
+    jq=${pkgs.jq}/bin/jq
+
+    window=$($hyprctl activewindow -j)
+    is_pinned=$(echo "$window" | $jq '.pinned')
+
+    if [ "$is_pinned" = "true" ]; then
+      $hyprctl dispatch pin active
+      $hyprctl dispatch togglefloating
+    else
+      is_floating=$(echo "$window" | $jq '.floating')
+      if [ "$is_floating" = "false" ]; then
+        $hyprctl dispatch togglefloating
+      fi
+
+      monitor=$($hyprctl monitors -j | $jq '.[] | select(.focused)')
+      width=$(echo "$monitor" | $jq '.width')
+      height=$(echo "$monitor" | $jq '.height')
+      scale=$(echo "$monitor" | $jq '.scale')
+
+      pip_w=480
+      pip_h=270
+      x=$(${pkgs.gawk}/bin/awk "BEGIN {printf \"%.0f\", $width/$scale - $pip_w - 20}")
+      y=$(${pkgs.gawk}/bin/awk "BEGIN {printf \"%.0f\", $height/$scale - $pip_h - 20}")
+
+      $hyprctl --batch "dispatch resizeactive exact $pip_w $pip_h; dispatch moveactive exact $x $y; dispatch pin active"
+    fi
+  '';
+
   handleEscapeScript = pkgs.writeShellScript "handle-escape" ''
     # Check if Rofi is running and kill it
     if ${pkgs.procps}/bin/pgrep -x rofi >/dev/null; then
@@ -26,7 +69,7 @@ let
       class=$(echo "$active_window" | $jq -r ".class")
       
       # Check if it matches our TUI list (case-insensitive)
-      if echo "$class" | grep -qEi "^(tui-network|tui-bluetooth|tui-speedtest|com.github.hluk.copyq)$"; then
+      if echo "$class" | grep -qEi "^(tui-network|tui-bluetooth|tui-speedtest|tui-btop|com.github.hluk.copyq)$"; then
         $hyprctl dispatch killactive
       fi
     fi
@@ -64,7 +107,7 @@ in
 
       bind = [
         "$mod, R, exec, rofi -show drun"
-        "$mod, Space, togglefloating"
+        "$mod, Space, exec, pkill -SIGUSR1 waybar"
         "$mod, T, exec, kitty"
         "$mod, B, exec, zen"
         "$mod, E, exec, nautilus"
@@ -77,8 +120,8 @@ in
         "$mod, l, movefocus, r"
         "$mod, j, movefocus, d"
         "$mod, k, movefocus, u"
-        # Screenshot keybindings
-        "$mod SHIFT, S, exec, grimblast --freeze copy area"
+        # Screenshot keybindings (area goes through satty for annotation)
+        "$mod SHIFT, S, exec, grimblast --freeze save area /tmp/screenshot-annotate.png && ${pkgs.satty}/bin/satty -f /tmp/screenshot-annotate.png"
         "$mod SHIFT, A, exec, grimblast --freeze copy screen"
         # Active window screenshots
         "$mod SHIFT, W, exec, grimblast copysave active"
@@ -86,10 +129,15 @@ in
         # Current monitor/output screenshots
         "$mod SHIFT, O, exec, grimblast copysave output"
         "$mod, O, exec, grimblast copy output"
+        # Screen recording toggle
+        "$mod SHIFT, R, exec, ${toggleRecording}"
+        # Color picker (copies hex to clipboard)
+        "$mod, P, exec, ${pkgs.hyprpicker}/bin/hyprpicker -a"
+        # Picture-in-picture toggle
+        "$mod SHIFT, P, exec, ${togglePip}"
         "$mod, V, exec, ${pkgs.copyq}/bin/copyq toggle"
         "$mod SHIFT, V, exec, ${pkgs.copyq}/bin/copyq menu"
         "$mod, S, togglespecialworkspace, spotify"
-        "$mod, mouse:272, setfloating"
         # Relative workspace movement
         "$mod, period, workspace, +1"
         "$mod, comma, workspace, -1"
@@ -142,7 +190,10 @@ in
       ];
       exec-once = [
         "${pkgs.copyq}/bin/copyq --start-server"
+        "${pkgs.bash}/bin/bash -c 'sleep 1 && ${pkgs.copyq}/bin/copyq loadTheme ~/.config/copyq/themes/tokyodark.ini && ${pkgs.copyq}/bin/copyq hide'"
         "${pkgs.hyprpolkitagent}/libexec/hyprpolkitagent"
+        # Start waybar hidden (toggle with Super+Space)
+        "${pkgs.bash}/bin/bash -c 'sleep 2 && pkill -SIGUSR1 waybar'"
         # hyprsunset is managed by systemd (see below)
       ];
       binds = {
@@ -205,6 +256,12 @@ in
         "center 1, match:initial_class ^(tui-speedtest)$"
         "size 800 400, match:initial_class ^(tui-speedtest)$"
         "dim_around 1, match:initial_class ^(tui-speedtest)$"
+
+        # Btop TUI
+        "float 1, match:initial_class ^(tui-btop)$"
+        "center 1, match:initial_class ^(tui-btop)$"
+        "size 1200 800, match:initial_class ^(tui-btop)$"
+        "dim_around 1, match:initial_class ^(tui-btop)$"
 
         # Windscribe VPN
         "float 1, match:class ^(Windscribe)$"

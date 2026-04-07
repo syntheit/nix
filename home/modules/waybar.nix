@@ -13,6 +13,7 @@
       mainBar = {
         modules-left = [
           "hyprland/workspaces"
+          "hyprland/submap"
           "mpris"
         ];
         modules-center = [
@@ -20,6 +21,9 @@
           "custom/dnd"
         ];
         modules-right = [
+          "custom/reboot-needed"
+          "custom/mic-toggle"
+          "custom/cam-toggle"
           "custom/network-activity"
           "custom/network-status"
           "bluetooth"
@@ -29,7 +33,11 @@
           "cpu"
           "memory"
         ]
-        ++ lib.optionals (hostName == "ionian") [ "battery" ];
+        ++ lib.optionals (hostName == "ionian") [ "battery" ]
+        ++ [
+          "privacy"
+          "systemd-failed-units"
+        ];
         pulseaudio = {
           format = "󰕾 {volume}%";
           format-bluetooth = "󰕾 {volume}%";
@@ -83,9 +91,9 @@
               ''
                 ${pkgs.bash}/bin/bash -c '
                 # For ionian, prefer Package id from coretemp or CPU from thinkpad sensor
-                temp=$(sensors 2>/dev/null | grep -E "Package id 0:|CPU:" | grep -oE "\+[0-9]+\.[0-9]+" | head -1 | tr -d "+")
+                temp=$(${pkgs.lm_sensors}/bin/sensors 2>/dev/null | grep -E "Package id 0:|CPU:" | grep -oE "\+[0-9]+\.[0-9]+" | head -1 | tr -d "+")
                 if [ -z "$temp" ]; then
-                  temp=$(sensors 2>/dev/null | grep -i "core 0" | grep -oE "[0-9]+\.[0-9]+|[0-9]+" | head -1)
+                  temp=$(${pkgs.lm_sensors}/bin/sensors 2>/dev/null | grep -i "core 0" | grep -oE "[0-9]+\.[0-9]+|[0-9]+" | head -1)
                 fi
                 if [ -z "$temp" ]; then
                   echo "N/A"
@@ -98,7 +106,7 @@
             else
               ''
                 ${pkgs.bash}/bin/bash -c '
-                temp=$(sensors 2>/dev/null | grep -i "core 0" | grep -oE "[0-9]+\.[0-9]+|[0-9]+" | head -1)
+                temp=$(${pkgs.lm_sensors}/bin/sensors 2>/dev/null | grep -i "core 0" | grep -oE "[0-9]+\.[0-9]+|[0-9]+" | head -1)
                 if [ -z "$temp" ]; then
                   temp=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null | awk "{printf \"%.0f\", \$1/1000}")
                 fi
@@ -112,6 +120,8 @@
         };
         cpu = {
           format = "󰍛 {usage}%";
+          tooltip-format = "CPU: {usage}%\nLoad: {load}";
+          on-click = "kitty --class tui-btop -e btop";
         };
         memory = {
           format = "󰟂 {}%";
@@ -139,7 +149,8 @@
             if [ ! -f "$cache" ] || [ $(($(date +%s) - $(stat -c %Y "$cache"))) -gt 3600 ]; then
               ${pkgs.curl}/bin/curl -s --max-time 2 https://api.ipify.org > "$cache" &
             fi
-            global_ip=$(cat "$cache" 2>/dev/null || echo "Fetching...")
+            global_ip=$(cat "$cache" 2>/dev/null)
+            [ -z "$global_ip" ] && global_ip="Fetching..."
 
             if [ "$type" = "wifi" ]; then
               ssid=$(${pkgs.networkmanager}/bin/nmcli -t -f ACTIVE,SSID dev wifi | grep "^yes" | cut -d: -f2)
@@ -217,10 +228,17 @@
           format = "{:%R}";
           format-alt = "{:%R %A, %B %d}";
           timezone = "America/Argentina/Buenos_Aires";
-          tooltip = false;
-          on-click-right = ''
-            ${pkgs.bash}/bin/bash -c '${pkgs.dunst}/bin/dunstctl set-paused toggle && pkill -SIGRTMIN+8 waybar'
-          '';
+          tooltip-format = "<tt><small>{calendar}</small></tt>";
+          calendar = {
+            mode = "month";
+            weeks-pos = "left";
+            format = {
+              months = "<span color='#ffead3'><b>{}</b></span>";
+              today = "<span color='#ff6699'><b><u>{}</u></b></span>";
+              weekdays = "<span color='#ffcc66'><b>{}</b></span>";
+              weeks = "<span color='#99ffdd'><b>W{}</b></span>";
+            };
+          };
           actions = {
             on-click-forward = "tz_up";
             on-click-backward = "tz_down";
@@ -247,12 +265,68 @@
         };
         "custom/weather" = {
           format = "{}";
-          interval = 1800; # Update every 30 minutes
-          exec = ''
-            ${pkgs.curl}/bin/curl -s "wttr.in?format=%t" | head -1 | tr -d '+'
-          '';
+          return-type = "json";
+          interval = 1800;
+          exec = "${pkgs.wttrbar}/bin/wttrbar --nerd --location 'Buenos Aires'";
           tooltip = true;
           on-click = "zen 'https://www.accuweather.com/en/ar/buenos-aires/7894/weather-forecast/7894'";
+        };
+        privacy = {
+          icon-spacing = 4;
+          icon-size = 18;
+          transition-duration = 250;
+          modules = [
+            {
+              type = "screenshare";
+              tooltip = true;
+              tooltip-icon-size = 24;
+            }
+            {
+              type = "audio-in";
+              tooltip = true;
+              tooltip-icon-size = 24;
+            }
+          ];
+        };
+        "systemd-failed-units" = {
+          format = "✗ {nr_failed}";
+          format-ok = "";
+          hide-on-ok = true;
+        };
+        "hyprland/submap" = {
+          format = "{}";
+          max-length = 20;
+          tooltip = false;
+        };
+        "custom/reboot-needed" = {
+          format = "{}";
+          return-type = "json";
+          interval = 60;
+          exec = ''
+            ${pkgs.bash}/bin/bash -c '
+            booted=$(readlink -f /run/booted-system)
+            current=$(readlink -f /run/current-system)
+            if [ "$booted" != "$current" ]; then
+              echo "{\"text\":\"󰜉\",\"tooltip\":\"System changed since boot — reboot recommended\"}"
+            else
+              echo "{\"text\":\"\",\"tooltip\":\"\"}"
+            fi
+            '
+          '';
+        };
+        "custom/mic-toggle" = {
+          format = "{}";
+          return-type = "json";
+          interval = 2;
+          exec = "usb-toggle mic waybar";
+          on-click = "sudo usb-toggle mic toggle";
+        };
+        "custom/cam-toggle" = {
+          format = "{}";
+          return-type = "json";
+          interval = 2;
+          exec = "usb-toggle cam waybar";
+          on-click = "sudo usb-toggle cam toggle";
         };
       };
     };
@@ -298,6 +372,9 @@
             padding: 2px 6px;
         }
 
+        #custom-reboot-needed,
+        #custom-mic-toggle,
+        #custom-cam-toggle,
         #custom-network-activity,
         #custom-network-status,
         #bluetooth,
@@ -350,25 +427,23 @@
           margin: 0;
         }
         
-        #custom-copyq:hover {
-            background-color: rgba(255, 255, 255, 0.1);
-        }
-        #mode {
-            color: #cc3436;
-            font-weight: bold;
-        }
-        #custom-power {
-          background-color: transparent;
-          border-radius: 100px;
-          margin: 5px 5px;
-          padding: 0 6px 0 0;
-        }
-        /*-----Indicators----*/
+      /*-----Indicators----*/
         #battery {
             letter-spacing: 0.1em;
         }
-        #idle_inhibitor.activated {
-            color: #2dcc36;
+        #privacy {
+            color: #e06c75;
+        }
+        #systemd-failed-units {
+            color: #cc3436;
+        }
+        #submap {
+            color: #e5c07b;
+            font-style: italic;
+        }
+        #custom-mic-toggle.off,
+        #custom-cam-toggle.off {
+            opacity: 0.4;
         }
         #battery.charging {
             color: #2dcc36;
@@ -379,7 +454,7 @@
         #battery.critical:not(.charging) {
             color: #cc3436;
         }
-        #temperature.critical {
+        #custom-temperature.critical {
             color: #cc3436;
         }
         #mpris {
