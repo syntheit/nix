@@ -108,6 +108,7 @@ in
       bind = [
         "$mod, R, exec, rofi -show drun"
         "$mod, Space, exec, pkill -SIGUSR1 waybar"
+        "CTRL $mod, Space, togglefloating"
         "$mod, T, exec, kitty"
         "$mod, B, exec, zen"
         "$mod, E, exec, nautilus"
