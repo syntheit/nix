@@ -98,6 +98,10 @@ in
         inactive_opacity = 1.0;
       };
 
+      animation = [
+        "specialWorkspace, 0"
+      ];
+
       "$mod" = "SUPER";
 
       # Non-consuming bind for Escape (allows key to pass to apps like Vim)
