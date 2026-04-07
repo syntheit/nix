@@ -56,6 +56,7 @@ in
       "whatsapp"
       "windscribe"
       "zen"
+      "zed"
     ];
     brews = [
       "awscli-local"
