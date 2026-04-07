@@ -143,6 +143,7 @@
     kdePackages.qtstyleplugin-kvantum
     libsForQt5.qtstyleplugin-kvantum
     ladybird
+    zed-editor
     obsidian
   ];
 }
