@@ -48,6 +48,7 @@
     # Development
     prisma-engines
     typst
+    gh
     jq
     htmlq
     kubectl
