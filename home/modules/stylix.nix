@@ -47,7 +47,6 @@
   };
 
   # Enable Targets (Stylix will theme these applications)
-  stylix.targets.waybar.enable = false;
   stylix.targets.rofi.enable = false;  # Disabled to use manual theme in rofi.nix
   stylix.targets.hyprland.enable = true;
   stylix.targets.kitty.enable = true;

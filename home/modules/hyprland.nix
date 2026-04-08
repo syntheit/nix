@@ -24,6 +24,17 @@ let
     fi
   '';
 
+  toggleMonitorRecording = pkgs.writeShellScript "toggle-monitor-recording" ''
+    if ${pkgs.procps}/bin/pgrep -x wf-recorder > /dev/null; then
+      ${pkgs.procps}/bin/pkill -INT wf-recorder
+      ${pkgs.libnotify}/bin/notify-send "Recording stopped" "Saved to ~/Videos/"
+    else
+      output=$(${config.wayland.windowManager.hyprland.package}/bin/hyprctl monitors -j | ${pkgs.jq}/bin/jq -r '.[] | select(.focused) | .name')
+      ${pkgs.wf-recorder}/bin/wf-recorder -o "$output" -f "$HOME/Videos/recording-$(date +%Y%m%d-%H%M%S).mp4" &
+      ${pkgs.libnotify}/bin/notify-send "Recording started" "$output"
+    fi
+  '';
+
   togglePip = pkgs.writeShellScript "toggle-pip" ''
     hyprctl=${config.wayland.windowManager.hyprland.package}/bin/hyprctl
     jq=${pkgs.jq}/bin/jq
@@ -54,6 +65,175 @@ let
     fi
   '';
 
+  clockScript = pkgs.writeShellScript "dashboard-clock" ''
+    suffix() {
+      case $1 in
+        1|21|31) echo "st" ;;
+        2|22)    echo "nd" ;;
+        3|23)    echo "rd" ;;
+        *)       echo "th" ;;
+      esac
+    }
+    day=$(date +%-d)
+    date_fmt="$(LC_TIME=en_US.UTF-8 date +"%B") ''${day}$(suffix "$day"), $(LC_TIME=en_US.UTF-8 date +%Y)"
+    exec tty-clock -s -c -C 4 -b -f "$date_fmt"
+  '';
+
+  dashboardInfoScript = pkgs.writeShellScript "dashboard-info" ''
+    tput civis
+    trap 'tput cnorm' EXIT
+
+    # Slow data cached to files (fetched in background, never blocks render)
+    cache_dir="/tmp/dashboard-cache"
+    mkdir -p "$cache_dir"
+    weather_last=0
+    wallpaper_last=0
+    capture_last=0
+
+    while true; do
+      now=$(date +%s)
+
+      # ── Background fetches for slow data ──
+      if [ $((now - weather_last)) -gt 1800 ]; then
+        (curl -s --max-time 10 "wttr.in/Buenos+Aires,Argentina?0" > "$cache_dir/weather" 2>/dev/null) &
+        weather_last=$now
+      fi
+      if [ $((now - wallpaper_last)) -gt 300 ]; then
+        (wallpaper-cycle info 2>/dev/null | sed -n 's/^URL:  *//p' > "$cache_dir/wallpaper") &
+        wallpaper_last=$now
+      fi
+      if [ $((now - capture_last)) -gt 5 ]; then
+        (pw-dump 2>/dev/null | ${pkgs.jq}/bin/jq -r '.[] | select(.info.props["media.class"] == "Stream/Input/Audio") | .info.props["application.name"] // empty' > "$cache_dir/capture" 2>/dev/null) &
+        capture_last=$now
+      fi
+
+      # ── Fast data (collected inline) ──
+      player_status=$(${pkgs.playerctl}/bin/playerctl status 2>/dev/null)
+      now_playing=""
+      if [ "$player_status" = "Playing" ] || [ "$player_status" = "Paused" ]; then
+        title=$(${pkgs.playerctl}/bin/playerctl metadata title 2>/dev/null)
+        artist=$(${pkgs.playerctl}/bin/playerctl metadata artist 2>/dev/null)
+        icon="▶"; [ "$player_status" = "Paused" ] && icon="⏸"
+        now_playing="  $icon $title — $artist"
+      fi
+
+      vol_info=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null)
+      vol_num=$(echo "$vol_info" | ${pkgs.gawk}/bin/awk '{printf "%.0f", $2 * 100}')
+      vol_line=""
+      if echo "$vol_info" | grep -q MUTED; then
+        vol_line="  󰝟 Muted"
+      else
+        filled=$((vol_num / 5))
+        bar=""
+        for i in $(seq 1 20); do
+          if [ "$i" -le "$filled" ]; then bar="''${bar}█"; else bar="''${bar}░"; fi
+        done
+        vol_line="  󰕾 ''${vol_num}%  ''${bar}"
+      fi
+
+      mic_json=$(usb-toggle mic waybar 2>/dev/null)
+      cam_json=$(usb-toggle cam waybar 2>/dev/null)
+      mic_icon=$(echo "$mic_json" | ${pkgs.jq}/bin/jq -r '.text // ""')
+      cam_icon=$(echo "$cam_json" | ${pkgs.jq}/bin/jq -r '.text // ""')
+      mic_tip=$(echo "$mic_json" | ${pkgs.jq}/bin/jq -r '.tooltip // ""')
+      cam_tip=$(echo "$cam_json" | ${pkgs.jq}/bin/jq -r '.tooltip // ""')
+      dev_line=""
+      [ -n "$mic_icon" ] && dev_line="  $mic_icon $mic_tip  [m]"
+      [ -n "$cam_icon" ] && dev_line="''${dev_line}    $cam_icon $cam_tip  [c]"
+
+      # ── Read cached slow data from files ──
+      capture_apps=$(cat "$cache_dir/capture" 2>/dev/null)
+      weather_cache=$(cat "$cache_dir/weather" 2>/dev/null)
+      wallpaper_cache=$(cat "$cache_dir/wallpaper" 2>/dev/null)
+
+      # ── Render everything at once ──
+      buf=""
+      [ -n "$now_playing" ] && buf+="$now_playing\033[K\n\033[K\n"
+      buf+="$vol_line\033[K\n\033[K\n"
+      [ -n "$dev_line" ] && buf+="$dev_line\033[K\n"
+      if [ -n "$capture_apps" ]; then
+        buf+="\033[K\n  ⚠  Audio capture: $capture_apps\033[K\n"
+      fi
+      buf+="\033[K\n"
+      if [ -n "$weather_cache" ]; then
+        buf+="── Weather ──\033[K\n"
+        while IFS= read -r wline; do buf+="$wline\033[K\n"; done <<< "$weather_cache"
+        buf+="\033[K\n"
+      fi
+      if [ -n "$wallpaper_cache" ] && [ "$wallpaper_cache" != "(local file)" ]; then
+        buf+="── Wallpaper [w] ──\033[K\n$wallpaper_cache\033[K\n"
+      fi
+
+      printf '\033[H%b\033[J' "$buf"
+
+      read -rsn1 -t 1 key
+      case $key in
+        m|M) sudo usb-toggle mic toggle 2>/dev/null ;;
+        c|C) sudo usb-toggle cam toggle 2>/dev/null ;;
+        w|W) [ -n "$wallpaper_cache" ] && xdg-open "$wallpaper_cache" 2>/dev/null & ;;
+      esac
+    done
+  '';
+
+  dashboardScript = pkgs.writeShellScript "dashboard" ''
+    T="${pkgs.tmux}/bin/tmux"
+    S="dashboard"
+
+    if $T -L $S has-session -t $S 2>/dev/null; then
+      exec $T -L $S attach -t $S
+    fi
+
+    $T -L $S new-session -d -s $S
+
+    # Clean look: no status bar, invisible pane borders
+    $T -L $S set status off
+    $T -L $S set mouse on
+    $T -L $S set pane-border-style "fg=black"
+    $T -L $S set pane-active-border-style "fg=black"
+
+    # Escape hides dashboard
+    $T -L $S bind -T root Escape run-shell "${config.wayland.windowManager.hyprland.package}/bin/hyprctl dispatch togglespecialworkspace dashboard"
+
+    # Scroll anywhere adjusts volume
+    $T -L $S bind -T root WheelUpPane run-shell -b "wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+"
+    $T -L $S bind -T root WheelDownPane run-shell -b "wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%-"
+
+    # Left: btop
+    $T -L $S send-keys "btop" Enter
+
+    # Right top: clock
+    $T -L $S split-window -h -l 40%
+    $T -L $S send-keys "${clockScript}" Enter
+
+    # Right middle: status panel
+    $T -L $S split-window -v -l 70%
+    $T -L $S send-keys "${dashboardInfoScript}" Enter
+
+    # Right bottom: pipes screensaver (sparse: 2 pipes, resets every ~40s)
+    $T -L $S split-window -v -l 40%
+    $T -L $S send-keys "pipes.sh -t 0 -t 1 -p 2 -R -f 30 -r 3000 -c 1 -c 2 -c 3 -c 4 -c 5 -c 6 -c 7" Enter
+
+    # Compact the clock pane to just what's needed
+    $T -L $S resize-pane -t 1 -y 15
+
+    # Focus status pane for mic/cam key toggles
+    $T -L $S select-pane -t 2
+
+    exec $T -L $S attach -t $S
+  '';
+
+  toggleDashboard = pkgs.writeShellScript "toggle-dashboard" ''
+    hyprctl=${config.wayland.windowManager.hyprland.package}/bin/hyprctl
+    jq=${pkgs.jq}/bin/jq
+
+    # Relaunch if dashboard window was closed
+    if ! $hyprctl clients -j | $jq -e '.[] | select(.class == "dashboard")' > /dev/null 2>&1; then
+      ${pkgs.kitty}/bin/kitty --class dashboard -e ${dashboardScript} &
+    fi
+
+    $hyprctl dispatch togglespecialworkspace dashboard
+  '';
+
   handleEscapeScript = pkgs.writeShellScript "handle-escape" ''
     # Check if Rofi is running and kill it
     if ${pkgs.procps}/bin/pgrep -x rofi >/dev/null; then
@@ -74,9 +254,82 @@ let
       fi
     fi
   '';
+  keybinds = pkgs.writeShellScriptBin "keybinds" ''
+    cat <<'CHEATSHEET'
+ ┌─────────────────────────────────────────────────────────┐
+ │                      KEYBINDINGS                        │
+ ├─────────────────────────────────────────────────────────┤
+ │  Apps                                                   │
+ │    Super + R          Rofi launcher                     │
+ │    Super + T          Terminal (Kitty)                  │
+ │    Super + B          Bluetooth (bluetuith)             │
+ │    Super + E          File manager (Nautilus)           │
+ │    Super + V          Clipboard (CopyQ)                 │
+ │    Super + Shift + V  Clipboard menu                    │
+ │    Super + C          Clipboard (CopyQ)                 │
+ │    Super + X          Power menu                        │
+ │    Home               Dashboard                         │
+ ├─────────────────────────────────────────────────────────┤
+ │  Windows                                                │
+ │    Super + Q          Kill window                       │
+ │    Super + F          Fullscreen                        │
+ │    Ctrl + Super + Space   Toggle floating               │
+ │    Super + H/J/K/L    Focus left/down/up/right          │
+ │    Super + Mouse L    Move window                       │
+ │    Super + Mouse R    Resize window                     │
+ │    Super + Shift + P  Picture-in-picture                │
+ │    Super + Shift + L  Lock screen                       │
+ ├─────────────────────────────────────────────────────────┤
+ │  Workspaces                                             │
+ │    Super + 1-0        Focus workspace 1-10              │
+ │    Super + Shift + 1-0    Move to workspace 1-10        │
+ │    Super + .          Next workspace                    │
+ │    Super + ,          Previous workspace                │
+ │    Super + Shift + .  Move window to next workspace     │
+ │    Super + Shift + ,  Move window to prev workspace     │
+ ├─────────────────────────────────────────────────────────┤
+ │  Screenshots                                            │
+ │    Super + S          Area → clipboard                  │
+ │    Super + Shift + S  Area → ~/Pictures/Screenshots     │
+ │    Super + A          Area → annotate (Satty)           │
+ │    Super + Shift + A  Full monitor → clipboard          │
+ │    Super + W          Active window → clipboard         │
+ │    Super + Shift + W  Active window → file              │
+ │    Super + O          Current monitor → clipboard       │
+ │    Super + Shift + O  Current monitor → file            │
+ │    Super + Shift + R  Record area (slurp)                │
+ │    Super + Alt + R    Record active monitor              │
+ │    Super + P          Color picker → clipboard          │
+ ├─────────────────────────────────────────────────────────┤
+ │  Wallpaper                                              │
+ │    Super + Alt + .    Next wallpaper                    │
+ │    Super + Alt + ,    Previous wallpaper                │
+ ├─────────────────────────────────────────────────────────┤
+ │  Media                                                  │
+ │    Volume Up/Down     ±5% volume                        │
+ │    Mute key           Toggle mute                       │
+ │    Play key           Play/pause                        │
+ │    Next/Prev key      Next/previous track               │
+ │    MX Vertical btn    Toggle Spotify                    │
+ ├─────────────────────────────────────────────────────────┤
+ │  Kitty                                                  │
+ │    Ctrl + Tab         Next tab                          │
+ │    Ctrl + Shift + Tab Previous tab                      │
+ │    Ctrl + Shift + T   New tab                           │
+ │    Ctrl + Shift + W   Close tab                         │
+ └─────────────────────────────────────────────────────────┘
+CHEATSHEET
+  '';
 in
 {
+  home.packages = [ keybinds ];
+
   # Hyprland configuration
+  # Kill dashboard tmux session on rebuild so it picks up changes on next toggle
+  home.activation.restartDashboard = lib.hm.dag.entryAfter ["writeBoundary"] ''
+    ${pkgs.tmux}/bin/tmux -L dashboard kill-server 2>/dev/null || true
+  '';
+
   wayland.windowManager.hyprland = {
     enable = true;
     xwayland.enable = true;
@@ -100,6 +353,13 @@ in
 
       animation = [
         "specialWorkspace, 0"
+        "workspaces, 0"
+        "windowsMove, 0"
+        "fade, 0"
+        "fadeIn, 1, 3, default"
+        "fadeOut, 1, 3, default"
+        "fadeLayersIn, 1, 3, default"
+        "fadeLayersOut, 1, 3, default"
       ];
 
       "$mod" = "SUPER";
@@ -111,10 +371,9 @@ in
 
       bind = [
         "$mod, R, exec, rofi -show drun"
-        "$mod, Space, exec, pkill -SIGUSR1 waybar"
         "CTRL $mod, Space, togglefloating"
         "$mod, T, exec, kitty"
-        "$mod, B, exec, zen"
+        "$mod, B, exec, kitty --class tui-bluetooth --override confirm_os_window_close=0 -e bluetuith"
         "$mod, E, exec, nautilus"
         "$mod, C, exec, ${pkgs.copyq}/bin/copyq toggle"
         "$mod SHIFT, L, exec, ${pkgs.hyprlock}/bin/hyprlock"
@@ -125,29 +384,36 @@ in
         "$mod, l, movefocus, r"
         "$mod, j, movefocus, d"
         "$mod, k, movefocus, u"
-        # Screenshot keybindings (area goes through satty for annotation)
-        "$mod SHIFT, S, exec, grimblast --freeze save area /tmp/screenshot-annotate.png && ${pkgs.satty}/bin/satty -f /tmp/screenshot-annotate.png"
-        "$mod SHIFT, A, exec, grimblast --freeze copy screen"
+        # Screenshot keybindings (area selections freeze screen via hyprpicker)
+        "$mod, S, exec, ${pkgs.hyprpicker}/bin/hyprpicker -r -z & HPID=$!; trap 'kill $HPID 2>/dev/null' EXIT; sleep 0.2; ${pkgs.grim}/bin/grim -g \"$(${pkgs.slurp}/bin/slurp)\" - | ${pkgs.wl-clipboard}/bin/wl-copy"
+        "$mod SHIFT, S, exec, ${pkgs.hyprpicker}/bin/hyprpicker -r -z & HPID=$!; trap 'kill $HPID 2>/dev/null' EXIT; sleep 0.2; ${pkgs.grim}/bin/grim -g \"$(${pkgs.slurp}/bin/slurp)\" ~/Pictures/Screenshots/screenshot-$(date +%Y%m%d-%H%M%S).png"
+        "$mod, A, exec, ${pkgs.hyprpicker}/bin/hyprpicker -r -z & HPID=$!; trap 'kill $HPID 2>/dev/null' EXIT; sleep 0.2; ${pkgs.grim}/bin/grim -g \"$(${pkgs.slurp}/bin/slurp)\" /tmp/screenshot-annotate.png && ${pkgs.satty}/bin/satty -f /tmp/screenshot-annotate.png"
+        "$mod SHIFT, A, exec, ${pkgs.grim}/bin/grim - | ${pkgs.wl-clipboard}/bin/wl-copy"
         # Active window screenshots
-        "$mod SHIFT, W, exec, grimblast copysave active"
-        "$mod, W, exec, grimblast copy active"
+        "$mod, W, exec, ${pkgs.grim}/bin/grim -g \"$(hyprctl activewindow -j | ${pkgs.jq}/bin/jq -r '.at as [$x,$y] | .size as [$w,$h] | \"\\($x),\\($y) \\($w)x\\($h)\"')\" - | ${pkgs.wl-clipboard}/bin/wl-copy"
+        "$mod SHIFT, W, exec, ${pkgs.grim}/bin/grim -g \"$(hyprctl activewindow -j | ${pkgs.jq}/bin/jq -r '.at as [$x,$y] | .size as [$w,$h] | \"\\($x),\\($y) \\($w)x\\($h)\"')\" ~/Pictures/Screenshots/screenshot-$(date +%Y%m%d-%H%M%S).png"
         # Current monitor/output screenshots
-        "$mod SHIFT, O, exec, grimblast copysave output"
-        "$mod, O, exec, grimblast copy output"
-        # Screen recording toggle
+        "$mod, O, exec, ${pkgs.grim}/bin/grim -o \"$(hyprctl monitors -j | ${pkgs.jq}/bin/jq -r '.[] | select(.focused) | .name')\" - | ${pkgs.wl-clipboard}/bin/wl-copy"
+        "$mod SHIFT, O, exec, ${pkgs.grim}/bin/grim -o \"$(hyprctl monitors -j | ${pkgs.jq}/bin/jq -r '.[] | select(.focused) | .name')\" ~/Pictures/Screenshots/screenshot-$(date +%Y%m%d-%H%M%S).png"
+        # Screen recording toggles
         "$mod SHIFT, R, exec, ${toggleRecording}"
+        "$mod ALT, R, exec, ${toggleMonitorRecording}"
         # Color picker (copies hex to clipboard)
         "$mod, P, exec, ${pkgs.hyprpicker}/bin/hyprpicker -a"
         # Picture-in-picture toggle
         "$mod SHIFT, P, exec, ${togglePip}"
         "$mod, V, exec, ${pkgs.copyq}/bin/copyq toggle"
         "$mod SHIFT, V, exec, ${pkgs.copyq}/bin/copyq menu"
-        "$mod, S, togglespecialworkspace, spotify"
+        ", Home, exec, ${toggleDashboard}"
         # Relative workspace movement
         "$mod, period, workspace, +1"
         "$mod, comma, workspace, -1"
         "$mod SHIFT, period, movetoworkspace, +1"
         "$mod SHIFT, comma, movetoworkspace, -1"
+
+        # Wallpaper cycling
+        "$mod ALT, period, exec, wallpaper-cycle next"
+        "$mod ALT, comma, exec, wallpaper-cycle prev"
       ]
       ++ (
         # workspaces
@@ -197,8 +463,8 @@ in
         "${pkgs.copyq}/bin/copyq --start-server"
         "${pkgs.bash}/bin/bash -c 'sleep 1 && ${pkgs.copyq}/bin/copyq loadTheme ~/.config/copyq/themes/tokyodark.ini && ${pkgs.copyq}/bin/copyq hide'"
         "${pkgs.hyprpolkitagent}/libexec/hyprpolkitagent"
-        # Start waybar hidden (toggle with Super+Space)
-        "${pkgs.bash}/bin/bash -c 'sleep 2 && pkill -SIGUSR1 waybar'"
+        # Start dashboard in background
+        "${pkgs.kitty}/bin/kitty --class dashboard -e ${dashboardScript}"
         # hyprsunset is managed by systemd (see below)
       ];
       binds = {
@@ -274,8 +540,12 @@ in
         "no_blur on, match:class ^(Windscribe)$"
         "no_shadow on, match:class ^(Windscribe)$"
 
-        # Spotify → hidden special workspace (toggled with Super+S)
+        # Spotify → hidden special workspace
         "workspace special:spotify silent, match:class (?i)^spotify$"
+        "workspace special:spotify silent, match:title ^Spotify.*Zen$"
+
+        # Dashboard → hidden special workspace (toggled with Super+Home)
+        "workspace special:dashboard silent, match:initial_class ^(dashboard)$"
       ];
       env = [
         "XDG_SESSION_TYPE,wayland"
