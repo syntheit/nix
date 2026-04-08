@@ -20,6 +20,12 @@
         # We use strict interpolation to point to the exact binary
         proxyCommand = "${pkgs.cloudflared}/bin/cloudflared access ssh --hostname %h";
       };
+      "raven.matv.io" = {
+        hostname = "raven.matv.io";
+        identityFile = "~/.ssh/mainkey";
+        user = "droid";
+        proxyCommand = "${pkgs.cloudflared}/bin/cloudflared access ssh --hostname %h";
+      };
       "github.com" = {
         hostname = "github.com";
         user = "git";
