@@ -16,14 +16,18 @@
   avf.defaultUser = "droid";
   avf.enableGraphics = false;
 
-  # SSH
+  # SSH — key-only auth
   services.openssh = {
     enable = true;
     settings = {
       PermitRootLogin = "no";
-      PasswordAuthentication = true;
+      PasswordAuthentication = false;
     };
   };
+
+  users.users."droid".openssh.authorizedKeys.keys = [
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdRcH2UWe31VdU62j3Ksbb6LDyS1APNW1BQMM8mvsej daniel@matv.io"
+  ];
 
   # Docker (start at boot — this is a server)
   virtualisation.docker = {
@@ -58,6 +62,9 @@
     enable = true;
     tunnels = {
       "raven" = {
+        ingress = {
+          "raven.matv.io" = "ssh://localhost:22";
+        };
         default = "http_status:404";
         credentialsFile = "/etc/cloudflared/credentials.json";
       };
