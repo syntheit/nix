@@ -23,14 +23,15 @@ let
     WHITE='\033[37m'
 
     color_temp() {
-      local t=$1
+      local t=''${1:-0}
       if [ "$t" -ge 45 ]; then printf "''${RED}"; elif [ "$t" -ge 38 ]; then printf "''${YELLOW}"; else printf "''${GREEN}"; fi
     }
 
     bar() {
-      local pct=$1 width=''${2:-30} filled=$(( $1 * $2 / 100 )) empty=0
-      filled=$(( pct * width / 100 ))
-      empty=$(( width - filled ))
+      local pct=''${1:-0}
+      local width=''${2:-30}
+      local filled=$(( pct * width / 100 ))
+      local empty=$(( width - filled ))
       local color
       if [ "$pct" -ge 60 ]; then color="''${GREEN}"; elif [ "$pct" -ge 25 ]; then color="''${YELLOW}"; else color="''${RED}"; fi
       printf "''${color}"
@@ -121,7 +122,7 @@ let
 
       # Battery
       printf "  ''${BOLD}BATTERY''${R}\n"
-      printf "  $(bar $capacity 30)  ''${BOLD}%s%%''${R}  %s%s''${R}\n" "$capacity" "$status_color" "$status"
+      printf "  $(bar $capacity 30)  ''${BOLD}%s%%''${R}  ''${status_color}%s''${R}\n" "$capacity" "$status"
       printf "  ''${DIM}''${temp_c}.''${temp_d}°C   ''${voltage}V   ''${current}mA   ''${cycles} cycles"
       if [ -n "$health_pct" ]; then printf "   health ''${health_pct}%%"; fi
       printf "''${R}\n\n"
@@ -130,8 +131,8 @@ let
       printf "  ''${BOLD}CPU''${R}\n"
 
       local i=0
-      local t_big="" t_mid="" t_lit="" t_gpu="" t_tpu="" t_isp=""
-      local t_disp="" t_batt="" t_usb="" t_quiet="" t_neutral=""
+      local t_big=0 t_mid=0 t_lit=0 t_gpu=0 t_tpu=0 t_isp=0
+      local t_disp=0 t_batt=0 t_usb=0 t_quiet=0 t_neutral=0
       while IFS= read -r ttype; do
         i=$((i+1))
         local tval=$(echo "$temps" | sed -n "''${i}p")
