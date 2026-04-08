@@ -36,6 +36,42 @@
           }
         ];
       };
+      # Disable Bluetooth microphone input so the Blue Snowball is the only mic source.
+      # Bluetooth headsets still work for audio output (A2DP/sink).
+      extraConfig."52-disable-bluetooth-mic" = {
+        "monitor.bluez.rules" = [
+          {
+            matches = [
+              {
+                "node.name" = "~bluez_input.*";
+              }
+            ];
+            actions = {
+              update-props = {
+                "node.disabled" = true;
+              };
+            };
+          }
+        ];
+      };
+      # Disable ALSA input devices (line-in, etc.) except the Blue Snowball
+      extraConfig."53-disable-alsa-inputs" = {
+        "monitor.alsa.rules" = [
+          {
+            matches = [
+              {
+                "node.name" = "~alsa_input.*";
+                "device.vendor.id" = "!0x0d8c";
+              }
+            ];
+            actions = {
+              update-props = {
+                "node.disabled" = true;
+              };
+            };
+          }
+        ];
+      };
     };
     # Enable JACK support for JACK applications
     #jack.enable = true;

@@ -17,12 +17,56 @@ let
       CACHE_DIR="$HOME/.cache/wallpapers"
       STATE_FILE="$CACHE_DIR/current"
       LOCAL_DIR="$HOME/Pictures/Wallpapers"
+      HISTORY_FILE="$CACHE_DIR/history"
+      HISTORY_POS_FILE="$CACHE_DIR/history_pos"
       mkdir -p "$CACHE_DIR" "$LOCAL_DIR"
 
       save_state() {
         # Save current wallpaper info: path, source url (if any)
         local path="$1" url="''${2:-}"
         printf '%s\n%s\n' "$path" "$url" > "$STATE_FILE"
+        ln -sf "$path" "$CACHE_DIR/current_wallpaper"
+      }
+
+      get_history_pos() {
+        if [ -f "$HISTORY_POS_FILE" ]; then
+          cat "$HISTORY_POS_FILE"
+        else
+          echo "-1"
+        fi
+      }
+
+      get_history_len() {
+        if [ -f "$HISTORY_FILE" ]; then
+          wc -l < "$HISTORY_FILE"
+        else
+          echo "0"
+        fi
+      }
+
+      history_push() {
+        local path="$1"
+        local pos len
+        pos=$(get_history_pos)
+        len=$(get_history_len)
+
+        # Truncate forward history if we navigated back
+        if [ "$pos" -ge 0 ] && [ "$pos" -lt $((len - 1)) ]; then
+          head -n $((pos + 1)) "$HISTORY_FILE" > "$HISTORY_FILE.tmp"
+          mv "$HISTORY_FILE.tmp" "$HISTORY_FILE"
+        fi
+
+        echo "$path" >> "$HISTORY_FILE"
+
+        # Keep history at most 50 entries
+        len=$(get_history_len)
+        if [ "$len" -gt 50 ]; then
+          tail -n 50 "$HISTORY_FILE" > "$HISTORY_FILE.tmp"
+          mv "$HISTORY_FILE.tmp" "$HISTORY_FILE"
+          len=50
+        fi
+
+        echo $((len - 1)) > "$HISTORY_POS_FILE"
       }
 
       get_current_path() {
@@ -53,7 +97,7 @@ let
 
         # Query Wallhaven API for a random high-res wallpaper
         api_response=$(curl -sf --max-time 10 \
-          "https://wallhaven.cc/api/v1/search?categories=100&purity=100&sorting=random&atleast=2560x1440&ratios=16x9,16x10&q=nature+landscape") || return 1
+          "https://wallhaven.cc/api/v1/search?categories=100&purity=100&sorting=random&atleast=2560x1440&ratios=16x9,16x10&q=-anime+-cartoon+-manga+-people+-girl+-boy") || return 1
 
         img_url=$(echo "$api_response" | jq -r '.data[0].path // empty')
         page_url=$(echo "$api_response" | jq -r '.data[0].url // empty')
@@ -79,8 +123,8 @@ let
           return 1
         fi
 
-        # Clean up old cached wallpapers (keep last 10)
-        find "$CACHE_DIR" -name "wallhaven_*" -type f | sort -r | tail -n +11 | xargs rm -f 2>/dev/null || true
+        # Clean up old cached wallpapers (keep last 50)
+        find "$CACHE_DIR" -name "wallhaven_*" -type f | sort -r | tail -n +51 | xargs rm -f 2>/dev/null || true
 
         save_state "$fetch_file" "$page_url"
         echo "Fetched wallpaper from Wallhaven ($file_size bytes)"
@@ -120,7 +164,21 @@ let
       }
 
       cmd_next() {
-        local wallpaper
+        local wallpaper pos len
+        pos=$(get_history_pos)
+        len=$(get_history_len)
+
+        # If we navigated back, go forward in history first
+        if [ "$pos" -ge 0 ] && [ "$pos" -lt $((len - 1)) ]; then
+          pos=$((pos + 1))
+          echo "$pos" > "$HISTORY_POS_FILE"
+          wallpaper=$(sed -n "$((pos + 1))p" "$HISTORY_FILE")
+          save_state "$wallpaper" ""
+          apply_wallpaper "$wallpaper"
+          return
+        fi
+
+        # Otherwise fetch a new wallpaper
         if wallpaper=$(fetch_wallpaper); then
           wallpaper=$(echo "$wallpaper" | tail -1)
         elif wallpaper=$(pick_local); then
@@ -129,6 +187,21 @@ let
           echo "No wallpapers available (Wallhaven failed and no local files)" >&2
           exit 1
         fi
+        history_push "$wallpaper"
+        apply_wallpaper "$wallpaper"
+      }
+
+      cmd_prev() {
+        local pos wallpaper
+        pos=$(get_history_pos)
+        if [ "$pos" -le 0 ]; then
+          echo "No previous wallpaper" >&2
+          exit 1
+        fi
+        pos=$((pos - 1))
+        echo "$pos" > "$HISTORY_POS_FILE"
+        wallpaper=$(sed -n "$((pos + 1))p" "$HISTORY_FILE")
+        save_state "$wallpaper" ""
         apply_wallpaper "$wallpaper"
       }
 
@@ -187,6 +260,7 @@ let
         echo ""
         echo "Commands:"
         echo "  next     Fetch a new wallpaper and apply it (default)"
+        echo "  prev     Go back to the previous wallpaper"
         echo "  current  Print the current wallpaper path"
         echo "  info     Show details (path, URL, size, type)"
         echo "  open     Open the source URL in the browser (or folder for local files)"
@@ -195,6 +269,7 @@ let
 
       case "''${1:-next}" in
         next)    cmd_next ;;
+        prev)    cmd_prev ;;
         current) cmd_current ;;
         info)    cmd_info ;;
         open)    cmd_open ;;

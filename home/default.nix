@@ -16,7 +16,6 @@
     ./modules/git.nix
     ./modules/packages.nix
     ./modules/hyprland.nix
-    ./modules/waybar.nix
     ./modules/rofi.nix
     ./modules/kitty.nix
     ./modules/thunderbird.nix
@@ -27,6 +26,8 @@
     ./modules/dunst.nix
     ./modules/copyq.nix
     ./modules/wallpaper.nix
+    ./modules/zed.nix
+    ./modules/spotify.nix
     ./shell.nix
   ];
 

@@ -55,6 +55,38 @@ let
         ;;
     esac
   '';
+  # GParted wrapper: pkexec strips DISPLAY on Wayland, so we re-inject it via a root helper
+  gpartedRoot = pkgs.writeShellScript "gparted-root" ''
+    export DISPLAY=''${DISPLAY:-:0}
+    exec ${pkgs.gparted}/bin/.gparted-wrapped "$@"
+  '';
+  gpartedWayland = pkgs.stdenv.mkDerivation {
+    name = "gparted-wayland";
+    dontUnpack = true;
+    installPhase = ''
+      mkdir -p $out/bin $out/share/applications
+      cat > $out/bin/gparted <<'WRAPPER'
+#!/bin/sh
+${pkgs.xorg.xhost}/bin/xhost +SI:localuser:root >/dev/null 2>&1
+pkexec --disable-internal-agent ${gpartedRoot} "$@"
+status=$?
+${pkgs.xorg.xhost}/bin/xhost -SI:localuser:root >/dev/null 2>&1
+exit $status
+WRAPPER
+      chmod +x $out/bin/gparted
+      cp -r ${pkgs.gparted}/share/icons $out/share/
+      cat > $out/share/applications/gparted.desktop <<DESKTOP
+[Desktop Entry]
+Name=GParted
+Comment=GNOME Partition Editor
+Exec=$out/bin/gparted
+Icon=gparted
+Terminal=false
+Type=Application
+Categories=GNOME;System;
+DESKTOP
+    '';
+  };
 in
 {
   imports = extraLibs.scanPaths ./.;
@@ -139,7 +171,7 @@ in
     android-tools
     # Affinity Suite
     inputs.affinity-nix.packages.${pkgs.stdenv.hostPlatform.system}.v3
-    xhost # Required for GParted access to display on Wayland
+    gpartedWayland # GParted with Wayland DISPLAY fix (replaces xhost + gparted)
     ntfs3g # NTFS read/write support and utilities
     cifs-utils # Samba/Windows network shares
     nfs-utils # NFS network shares

@@ -14,6 +14,10 @@
     # CLI tools
     btop
     fastfetch
+    figlet
+    pipes
+    tmux
+    tty-clock
     lazygit
     yazi
     tldr
@@ -106,6 +110,7 @@
     (pkgs.callPackage ../../packages/hyprland-dynamic-borders { })
 
     # System & apps
+    scrcpy
     tor-browser
     brave
     inputs.zen-browser.packages.${pkgs.stdenv.hostPlatform.system}.default
@@ -129,7 +134,6 @@
     resources
     gnome-2048
     gnome-calculator
-    gparted
     gnome-disk-utility
     papers
     snapshot
@@ -143,7 +147,6 @@
     kdePackages.qtstyleplugin-kvantum
     libsForQt5.qtstyleplugin-kvantum
     ladybird
-    zed-editor
     obsidian
   ];
 }

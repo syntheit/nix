@@ -93,10 +93,38 @@
       bindkey '\e\e' sudo-command-line
 
       # --- Cursor shape (blinking underline) ---
-      echo -ne '\e[3 q'
-      function zle-line-init() {
-        zle reset-prompt
-        echo -ne '\e[3 q'
+      printf '\e[3 q'
+
+      # --- Transient prompt ---
+      # After pressing Enter, previous prompts collapse to a minimal ❯
+      # Keeps scrollback clean: just commands and output, no prompt noise
+      zle-line-init() {
+        emulate -L zsh
+        [[ $CONTEXT == start ]] || return 0
+
+        printf '\e[3 q'
+
+        while true; do
+          zle .recursive-edit
+          local -i ret=$?
+          [[ $ret == 0 && $KEYS == $'\4' ]] || break
+          [[ -o ignore_eof ]] || exit 0
+        done
+
+        local saved_prompt=$PROMPT
+        local saved_rprompt=$RPROMPT
+        PROMPT='%(?.%F{green}❯%f .%F{red}❯%f )'
+        RPROMPT=""
+        zle .reset-prompt
+        PROMPT=$saved_prompt
+        RPROMPT=$saved_rprompt
+
+        if (( ret )); then
+          zle .send-break
+        else
+          zle .accept-line
+        fi
+        return ret
       }
       zle -N zle-line-init
     '';
@@ -122,97 +150,79 @@
     enableZshIntegration = true;
     settings = {
       add_newline = true;
-      continuation_prompt = "> ";
+      continuation_prompt = "[∙](dimmed white) ";
 
-      format = "$nix_shell$cmd_duration$jobs$directory$python$nodejs$rust$golang$git_branch$git_status$character";
-      right_format = "";
+      format = "$nix_shell$directory$git_branch$git_status$character";
+      right_format = "$jobs$cmd_duration";
 
       character = {
         format = "$symbol ";
-        success_symbol = "[>](white)";
-        error_symbol = "[>](red)";
-        vimcmd_symbol = "[>](white)";
-        vimcmd_replace_one_symbol = ">";
-        vimcmd_replace_symbol = ">";
-        vimcmd_visual_symbol = ">";
+        success_symbol = "[❯](green)";
+        error_symbol = "[❯](red)";
+        vimcmd_symbol = "[❮](green)";
+        vimcmd_replace_one_symbol = "[❯](purple)";
+        vimcmd_replace_symbol = "[❯](purple)";
+        vimcmd_visual_symbol = "[❯](yellow)";
       };
 
       directory = {
         home_symbol = "~";
         truncation_length = 3;
-        truncation_symbol = "";
-        read_only = "";
+        truncation_symbol = "…/";
+        read_only = " 󰌾";
         use_os_path_sep = true;
-        style = "bright-blue";
-        format = "[$path]($style)";
-        repo_root_style = "bright-blue";
-        repo_root_format = "[$path]($style)";
+        style = "blue";
+        format = "[$path]($style)[$read_only](red) ";
+        # Repo root pops in bold, parent path fades back
+        repo_root_style = "bold blue";
+        before_repo_root_style = "dimmed blue";
+        repo_root_format = "[$before_root_path]($before_repo_root_style)[$repo_root]($repo_root_style)[$path]($style)[$read_only](red) ";
       };
 
       git_branch = {
-        format = " [$branch(:$remote_branch)]($style)";
-        style = "bright-blue";
-        truncation_symbol = "";
+        format = "[$symbol$branch(:$remote_branch)]($style) ";
+        symbol = "";
+        style = "purple";
+        truncation_symbol = "…";
         only_attached = true;
       };
 
+      # Color-coded status: green=staged, yellow=modified, red=conflict/delete, dimmed=untracked
       git_status = {
-        style = "bright-blue";
-        format = "([$ahead_behind$staged$modified$untracked$renamed$deleted$conflicted$stashed](bright-blue))";
-        conflicted = "!";
-        ahead = "+$count";
-        behind = "-$count";
-        diverged = "+$ahead_count -$behind_count";
-        untracked = "?";
-        stashed = "$";
-        modified = "*";
-        staged = "+$count";
-        renamed = ">";
-        deleted = "x";
+        format = "([\\[$all_status$ahead_behind\\]](242) )";
+        conflicted = "[=$count](red)";
+        ahead = "[⇡$count](green)";
+        behind = "[⇣$count](yellow)";
+        diverged = "[⇡$ahead_count⇣$behind_count](red)";
+        untracked = "[?$count](dimmed)";
+        stashed = "[*$count](cyan)";
+        modified = "[!$count](yellow)";
+        staged = "[+$count](green)";
+        renamed = "[»$count](cyan)";
+        deleted = "[✕$count](red)";
       };
 
       nix_shell = {
-        style = "bright-blue";
-        format = "[nix:$state]($style) ";
-        impure_msg = "impure";
-        pure_msg = "pure";
-        unknown_msg = "unknown";
+        format = "[$symbol]($style) ";
+        symbol = "";
+        style = "cyan";
       };
 
       cmd_duration = {
         min_time = 1000;
-        format = "[$duration]($style) ";
-        style = "bright-blue";
+        format = "[$duration]($style)";
+        style = "yellow";
       };
 
       jobs = {
-        format = "[$number]($style) ";
-        style = "bright-blue";
+        format = "[✦ $number]($style) ";
+        style = "blue";
       };
 
-      python = {
-        format = "[py $version]($style) ";
-        style = "bright-blue";
-        version_format = "v\${raw}";
-      };
-
-      nodejs = {
-        format = "[node $version]($style) ";
-        style = "bright-blue";
-        version_format = "v\${raw}";
-      };
-
-      rust = {
-        format = "[rust $version]($style) ";
-        style = "bright-blue";
-        version_format = "v\${raw}";
-      };
-
-      golang = {
-        format = "[go $version]($style) ";
-        style = "bright-blue";
-        version_format = "v\${raw}";
-      };
+      python.disabled = true;
+      nodejs.disabled = true;
+      rust.disabled = true;
+      golang.disabled = true;
 
       git_metrics.disabled = true;
       localip.disabled = true;
