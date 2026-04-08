@@ -67,10 +67,10 @@ let
       mkdir -p $out/bin $out/share/applications
       cat > $out/bin/gparted <<'WRAPPER'
 #!/bin/sh
-${pkgs.xorg.xhost}/bin/xhost +SI:localuser:root >/dev/null 2>&1
+${pkgs.xhost}/bin/xhost +SI:localuser:root >/dev/null 2>&1
 pkexec --disable-internal-agent ${gpartedRoot} "$@"
 status=$?
-${pkgs.xorg.xhost}/bin/xhost -SI:localuser:root >/dev/null 2>&1
+${pkgs.xhost}/bin/xhost -SI:localuser:root >/dev/null 2>&1
 exit $status
 WRAPPER
       chmod +x $out/bin/gparted

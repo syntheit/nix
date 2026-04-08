@@ -263,6 +263,7 @@ let
  │    Super + R          Rofi launcher                     │
  │    Super + T          Terminal (Kitty)                  │
  │    Super + B          Bluetooth (bluetuith)             │
+ │    Super + N          Network (nmtui)                   │
  │    Super + E          File manager (Nautilus)           │
  │    Super + V          Clipboard (CopyQ)                 │
  │    Super + Shift + V  Clipboard menu                    │
@@ -374,6 +375,7 @@ in
         "CTRL $mod, Space, togglefloating"
         "$mod, T, exec, kitty"
         "$mod, B, exec, kitty --class tui-bluetooth --override confirm_os_window_close=0 -e bluetuith"
+        "$mod, N, exec, kitty --class tui-network --override confirm_os_window_close=0 -e nmtui"
         "$mod, E, exec, nautilus"
         "$mod, C, exec, ${pkgs.copyq}/bin/copyq toggle"
         "$mod SHIFT, L, exec, ${pkgs.hyprlock}/bin/hyprlock"
