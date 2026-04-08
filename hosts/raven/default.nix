@@ -36,6 +36,17 @@
   };
   virtualisation.oci-containers.backend = "docker";
 
+  # Containers
+  virtualisation.oci-containers.containers = {
+    website = {
+      image = "synzeit/website:arm64";
+      ports = [ "3000:3000" ];
+      environment = {
+        NODE_ENV = "production";
+      };
+    };
+  };
+
   # Nix
   nix = {
     settings = {
@@ -63,6 +74,7 @@
     tunnels = {
       "raven" = {
         ingress = {
+          "matv.io" = "http://localhost:3000";
           "raven.matv.io" = "ssh://localhost:22";
         };
         default = "http_status:404";
