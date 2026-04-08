@@ -58,6 +58,11 @@
       url = "github:syntheit/windscribe-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    nixos-avf = {
+      url = "github:nix-community/nixos-avf";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -130,6 +135,30 @@
                 hostName = "ionian";
               };
               home-manager.users."${vars.user.name}" = import ./home;
+            }
+          ];
+        };
+
+        raven = nixpkgs.lib.nixosSystem {
+          system = "aarch64-linux";
+          specialArgs = specialArgs // {
+            hostName = "raven";
+          };
+          modules = [
+            ./hosts/raven
+            inputs.home-manager.nixosModules.home-manager
+            {
+              nixpkgs.overlays = [
+                (import ./overlays { inherit inputs lib; }).modifications
+                (import ./overlays { inherit inputs lib; }).additions
+              ];
+              home-manager.useGlobalPkgs = true;
+              home-manager.useUserPackages = true;
+              home-manager.backupFileExtension = "bkp";
+              home-manager.extraSpecialArgs = specialArgs // {
+                hostName = "raven";
+              };
+              home-manager.users."droid" = import ./hosts/raven/home.nix;
             }
           ];
         };
