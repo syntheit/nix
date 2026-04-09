@@ -395,6 +395,11 @@
         "/micron01/appdata/jellyfin_config:/config"
         "/iotapool:/iotapool"
         "/lambdapool:/lambdapool"
+        "/deltapool:/deltapool"
+        "/thetapool:/thetapool"
+        "/epsilpool:/epsilpool"
+        "/rhopool:/rhopool"
+        "/platapool:/platapool"
       ];
       extraOptions = [
         "--device=nvidia.com/gpu=all"
