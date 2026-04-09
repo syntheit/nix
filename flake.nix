@@ -139,6 +139,16 @@
           ];
         };
 
+        antares = nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          specialArgs = specialArgs // {
+            hostName = "antares";
+          };
+          modules = [
+            ./hosts/antares
+          ];
+        };
+
         raven = nixpkgs.lib.nixosSystem {
           system = "aarch64-linux";
           specialArgs = specialArgs // {
