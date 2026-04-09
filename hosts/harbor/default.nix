@@ -224,6 +224,87 @@
         "/arespool/appdata/Portainer:/data"
         "/var/run/docker.sock:/var/run/docker.sock"
       ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    memos = {
+      image = "neosmemo/memos:stable";
+      user = "1000:1000";
+      ports = [ "5230:5230" ];
+      volumes = [
+        "/arespool/appdata/memos:/var/opt/memos"
+      ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    scrutiny = {
+      image = "ghcr.io/analogj/scrutiny:master-omnibus";
+      ports = [
+        "5153:8080"
+        "39419:8086"
+      ];
+      volumes = [
+        "/run/udev:/run/udev:ro"
+        "/arespool/appdata/srcutiny/config:/opt/scrutiny/config"
+        "/arespool/appdata/srcutiny/influxdb:/opt/scrutiny/influxdb"
+      ];
+      extraOptions = [
+        "--cap-add=SYS_RAWIO"
+        "--cap-add=SYS_ADMIN"
+        "--device=/dev/nvme0"
+        "--device=/dev/nvme1"
+        "--device=/dev/nvme2"
+        "--device=/dev/sda"
+        "--device=/dev/sdb"
+        "--device=/dev/sdc"
+        "--device=/dev/sdd"
+        "--device=/dev/sde"
+        "--device=/dev/sdf"
+      ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    syncthing = {
+      image = "lscr.io/linuxserver/syncthing:latest";
+      environment = {
+        PUID = "1000";
+        PGID = "1000";
+        TZ = "America/New_York";
+      };
+      ports = [
+        "8384:8384"
+        "22000:22000/tcp"
+        "22000:22000/udp"
+        "21027:21027/udp"
+      ];
+      volumes = [
+        "/arespool/appdata/syncthing/config:/config"
+        "/arespool/nextcloud/data/topikzero/files/Sync:/config/Sync"
+      ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    watchtower = {
+      image = "containrrr/watchtower";
+      volumes = [
+        "/var/run/docker.sock:/var/run/docker.sock"
+      ];
+      cmd = [ "--label-enable" "--cleanup" "--interval" "3600" ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    tracearr = {
+      image = "ghcr.io/connorgallopo/tracearr:supervised";
+      ports = [ "7898:3000" ];
+      environment = {
+        TZ = "America/New_York";
+        LOG_LEVEL = "info";
+      };
+      volumes = [
+        "tracearr_postgres:/data/postgres"
+        "tracearr_redis:/data/redis"
+        "tracearr_data:/data/tracearr"
+      ];
+      extraOptions = [
+        "--shm-size=256m"
+        "--memory=2g"
+      ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
   };
 
