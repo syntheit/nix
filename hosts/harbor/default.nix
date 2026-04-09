@@ -330,10 +330,10 @@
         "/epsilpool:/epsilpool"
         "/rhopool:/rhopool"
       ];
-      dependsOn = [ "nextcloud-db" ];
+      dependsOn = [ "nextcloud_db" ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
-    nextcloud-db = {
+    nextcloud_db = {
       image = "linuxserver/mariadb:latest";
       environmentFiles = [ config.sops.templates."nextcloud-db.env".path ];
       volumes = [
