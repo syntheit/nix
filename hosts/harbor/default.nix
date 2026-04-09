@@ -215,6 +215,18 @@
     enableOnBoot = true;
   };
 
+  virtualisation.oci-containers.backend = "docker";
+  virtualisation.oci-containers.containers = {
+    portainer = {
+      image = "portainer/portainer-ce:latest";
+      ports = [ "9443:9443" ];
+      volumes = [
+        "/arespool/appdata/Portainer:/data"
+        "/var/run/docker.sock:/var/run/docker.sock"
+      ];
+    };
+  };
+
   # =====================================================
   # COCKROACH ACCESS INFRASTRUCTURE
   # Never restart access services during nixos-rebuild switch.
