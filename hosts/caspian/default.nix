@@ -9,5 +9,9 @@
   ];
 
   networking.hostName = "caspian";
+
+  services.tailscale.enable = true;
+  networking.firewall.trustedInterfaces = [ "tailscale0" ];
+
   system.stateVersion = "25.05";
 }

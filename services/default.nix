@@ -55,18 +55,34 @@
         ];
       };
       # Disable ALSA input devices (line-in, etc.) except the Blue Snowball
+      # Split into two rules because device.vendor.id isn't available on nodes
       extraConfig."53-disable-alsa-inputs" = {
         "monitor.alsa.rules" = [
           {
             matches = [
               {
                 "node.name" = "~alsa_input.*";
-                "device.vendor.id" = "!0x0d8c";
               }
             ];
             actions = {
               update-props = {
                 "node.disabled" = true;
+              };
+            };
+          }
+        ];
+      };
+      extraConfig."54-enable-snowball" = {
+        "monitor.alsa.rules" = [
+          {
+            matches = [
+              {
+                "node.name" = "~alsa_input.*BLUE_MICROPHONE.*";
+              }
+            ];
+            actions = {
+              update-props = {
+                "node.disabled" = false;
               };
             };
           }
