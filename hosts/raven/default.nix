@@ -90,6 +90,7 @@
     curl
     wget
     htop
+    mosh
     cloudflared
   ];
 

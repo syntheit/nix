@@ -154,6 +154,7 @@
     zsh
     btop
     cloudflared
+    mosh
     git
     speedtest-cli
     lshw
