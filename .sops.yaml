@@ -1,0 +1,10 @@
+keys:
+  - &harbor age1c6c5ez6luwjjlhvvxtuwfc8ju6nw6jt6czrnw6t35ggz8nmzy3cs8zt5hs
+  - &daniel age179l0hwpm4h40raspjng5hscgfnl4ycng8sragp9kfsyu8ej849mqn4797w
+
+creation_rules:
+  - path_regex: secrets/harbor\.yaml$
+    key_groups:
+      - age:
+          - *harbor
+          - *daniel
