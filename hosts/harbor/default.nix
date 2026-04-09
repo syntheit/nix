@@ -318,7 +318,9 @@
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
-      ExecStart = "${pkgs.docker}/bin/docker network create nextcloud_default || true";
+      ExecStart = pkgs.writeShellScript "create-nextcloud-network" ''
+        ${pkgs.docker}/bin/docker network create nextcloud_default || true
+      '';
     };
   };
   systemd.services.docker-nextcloud.after = [ "docker-network-nextcloud.service" ];
