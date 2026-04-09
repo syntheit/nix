@@ -8,13 +8,37 @@
 {
   imports = [ ./hardware-configuration.nix ];
 
+  # sops-nix — secrets decrypted at activation time to /run/secrets/
+  sops.defaultSopsFile = ../../secrets/harbor.yaml;
+  sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
+  sops.secrets.nextdns_id = { };
+  sops.secrets.nextcloud_db_root_pw = { };
+  sops.secrets.nextcloud_db_name = { };
+  sops.secrets.nextcloud_db_user = { };
+  sops.secrets.nextcloud_db_pw = { };
+
+  # Nextcloud MariaDB env file — rendered from sops secrets at boot
+  sops.templates."nextcloud-db.env".content = ''
+    PUID=1000
+    PGID=1000
+    MYSQL_ROOT_PASSWORD=${config.sops.placeholder.nextcloud_db_root_pw}
+    TZ=America/New_York
+    MYSQL_DATABASE=${config.sops.placeholder.nextcloud_db_name}
+    MYSQL_USER=${config.sops.placeholder.nextcloud_db_user}
+    MYSQL_PASSWORD=${config.sops.placeholder.nextcloud_db_pw}
+  '';
+
   # Boot configuration
   boot = {
     loader.systemd-boot.enable = true;
+    loader.systemd-boot.configurationLimit = 20;
     loader.efi.canTouchEfiVariables = true;
     supportedFilesystems = [ "zfs" ];
     blacklistedKernelModules = [ "nouveau" ];
-    kernelParams = [ "i915.enable_guc=2" ];
+    kernelParams = [
+      "i915.enable_guc=2"
+      "zfs.zfs_arc_max=34359738368" # 32GB — half of RAM, leaves room for Docker/OS
+    ];
     zfs = {
       forceImportRoot = false;
       extraPools = [
@@ -28,6 +52,22 @@
         "platapool"
       ];
     };
+    # tmpfs for /tmp — reduces SSD writes
+    tmp.useTmpfs = true;
+    tmp.tmpfsSize = "16G";
+    # Server-tuned sysctl
+    kernel.sysctl = {
+      "vm.swappiness" = 10; # Low — prefer reclaiming ZFS ARC over swapping
+      "vm.vfs_cache_pressure" = 50; # ZFS handles its own caching
+      "vm.dirty_bytes" = 268435456; # 256MB — flush dirty pages at fixed thresholds
+      "vm.dirty_background_bytes" = 67108864; # 64MB
+    };
+  };
+
+  # Compressed in-memory swap — OOM protection without disk swap
+  zramSwap = {
+    enable = true;
+    memoryPercent = 25; # ~16GB compressed swap
   };
 
   # Networking configuration
@@ -44,12 +84,31 @@
     };
   };
 
-  networking.nameservers = [
-    "45.90.28.0#d8522d.dns.nextdns.io"
-    "2a07:a8c0::#d8522d.dns.nextdns.io"
-    "45.90.30.0#d8522d.dns.nextdns.io"
-    "2a07:a8c1::#d8522d.dns.nextdns.io"
-  ];
+  # NextDNS — ID loaded from sops secret at runtime
+  sops.templates."nextdns-resolved.conf".content = ''
+    [Resolve]
+    DNS=45.90.28.0#${config.sops.placeholder.nextdns_id}.dns.nextdns.io
+    DNS=2a07:a8c0::#${config.sops.placeholder.nextdns_id}.dns.nextdns.io
+    DNS=45.90.30.0#${config.sops.placeholder.nextdns_id}.dns.nextdns.io
+    DNS=2a07:a8c1::#${config.sops.placeholder.nextdns_id}.dns.nextdns.io
+    DNSOverTLS=yes
+  '';
+
+  systemd.services.apply-nextdns = {
+    description = "Apply NextDNS config from sops secret";
+    after = [ "sops-nix.service" "systemd-resolved.service" ];
+    wants = [ "sops-nix.service" ];
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = pkgs.writeShellScript "apply-nextdns" ''
+        mkdir -p /etc/systemd/resolved.conf.d
+        cp ${config.sops.templates."nextdns-resolved.conf".path} /etc/systemd/resolved.conf.d/10-nextdns.conf
+        systemctl restart systemd-resolved
+      '';
+    };
+  };
 
   time.timeZone = "America/New_York";
   i18n = {
@@ -67,16 +126,9 @@
     };
   };
 
-  services.xserver = {
-    xkb = {
-      layout = "us";
-      variant = "";
-    };
-    videoDrivers = [
-      "nvidia"
-      "intel"
-    ];
-  };
+  # GPU drivers — headless server, no X11 needed
+  # nvidia driver required for container toolkit (Jellyfin GPU transcoding)
+  services.xserver.videoDrivers = [ "nvidia" "intel" ];
 
   # Hardware configuration
   hardware = {
@@ -94,21 +146,14 @@
     nvidia = {
       modesetting.enable = true;
       open = true;
-      nvidiaSettings = true;
+      nvidiaSettings = false; # No GUI on a headless server
       package = config.boot.kernelPackages.nvidiaPackages.stable;
     };
     nvidia-container-toolkit.enable = true;
   };
 
   # Nixpkgs configuration
-  nixpkgs.config = {
-    allowUnfree = true;
-    allowUnfreePredicate = pkg:
-      builtins.elem (lib.getName pkg) [
-        "nvidia-x11"
-        "nvidia-settings"
-      ];
-  };
+  nixpkgs.config.allowUnfree = true;
 
   # Nix
   nix = {
@@ -121,6 +166,9 @@
       auto-optimise-store = true;
       max-jobs = "auto";
       cores = 0;
+      download-buffer-size = 134217728; # 128MB — faster downloads
+      min-free = 1073741824; # 1GB — auto-GC when free space drops below
+      max-free = 3221225472; # 3GB — stop GC once this much space is free
     };
     gc = {
       automatic = true;
@@ -166,6 +214,14 @@
     bat
     python3
     plocate
+    tmux
+    ncdu
+    curl
+    wget
+    jq
+    iotop
+    nethogs
+    tcpdump
 
     # Dead man's switch — arm before risky rebuilds, disarm after verifying access
     (writeShellScriptBin "arm-watchdog" ''
@@ -190,12 +246,11 @@
     openssh = {
       enable = true;
       settings = {
-        PasswordAuthentication = true; # TODO: disable after confirming key auth works via flake
-        KbdInteractiveAuthentication = true; # TODO: disable after confirming key auth works via flake
+        PasswordAuthentication = false;
+        KbdInteractiveAuthentication = false;
       };
       extraConfig = ''
         AllowTcpForwarding yes
-        GatewayPorts yes
       '';
       ports = [ 64829 ];
     };
@@ -207,19 +262,88 @@
         };
       };
     };
+    # SMART drive monitoring
+    smartd = {
+      enable = true;
+      autodetect = true;
+      notifications.wall.enable = true;
+    };
+    # ZFS automatic scrub — detects silent data corruption
+    zfs.autoScrub = {
+      enable = true;
+      interval = "monthly";
+    };
+    # BTRFS periodic scrub on root filesystem
+    btrfs.autoScrub = {
+      enable = true;
+      interval = "monthly";
+      fileSystems = [ "/" ];
+    };
+    # File indexing for locate/plocate
+    locate = {
+      enable = true;
+      package = pkgs.plocate;
+    };
+  };
+
+  # Cap journal size to prevent unbounded growth
+  services.journald.extraConfig = ''
+    SystemMaxUse=500M
+    MaxRetentionSec=1month
+  '';
+
+  # Kill runaway processes before the system becomes unresponsive
+  services.earlyoom = {
+    enable = true;
+    freeMemThreshold = 5;
+    freeSwapThreshold = 10;
   };
 
   # Docker (start at boot — this is a server)
   virtualisation.docker = {
     enable = true;
     enableOnBoot = true;
+    autoPrune = {
+      enable = true;
+      dates = "weekly";
+      flags = [ "--all" ];
+    };
   };
 
   virtualisation.oci-containers.backend = "docker";
   virtualisation.oci-containers.containers = {
+    nextcloud = {
+      image = "lscr.io/linuxserver/nextcloud:latest";
+      environment = {
+        PUID = "1000";
+        PGID = "1000";
+        TZ = "America/New_York";
+      };
+      ports = [ "127.0.0.1:9787:443" ];
+      volumes = [
+        "/arespool/appdata/nextcloud_config:/config"
+        "/arespool/nextcloud/data:/arespool/nextcloud/data"
+        "/iotapool:/iotapool"
+        "/lambdapool:/lambdapool"
+        "/deltapool:/deltapool"
+        "/thetapool:/thetapool"
+        "/epsilpool:/epsilpool"
+        "/rhopool:/rhopool"
+      ];
+      dependsOn = [ "nextcloud-db" ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    nextcloud-db = {
+      image = "linuxserver/mariadb:latest";
+      environmentFiles = [ config.sops.templates."nextcloud-db.env".path ];
+      volumes = [
+        "/arespool/appdata/nextcloud-mariadb:/config"
+      ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
     portainer = {
       image = "portainer/portainer-ce:latest";
-      ports = [ "9443:9443" ];
+      ports = [ "127.0.0.1:9443:9443" ];
       volumes = [
         "/arespool/appdata/Portainer:/data"
         "/var/run/docker.sock:/var/run/docker.sock"
@@ -229,7 +353,7 @@
     memos = {
       image = "neosmemo/memos:stable";
       user = "1000:1000";
-      ports = [ "5230:5230" ];
+      ports = [ "127.0.0.1:5230:5230" ];
       volumes = [
         "/arespool/appdata/memos:/var/opt/memos"
       ];
@@ -238,8 +362,8 @@
     scrutiny = {
       image = "ghcr.io/analogj/scrutiny:master-omnibus";
       ports = [
-        "5153:8080"
-        "39419:8086"
+        "127.0.0.1:5153:8080"
+        "127.0.0.1:39419:8086"
       ];
       volumes = [
         "/run/udev:/run/udev:ro"
@@ -269,7 +393,7 @@
         TZ = "America/New_York";
       };
       ports = [
-        "8384:8384"
+        "127.0.0.1:8384:8384"
         "22000:22000/tcp"
         "22000:22000/udp"
         "21027:21027/udp"
@@ -281,7 +405,7 @@
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
     watchtower = {
-      image = "containrrr/watchtower";
+      image = "containrrr/watchtower:1.7.1";
       volumes = [
         "/var/run/docker.sock:/var/run/docker.sock"
       ];
@@ -290,7 +414,7 @@
     };
     tracearr = {
       image = "ghcr.io/connorgallopo/tracearr:supervised";
-      ports = [ "7898:3000" ];
+      ports = [ "127.0.0.1:7898:3000" ];
       environment = {
         TZ = "America/New_York";
         LOG_LEVEL = "info";

@@ -12,6 +12,8 @@
 
   home.packages = with pkgs; [
     # CLI tools
+    sops
+    ssh-to-age
     btop
     fastfetch
     figlet
