@@ -198,23 +198,21 @@ let
     $T -L $S bind -T root WheelUpPane run-shell -b "wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+"
     $T -L $S bind -T root WheelDownPane run-shell -b "wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%-"
 
-    # Left: btop
-    $T -L $S send-keys "btop" Enter
+    # Create all pane splits and sizing first, then launch programs.
+    # This avoids a race where tty-clock's initial ncurses draw gets
+    # lost when the pane is resized after startup.
 
-    # Right top: clock
-    $T -L $S split-window -h -l 40%
-    $T -L $S send-keys "${clockScript}" Enter
-
-    # Right middle: status panel
-    $T -L $S split-window -v -l 70%
-    $T -L $S send-keys "${dashboardInfoScript}" Enter
-
-    # Right bottom: pipes screensaver (sparse: 2 pipes, resets every ~40s)
-    $T -L $S split-window -v -l 40%
-    $T -L $S send-keys "pipes.sh -t 0 -t 1 -p 2 -R -f 30 -r 3000 -c 1 -c 2 -c 3 -c 4 -c 5 -c 6 -c 7" Enter
-
-    # Compact the clock pane to just what's needed
+    # pane 0 (left): btop
+    $T -L $S split-window -h -l 40%          # pane 1 (right top)
+    $T -L $S split-window -v -l 70%          # pane 2 (right middle)
+    $T -L $S split-window -v -l 40%          # pane 3 (right bottom)
     $T -L $S resize-pane -t 1 -y 15
+
+    # Now launch programs in each pane
+    $T -L $S send-keys -t 0 "btop" Enter
+    $T -L $S send-keys -t 1 "${clockScript}" Enter
+    $T -L $S send-keys -t 2 "${dashboardInfoScript}" Enter
+    $T -L $S send-keys -t 3 "pipes.sh -t 0 -t 1 -p 2 -R -f 30 -r 3000 -c 1 -c 2 -c 3 -c 4 -c 5 -c 6 -c 7" Enter
 
     # Focus status pane for mic/cam key toggles
     $T -L $S select-pane -t 2
