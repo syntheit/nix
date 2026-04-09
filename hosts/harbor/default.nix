@@ -153,6 +153,7 @@
     fastfetch
     zsh
     btop
+    cloudflared
     git
     speedtest-cli
     lshw
@@ -225,10 +226,16 @@
       "harbor" = {
         ingress = {
           "admin.matv.io" = "ssh://localhost:64829";
-          "containers.matv.io" = "https://localhost:9443";
+          "containers.matv.io" = {
+            service = "https://localhost:9443";
+            originRequest.noTLSVerify = true;
+          };
           "request.matv.io" = "http://localhost:5055";
           "links.matv.io" = "http://localhost:28793";
-          "cloud.matv.io" = "https://localhost:9787";
+          "cloud.matv.io" = {
+            service = "https://localhost:9787";
+            originRequest.noTLSVerify = true;
+          };
           "downloader.matv.io" = "http://localhost:9091";
           "jackett.matv.io" = "http://localhost:9117";
           "sonarr.matv.io" = "http://localhost:8989";
