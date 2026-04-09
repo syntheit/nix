@@ -16,6 +16,13 @@
   sops.secrets.nextcloud_db_name = { };
   sops.secrets.nextcloud_db_user = { };
   sops.secrets.nextcloud_db_pw = { };
+  sops.secrets.qbittorrent_webui_password = { };
+
+  # qBittorrent env file
+  sops.templates."qbittorrent.env".content = ''
+    VPN_TYPE=wireguard
+    WEBUI_PASSWORD=${config.sops.placeholder.qbittorrent_webui_password}
+  '';
 
   # Nextcloud MariaDB env file — rendered from sops secrets at boot
   sops.templates."nextcloud-db.env".content = ''
@@ -311,20 +318,31 @@
   };
 
   # Create Docker networks for multi-container stacks
-  systemd.services.docker-network-nextcloud = {
-    description = "Create Nextcloud Docker network";
+  systemd.services.docker-networks = {
+    description = "Create Docker networks for multi-container stacks";
     after = [ "docker.service" ];
     wantedBy = [ "multi-user.target" ];
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
-      ExecStart = pkgs.writeShellScript "create-nextcloud-network" ''
+      ExecStart = pkgs.writeShellScript "create-docker-networks" ''
         ${pkgs.docker}/bin/docker network create nextcloud_default || true
+        ${pkgs.docker}/bin/docker network create downloader_media_network || true
       '';
     };
   };
-  systemd.services.docker-nextcloud.after = [ "docker-network-nextcloud.service" ];
-  systemd.services.docker-nextcloud_db.after = [ "docker-network-nextcloud.service" ];
+  # Network dependencies
+  systemd.services.docker-nextcloud.after = [ "docker-networks.service" ];
+  systemd.services.docker-nextcloud_db.after = [ "docker-networks.service" ];
+  systemd.services.docker-qbittorrent.after = [ "docker-networks.service" ];
+  systemd.services.docker-sonarr.after = [ "docker-networks.service" ];
+  systemd.services.docker-radarr.after = [ "docker-networks.service" ];
+  systemd.services.docker-bazarr.after = [ "docker-networks.service" ];
+  systemd.services.docker-jackett.after = [ "docker-networks.service" ];
+  systemd.services.docker-jellyseerr.after = [ "docker-networks.service" ];
+  # NVIDIA CDI dependency
+  systemd.services.docker-jellyfin.after = [ "nvidia-container-toolkit-cdi-generator.service" ];
+  systemd.services.docker-jellyfin.wants = [ "nvidia-container-toolkit-cdi-generator.service" ];
 
   virtualisation.oci-containers.backend = "docker";
   virtualisation.oci-containers.containers = {
@@ -357,6 +375,150 @@
         "/arespool/appdata/nextcloud-mariadb:/config"
       ];
       extraOptions = [ "--network=nextcloud_default" ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    jellyfin = {
+      image = "lscr.io/linuxserver/jellyfin:latest";
+      environment = {
+        PUID = "1000";
+        PGID = "1000";
+        TZ = "America/New_York";
+        JELLYFIN_PublishedServerUrl = "watch.matv.io";
+        NVIDIA_VISIBLE_DEVICES = "all";
+        NVIDIA_DRIVER_CAPABILITIES = "all";
+      };
+      ports = [
+        "127.0.0.1:8096:8096"
+        "127.0.0.1:8920:8920"
+      ];
+      volumes = [
+        "/micron01/appdata/jellyfin_config:/config"
+        "/iotapool:/iotapool"
+        "/lambdapool:/lambdapool"
+      ];
+      extraOptions = [
+        "--device=nvidia.com/gpu=all"
+      ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    # ===== DOWNLOADING STACK (shared downloader_media_network) =====
+    qbittorrent = {
+      image = "trigus42/qbittorrentvpn";
+      environmentFiles = [ config.sops.templates."qbittorrent.env".path ];
+      ports = [ "127.0.0.1:9091:8080" ];
+      volumes = [
+        "/arespool/appdata/qbittorrent:/config"
+        "/rhopool/Downloads:/downloads"
+        "/iotapool:/iotapool"
+        "/lambdapool:/lambdapool"
+        "/deltapool:/deltapool"
+        "/thetapool:/thetapool"
+        "/epsilpool:/epsilpool"
+        "/rhopool:/rhopool"
+        "/platapool:/platapool"
+      ];
+      extraOptions = [
+        "--network=downloader_media_network"
+        "--cap-add=NET_ADMIN"
+        "--device=/dev/net/tun"
+        "--sysctl=net.ipv4.conf.all.src_valid_mark=1"
+        "--sysctl=net.ipv6.conf.all.disable_ipv6=0"
+      ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    jellyseerr = {
+      image = "fallenbagel/jellyseerr:latest";
+      environment = {
+        LOG_LEVEL = "debug";
+        TZ = "America/New_York";
+      };
+      ports = [ "127.0.0.1:5055:5055" ];
+      volumes = [
+        "/arespool/appdata/jellyseerr_config:/app/config"
+      ];
+      extraOptions = [ "--network=downloader_media_network" ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    jackett = {
+      image = "lscr.io/linuxserver/jackett:latest";
+      environment = {
+        PUID = "1000";
+        PGID = "1000";
+        TZ = "America/New_York";
+        AUTO_UPDATE = "true";
+      };
+      ports = [ "127.0.0.1:9117:9117" ];
+      volumes = [
+        "/arespool/appdata/jackett:/config"
+        "/rhopool/Downloads:/downloads"
+      ];
+      dependsOn = [ "qbittorrent" ];
+      extraOptions = [ "--network=downloader_media_network" ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    sonarr = {
+      image = "linuxserver/sonarr";
+      environment = {
+        PUID = "1000";
+        PGID = "1000";
+        TZ = "America/New_York";
+      };
+      ports = [ "127.0.0.1:8989:8989" ];
+      volumes = [
+        "/arespool/appdata/sonarr:/config"
+        "/rhopool/Downloads:/downloads"
+        "/iotapool:/iotapool"
+        "/lambdapool:/lambdapool"
+        "/deltapool:/deltapool"
+        "/thetapool:/thetapool"
+        "/epsilpool:/epsilpool"
+        "/rhopool:/rhopool"
+        "/platapool:/platapool"
+      ];
+      extraOptions = [ "--network=downloader_media_network" ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    radarr = {
+      image = "linuxserver/radarr";
+      environment = {
+        PUID = "1000";
+        PGID = "1000";
+        TZ = "America/New_York";
+      };
+      ports = [ "127.0.0.1:7878:7878" ];
+      volumes = [
+        "/arespool/appdata/radarr:/config"
+        "/rhopool/Downloads:/downloads"
+        "/iotapool:/iotapool"
+        "/lambdapool:/lambdapool"
+        "/deltapool:/deltapool"
+        "/thetapool:/thetapool"
+        "/epsilpool:/epsilpool"
+        "/rhopool:/rhopool"
+        "/platapool:/platapool"
+      ];
+      extraOptions = [ "--network=downloader_media_network" ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    bazarr = {
+      image = "linuxserver/bazarr";
+      environment = {
+        PUID = "1000";
+        PGID = "1000";
+        TZ = "America/New_York";
+      };
+      ports = [ "127.0.0.1:6767:6767" ];
+      volumes = [
+        "/arespool/appdata/bazarr:/config"
+        "/iotapool:/iotapool"
+        "/lambdapool:/lambdapool"
+        "/deltapool:/deltapool"
+        "/thetapool:/thetapool"
+        "/epsilpool:/epsilpool"
+        "/rhopool:/rhopool"
+        "/platapool:/platapool"
+      ];
+      extraOptions = [ "--network=downloader_media_network" ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
     portainer = {
