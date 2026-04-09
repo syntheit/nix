@@ -310,6 +310,20 @@
     };
   };
 
+  # Create Docker networks for multi-container stacks
+  systemd.services.docker-network-nextcloud = {
+    description = "Create Nextcloud Docker network";
+    after = [ "docker.service" ];
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = "${pkgs.docker}/bin/docker network create nextcloud_default || true";
+    };
+  };
+  systemd.services.docker-nextcloud.after = [ "docker-network-nextcloud.service" ];
+  systemd.services.docker-nextcloud_db.after = [ "docker-network-nextcloud.service" ];
+
   virtualisation.oci-containers.backend = "docker";
   virtualisation.oci-containers.containers = {
     nextcloud = {
