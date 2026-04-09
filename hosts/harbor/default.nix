@@ -331,6 +331,7 @@
         "/rhopool:/rhopool"
       ];
       dependsOn = [ "nextcloud_db" ];
+      extraOptions = [ "--network=nextcloud_default" ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
     nextcloud_db = {
@@ -339,6 +340,7 @@
       volumes = [
         "/arespool/appdata/nextcloud-mariadb:/config"
       ];
+      extraOptions = [ "--network=nextcloud_default" ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
     portainer = {
