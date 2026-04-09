@@ -296,9 +296,9 @@
         LOG_LEVEL = "info";
       };
       volumes = [
-        "tracearr_postgres:/data/postgres"
-        "tracearr_redis:/data/redis"
-        "tracearr_data:/data/tracearr"
+        "tracearr_tracearr_postgres:/data/postgres"
+        "tracearr_tracearr_redis:/data/redis"
+        "tracearr_tracearr_data:/data/tracearr"
       ];
       extraOptions = [
         "--shm-size=256m"
