@@ -33,7 +33,7 @@
   # Networking configuration
   networking = {
     hostId = "fdbe6a1e";
-    hostName = "antares";
+    hostName = "harbor";
     networkmanager.enable = true;
     nftables.enable = true;
     firewall = {
@@ -145,12 +145,7 @@
           "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdRcH2UWe31VdU62j3Ksbb6LDyS1APNW1BQMM8mvsej daniel@matv.io"
         ];
       };
-      cloudflared = {
-        group = "cloudflared";
-        isSystemUser = true;
-      };
     };
-    groups.cloudflared = { };
   };
 
   # System packages and programs
@@ -158,7 +153,6 @@
     fastfetch
     zsh
     btop
-    cloudflared
     git
     speedtest-cli
     lshw
@@ -225,20 +219,35 @@
   # Changes only take effect on reboot. This prevents losing access.
   # =====================================================
 
-  systemd.services.antares_tunnel = {
-    wantedBy = [ "multi-user.target" ];
-    after = [ "network.target" ];
-    restartIfChanged = false;
-    serviceConfig = {
-      ExecStart = "${pkgs.cloudflared}/bin/cloudflared tunnel --no-autoupdate run --token=$TUNNEL_TOKEN";
-      EnvironmentFile = "/etc/cloudflared/tunnel-token";
-      Restart = "always";
-      RestartSec = "2s";
-      User = "cloudflared";
-      Group = "cloudflared";
-      StartLimitIntervalSec = 0;
+  services.cloudflared = {
+    enable = true;
+    tunnels = {
+      "harbor" = {
+        ingress = {
+          "admin.matv.io" = "ssh://localhost:64829";
+          "containers.matv.io" = "https://localhost:9443";
+          "request.matv.io" = "http://localhost:5055";
+          "links.matv.io" = "http://localhost:28793";
+          "cloud.matv.io" = "https://localhost:9787";
+          "downloader.matv.io" = "http://localhost:9091";
+          "jackett.matv.io" = "http://localhost:9117";
+          "sonarr.matv.io" = "http://localhost:8989";
+          "radarr.matv.io" = "http://localhost:7878";
+          "bazarr.matv.io" = "http://localhost:6767";
+          "notes.matv.io" = "http://localhost:5230";
+          "vault.matv.io" = "http://localhost:29446";
+          "drivehealth.matv.io" = "http://localhost:5153";
+          "sync.matv.io" = "http://localhost:8384";
+          "watch.matv.io" = "http://localhost:8096";
+          "retrospend.app" = "http://localhost:1997";
+          "tracearr.matv.io" = "http://localhost:7898";
+        };
+        default = "http_status:404";
+        credentialsFile = "/etc/cloudflared/credentials.json";
+      };
     };
   };
+  systemd.services.cloudflared-tunnel-harbor.restartIfChanged = false;
 
   services.tailscale.enable = true;
   networking.firewall.trustedInterfaces = [ "tailscale0" ];

@@ -139,13 +139,13 @@
           ];
         };
 
-        antares = nixpkgs.lib.nixosSystem {
+        harbor = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
           specialArgs = specialArgs // {
-            hostName = "antares";
+            hostName = "harbor";
           };
           modules = [
-            ./hosts/antares
+            ./hosts/harbor
           ];
         };
 
