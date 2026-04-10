@@ -423,14 +423,7 @@
       flags = [ "--all" ];
     };
     daemon.settings = {
-      # Use host DNS instead of stale hardcoded IPs
       dns = [ "127.0.0.53" ];
-      # Limit container log sizes (journald handles aggregation, but direct logs can grow)
-      log-opts = {
-        max-size = "50m";
-        max-file = "3";
-      };
-      # Default ulimits for all containers
       default-ulimits = {
         nofile = {
           Name = "nofile";
