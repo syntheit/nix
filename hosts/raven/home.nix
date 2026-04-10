@@ -256,7 +256,7 @@ in
 
   programs.starship.settings.hostname = {
     ssh_only = true;
-    format = "[󱗆  $hostname]($style)";
+    format = "[󱗆 $hostname]($style)";
     style = "dimmed white";
   };
 
