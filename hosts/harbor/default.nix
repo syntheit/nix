@@ -390,6 +390,17 @@
       interval = "monthly";
       fileSystems = [ "/" ];
     };
+    # BTRFS automated snapshots on root
+    btrbk.instances."default" = {
+      onCalendar = "daily";
+      settings = {
+        snapshot_preserve_min = "2d";
+        snapshot_preserve = "7d 4w";
+        volume."/" = {
+          subvolume."@" = { snapshot_dir = "@snapshots"; };
+        };
+      };
+    };
     # File indexing for locate/plocate
     locate = {
       enable = true;
@@ -397,6 +408,79 @@
     };
     # Seerr — media request management (native NixOS service, no Docker)
     seerr.enable = true;
+    # ZFS automated snapshots
+    sanoid = {
+      enable = true;
+      interval = "hourly";
+      datasets = {
+        # App data — critical, changes frequently
+        "arespool" = {
+          autosnap = true;
+          autoprune = true;
+          hourly = 24;
+          daily = 30;
+          monthly = 12;
+          recursive = true;
+        };
+        # Media pools — write-once content, fewer snapshots needed
+        "deltapool" = {
+          autosnap = true;
+          autoprune = true;
+          hourly = 0;
+          daily = 7;
+          monthly = 3;
+          recursive = true;
+        };
+        "epsilpool" = {
+          autosnap = true;
+          autoprune = true;
+          hourly = 0;
+          daily = 7;
+          monthly = 3;
+          recursive = true;
+        };
+        "iotapool" = {
+          autosnap = true;
+          autoprune = true;
+          hourly = 0;
+          daily = 7;
+          monthly = 3;
+          recursive = true;
+        };
+        "lambdapool" = {
+          autosnap = true;
+          autoprune = true;
+          hourly = 0;
+          daily = 7;
+          monthly = 3;
+          recursive = true;
+        };
+        "thetapool" = {
+          autosnap = true;
+          autoprune = true;
+          hourly = 0;
+          daily = 7;
+          monthly = 3;
+          recursive = true;
+        };
+        "rhopool" = {
+          autosnap = true;
+          autoprune = true;
+          hourly = 0;
+          daily = 7;
+          monthly = 3;
+          recursive = true;
+        };
+        "platapool" = {
+          autosnap = true;
+          autoprune = true;
+          hourly = 0;
+          daily = 7;
+          monthly = 3;
+          recursive = true;
+        };
+      };
+    };
   };
 
   # Cap journal size to prevent unbounded growth
@@ -964,7 +1048,7 @@
     tunnels = {
       "harbor" = {
         ingress = {
-          "admin.matv.io" = "ssh://localhost:64829";
+          "harbor.matv.io" = "ssh://localhost:64829";
           "containers.matv.io" = {
             service = "https://localhost:9443";
             originRequest.noTLSVerify = true;

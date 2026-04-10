@@ -13,11 +13,11 @@
       "*" = {
         identityFile = "~/.ssh/mainkey";
       };
-      "admin.matv.io" = {
-        hostname = "admin.matv.io";
-        identityFile = "~/.ssh/mainkey"; # Points to the manual file
+      "harbor.matv.io" = {
+        hostname = "harbor.matv.io";
+        identityFile = "~/.ssh/mainkey";
+        user = "matv";
         port = 64829;
-        # We use strict interpolation to point to the exact binary
         proxyCommand = "${pkgs.cloudflared}/bin/cloudflared access ssh --hostname %h";
       };
       "raven.matv.io" = {
@@ -25,6 +25,17 @@
         identityFile = "~/.ssh/mainkey";
         user = "droid";
         proxyCommand = "${pkgs.cloudflared}/bin/cloudflared access ssh --hostname %h";
+      };
+      "raven.tailscale" = {
+        hostname = "100.98.64.97";
+        identityFile = "~/.ssh/mainkey";
+        user = "droid";
+      };
+      "harbor.tailscale" = {
+        hostname = "100.109.63.87";
+        identityFile = "~/.ssh/mainkey";
+        user = "matv";
+        port = 64829;
       };
       "github.com" = {
         hostname = "github.com";
