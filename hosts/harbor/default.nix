@@ -28,6 +28,9 @@
   sops.secrets.retrospend_openrouter_api_key = { };
   sops.secrets.retrospend_smtp_user = { };
   sops.secrets.retrospend_smtp_password = { };
+  sops.secrets.immich_db_password = { };
+  sops.secrets.vpn_openvpn_user = { };
+  sops.secrets.vpn_openvpn_password = { };
 
   # qBittorrent env file
   sops.templates."qbittorrent.env".content = ''
@@ -83,6 +86,37 @@
     POSTGRES_USER=postgres
     POSTGRES_PASSWORD=${config.sops.placeholder.retrospend_postgres_password}
     POSTGRES_DB=retrospend
+  '';
+
+  # Immich env file (shared by server + ML + postgres)
+  sops.templates."immich.env".content = ''
+    DB_USERNAME=postgres
+    DB_PASSWORD=${config.sops.placeholder.immich_db_password}
+    DB_DATABASE_NAME=immich
+    IMMICH_VERSION=release
+    UPLOAD_LOCATION=/arespool/nextcloud/data/topikzero/files/ImmichUpload
+  '';
+
+  # Immich Postgres env file
+  sops.templates."immich-postgres.env".content = ''
+    POSTGRES_USER=postgres
+    POSTGRES_PASSWORD=${config.sops.placeholder.immich_db_password}
+    POSTGRES_DB=immich
+    POSTGRES_INITDB_ARGS=--data-checksums
+    DB_STORAGE_TYPE=SSD
+  '';
+
+  # VPN (Gluetun) env file
+  sops.templates."vpn.env".content = ''
+    VPN_SERVICE_PROVIDER=custom
+    VPN_TYPE=openvpn
+    OPENVPN_CUSTOM_CONFIG=/gluetun/custom.conf
+    OPENVPN_USER=${config.sops.placeholder.vpn_openvpn_user}
+    OPENVPN_PASSWORD=${config.sops.placeholder.vpn_openvpn_password}
+    FIREWALL_VPN_INPUT_PORTS=2283,5096
+    FIREWALL_OUTBOUND_SUBNETS=172.24.0.0/16
+    PUID=1000
+    PGID=1000
   '';
 
   # Linkding env file
@@ -402,6 +436,7 @@
         ${pkgs.docker}/bin/docker network create downloader_media_network || true
         ${pkgs.docker}/bin/docker network create bitwarden_default || true
         ${pkgs.docker}/bin/docker network create retrospend_default || true
+        ${pkgs.docker}/bin/docker network create immich_default || true
       '';
     };
   };
@@ -420,6 +455,13 @@
   systemd.services.docker-retrospend_postgres.after = [ "docker-networks.service" ];
   systemd.services.docker-retrospend_ollama.after = [ "docker-networks.service" "nvidia-container-toolkit-cdi-generator.service" ];
   systemd.services.docker-retrospend_ollama.wants = [ "nvidia-container-toolkit-cdi-generator.service" ];
+  systemd.services.docker-vpn.after = [ "docker-networks.service" ];
+  systemd.services.docker-edge.after = [ "docker-vpn.service" ];
+  systemd.services.docker-immich_server.after = [ "docker-networks.service" "nvidia-container-toolkit-cdi-generator.service" ];
+  systemd.services.docker-immich_server.wants = [ "nvidia-container-toolkit-cdi-generator.service" ];
+  systemd.services.docker-immich_machine_learning.after = [ "docker-networks.service" ];
+  systemd.services.docker-immich_postgres.after = [ "docker-networks.service" ];
+  systemd.services.docker-immich_redis.after = [ "docker-networks.service" ];
   # NVIDIA CDI dependency
   systemd.services.docker-jellyfin.after = [ "nvidia-container-toolkit-cdi-generator.service" ];
   systemd.services.docker-jellyfin.wants = [ "nvidia-container-toolkit-cdi-generator.service" ];
@@ -681,6 +723,95 @@
         "/arespool/nextcloud/data/topikzero/files/Sync:/config/Sync"
       ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    # ===== IMMICH + VPN (shared immich_default network) =====
+    vpn = {
+      image = "qmcgaw/gluetun";
+      environmentFiles = [ config.sops.templates."vpn.env".path ];
+      environment = {
+        HEALTH_RESTART_VPN = "on"; # Auto-restart VPN if health check fails
+        HEALTH_TARGET_ADDRESSES = "cloudflare.com:443,github.com:443";
+        HEALTH_SMALL_CHECK_TYPE = "icmp";
+      };
+      ports = [
+        "12283:2283"
+        "15096:5096"
+      ];
+      volumes = [
+        "/arespool/appdata/vpn/ovpn/windscribe.ovpn:/gluetun/custom.conf:ro"
+      ];
+      extraOptions = [
+        "--network=immich_default"
+        "--cap-add=NET_ADMIN"
+        "--device=/dev/net/tun"
+        "--health-cmd" "wget -q -O /dev/null https://cloudflare.com || exit 1"
+        "--health-interval" "30s"
+        "--health-timeout" "10s"
+        "--health-retries" "3"
+      ];
+    };
+    immich_server = {
+      image = "ghcr.io/immich-app/immich-server:release";
+      environmentFiles = [ config.sops.templates."immich.env".path ];
+      environment = {
+        NVIDIA_DRIVER_CAPABILITIES = "all";
+        NVIDIA_VISIBLE_DEVICES = "all";
+      };
+      ports = [ "127.0.0.1:2283:2283" ];
+      volumes = [
+        "/arespool/nextcloud/data/topikzero/files/ImmichUpload:/usr/src/app/upload"
+        "/arespool/nextcloud/data/topikzero/files/Photos/Google Photos:/mnt/media/Google Photos:ro"
+        "/arespool/nextcloud/data/topikzero/files/Photos/InstantUpload:/mnt/media/InstantUpload:ro"
+        "/arespool/photos-videos:/mnt/media/photos-videos:ro"
+        "/etc/localtime:/etc/localtime:ro"
+      ];
+      dependsOn = [ "immich_postgres" "immich_redis" ];
+      extraOptions = [
+        "--network=immich_default"
+        "--device=nvidia.com/gpu=all"
+      ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    immich_machine_learning = {
+      image = "ghcr.io/immich-app/immich-machine-learning:release";
+      environmentFiles = [ config.sops.templates."immich.env".path ];
+      volumes = [
+        "/arespool/appdata/immich/model-cache:/cache"
+      ];
+      dependsOn = [ "immich_postgres" ];
+      extraOptions = [ "--network=immich_default" ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    immich_postgres = {
+      image = "ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0";
+      environmentFiles = [ config.sops.templates."immich-postgres.env".path ];
+      volumes = [
+        "/arespool/appdata/immich/postgres/pgdata:/var/lib/postgresql/data"
+      ];
+      extraOptions = [
+        "--network=immich_default"
+        "--network-alias=database"
+        "--shm-size=128m"
+      ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    immich_redis = {
+      image = "valkey/valkey:9";
+      extraOptions = [
+        "--network=immich_default"
+        "--network-alias=redis"
+      ];
+    };
+    edge = {
+      image = "caddy:2-alpine";
+      dependsOn = [ "vpn" ];
+      volumes = [
+        "/arespool/appdata/vpn/caddy/config:/etc/caddy"
+        "/arespool/appdata/vpn/caddy/data:/data"
+        "/arespool/appdata/vpn/certs/photos.matv.io:/certs:ro"
+      ];
+      extraOptions = [ "--network=container:vpn" "--entrypoint" "/bin/sh" ];
+      cmd = [ "-lc" "echo 'Waiting for Immich...'; until nc -z immich_server 2283; do sleep 1; done; exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile" ];
     };
     # ===== RETROSPEND (shared retrospend_default network) =====
     retrospend = {
