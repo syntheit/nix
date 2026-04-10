@@ -40,9 +40,10 @@
       ExecStart = pkgs.writeShellScript "create-docker-networks" ''
         ${pkgs.docker}/bin/docker network create nextcloud_default || true
         ${pkgs.docker}/bin/docker network create downloader_media_network || true
-        ${pkgs.docker}/bin/docker network create bitwarden_default || true
         ${pkgs.docker}/bin/docker network create retrospend_default || true
         ${pkgs.docker}/bin/docker network create immich_default || true
+        ${pkgs.docker}/bin/docker network create karakeep_default || true
+        ${pkgs.docker}/bin/docker network create docmost_default || true
       '';
     };
   };
@@ -57,5 +58,40 @@
     ];
     cmd = [ "--label-enable" "--cleanup" "--interval" "3600" ];
     labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+  };
+
+  # Shared Ollama — GPU-accelerated LLM inference for Retrospend + Karakeep
+  virtualisation.oci-containers.containers.ollama = {
+    image = "ollama/ollama:latest";
+    volumes = [
+      "retrospend_ollama_data:/root/.ollama"
+    ];
+    extraOptions = [
+      "--network=retrospend_default"
+      "--network-alias=ollama"
+      "--device=nvidia.com/gpu=all"
+      "--dns=1.1.1.1"
+      "--dns=1.0.0.1"
+    ];
+    labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+  };
+
+  systemd.services.docker-ollama.after = [ "docker-networks.service" "nvidia-container-toolkit-cdi-generator.service" ];
+  systemd.services.docker-ollama.wants = [ "nvidia-container-toolkit-cdi-generator.service" ];
+
+  # Connect shared Ollama to Karakeep's network so both stacks can reach it
+  systemd.services.docker-ollama-karakeep-connect = {
+    description = "Connect shared Ollama to Karakeep network";
+    after = [ "docker-ollama.service" "docker-networks.service" ];
+    partOf = [ "docker-ollama.service" ];
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = pkgs.writeShellScript "connect-ollama-karakeep" ''
+        until ${pkgs.docker}/bin/docker inspect ollama >/dev/null 2>&1; do sleep 1; done
+        ${pkgs.docker}/bin/docker network connect --alias ollama karakeep_default ollama 2>/dev/null || true
+      '';
+    };
   };
 }

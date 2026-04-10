@@ -12,9 +12,7 @@
   sops.secrets.qbittorrent_webui_password = { };
   sops.secrets.linkding_superuser_name = { };
   sops.secrets.linkding_superuser_password = { };
-  sops.secrets.bitwarden_installation_id = { };
-  sops.secrets.bitwarden_installation_key = { };
-  sops.secrets.bitwarden_db_password = { };
+  sops.secrets.vaultwarden_admin_token = { };
   sops.secrets.retrospend_postgres_password = { };
   sops.secrets.retrospend_auth_secret = { };
   sops.secrets.retrospend_worker_api_key = { };
@@ -25,6 +23,17 @@
   sops.secrets.vpn_openvpn_user = { };
   sops.secrets.vpn_openvpn_password = { };
   sops.secrets.restic_backup_password = { };
+  sops.secrets.paperless_admin_password = {
+    mode = "0444"; # readable by paperless service user
+  };
+  sops.secrets.karakeep_nextauth_secret = { };
+  sops.secrets.karakeep_meili_master_key = { };
+  sops.secrets.docmost_app_secret = { };
+  sops.secrets.docmost_db_password = { };
+  sops.secrets.grafana_secret_key = {
+    owner = "grafana";
+    group = "grafana";
+  };
 
   # qBittorrent env file
   sops.templates."qbittorrent.env".content = ''
@@ -32,24 +41,11 @@
     WEBUI_PASSWORD=${config.sops.placeholder.qbittorrent_webui_password}
   '';
 
-  # Bitwarden env file
-  sops.templates."bitwarden.env".content = ''
-    BW_DOMAIN=vault.matv.io
-    BW_INSTALLATION_ID=${config.sops.placeholder.bitwarden_installation_id}
-    BW_INSTALLATION_KEY=${config.sops.placeholder.bitwarden_installation_key}
-    BW_DB_PROVIDER=mysql
-    BW_DB_SERVER=bitwarden_db
-    BW_DB_DATABASE=bitwarden_vault
-    BW_DB_USERNAME=bitwarden
-    BW_DB_PASSWORD=${config.sops.placeholder.bitwarden_db_password}
-  '';
-
-  # Bitwarden DB env file
-  sops.templates."bitwarden-db.env".content = ''
-    MARIADB_RANDOM_ROOT_PASSWORD=true
-    MARIADB_USER=bitwarden
-    MARIADB_PASSWORD=${config.sops.placeholder.bitwarden_db_password}
-    MARIADB_DATABASE=bitwarden_vault
+  # Vaultwarden env file
+  sops.templates."vaultwarden.env".content = ''
+    ADMIN_TOKEN=${config.sops.placeholder.vaultwarden_admin_token}
+    DOMAIN=https://vault.matv.io
+    SIGNUPS_ALLOWED=true
   '';
 
   # Retrospend env file (shared by app + sidecar)
@@ -131,6 +127,41 @@
     MYSQL_DATABASE=${config.sops.placeholder.nextcloud_db_name}
     MYSQL_USER=${config.sops.placeholder.nextcloud_db_user}
     MYSQL_PASSWORD=${config.sops.placeholder.nextcloud_db_pw}
+  '';
+
+  # Karakeep env file
+  sops.templates."karakeep.env".content = ''
+    NEXTAUTH_SECRET=${config.sops.placeholder.karakeep_nextauth_secret}
+    NEXTAUTH_URL=https://keep.matv.io
+    MEILI_ADDR=http://karakeep_meilisearch:7700
+    MEILI_MASTER_KEY=${config.sops.placeholder.karakeep_meili_master_key}
+    DATA_DIR=/data
+    BROWSER_WEB_URL=http://karakeep_chrome:9222
+    CRAWLER_FULL_PAGE_ARCHIVE=true
+    CRAWLER_FULL_PAGE_SCREENSHOT=true
+    OLLAMA_BASE_URL=http://ollama:11434
+    INFERENCE_TEXT_MODEL=qwen2.5:7b
+  '';
+
+  # Karakeep Meilisearch env file
+  sops.templates."karakeep-meilisearch.env".content = ''
+    MEILI_MASTER_KEY=${config.sops.placeholder.karakeep_meili_master_key}
+    MEILI_NO_ANALYTICS=true
+  '';
+
+  # Docmost env file
+  sops.templates."docmost.env".content = ''
+    APP_URL=https://docs.matv.io
+    APP_SECRET=${config.sops.placeholder.docmost_app_secret}
+    DATABASE_URL=postgresql://docmost:${config.sops.placeholder.docmost_db_password}@docmost_postgres:5432/docmost
+    REDIS_URL=redis://docmost_redis:6379
+  '';
+
+  # Docmost Postgres env file
+  sops.templates."docmost-postgres.env".content = ''
+    POSTGRES_USER=docmost
+    POSTGRES_PASSWORD=${config.sops.placeholder.docmost_db_password}
+    POSTGRES_DB=docmost
   '';
 
   # NextDNS resolved config

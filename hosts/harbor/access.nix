@@ -20,7 +20,7 @@
             originRequest.noTLSVerify = true;
           };
           "downloader.matv.io" = "http://localhost:9091";
-          "jackett.matv.io" = "http://localhost:9117";
+          "prowlarr.matv.io" = "http://localhost:9696";
           "sonarr.matv.io" = "http://localhost:8989";
           "radarr.matv.io" = "http://localhost:7878";
           "bazarr.matv.io" = "http://localhost:6767";
@@ -31,6 +31,11 @@
           "watch.matv.io" = "http://localhost:8096";
           "retrospend.app" = "http://localhost:1997";
           "tracearr.matv.io" = "http://localhost:7898";
+          "dav.matv.io" = "http://localhost:5232";
+          "grafana.matv.io" = "http://localhost:3100";
+          "paperless.matv.io" = "http://localhost:28981";
+          "keep.matv.io" = "http://localhost:3030";
+          "docs.matv.io" = "http://localhost:3040";
         };
         default = "http_status:404";
         credentialsFile = "/etc/cloudflared/credentials.json";
