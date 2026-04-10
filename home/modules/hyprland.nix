@@ -159,10 +159,14 @@ let
             load=$(cut -d" " -f1 /proc/loadavg)
             read -r total avail <<< $(awk "/MemTotal/{t=\$2} /MemAvailable/{a=\$2} END{printf \"%d %d\", t/1048576, a/1048576}" /proc/meminfo)
             used=$((total - avail))
-            temp=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null)
-            temp_str=""; [ -n "$temp" ] && temp_str="  ''${temp%???}°C"
+            temp=""
+            for tz in /sys/class/thermal/thermal_zone*/temp; do
+              t=$(cat "$tz" 2>/dev/null)
+              [ -n "$t" ] && [ "$t" -gt 0 ] 2>/dev/null && { temp=$t; break; }
+            done
+            temp_str=""; [ -n "$temp" ] && temp_str="  󰔏 ''${temp%???}°C"
             ct=$(docker ps -q 2>/dev/null | wc -l)
-            echo "''${days}d  Load: $load  RAM: ''${used}/''${total}G''${temp_str}  Containers: $ct"
+            echo "''${days}d  󰄧 $load   ''${used}/''${total}G''${temp_str}  󰡨 $ct"
           ' > "$cache_dir/server_$srv" 2>/dev/null) &
         done
         servers_last=$now
@@ -228,8 +232,8 @@ let
         buf+="\033[K\n"
       fi
       if [ -n "$raven_cache" ] || [ -n "$harbor_cache" ]; then
-        [ -n "$raven_cache" ] && buf+="raven   $raven_cache\033[K\n"
-        [ -n "$harbor_cache" ] && buf+="harbor  $harbor_cache\033[K\n"
+        [ -n "$raven_cache" ] && buf+="󱗆 raven   $raven_cache\033[K\n"
+        [ -n "$harbor_cache" ] && buf+="󰒋 harbor  $harbor_cache\033[K\n"
         buf+="\033[K\n"
       fi
       if [ -n "$weather_cache" ]; then

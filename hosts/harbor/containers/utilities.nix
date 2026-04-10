@@ -115,10 +115,11 @@
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
     karakeep_chrome = {
-      image = "ghcr.io/karakeep-app/chrome:release";
+      image = "gcr.io/zenika-hub/alpine-chrome:latest";
       environment = {
-        CHROME_FLAGS = "--disable-gpu --no-sandbox";
+        CHROME_FLAGS = "--disable-gpu --no-sandbox --disable-dev-shm-usage --remote-debugging-address=0.0.0.0 --remote-debugging-port=9222";
       };
+      cmd = [ "chromium-browser" "--headless" "--disable-gpu" "--no-sandbox" "--disable-dev-shm-usage" "--remote-debugging-address=0.0.0.0" "--remote-debugging-port=9222" ];
       extraOptions = [ "--network=karakeep_default" ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
