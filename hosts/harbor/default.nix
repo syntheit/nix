@@ -413,12 +413,19 @@
             exit 0
           fi
           mkdir -p "$WEBDIR/ui"
-          curl -sL "https://raw.githubusercontent.com/AumGupta/abyss-jellyfin/main/spotlight/spotlight.html" -o "$WEBDIR/ui/spotlight.html"
-          curl -sL "https://raw.githubusercontent.com/AumGupta/abyss-jellyfin/main/spotlight/spotlight.css" -o "$WEBDIR/ui/spotlight.css"
+          curl -sL "https://raw.githubusercontent.com/AumGupta/abyss-jellyfin/main/scripts/spotlight/spotlight.html" -o "$WEBDIR/ui/spotlight.html"
+          curl -sL "https://raw.githubusercontent.com/AumGupta/abyss-jellyfin/main/scripts/spotlight/spotlight.css" -o "$WEBDIR/ui/spotlight.css"
           CHUNK=$(find "$WEBDIR" -name "home-html.*.chunk.js" ! -name "*.bak" | head -1)
-          if [ -n "$CHUNK" ] && ! grep -q "spotlight" "$CHUNK" 2>/dev/null; then
-            cp "$CHUNK" "$CHUNK.bak"
-            curl -sL "https://raw.githubusercontent.com/AumGupta/abyss-jellyfin/main/spotlight/home-html.chunk.js" -o "$CHUNK"
+          if [ -n "$CHUNK" ]; then
+            # Restore from backup if chunk is corrupted or already patched incorrectly
+            if [ -f "$CHUNK.bak" ] && [ "$(wc -c < "$CHUNK")" -lt 1000 ]; then
+              cp "$CHUNK.bak" "$CHUNK"
+            fi
+            # Patch if not already patched
+            if ! grep -q "spotlight" "$CHUNK" 2>/dev/null; then
+              [ ! -f "$CHUNK.bak" ] && cp "$CHUNK" "$CHUNK.bak"
+              curl -sL "https://raw.githubusercontent.com/AumGupta/abyss-jellyfin/main/scripts/spotlight/home-html.chunk.js" -o "$CHUNK"
+            fi
           fi
           echo "[abyss] Spotlight installed"
         ''}:/custom-cont-init.d/abyss-spotlight"
