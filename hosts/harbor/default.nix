@@ -416,10 +416,28 @@
   virtualisation.docker = {
     enable = true;
     enableOnBoot = true;
+    liveRestore = true;
     autoPrune = {
       enable = true;
       dates = "weekly";
       flags = [ "--all" ];
+    };
+    daemon.settings = {
+      # Use host DNS instead of stale hardcoded IPs
+      dns = [ "127.0.0.53" ];
+      # Limit container log sizes (journald handles aggregation, but direct logs can grow)
+      log-opts = {
+        max-size = "50m";
+        max-file = "3";
+      };
+      # Default ulimits for all containers
+      default-ulimits = {
+        nofile = {
+          Name = "nofile";
+          Hard = 65536;
+          Soft = 65536;
+        };
+      };
     };
   };
 
@@ -782,6 +800,7 @@
       dependsOn = [ "immich_postgres" ];
       extraOptions = [
         "--network=immich_default"
+        "--network-alias=immich-machine-learning"
         "--device=nvidia.com/gpu=all"
       ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
