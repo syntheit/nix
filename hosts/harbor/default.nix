@@ -17,11 +17,22 @@
   sops.secrets.nextcloud_db_user = { };
   sops.secrets.nextcloud_db_pw = { };
   sops.secrets.qbittorrent_webui_password = { };
+  sops.secrets.linkding_superuser_name = { };
+  sops.secrets.linkding_superuser_password = { };
 
   # qBittorrent env file
   sops.templates."qbittorrent.env".content = ''
     VPN_TYPE=wireguard
     WEBUI_PASSWORD=${config.sops.placeholder.qbittorrent_webui_password}
+  '';
+
+  # Linkding env file
+  sops.templates."linkding.env".content = ''
+    LD_SUPERUSER_NAME=${config.sops.placeholder.linkding_superuser_name}
+    LD_SUPERUSER_PASSWORD=${config.sops.placeholder.linkding_superuser_password}
+    LD_CSRF_TRUSTED_ORIGINS=https://links.matv.io
+    LD_DISABLE_BACKGROUND_TASKS=False
+    LD_DISABLE_URL_VALIDATION=False
   '';
 
   # Nextcloud MariaDB env file — rendered from sops secrets at boot
@@ -600,6 +611,15 @@
       volumes = [
         "/arespool/appdata/syncthing/config:/config"
         "/arespool/nextcloud/data/topikzero/files/Sync:/config/Sync"
+      ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    linkding = {
+      image = "sissbruecker/linkding:latest-plus";
+      environmentFiles = [ config.sops.templates."linkding.env".path ];
+      ports = [ "127.0.0.1:28793:9090" ];
+      volumes = [
+        "/arespool/appdata/linkding:/etc/linkding/data"
       ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
