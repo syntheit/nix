@@ -755,15 +755,6 @@
       extraOptions = [ "--network=downloader_media_network" ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
-    portainer = {
-      image = "portainer/portainer-ce:latest";
-      ports = [ "127.0.0.1:9443:9443" ];
-      volumes = [
-        "/arespool/appdata/Portainer:/data"
-        "/var/run/docker.sock:/var/run/docker.sock"
-      ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
-    };
     memos = {
       image = "neosmemo/memos:stable";
       user = "1000:1000";
@@ -1049,10 +1040,6 @@
       "harbor" = {
         ingress = {
           "harbor.matv.io" = "ssh://localhost:64829";
-          "containers.matv.io" = {
-            service = "https://localhost:9443";
-            originRequest.noTLSVerify = true;
-          };
           "request.matv.io" = "http://localhost:5055";
           "links.matv.io" = "http://localhost:28793";
           "cloud.matv.io" = {
