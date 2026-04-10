@@ -51,7 +51,7 @@
         "127.0.0.1:8920:8920"
       ];
       volumes = [
-        "/micron01/appdata/jellyfin_config:/config"
+        "/arespool/appdata/jellyfin_config:/config"
         "/iotapool:/iotapool"
         "/lambdapool:/lambdapool"
         "/deltapool:/deltapool"
