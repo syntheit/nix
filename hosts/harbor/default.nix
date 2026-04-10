@@ -198,6 +198,12 @@
     memoryPercent = 25; # ~16GB compressed swap
   };
 
+  # Radicale data directories (must exist before systemd mount namespacing)
+  systemd.tmpfiles.rules = [
+    "d /arespool/appdata/radicale 0755 root root -"
+    "d /arespool/appdata/radicale/collections 0755 root root -"
+  ];
+
   # Radicale — CalDAV/CardDAV for contacts & calendar
   services.radicale = {
     enable = true;
