@@ -97,6 +97,13 @@
       address: 127.0.0.1
       port: 3001
 
+    ui:
+      title: Status | matv.io
+      description: Service status for matv.io infrastructure
+      header: Status
+      link: https://status.matv.io
+      logo: https://matv.io/favicon.ico
+
     endpoints:
       # ===== HARBOR SERVICES =====
       - name: Nextcloud
