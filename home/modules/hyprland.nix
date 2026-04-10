@@ -86,8 +86,10 @@ let
       day=$(date +%-d)
       date_str="$(LC_TIME=en_US.UTF-8 date +"%B") ''${day}$(suffix "$day"), $(LC_TIME=en_US.UTF-8 date +%Y)"
 
-      rendered=$(${pkgs.toilet}/bin/toilet -f mono12 -F metal "$time_str")
-      rwidth=$(echo "$rendered" | head -1 | wc -c)
+      # Render time with metal gradient, replace dark gray with blue for readability
+      rendered=$(${pkgs.toilet}/bin/toilet -f mono9 -F metal "$time_str" | sed 's/\x1b\[0;1;30;90m/\x1b[0;34m/g')
+      # Visible width (strip ANSI escapes for measuring)
+      rwidth=$(echo "$rendered" | sed 's/\x1b\[[0-9;]*m//g' | head -1 | wc -m)
       rheight=$(echo "$rendered" | wc -l)
       date_width=''${#date_str}
 
@@ -200,7 +202,7 @@ let
         buf+="\033[K\n  ⚠  Audio capture: $capture_apps\033[K\n"
       fi
       if [ -n "$exchange_cache" ]; then
-        buf+="── Dólar ──\033[K\n"
+        buf+="\033[K\n"
         while IFS= read -r eline; do buf+="$eline\033[K\n"; done <<< "$exchange_cache"
         buf+="\033[K\n"
       fi
@@ -255,7 +257,7 @@ let
     $T -L $S split-window -h -l 40%          # pane 1 (right top)
     $T -L $S split-window -v -l 70%          # pane 2 (right middle)
     $T -L $S split-window -v -l 40%          # pane 3 (right bottom)
-    $T -L $S resize-pane -t 1 -y 15
+    $T -L $S resize-pane -t 1 -y 10
 
     # Now launch programs in each pane
     $T -L $S send-keys -t 0 "btop" Enter
