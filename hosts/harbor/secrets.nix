@@ -24,6 +24,7 @@
   sops.secrets.immich_db_password = { };
   sops.secrets.vpn_openvpn_user = { };
   sops.secrets.vpn_openvpn_password = { };
+  sops.secrets.restic_backup_password = { };
 
   # qBittorrent env file
   sops.templates."qbittorrent.env".content = ''

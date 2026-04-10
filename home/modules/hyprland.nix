@@ -66,6 +66,9 @@ let
   '';
 
   clockScript = pkgs.writeShellScript "dashboard-clock" ''
+    tput civis
+    trap 'tput cnorm' EXIT
+
     suffix() {
       case $1 in
         1|21|31) echo "st" ;;
@@ -74,9 +77,41 @@ let
         *)       echo "th" ;;
       esac
     }
-    day=$(date +%-d)
-    date_fmt="$(LC_TIME=en_US.UTF-8 date +"%B") ''${day}$(suffix "$day"), $(LC_TIME=en_US.UTF-8 date +%Y)"
-    exec tty-clock -s -c -C 4 -b -f "$date_fmt"
+
+    cols=$(tput cols)
+    rows=$(tput lines)
+
+    while true; do
+      time_str=$(date +"%H:%M:%S")
+      day=$(date +%-d)
+      date_str="$(LC_TIME=en_US.UTF-8 date +"%B") ''${day}$(suffix "$day"), $(LC_TIME=en_US.UTF-8 date +%Y)"
+
+      rendered=$(${pkgs.toilet}/bin/toilet -f mono12 -F metal "$time_str")
+      rwidth=$(echo "$rendered" | head -1 | wc -c)
+      rheight=$(echo "$rendered" | wc -l)
+      date_width=''${#date_str}
+
+      # Center vertically and horizontally
+      pad_top=$(( (rows - rheight - 2) / 2 ))
+      pad_left=$(( (cols - rwidth) / 2 ))
+      date_pad=$(( (cols - date_width) / 2 ))
+      [ "$pad_top" -lt 0 ] && pad_top=0
+      [ "$pad_left" -lt 0 ] && pad_left=0
+      [ "$date_pad" -lt 0 ] && date_pad=0
+
+      hpad=$(printf '%*s' "$pad_left" "")
+      dpad=$(printf '%*s' "$date_pad" "")
+
+      buf=""
+      for i in $(seq 1 "$pad_top"); do buf+="\n"; done
+      while IFS= read -r line; do
+        buf+="''${hpad}''${line}\n"
+      done <<< "$rendered"
+      buf+="\n\033[1;34m''${dpad}''${date_str}\033[0m\n"
+
+      printf '\033[H\033[J%b' "$buf"
+      sleep 1
+    done
   '';
 
   dashboardInfoScript = pkgs.writeShellScript "dashboard-info" ''
@@ -89,6 +124,7 @@ let
     weather_last=0
     wallpaper_last=0
     capture_last=0
+    exchange_last=0
 
     while true; do
       now=$(date +%s)
@@ -101,6 +137,14 @@ let
       if [ $((now - wallpaper_last)) -gt 300 ]; then
         (wallpaper-cycle info 2>/dev/null | sed -n 's/^URL:  *//p' > "$cache_dir/wallpaper") &
         wallpaper_last=$now
+      fi
+      if [ $((now - exchange_last)) -gt 1800 ]; then
+        (curl -s --max-time 10 "https://dolarapi.com/v1/dolares" 2>/dev/null | ${pkgs.jq}/bin/jq -r '
+          [.[] | select(.casa == "blue" or .casa == "oficial" or .casa == "bolsa")] |
+          sort_by(if .casa == "oficial" then 0 elif .casa == "blue" then 1 else 2 end) |
+          .[] | "  \(.nombre): $\(.compra) / $\(.venta)"
+        ' > "$cache_dir/exchange" 2>/dev/null) &
+        exchange_last=$now
       fi
       if [ $((now - capture_last)) -gt 5 ]; then
         (pw-dump 2>/dev/null | ${pkgs.jq}/bin/jq -r '.[] | select(.info.props["media.class"] == "Stream/Input/Audio") | .info.props["application.name"] // empty' > "$cache_dir/capture" 2>/dev/null) &
@@ -143,6 +187,7 @@ let
 
       # ── Read cached slow data from files ──
       capture_apps=$(cat "$cache_dir/capture" 2>/dev/null)
+      exchange_cache=$(cat "$cache_dir/exchange" 2>/dev/null)
       weather_cache=$(cat "$cache_dir/weather" 2>/dev/null)
       wallpaper_cache=$(cat "$cache_dir/wallpaper" 2>/dev/null)
 
@@ -154,7 +199,11 @@ let
       if [ -n "$capture_apps" ]; then
         buf+="\033[K\n  ⚠  Audio capture: $capture_apps\033[K\n"
       fi
-      buf+="\033[K\n"
+      if [ -n "$exchange_cache" ]; then
+        buf+="── Dólar ──\033[K\n"
+        while IFS= read -r eline; do buf+="$eline\033[K\n"; done <<< "$exchange_cache"
+        buf+="\033[K\n"
+      fi
       if [ -n "$weather_cache" ]; then
         buf+="── Weather ──\033[K\n"
         while IFS= read -r wline; do buf+="$wline\033[K\n"; done <<< "$weather_cache"

@@ -19,7 +19,7 @@
     figlet
     pipes
     tmux
-    tty-clock
+    toilet
     lazygit
     yazi
     tldr
