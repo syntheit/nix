@@ -13,29 +13,29 @@
       "*" = {
         identityFile = "~/.ssh/mainkey";
       };
-      "harbor.matv.io" = {
+      "harbor" = {
+        hostname = "100.109.63.87";
+        identityFile = "~/.ssh/mainkey";
+        user = "matv";
+        port = 64829;
+      };
+      "harbor.tunnel" = {
         hostname = "harbor.matv.io";
         identityFile = "~/.ssh/mainkey";
         user = "matv";
         port = 64829;
         proxyCommand = "${pkgs.cloudflared}/bin/cloudflared access ssh --hostname %h";
       };
-      "raven.matv.io" = {
-        hostname = "raven.matv.io";
-        identityFile = "~/.ssh/mainkey";
-        user = "droid";
-        proxyCommand = "${pkgs.cloudflared}/bin/cloudflared access ssh --hostname %h";
-      };
-      "raven.tailscale" = {
+      "raven" = {
         hostname = "100.98.64.97";
         identityFile = "~/.ssh/mainkey";
         user = "droid";
       };
-      "harbor.tailscale" = {
-        hostname = "100.109.63.87";
+      "raven.tunnel" = {
+        hostname = "raven.matv.io";
         identityFile = "~/.ssh/mainkey";
-        user = "matv";
-        port = 64829;
+        user = "droid";
+        proxyCommand = "${pkgs.cloudflared}/bin/cloudflared access ssh --hostname %h";
       };
       "github.com" = {
         hostname = "github.com";
