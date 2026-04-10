@@ -2,28 +2,18 @@
 
 {
   virtualisation.oci-containers.containers = {
-    # ===== BITWARDEN (shared bitwarden_default network) =====
-    bitwarden = {
-      image = "ghcr.io/bitwarden/self-host:beta";
-      environmentFiles = [ config.sops.templates."bitwarden.env".path ];
-      ports = [ "127.0.0.1:29446:8080" ];
+    # ===== VAULTWARDEN (standalone, SQLite) =====
+    vaultwarden = {
+      image = "vaultwarden/server:latest";
+      environmentFiles = [ config.sops.templates."vaultwarden.env".path ];
+      ports = [ "127.0.0.1:29446:80" ];
       volumes = [
-        "/arespool/appdata/bitwarden/bitwarden:/etc/bitwarden"
-        "/arespool/appdata/bitwarden/logs:/var/log/bitwarden"
+        "/arespool/appdata/vaultwarden:/data"
       ];
-      dependsOn = [ "bitwarden_db" ];
-      extraOptions = [ "--network=bitwarden_default" ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
-    bitwarden_db = {
-      image = "mariadb:10";
-      environmentFiles = [ config.sops.templates."bitwarden-db.env".path ];
-      volumes = [
-        "/arespool/appdata/bitwarden_db/data:/var/lib/mysql"
-      ];
-      extraOptions = [ "--network=bitwarden_default" ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
-    };
+
+    # ===== LINKDING =====
     linkding = {
       image = "sissbruecker/linkding:latest-plus";
       environmentFiles = [ config.sops.templates."linkding.env".path ];
@@ -33,6 +23,8 @@
       ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
+
+    # ===== SCRUTINY (drive health monitoring) =====
     scrutiny = {
       image = "ghcr.io/analogj/scrutiny:master-omnibus";
       ports = [
@@ -59,6 +51,8 @@
       ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
+
+    # ===== SYNCTHING =====
     syncthing = {
       image = "lscr.io/linuxserver/syncthing:latest";
       environment = {
@@ -78,6 +72,8 @@
       ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
+
+    # ===== TRACEARR =====
     tracearr = {
       image = "ghcr.io/connorgallopo/tracearr:supervised";
       ports = [ "127.0.0.1:7898:3000" ];
@@ -96,9 +92,74 @@
       ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
+
+    # ===== KARAKEEP (shared karakeep_default network) =====
+    karakeep = {
+      image = "ghcr.io/karakeep-app/karakeep:release";
+      environmentFiles = [ config.sops.templates."karakeep.env".path ];
+      ports = [ "127.0.0.1:3030:3000" ];
+      volumes = [
+        "/arespool/appdata/karakeep:/data"
+      ];
+      dependsOn = [ "karakeep_meilisearch" "karakeep_chrome" ];
+      extraOptions = [ "--network=karakeep_default" ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    karakeep_meilisearch = {
+      image = "getmeili/meilisearch:v1.11";
+      environmentFiles = [ config.sops.templates."karakeep-meilisearch.env".path ];
+      volumes = [
+        "karakeep_meilisearch_data:/meili_data"
+      ];
+      extraOptions = [ "--network=karakeep_default" ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    karakeep_chrome = {
+      image = "ghcr.io/karakeep-app/chrome:release";
+      environment = {
+        CHROME_FLAGS = "--disable-gpu --no-sandbox";
+      };
+      extraOptions = [ "--network=karakeep_default" ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+
+    # ===== DOCMOST (shared docmost_default network) =====
+    docmost = {
+      image = "docmost/docmost:latest";
+      environmentFiles = [ config.sops.templates."docmost.env".path ];
+      ports = [ "127.0.0.1:3040:3000" ];
+      volumes = [
+        "/arespool/appdata/docmost/storage:/app/data/storage"
+      ];
+      dependsOn = [ "docmost_postgres" "docmost_redis" ];
+      extraOptions = [ "--network=docmost_default" ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    docmost_postgres = {
+      image = "postgres:16-alpine";
+      environmentFiles = [ config.sops.templates."docmost-postgres.env".path ];
+      volumes = [
+        "/arespool/appdata/docmost/postgres:/var/lib/postgresql/data"
+      ];
+      extraOptions = [ "--network=docmost_default" ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    docmost_redis = {
+      image = "redis:7-alpine";
+      cmd = [ "redis-server" "--appendonly" "yes" ];
+      volumes = [
+        "docmost_redis_data:/data"
+      ];
+      extraOptions = [ "--network=docmost_default" ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
   };
 
   # Network dependencies
-  systemd.services.docker-bitwarden.after = [ "docker-networks.service" ];
-  systemd.services.docker-bitwarden_db.after = [ "docker-networks.service" ];
+  systemd.services.docker-karakeep.after = [ "docker-networks.service" ];
+  systemd.services.docker-karakeep_meilisearch.after = [ "docker-networks.service" ];
+  systemd.services.docker-karakeep_chrome.after = [ "docker-networks.service" ];
+  systemd.services.docker-docmost.after = [ "docker-networks.service" ];
+  systemd.services.docker-docmost_postgres.after = [ "docker-networks.service" ];
+  systemd.services.docker-docmost_redis.after = [ "docker-networks.service" ];
 }

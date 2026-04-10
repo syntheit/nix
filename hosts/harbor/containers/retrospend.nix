@@ -40,26 +40,10 @@
       ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
-    retrospend_ollama = {
-      image = "ollama/ollama:latest";
-      volumes = [
-        "retrospend_ollama_data:/root/.ollama"
-      ];
-      extraOptions = [
-        "--network=retrospend_default"
-        "--network-alias=ollama"
-        "--device=nvidia.com/gpu=all"
-        "--dns=1.1.1.1"
-        "--dns=1.0.0.1"
-      ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
-    };
   };
 
   # Network + NVIDIA dependencies
   systemd.services.docker-retrospend.after = [ "docker-networks.service" ];
   systemd.services.docker-retrospend_sidecar.after = [ "docker-networks.service" ];
   systemd.services.docker-retrospend_postgres.after = [ "docker-networks.service" ];
-  systemd.services.docker-retrospend_ollama.after = [ "docker-networks.service" "nvidia-container-toolkit-cdi-generator.service" ];
-  systemd.services.docker-retrospend_ollama.wants = [ "nvidia-container-toolkit-cdi-generator.service" ];
 }

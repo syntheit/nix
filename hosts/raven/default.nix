@@ -1,4 +1,5 @@
 {
+  lib,
   pkgs,
   vars,
   inputs,
@@ -8,6 +9,9 @@
   imports = [
     inputs.nixos-avf.nixosModules.avf
   ];
+
+  # Override deprecated option set by nixos-avf module
+  services.resolved.settings.Resolve.DNSSEC = lib.mkForce "false";
 
   networking.hostName = "raven";
   system.stateVersion = "26.05";

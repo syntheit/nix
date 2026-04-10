@@ -78,18 +78,17 @@ let
       esac
     }
 
-    cols=$(tput cols)
-    rows=$(tput lines)
-
     while true; do
+      cols=$(tput cols)
+      rows=$(tput lines)
       time_str=$(date +"%H:%M:%S")
       day=$(date +%-d)
       date_str="$(LC_TIME=en_US.UTF-8 date +"%B") ''${day}$(suffix "$day"), $(LC_TIME=en_US.UTF-8 date +%Y)"
 
       # Render time with metal gradient, replace dark gray with blue for readability
       rendered=$(${pkgs.toilet}/bin/toilet -f mono9 -F metal "$time_str" | sed 's/\x1b\[0;1;30;90m/\x1b[0;34m/g')
-      # Visible width (strip ANSI escapes for measuring)
-      rwidth=$(echo "$rendered" | sed 's/\x1b\[[0-9;]*m//g' | head -1 | wc -m)
+      # Visible width (strip ANSI escapes, measure widest line)
+      rwidth=$(echo "$rendered" | sed 's/\x1b\[[0-9;]*m//g' | wc -L)
       rheight=$(echo "$rendered" | wc -l)
       date_width=''${#date_str}
 
@@ -127,6 +126,7 @@ let
     wallpaper_last=0
     capture_last=0
     exchange_last=0
+    servers_last=0
 
     while true; do
       now=$(date +%s)
@@ -141,12 +141,31 @@ let
         wallpaper_last=$now
       fi
       if [ $((now - exchange_last)) -gt 1800 ]; then
-        (curl -s --max-time 10 "https://dolarapi.com/v1/dolares" 2>/dev/null | ${pkgs.jq}/bin/jq -r '
-          [.[] | select(.casa == "blue" or .casa == "oficial" or .casa == "bolsa")] |
-          sort_by(if .casa == "oficial" then 0 elif .casa == "blue" then 1 else 2 end) |
-          .[] | "  \(.nombre): $\(.compra) / $\(.venta)"
-        ' > "$cache_dir/exchange" 2>/dev/null) &
+        (
+          ars=$(curl -s --max-time 10 "https://dolarapi.com/v1/dolares" 2>/dev/null | ${pkgs.jq}/bin/jq -r '
+            [.[] | select(.casa == "blue" or .casa == "oficial" or .casa == "bolsa")] |
+            sort_by(if .casa == "oficial" then 0 elif .casa == "blue" then 1 else 2 end) |
+            .[] | "\(if .casa == "oficial" then "Official" elif .casa == "blue" then "Blue" else "MEP" end): \(.compra | floor) / \(.venta | floor)"
+          ')
+          brl=$(curl -s --max-time 10 "https://raw.githubusercontent.com/syntheit/exchange-rates/refs/heads/main/rates.json" 2>/dev/null | ${pkgs.jq}/bin/jq -r '.rates.BRL | . * 100 | round | . / 100 | tostring | "BRL: " + .')
+          { [ -n "$ars" ] && echo "$ars"; [ -n "$brl" ] && echo "$brl"; } > "$cache_dir/exchange"
+        ) &
         exchange_last=$now
+      fi
+      if [ $((now - servers_last)) -gt 1800 ]; then
+        for srv in raven harbor; do
+          (ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$srv" '
+            days=$(( $(cut -d. -f1 /proc/uptime | cut -d" " -f1) / 86400 ))
+            load=$(cut -d" " -f1 /proc/loadavg)
+            read -r total avail <<< $(awk "/MemTotal/{t=\$2} /MemAvailable/{a=\$2} END{printf \"%d %d\", t/1048576, a/1048576}" /proc/meminfo)
+            used=$((total - avail))
+            temp=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null)
+            temp_str=""; [ -n "$temp" ] && temp_str="  ''${temp%???}°C"
+            ct=$(docker ps -q 2>/dev/null | wc -l)
+            echo "''${days}d  Load: $load  RAM: ''${used}/''${total}G''${temp_str}  Containers: $ct"
+          ' > "$cache_dir/server_$srv" 2>/dev/null) &
+        done
+        servers_last=$now
       fi
       if [ $((now - capture_last)) -gt 5 ]; then
         (pw-dump 2>/dev/null | ${pkgs.jq}/bin/jq -r '.[] | select(.info.props["media.class"] == "Stream/Input/Audio") | .info.props["application.name"] // empty' > "$cache_dir/capture" 2>/dev/null) &
@@ -190,6 +209,8 @@ let
       # ── Read cached slow data from files ──
       capture_apps=$(cat "$cache_dir/capture" 2>/dev/null)
       exchange_cache=$(cat "$cache_dir/exchange" 2>/dev/null)
+      raven_cache=$(cat "$cache_dir/server_raven" 2>/dev/null)
+      harbor_cache=$(cat "$cache_dir/server_harbor" 2>/dev/null)
       weather_cache=$(cat "$cache_dir/weather" 2>/dev/null)
       wallpaper_cache=$(cat "$cache_dir/wallpaper" 2>/dev/null)
 
@@ -206,9 +227,15 @@ let
         while IFS= read -r eline; do buf+="$eline\033[K\n"; done <<< "$exchange_cache"
         buf+="\033[K\n"
       fi
+      if [ -n "$raven_cache" ] || [ -n "$harbor_cache" ]; then
+        [ -n "$raven_cache" ] && buf+="raven   $raven_cache\033[K\n"
+        [ -n "$harbor_cache" ] && buf+="harbor  $harbor_cache\033[K\n"
+        buf+="\033[K\n"
+      fi
       if [ -n "$weather_cache" ]; then
-        buf+="── Weather ──\033[K\n"
-        while IFS= read -r wline; do buf+="$wline\033[K\n"; done <<< "$weather_cache"
+        weather_body=$(echo "$weather_cache" | tail -n +2)
+        buf+="Buenos Aires, Argentina\033[K\n"
+        while IFS= read -r wline; do buf+="$wline\033[K\n"; done <<< "$weather_body"
         buf+="\033[K\n"
       fi
       if [ -n "$wallpaper_cache" ] && [ "$wallpaper_cache" != "(local file)" ]; then
@@ -255,9 +282,8 @@ let
 
     # pane 0 (left): btop
     $T -L $S split-window -h -l 40%          # pane 1 (right top)
-    $T -L $S split-window -v -l 70%          # pane 2 (right middle)
+    $T -L $S split-window -v -l 80%          # pane 2 (right middle)
     $T -L $S split-window -v -l 40%          # pane 3 (right bottom)
-    $T -L $S resize-pane -t 1 -y 10
 
     # Now launch programs in each pane
     $T -L $S send-keys -t 0 "btop" Enter

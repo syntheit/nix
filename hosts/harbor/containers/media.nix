@@ -115,18 +115,16 @@
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
     # Seerr runs as a native NixOS service (see services.seerr above)
-    jackett = {
-      image = "lscr.io/linuxserver/jackett:latest";
+    prowlarr = {
+      image = "linuxserver/prowlarr:latest";
       environment = {
         PUID = "1000";
         PGID = "1000";
         TZ = "America/New_York";
-        AUTO_UPDATE = "true";
       };
-      ports = [ "127.0.0.1:9117:9117" ];
+      ports = [ "127.0.0.1:9696:9696" ];
       volumes = [
-        "/arespool/appdata/jackett:/config"
-        "/rhopool/Downloads:/downloads"
+        "/arespool/appdata/prowlarr:/config"
       ];
       dependsOn = [ "qbittorrent" ];
       extraOptions = [ "--network=downloader_media_network" ];
@@ -215,7 +213,7 @@
   systemd.services.docker-sonarr.after = [ "docker-networks.service" ];
   systemd.services.docker-radarr.after = [ "docker-networks.service" ];
   systemd.services.docker-bazarr.after = [ "docker-networks.service" ];
-  systemd.services.docker-jackett.after = [ "docker-networks.service" ];
+  systemd.services.docker-prowlarr.after = [ "docker-networks.service" ];
   systemd.services.docker-jellyfin.after = [ "nvidia-container-toolkit-cdi-generator.service" ];
   systemd.services.docker-jellyfin.wants = [ "nvidia-container-toolkit-cdi-generator.service" ];
 }

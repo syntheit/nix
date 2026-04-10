@@ -12,6 +12,7 @@
     ./storage.nix
     ./containers
     ./access.nix
+    ./monitoring.nix
   ];
 
   # Networking configuration
@@ -195,6 +196,34 @@
   zramSwap = {
     enable = true;
     memoryPercent = 25; # ~16GB compressed swap
+  };
+
+  # Radicale — CalDAV/CardDAV for contacts & calendar
+  services.radicale = {
+    enable = true;
+    settings = {
+      server.hosts = [ "127.0.0.1:5232" ];
+      auth = {
+        type = "htpasswd";
+        htpasswd_filename = "/arespool/appdata/radicale/htpasswd";
+        htpasswd_encryption = "bcrypt";
+      };
+      storage.filesystem_folder = "/arespool/appdata/radicale/collections";
+    };
+  };
+
+  # Paperless-ngx — document management with OCR
+  services.paperless = {
+    enable = true;
+    address = "127.0.0.1";
+    port = 28981;
+    dataDir = "/arespool/appdata/paperless";
+    passwordFile = config.sops.secrets.paperless_admin_password.path;
+    settings = {
+      PAPERLESS_URL = "https://paperless.matv.io";
+      PAPERLESS_TIME_ZONE = "America/New_York";
+      PAPERLESS_OCR_LANGUAGE = "eng";
+    };
   };
 
   system.stateVersion = "23.05";

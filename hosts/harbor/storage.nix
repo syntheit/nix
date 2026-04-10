@@ -143,7 +143,7 @@
         "/arespool/appdata/jellyfin_config"
 
         # Seerr (native NixOS service)
-        "/var/lib/private/seerr"
+        "/var/lib/private/jellyseerr"
 
         # DB dumps (created by pre-backup hook)
         "/var/lib/harbor-backups/db-dumps"
