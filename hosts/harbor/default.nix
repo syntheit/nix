@@ -22,6 +22,12 @@
   sops.secrets.bitwarden_installation_id = { };
   sops.secrets.bitwarden_installation_key = { };
   sops.secrets.bitwarden_db_password = { };
+  sops.secrets.retrospend_postgres_password = { };
+  sops.secrets.retrospend_auth_secret = { };
+  sops.secrets.retrospend_worker_api_key = { };
+  sops.secrets.retrospend_openrouter_api_key = { };
+  sops.secrets.retrospend_smtp_user = { };
+  sops.secrets.retrospend_smtp_password = { };
 
   # qBittorrent env file
   sops.templates."qbittorrent.env".content = ''
@@ -47,6 +53,36 @@
     MARIADB_USER=bitwarden
     MARIADB_PASSWORD=${config.sops.placeholder.bitwarden_db_password}
     MARIADB_DATABASE=bitwarden_vault
+  '';
+
+  # Retrospend env file (shared by app + sidecar)
+  sops.templates."retrospend.env".content = ''
+    POSTGRES_USER=postgres
+    POSTGRES_PASSWORD=${config.sops.placeholder.retrospend_postgres_password}
+    POSTGRES_DB_NAME=retrospend
+    DATABASE_URL=postgresql://postgres:${config.sops.placeholder.retrospend_postgres_password}@postgres:5432/retrospend
+    AUTH_SECRET=${config.sops.placeholder.retrospend_auth_secret}
+    WORKER_API_KEY=${config.sops.placeholder.retrospend_worker_api_key}
+    OPENROUTER_API_KEY=${config.sops.placeholder.retrospend_openrouter_api_key}
+    OPENROUTER_MODEL=qwen/qwen-2.5-7b-instruct
+    SIDECAR_URL=http://sidecar:8080
+    PUBLIC_URL=https://retrospend.app
+    UPLOAD_DIR=/data/uploads
+    SHOW_LANDING_PAGE=true
+    ENABLE_LEGAL_PAGES=true
+    AUDIT_PRIVACY_MODE=anonymized
+    SMTP_HOST=smtppro.zoho.com
+    SMTP_PORT=587
+    SMTP_USER=${config.sops.placeholder.retrospend_smtp_user}
+    SMTP_PASSWORD=${config.sops.placeholder.retrospend_smtp_password}
+    EMAIL_FROM=Retrospend <noreply@retrospend.app>
+  '';
+
+  # Retrospend Postgres env file
+  sops.templates."retrospend-postgres.env".content = ''
+    POSTGRES_USER=postgres
+    POSTGRES_PASSWORD=${config.sops.placeholder.retrospend_postgres_password}
+    POSTGRES_DB=retrospend
   '';
 
   # Linkding env file
@@ -365,6 +401,7 @@
         ${pkgs.docker}/bin/docker network create nextcloud_default || true
         ${pkgs.docker}/bin/docker network create downloader_media_network || true
         ${pkgs.docker}/bin/docker network create bitwarden_default || true
+        ${pkgs.docker}/bin/docker network create retrospend_default || true
       '';
     };
   };
@@ -378,6 +415,11 @@
   systemd.services.docker-jackett.after = [ "docker-networks.service" ];
   systemd.services.docker-bitwarden.after = [ "docker-networks.service" ];
   systemd.services.docker-bitwarden_db.after = [ "docker-networks.service" ];
+  systemd.services.docker-retrospend.after = [ "docker-networks.service" ];
+  systemd.services.docker-retrospend_sidecar.after = [ "docker-networks.service" ];
+  systemd.services.docker-retrospend_postgres.after = [ "docker-networks.service" ];
+  systemd.services.docker-retrospend_ollama.after = [ "docker-networks.service" "nvidia-container-toolkit-cdi-generator.service" ];
+  systemd.services.docker-retrospend_ollama.wants = [ "nvidia-container-toolkit-cdi-generator.service" ];
   # NVIDIA CDI dependency
   systemd.services.docker-jellyfin.after = [ "nvidia-container-toolkit-cdi-generator.service" ];
   systemd.services.docker-jellyfin.wants = [ "nvidia-container-toolkit-cdi-generator.service" ];
@@ -637,6 +679,58 @@
       volumes = [
         "/arespool/appdata/syncthing/config:/config"
         "/arespool/nextcloud/data/topikzero/files/Sync:/config/Sync"
+      ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    # ===== RETROSPEND (shared retrospend_default network) =====
+    retrospend = {
+      image = "synzeit/retrospend:latest";
+      environmentFiles = [ config.sops.templates."retrospend.env".path ];
+      ports = [ "127.0.0.1:1997:1997" ];
+      volumes = [
+        "retrospend_uploads:/data/uploads"
+      ];
+      dependsOn = [ "retrospend_postgres" "retrospend_sidecar" ];
+      extraOptions = [ "--network=retrospend_default" ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    retrospend_sidecar = {
+      image = "synzeit/retrospend-sidecar:latest";
+      environmentFiles = [ config.sops.templates."retrospend.env".path ];
+      volumes = [
+        "retrospend_sidecar_data:/app/data"
+        "retrospend_backup_data:/backups"
+      ];
+      dependsOn = [ "retrospend_postgres" ];
+      extraOptions = [
+        "--network=retrospend_default"
+        "--network-alias=sidecar"
+      ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    retrospend_postgres = {
+      image = "postgres:16-alpine";
+      environmentFiles = [ config.sops.templates."retrospend-postgres.env".path ];
+      volumes = [
+        "retrospend_postgres_data:/var/lib/postgresql/data"
+      ];
+      extraOptions = [
+        "--network=retrospend_default"
+        "--network-alias=postgres"
+      ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    retrospend_ollama = {
+      image = "ollama/ollama:latest";
+      volumes = [
+        "retrospend_ollama_data:/root/.ollama"
+      ];
+      extraOptions = [
+        "--network=retrospend_default"
+        "--network-alias=ollama"
+        "--device=nvidia.com/gpu=all"
+        "--dns=1.1.1.1"
+        "--dns=1.0.0.1"
       ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
