@@ -88,13 +88,13 @@
     in
     {
       nixosConfigurations = {
-        caspian = nixpkgs.lib.nixosSystem {
+        mantle = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
           specialArgs = specialArgs // {
-            hostName = "caspian";
+            hostName = "mantle";
           };
           modules = [
-            ./hosts/caspian
+            ./hosts/mantle
             inputs.home-manager.nixosModules.home-manager
             inputs.windscribe.nixosModules.default
             {
@@ -109,20 +109,20 @@
               home-manager.useUserPackages = true;
               home-manager.backupFileExtension = "bkp";
               home-manager.extraSpecialArgs = specialArgs // {
-                hostName = "caspian";
+                hostName = "mantle";
               };
               home-manager.users."${vars.user.name}" = import ./home;
             }
           ];
         };
 
-        ionian = nixpkgs.lib.nixosSystem {
+        ledger = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
           specialArgs = specialArgs // {
-            hostName = "ionian";
+            hostName = "ledger";
           };
           modules = [
-            ./hosts/ionian
+            ./hosts/ledger
             inputs.home-manager.nixosModules.home-manager
             inputs.windscribe.nixosModules.default
             {
@@ -137,7 +137,7 @@
               home-manager.useUserPackages = true;
               home-manager.backupFileExtension = "bkp";
               home-manager.extraSpecialArgs = specialArgs // {
-                hostName = "ionian";
+                hostName = "ledger";
               };
               home-manager.users."${vars.user.name}" = import ./home;
             }
@@ -181,13 +181,13 @@
       };
 
       darwinConfigurations = {
-        aegean = inputs.nix-darwin.lib.darwinSystem {
+        swift = inputs.nix-darwin.lib.darwinSystem {
           system = "aarch64-darwin";
           specialArgs = specialArgs // {
-            hostName = "aegean";
+            hostName = "swift";
           };
           modules = [
-            ./hosts/aegean
+            ./hosts/swift
             inputs.nix-homebrew.darwinModules.nix-homebrew
             inputs.home-manager.darwinModules.home-manager
             {
@@ -199,9 +199,9 @@
               home-manager.useUserPackages = true;
               home-manager.backupFileExtension = "bkp";
               home-manager.extraSpecialArgs = specialArgs // {
-                hostName = "aegean";
+                hostName = "swift";
               };
-              home-manager.users."${vars.user.name}" = import ./hosts/aegean/home.nix;
+              home-manager.users."${vars.user.name}" = import ./hosts/swift/home.nix;
             }
           ];
         };

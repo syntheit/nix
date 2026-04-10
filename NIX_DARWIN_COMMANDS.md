@@ -4,13 +4,13 @@
 
 ```bash
 # Apply configuration changes
-darwin-rebuild switch --flake .#aegean
+darwin-rebuild switch --flake .#swift
 
 # Update flake inputs
 nix flake update
 
 # Test configuration without activating
-darwin-rebuild build --flake .#aegean
+darwin-rebuild build --flake .#swift
 
 # Rollback to previous generation
 darwin-rebuild --rollback
@@ -36,7 +36,7 @@ nix run nix-darwin -- switch --flake ~/.config/nix-darwin
 cd /Users/daniel/Dev/nixos
 git add .
 git commit -m "Initial commit" # Flakes need changes committed or staged
-sudo nix run nix-darwin -- switch --flake .#aegean
+sudo nix run nix-darwin -- switch --flake .#swift
 ```
 
 ---
@@ -47,16 +47,16 @@ sudo nix run nix-darwin -- switch --flake .#aegean
 
 ```bash
 # Build and activate (most common)
-darwin-rebuild switch --flake .#aegean
+darwin-rebuild switch --flake .#swift
 
 # Build only (test without activating)
-darwin-rebuild build --flake .#aegean
+darwin-rebuild build --flake .#swift
 
 # Build and view changelog
-darwin-rebuild switch --flake .#aegean --show-trace
+darwin-rebuild switch --flake .#swift --show-trace
 
 # Dry run (show what would change)
-darwin-rebuild build --flake .#aegean --dry-run
+darwin-rebuild build --flake .#swift --dry-run
 ```
 
 ### Update Dependencies
@@ -69,7 +69,7 @@ nix flake update
 nix flake lock --update-input nixpkgs
 
 # Update and rebuild in one command
-nix flake update && darwin-rebuild switch --flake .#aegean
+nix flake update && darwin-rebuild switch --flake .#swift
 ```
 
 ### Check Configuration
@@ -154,7 +154,7 @@ brew cleanup               # Clean old versions
 # No separate home-manager command needed
 
 # To rebuild home config only (if standing alone)
-home-manager switch --flake .#daniel@aegean
+home-manager switch --flake .#daniel@swift
 
 # Show home-manager generations
 home-manager generations
@@ -204,13 +204,13 @@ brew services list | grep sketchybar
 
 ```bash
 # Show full trace on error
-darwin-rebuild switch --flake .#aegean --show-trace
+darwin-rebuild switch --flake .#swift --show-trace
 
 # Verbose output
-darwin-rebuild switch --flake .#aegean --verbose
+darwin-rebuild switch --flake .#swift --verbose
 
 # Keep build artifacts on failure
-darwin-rebuild switch --flake .#aegean --keep-failed
+darwin-rebuild switch --flake .#swift --keep-failed
 
 # Show why a package is in the closure
 nix why-depends /run/current-system nixpkgs#package-name
@@ -222,10 +222,10 @@ nix why-depends /run/current-system nixpkgs#package-name
 # Open Nix REPL with flake
 nix repl
 :lf .
-:p darwinConfigurations.aegean.config.services
+:p darwinConfigurations.swift.config.services
 
 # Evaluate expression
-nix eval .#darwinConfigurations.aegean.config.system.stateVersion
+nix eval .#darwinConfigurations.swift.config.system.stateVersion
 ```
 
 ### System Information
@@ -249,13 +249,13 @@ readlink /nix/var/nix/profiles/system
 
 ```bash
 # 1. Edit configuration files
-vim hosts/aegean/default.nix
+vim hosts/swift/default.nix
 
 # 2. Test build
-darwin-rebuild build --flake .#aegean
+darwin-rebuild build --flake .#swift
 
 # 3. Apply if successful
-darwin-rebuild switch --flake .#aegean
+darwin-rebuild switch --flake .#swift
 
 # 4. Commit changes
 git add .
@@ -267,7 +267,7 @@ git commit -m "Update configuration"
 ```bash
 # Full update workflow
 nix flake update
-darwin-rebuild switch --flake .#aegean
+darwin-rebuild switch --flake .#swift
 nix-collect-garbage -d
 ```
 
@@ -275,13 +275,13 @@ nix-collect-garbage -d
 
 ```bash
 # 1. Show full trace
-darwin-rebuild switch --flake .#aegean --show-trace
+darwin-rebuild switch --flake .#swift --show-trace
 
 # 2. Check flake
 nix flake check
 
 # 3. Try building specific derivation
-nix build .#darwinConfigurations.aegean.system
+nix build .#darwinConfigurations.swift.system
 
 # 4. Rollback if needed
 darwin-rebuild --rollback
@@ -355,9 +355,9 @@ nix profile remove package-name
 ```nix
 home.shellAliases = {
   # Darwin rebuild shortcuts
-  drb = "darwin-rebuild build --flake .#aegean";
-  drs = "darwin-rebuild switch --flake .#aegean";
-  drt = "darwin-rebuild build --flake .#aegean --show-trace";
+  drb = "darwin-rebuild build --flake .#swift";
+  drs = "darwin-rebuild switch --flake .#swift";
+  drt = "darwin-rebuild build --flake .#swift --show-trace";
 
   # Nix garbage collection
   ngc = "nix-collect-garbage -d";
@@ -384,8 +384,8 @@ home.shellAliases = {
 
 | Task           | Command                                  |
 | -------------- | ---------------------------------------- |
-| Apply config   | `darwin-rebuild switch --flake .#aegean` |
-| Test build     | `darwin-rebuild build --flake .#aegean`  |
+| Apply config   | `darwin-rebuild switch --flake .#swift` |
+| Test build     | `darwin-rebuild build --flake .#swift`  |
 | Update inputs  | `nix flake update`                       |
 | Rollback       | `darwin-rebuild --rollback`              |
 | Clean up       | `nix-collect-garbage -d`                 |

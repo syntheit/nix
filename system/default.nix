@@ -226,7 +226,7 @@ in
   };
 
   # Fingerprint authentication for sudo and login
-  # Only enabled per-host where fprintd is available (see hosts/ionian/hardware.nix)
+  # Only enabled per-host where fprintd is available (see hosts/ledger/hardware.nix)
 
   # Allow user to toggle USB devices without password
   security.sudo.extraRules = [

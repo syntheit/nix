@@ -8,7 +8,7 @@
     ../../desktop
   ];
 
-  networking.hostName = "caspian";
+  networking.hostName = "mantle";
 
   services.tailscale.enable = true;
   networking.firewall.trustedInterfaces = [ "tailscale0" ];
