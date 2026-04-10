@@ -281,12 +281,10 @@ let
     $T -L $S bind -T root WheelDownPane run-shell -b "wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%-"
 
     # Create all pane splits and sizing first, then launch programs.
-    # This avoids a race where tty-clock's initial ncurses draw gets
-    # lost when the pane is resized after startup.
 
     # pane 0 (left): btop
     $T -L $S split-window -h -l 40%          # pane 1 (right top)
-    $T -L $S split-window -v -l 80%          # pane 2 (right middle)
+    $T -L $S split-window -v -l 85%          # pane 2 (right middle)
     $T -L $S split-window -v -l 40%          # pane 3 (right bottom)
 
     # Now launch programs in each pane
