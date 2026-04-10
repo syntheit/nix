@@ -15,7 +15,9 @@
         "12283:2283"
         "15096:5096"
       ];
-      volumes = [ ];
+      volumes = [
+        "/arespool/appdata/vpn/ovpn/windscribe.ovpn:/gluetun/custom.conf:ro"
+      ];
       extraOptions = [
         "--network=immich_default"
         "--cap-add=NET_ADMIN"
