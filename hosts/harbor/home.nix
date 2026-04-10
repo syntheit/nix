@@ -39,6 +39,7 @@
     lsof
     python3
     claude-code
+    restic
   ];
 
   programs.starship.settings.hostname = {
