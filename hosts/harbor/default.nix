@@ -339,7 +339,7 @@
   systemd.services.docker-radarr.after = [ "docker-networks.service" ];
   systemd.services.docker-bazarr.after = [ "docker-networks.service" ];
   systemd.services.docker-jackett.after = [ "docker-networks.service" ];
-  systemd.services.docker-jellyseerr.after = [ "docker-networks.service" ];
+  systemd.services.docker-seerr.after = [ "docker-networks.service" ];
   # NVIDIA CDI dependency
   systemd.services.docker-jellyfin.after = [ "nvidia-container-toolkit-cdi-generator.service" ];
   systemd.services.docker-jellyfin.wants = [ "nvidia-container-toolkit-cdi-generator.service" ];
@@ -403,6 +403,24 @@
       ];
       extraOptions = [
         "--device=nvidia.com/gpu=all"
+        "-v" "${pkgs.writeShellScript "abyss-spotlight" ''
+          #!/bin/bash
+          echo "[abyss] Installing Spotlight..."
+          WEBDIR=$(find / -path "*/jellyfin-web" -type d 2>/dev/null | head -1)
+          if [ -z "$WEBDIR" ]; then
+            echo "[abyss] Could not find jellyfin-web directory"
+            exit 0
+          fi
+          mkdir -p "$WEBDIR/ui"
+          curl -sL "https://raw.githubusercontent.com/AumGupta/abyss-jellyfin/main/spotlight/spotlight.html" -o "$WEBDIR/ui/spotlight.html"
+          curl -sL "https://raw.githubusercontent.com/AumGupta/abyss-jellyfin/main/spotlight/spotlight.css" -o "$WEBDIR/ui/spotlight.css"
+          CHUNK=$(find "$WEBDIR" -name "home-html.*.chunk.js" ! -name "*.bak" | head -1)
+          if [ -n "$CHUNK" ] && ! grep -q "spotlight" "$CHUNK" 2>/dev/null; then
+            cp "$CHUNK" "$CHUNK.bak"
+            curl -sL "https://raw.githubusercontent.com/AumGupta/abyss-jellyfin/main/spotlight/home-html.chunk.js" -o "$CHUNK"
+          fi
+          echo "[abyss] Spotlight installed"
+        ''}:/custom-cont-init.d/abyss-spotlight"
       ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
@@ -431,8 +449,8 @@
       ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
-    jellyseerr = {
-      image = "fallenbagel/jellyseerr:latest";
+    seerr = {
+      image = "ghcr.io/seerr-team/seerr:latest";
       environment = {
         LOG_LEVEL = "debug";
         TZ = "America/New_York";
@@ -441,7 +459,10 @@
       volumes = [
         "/arespool/appdata/jellyseerr_config:/app/config"
       ];
-      extraOptions = [ "--network=downloader_media_network" ];
+      extraOptions = [
+        "--network=downloader_media_network"
+        "--init"
+      ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
     jackett = {
