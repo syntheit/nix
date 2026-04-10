@@ -17,6 +17,7 @@
         frame_color = "#7aa2f7"; # Single manual color (Border) just in case, but Stylix usually overrides
         font = lib.mkForce "JetBrainsMono Nerd Font 10";
         format = "<b>%s</b>\n%b";  # Hide app name, show only summary and body
+        show_indicators = false;  # Hide (A) action indicator
       };
       
       urgency_normal = {
