@@ -552,7 +552,6 @@
           echo "[abyss] Spotlight installed"
         ''}:/custom-cont-init.d/abyss-spotlight"
       ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
     # ===== DOWNLOADING STACK (shared downloader_media_network) =====
     qbittorrent = {
@@ -750,6 +749,7 @@
         "--health-timeout" "10s"
         "--health-retries" "3"
       ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
     immich_server = {
       image = "ghcr.io/immich-app/immich-server:release";
@@ -817,6 +817,7 @@
         "--network=immich_default"
         "--network-alias=redis"
       ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
     edge = {
       image = "caddy:2-alpine";
@@ -828,6 +829,7 @@
       ];
       extraOptions = [ "--network=container:vpn" "--entrypoint" "/bin/sh" ];
       cmd = [ "-lc" "echo 'Waiting for Immich...'; until nc -z immich_server 2283; do sleep 1; done; exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile" ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
     # ===== RETROSPEND (shared retrospend_default network) =====
     retrospend = {
