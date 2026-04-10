@@ -22,6 +22,11 @@
   sops.secrets.immich_db_password = { };
   sops.secrets.vpn_openvpn_user = { };
   sops.secrets.vpn_openvpn_password = { };
+  sops.secrets.vpn_wireguard_private_key = { };
+  sops.secrets.vpn_wireguard_address = { };
+  sops.secrets.vpn_wireguard_public_key = { };
+  sops.secrets.vpn_wireguard_endpoint = { };
+  sops.secrets.vpn_wireguard_preshared_key = { };
   sops.secrets.restic_backup_password = { };
   sops.secrets.paperless_admin_password = {
     mode = "0444"; # readable by paperless service user
@@ -96,13 +101,16 @@
     DB_STORAGE_TYPE=SSD
   '';
 
-  # VPN (Gluetun) env file
+  # VPN (Gluetun) env file — WireGuard
   sops.templates."vpn.env".content = ''
     VPN_SERVICE_PROVIDER=custom
-    VPN_TYPE=openvpn
-    OPENVPN_CUSTOM_CONFIG=/gluetun/custom.conf
-    OPENVPN_USER=${config.sops.placeholder.vpn_openvpn_user}
-    OPENVPN_PASSWORD=${config.sops.placeholder.vpn_openvpn_password}
+    VPN_TYPE=wireguard
+    WIREGUARD_PRIVATE_KEY=${config.sops.placeholder.vpn_wireguard_private_key}
+    WIREGUARD_ADDRESSES=${config.sops.placeholder.vpn_wireguard_address}
+    WIREGUARD_PUBLIC_KEY=${config.sops.placeholder.vpn_wireguard_public_key}
+    WIREGUARD_ENDPOINT_IP=82.29.92.2
+    WIREGUARD_ENDPOINT_PORT=443
+    WIREGUARD_PRESHARED_KEY=${config.sops.placeholder.vpn_wireguard_preshared_key}
     FIREWALL_VPN_INPUT_PORTS=2283,5096
     FIREWALL_OUTBOUND_SUBNETS=172.24.0.0/16
     PUID=1000
