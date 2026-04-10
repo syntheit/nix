@@ -12,6 +12,7 @@
 
   home.packages = with pkgs; [
     # CLI tools
+    (pkgs.writeShellScriptBin "raven-status" ''exec ssh raven raven-status "$@"'')
     sops
     ssh-to-age
     btop
