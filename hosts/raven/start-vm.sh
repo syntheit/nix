@@ -15,7 +15,7 @@ sleep 5
 su 10228 -c 'export PREFIX=/data/data/com.termux/files/usr HOME=/data/data/com.termux/files/home LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; /data/data/com.termux/files/usr/bin/sshd'
 # Launch VM terminal last so it stays in foreground
 am start -S -W -n com.android.virtualization.terminal/.MainActivity
-sleep 15
+sleep 45
 input tap 720 1560
 sleep 30
 svc power stayon false
