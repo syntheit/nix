@@ -154,20 +154,21 @@ let
       fi
       if [ $((now - servers_last)) -gt 1800 ]; then
         for srv in raven harbor; do
-          (ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$srv" '
+          (ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$srv" 'bash -s' <<'REMOTECMD'
             days=$(( $(cut -d. -f1 /proc/uptime | cut -d" " -f1) / 86400 ))
             load=$(cut -d" " -f1 /proc/loadavg)
-            read -r total avail <<< $(awk "/MemTotal/{t=\$2} /MemAvailable/{a=\$2} END{printf \"%d %d\", t/1048576, a/1048576}" /proc/meminfo)
+            eval $(awk '/MemTotal/{printf "total=%d ", $2/1048576} /MemAvailable/{printf "avail=%d", $2/1048576}' /proc/meminfo)
             used=$((total - avail))
             temp=""
             for tz in /sys/class/thermal/thermal_zone*/temp; do
               t=$(cat "$tz" 2>/dev/null)
               [ -n "$t" ] && [ "$t" -gt 0 ] 2>/dev/null && { temp=$t; break; }
             done
-            temp_str=""; [ -n "$temp" ] && temp_str="  󰔏 ''${temp%???}°C"
+            temp_str=""; [ -n "$temp" ] && temp_str="  󰔏 ${temp%???}°C"
             ct=$(docker ps -q 2>/dev/null | wc -l)
-            echo "''${days}d  󰄧 $load   ''${used}/''${total}G''${temp_str}  󰡨 $ct"
-          ' > "$cache_dir/server_$srv" 2>/dev/null) &
+            echo "${days}d  󰄧 $load   ${used}/${total}G${temp_str}  󰡨 $ct"
+REMOTECMD
+          > "$cache_dir/server_$srv" 2>/dev/null) &
         done
         servers_last=$now
       fi
@@ -232,8 +233,8 @@ let
         buf+="\033[K\n"
       fi
       if [ -n "$raven_cache" ] || [ -n "$harbor_cache" ]; then
-        [ -n "$raven_cache" ] && buf+="󱗆 raven   $raven_cache\033[K\n"
-        [ -n "$harbor_cache" ] && buf+="󰒋 harbor  $harbor_cache\033[K\n"
+        [ -n "$raven_cache" ]  && buf+="$(printf '󱗆 %-8s %s' raven  "$raven_cache")\033[K\n"
+        [ -n "$harbor_cache" ] && buf+="$(printf '󰒋 %-8s %s' harbor "$harbor_cache")\033[K\n"
         buf+="\033[K\n"
       fi
       if [ -n "$weather_cache" ]; then
@@ -284,7 +285,7 @@ let
 
     # pane 0 (left): btop
     $T -L $S split-window -h -l 40%          # pane 1 (right top)
-    $T -L $S split-window -v -l 85%          # pane 2 (right middle)
+    $T -L $S split-window -v -l 90%          # pane 2 (right middle)
     $T -L $S split-window -v -l 40%          # pane 3 (right bottom)
 
     # Now launch programs in each pane

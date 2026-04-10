@@ -200,8 +200,8 @@
 
   # Radicale data directories (must exist before systemd mount namespacing)
   systemd.tmpfiles.rules = [
-    "d /arespool/appdata/radicale 0755 root root -"
-    "d /arespool/appdata/radicale/collections 0755 root root -"
+    "d /arespool/appdata/radicale 0750 radicale radicale -"
+    "d /arespool/appdata/radicale/collections 0750 radicale radicale -"
   ];
 
   # Radicale — CalDAV/CardDAV for contacts & calendar
