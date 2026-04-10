@@ -102,7 +102,6 @@
       description: Service status for matv.io infrastructure
       header: Status
       link: https://status.matv.io
-      logo: https://matv.io/favicon.ico
 
     endpoints:
       # ===== HARBOR SERVICES =====
