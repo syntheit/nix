@@ -423,7 +423,6 @@
       flags = [ "--all" ];
     };
     daemon.settings = {
-      dns = [ "127.0.0.53" ];
       default-ulimits = {
         nofile = {
           Name = "nofile";
