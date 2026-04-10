@@ -794,6 +794,7 @@
       ];
       cmd = [
         "postgres"
+        "-c" "shared_preload_libraries=vchord.so"
         "-c" "shared_buffers=4GB"
         "-c" "effective_cache_size=48GB"
         "-c" "work_mem=128MB"
