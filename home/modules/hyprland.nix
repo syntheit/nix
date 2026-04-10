@@ -441,7 +441,7 @@ in
         ", XF86AudioRaiseVolume, exec, wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+"
         ", XF86AudioLowerVolume, exec, wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%-"
       ]
-      ++ lib.optionals (hostName == "ionian") [
+      ++ lib.optionals (hostName == "ledger") [
         ", XF86MonBrightnessUp, exec, brightnessctl s 5%+"
         ", XF86MonBrightnessDown, exec, brightnessctl s 5%-"
       ];
@@ -452,7 +452,7 @@ in
         ", XF86AudioNext, exec, playerctl next"
         ", XF86AudioPrev, exec, playerctl previous"
       ]
-      ++ lib.optionals (hostName == "ionian") [
+      ++ lib.optionals (hostName == "ledger") [
         ", switch:off:Lid Switch, exec, ${pkgs.hyprlock}/bin/hyprlock"
       ];
       bindm = [
@@ -554,14 +554,14 @@ in
         "QT_QPA_PLATFORMTHEME,qtct"
         "QT_WAYLAND_DISABLE_WINDOWDECORATION,1"
       ]
-      ++ lib.optionals (hostName == "caspian") [
+      ++ lib.optionals (hostName == "mantle") [
         "LIBVA_DRIVER_NAME,nvidia"
         "GBM_BACKEND,nvidia-drm"
         "__GLX_VENDOR_LIBRARY_NAME,nvidia"
         "NVD_BACKEND,direct"
       ];
       cursor = {
-        no_hardware_cursors = hostName == "caspian";
+        no_hardware_cursors = hostName == "mantle";
         warp_on_change_workspace = false;
         no_warps = true;
       };

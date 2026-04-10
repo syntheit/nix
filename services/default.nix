@@ -99,7 +99,7 @@
     enableOnBoot = false;
   };
 
-  # NVIDIA container support is enabled per-host (see hosts/caspian/hardware.nix)
+  # NVIDIA container support is enabled per-host (see hosts/mantle/hardware.nix)
 
   virtualisation.oci-containers.backend = "docker";
 
