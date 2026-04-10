@@ -152,6 +152,20 @@
           modules = [
             ./hosts/harbor
             inputs.sops-nix.nixosModules.sops
+            inputs.home-manager.nixosModules.home-manager
+            {
+              nixpkgs.overlays = [
+                (import ./overlays { inherit inputs lib; }).modifications
+                (import ./overlays { inherit inputs lib; }).additions
+              ];
+              home-manager.useGlobalPkgs = true;
+              home-manager.useUserPackages = true;
+              home-manager.backupFileExtension = "bkp";
+              home-manager.extraSpecialArgs = specialArgs // {
+                hostName = "harbor";
+              };
+              home-manager.users."matv" = import ./hosts/harbor/home.nix;
+            }
           ];
         };
 
