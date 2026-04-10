@@ -19,11 +19,34 @@
   sops.secrets.qbittorrent_webui_password = { };
   sops.secrets.linkding_superuser_name = { };
   sops.secrets.linkding_superuser_password = { };
+  sops.secrets.bitwarden_installation_id = { };
+  sops.secrets.bitwarden_installation_key = { };
+  sops.secrets.bitwarden_db_password = { };
 
   # qBittorrent env file
   sops.templates."qbittorrent.env".content = ''
     VPN_TYPE=wireguard
     WEBUI_PASSWORD=${config.sops.placeholder.qbittorrent_webui_password}
+  '';
+
+  # Bitwarden env file
+  sops.templates."bitwarden.env".content = ''
+    BW_DOMAIN=vault.matv.io
+    BW_INSTALLATION_ID=${config.sops.placeholder.bitwarden_installation_id}
+    BW_INSTALLATION_KEY=${config.sops.placeholder.bitwarden_installation_key}
+    BW_DB_PROVIDER=mysql
+    BW_DB_SERVER=bitwarden_db
+    BW_DB_DATABASE=bitwarden_vault
+    BW_DB_USERNAME=bitwarden
+    BW_DB_PASSWORD=${config.sops.placeholder.bitwarden_db_password}
+  '';
+
+  # Bitwarden DB env file
+  sops.templates."bitwarden-db.env".content = ''
+    MARIADB_RANDOM_ROOT_PASSWORD=true
+    MARIADB_USER=bitwarden
+    MARIADB_PASSWORD=${config.sops.placeholder.bitwarden_db_password}
+    MARIADB_DATABASE=bitwarden_vault
   '';
 
   # Linkding env file
@@ -341,6 +364,7 @@
       ExecStart = pkgs.writeShellScript "create-docker-networks" ''
         ${pkgs.docker}/bin/docker network create nextcloud_default || true
         ${pkgs.docker}/bin/docker network create downloader_media_network || true
+        ${pkgs.docker}/bin/docker network create bitwarden_default || true
       '';
     };
   };
@@ -352,6 +376,8 @@
   systemd.services.docker-radarr.after = [ "docker-networks.service" ];
   systemd.services.docker-bazarr.after = [ "docker-networks.service" ];
   systemd.services.docker-jackett.after = [ "docker-networks.service" ];
+  systemd.services.docker-bitwarden.after = [ "docker-networks.service" ];
+  systemd.services.docker-bitwarden_db.after = [ "docker-networks.service" ];
   # NVIDIA CDI dependency
   systemd.services.docker-jellyfin.after = [ "nvidia-container-toolkit-cdi-generator.service" ];
   systemd.services.docker-jellyfin.wants = [ "nvidia-container-toolkit-cdi-generator.service" ];
@@ -612,6 +638,28 @@
         "/arespool/appdata/syncthing/config:/config"
         "/arespool/nextcloud/data/topikzero/files/Sync:/config/Sync"
       ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    # ===== BITWARDEN (shared bitwarden_default network) =====
+    bitwarden = {
+      image = "ghcr.io/bitwarden/self-host:beta";
+      environmentFiles = [ config.sops.templates."bitwarden.env".path ];
+      ports = [ "127.0.0.1:29446:8080" ];
+      volumes = [
+        "/arespool/appdata/bitwarden/bitwarden:/etc/bitwarden"
+        "/arespool/appdata/bitwarden/logs:/var/log/bitwarden"
+      ];
+      dependsOn = [ "bitwarden_db" ];
+      extraOptions = [ "--network=bitwarden_default" ];
+      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+    };
+    bitwarden_db = {
+      image = "mariadb:10";
+      environmentFiles = [ config.sops.templates."bitwarden-db.env".path ];
+      volumes = [
+        "/arespool/appdata/bitwarden_db/data:/var/lib/mysql"
+      ];
+      extraOptions = [ "--network=bitwarden_default" ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
     linkding = {
