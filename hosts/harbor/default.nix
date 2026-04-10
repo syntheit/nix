@@ -459,7 +459,8 @@
   systemd.services.docker-edge.after = [ "docker-vpn.service" ];
   systemd.services.docker-immich_server.after = [ "docker-networks.service" "nvidia-container-toolkit-cdi-generator.service" ];
   systemd.services.docker-immich_server.wants = [ "nvidia-container-toolkit-cdi-generator.service" ];
-  systemd.services.docker-immich_machine_learning.after = [ "docker-networks.service" ];
+  systemd.services.docker-immich_machine_learning.after = [ "docker-networks.service" "nvidia-container-toolkit-cdi-generator.service" ];
+  systemd.services.docker-immich_machine_learning.wants = [ "nvidia-container-toolkit-cdi-generator.service" ];
   systemd.services.docker-immich_postgres.after = [ "docker-networks.service" ];
   systemd.services.docker-immich_redis.after = [ "docker-networks.service" ];
   # NVIDIA CDI dependency
@@ -773,13 +774,16 @@
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
     immich_machine_learning = {
-      image = "ghcr.io/immich-app/immich-machine-learning:release";
+      image = "ghcr.io/immich-app/immich-machine-learning:release-cuda";
       environmentFiles = [ config.sops.templates."immich.env".path ];
       volumes = [
         "/arespool/appdata/immich/model-cache:/cache"
       ];
       dependsOn = [ "immich_postgres" ];
-      extraOptions = [ "--network=immich_default" ];
+      extraOptions = [
+        "--network=immich_default"
+        "--device=nvidia.com/gpu=all"
+      ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
     immich_postgres = {
@@ -788,10 +792,21 @@
       volumes = [
         "/arespool/appdata/immich/postgres/pgdata:/var/lib/postgresql/data"
       ];
+      cmd = [
+        "postgres"
+        "-c" "shared_buffers=4GB"
+        "-c" "effective_cache_size=48GB"
+        "-c" "work_mem=128MB"
+        "-c" "maintenance_work_mem=2GB"
+        "-c" "wal_buffers=64MB"
+        "-c" "random_page_cost=1.1"
+        "-c" "effective_io_concurrency=200"
+        "-c" "max_connections=200"
+      ];
       extraOptions = [
         "--network=immich_default"
         "--network-alias=database"
-        "--shm-size=128m"
+        "--shm-size=512m"
       ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
