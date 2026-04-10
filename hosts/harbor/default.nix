@@ -291,6 +291,8 @@
       enable = true;
       package = pkgs.plocate;
     };
+    # Seerr — media request management (native NixOS service, no Docker)
+    seerr.enable = true;
   };
 
   # Cap journal size to prevent unbounded growth
@@ -339,7 +341,6 @@
   systemd.services.docker-radarr.after = [ "docker-networks.service" ];
   systemd.services.docker-bazarr.after = [ "docker-networks.service" ];
   systemd.services.docker-jackett.after = [ "docker-networks.service" ];
-  systemd.services.docker-seerr.after = [ "docker-networks.service" ];
   # NVIDIA CDI dependency
   systemd.services.docker-jellyfin.after = [ "nvidia-container-toolkit-cdi-generator.service" ];
   systemd.services.docker-jellyfin.wants = [ "nvidia-container-toolkit-cdi-generator.service" ];
@@ -449,22 +450,7 @@
       ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
-    seerr = {
-      image = "ghcr.io/seerr-team/seerr:latest";
-      environment = {
-        LOG_LEVEL = "debug";
-        TZ = "America/New_York";
-      };
-      ports = [ "127.0.0.1:5055:5055" ];
-      volumes = [
-        "/arespool/appdata/jellyseerr_config:/app/config"
-      ];
-      extraOptions = [
-        "--network=downloader_media_network"
-        "--init"
-      ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
-    };
+    # Seerr runs as a native NixOS service (see services.seerr below)
     jackett = {
       image = "lscr.io/linuxserver/jackett:latest";
       environment = {
