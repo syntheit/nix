@@ -65,6 +65,27 @@ let
     fi
   '';
 
+  serverHealthScript = pkgs.writeShellScript "server-health" ''
+    days=$(( $(cut -d. -f1 /proc/uptime | cut -d" " -f1) / 86400 ))
+    load=$(cut -d" " -f1 /proc/loadavg)
+    eval $(awk '/MemTotal/{printf "total=%d ", $2/1048576} /MemAvailable/{printf "avail=%d", $2/1048576}' /proc/meminfo)
+    used=$((total - avail))
+    temp=""
+    for tz in /sys/class/thermal/thermal_zone*/temp; do
+      t=$(cat "$tz" 2>/dev/null)
+      [ -n "$t" ] && [ "$t" -gt 0 ] 2>/dev/null && { temp=$t; break; }
+    done
+    # Fallback: grab Android host battery temp via gateway (for NixOS VMs on Android)
+    if [ -z "$temp" ]; then
+      gw=$(ip route | awk '/default/ {print $3}')
+      bat=$(ssh -p 8022 -i ~/.ssh/mainkey -o BatchMode=yes -o ConnectTimeout=2 -o StrictHostKeyChecking=no "$gw" cat /sys/class/power_supply/battery/temp 2>/dev/null)
+      [ -n "$bat" ] && temp=$(( bat / 10 * 1000 ))
+    fi
+    temp_str=""; [ -n "$temp" ] && temp_str="  󰔏 ''${temp%???}°C"
+    ct=$(docker ps -q 2>/dev/null | wc -l)
+    echo "''${days}d  󰄧 $load   ''${used}/''${total}G''${temp_str}  󰡨 $ct"
+  '';
+
   clockScript = pkgs.writeShellScript "dashboard-clock" ''
     tput civis
     trap 'tput cnorm' EXIT
@@ -154,21 +175,7 @@ let
       fi
       if [ $((now - servers_last)) -gt 1800 ]; then
         for srv in raven harbor; do
-          (ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$srv" 'bash -s' <<'REMOTECMD'
-            days=$(( $(cut -d. -f1 /proc/uptime | cut -d" " -f1) / 86400 ))
-            load=$(cut -d" " -f1 /proc/loadavg)
-            eval $(awk '/MemTotal/{printf "total=%d ", $2/1048576} /MemAvailable/{printf "avail=%d", $2/1048576}' /proc/meminfo)
-            used=$((total - avail))
-            temp=""
-            for tz in /sys/class/thermal/thermal_zone*/temp; do
-              t=$(cat "$tz" 2>/dev/null)
-              [ -n "$t" ] && [ "$t" -gt 0 ] 2>/dev/null && { temp=$t; break; }
-            done
-            temp_str=""; [ -n "$temp" ] && temp_str="  󰔏 ''${temp%???}°C"
-            ct=$(docker ps -q 2>/dev/null | wc -l)
-            echo "''${days}d  󰄧 $load   ''${used}/''${total}G''${temp_str}  󰡨 $ct"
-REMOTECMD
-          > "$cache_dir/server_$srv" 2>/dev/null) &
+          (ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$srv" bash < ${serverHealthScript} > "$cache_dir/server_$srv" 2>/dev/null) &
         done
         servers_last=$now
       fi

@@ -113,6 +113,7 @@
     btop
     cloudflared
     mosh
+    curl
     git
     speedtest-cli
     lshw
