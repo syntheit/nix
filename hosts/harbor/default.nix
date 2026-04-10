@@ -407,9 +407,9 @@
         "-v" "${pkgs.writeShellScript "abyss-spotlight" ''
           #!/bin/bash
           echo "[abyss] Installing Spotlight..."
-          WEBDIR=$(find / -path "*/jellyfin-web" -type d 2>/dev/null | head -1)
-          if [ -z "$WEBDIR" ]; then
-            echo "[abyss] Could not find jellyfin-web directory"
+          WEBDIR="/usr/share/jellyfin/web"
+          if [ ! -d "$WEBDIR" ]; then
+            echo "[abyss] $WEBDIR not found"
             exit 0
           fi
           mkdir -p "$WEBDIR/ui"
