@@ -58,4 +58,24 @@
   security.pam.services.login.fprintAuth = true;
 
   zramSwap.enable = true;
+
+  # BTRFS periodic scrub
+  services.btrfs.autoScrub = {
+    enable = true;
+    interval = "monthly";
+    fileSystems = [ "/" ];
+  };
+
+  # BTRFS automated snapshots
+  services.btrbk.instances."default" = {
+    onCalendar = "daily";
+    settings = {
+      snapshot_preserve_min = "2d";
+      snapshot_preserve = "7d 4w";
+      volume."/" = {
+        subvolume."@" = { snapshot_dir = "@snapshots"; };
+        subvolume."@home" = { snapshot_dir = "@snapshots"; };
+      };
+    };
+  };
 }

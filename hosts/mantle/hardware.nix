@@ -47,6 +47,18 @@
     fileSystems = [ "/" ];
   };
 
+  # BTRFS automated snapshots
+  services.btrbk.instances."default" = {
+    onCalendar = "daily";
+    settings = {
+      snapshot_preserve_min = "2d";
+      snapshot_preserve = "7d 4w";
+      volume."/" = {
+        subvolume."@" = { snapshot_dir = "@snapshots"; };
+      };
+    };
+  };
+
   # tmpfs for /tmp — reduces SSD writes, faster temp file I/O
   boot.tmp.useTmpfs = true;
   boot.tmp.tmpfsSize = "50%";

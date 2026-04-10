@@ -153,7 +153,7 @@
       continuation_prompt = "[∙](dimmed white) ";
 
       format = "$nix_shell$directory$git_branch$git_status$character";
-      right_format = "$jobs$cmd_duration";
+      right_format = "$jobs$cmd_duration$hostname";
 
       character = {
         format = "$symbol ";

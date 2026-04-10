@@ -41,5 +41,11 @@
     claude-code
   ];
 
+  programs.starship.settings.hostname = {
+    ssh_only = true;
+    format = "[󰒋 $hostname]($style)";
+    style = "dimmed white";
+  };
+
   programs.home-manager.enable = true;
 }
