@@ -68,15 +68,160 @@
 
   nixpkgs.config.allowUnfree = true;
 
-  # Uptime Kuma — independent monitoring for harbor services
-  services.uptime-kuma = {
-    enable = true;
-    appriseSupport = true;
-    settings = {
-      HOST = "127.0.0.1";
-      PORT = "3001";
+  # Gatus — declarative status page monitoring harbor + raven services
+  systemd.services.gatus = {
+    description = "Gatus status monitor";
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      ExecStart = "${pkgs.gatus}/bin/gatus";
+      DynamicUser = true;
+      StateDirectory = "gatus";
+      Environment = "GATUS_CONFIG_PATH=/etc/gatus/config.yaml";
+      Restart = "always";
+      RestartSec = "5s";
     };
   };
+
+  environment.etc."gatus/config.yaml".text = ''
+    storage:
+      type: sqlite
+      path: /var/lib/gatus/data.db
+
+    web:
+      address: 127.0.0.1
+      port: 3001
+
+    endpoints:
+      # ===== HARBOR SERVICES =====
+      - name: Nextcloud
+        group: harbor
+        url: https://cloud.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Jellyfin
+        group: harbor
+        url: https://watch.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Immich
+        group: harbor
+        url: https://photos.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Bitwarden
+        group: harbor
+        url: https://vault.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Retrospend
+        group: harbor
+        url: https://retrospend.app
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Linkding
+        group: harbor
+        url: https://links.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Overseerr
+        group: harbor
+        url: https://request.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Transmission
+        group: harbor
+        url: https://downloader.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Jackett
+        group: harbor
+        url: https://jackett.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Sonarr
+        group: harbor
+        url: https://sonarr.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Radarr
+        group: harbor
+        url: https://radarr.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Bazarr
+        group: harbor
+        url: https://bazarr.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Memos
+        group: harbor
+        url: https://notes.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Scrutiny
+        group: harbor
+        url: https://drivehealth.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Syncthing
+        group: harbor
+        url: https://sync.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Trackarr
+        group: harbor
+        url: https://tracearr.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      # ===== RAVEN SERVICES =====
+      - name: Website
+        group: raven
+        url: https://matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Status Page
+        group: raven
+        url: https://status.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+  '';
 
   # Cloudflared tunnel for remote SSH
   services.cloudflared = {
