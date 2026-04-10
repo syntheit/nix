@@ -68,6 +68,16 @@
 
   nixpkgs.config.allowUnfree = true;
 
+  # Uptime Kuma — independent monitoring for harbor services
+  services.uptime-kuma = {
+    enable = true;
+    appriseSupport = true;
+    settings = {
+      HOST = "127.0.0.1";
+      PORT = "3001";
+    };
+  };
+
   # Cloudflared tunnel for remote SSH
   services.cloudflared = {
     enable = true;
@@ -75,6 +85,7 @@
       "raven" = {
         ingress = {
           "matv.io" = "http://localhost:3000";
+          "status.matv.io" = "http://localhost:3001";
           "raven.matv.io" = "ssh://localhost:22";
         };
         default = "http_status:404";
