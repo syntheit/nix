@@ -25,13 +25,15 @@ settings put system screen_off_timeout 1000
 while true; do
     sleep 30
     if ! ip neigh | grep -q avf_tap; then
+        settings put system screen_off_timeout 120000
         input keyevent KEYCODE_WAKEUP
         sleep 2
         svc power stayon usb
         am start -S -W -n com.android.virtualization.terminal/.MainActivity
-        sleep 15
+        sleep 45
         input tap 720 1560
         sleep 30
         svc power stayon false
+        settings put system screen_off_timeout 1000
     fi
 done
