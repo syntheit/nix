@@ -31,7 +31,7 @@ in
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
     nextcloud_db = {
-      image = "linuxserver/mariadb:11";
+      image = "linuxserver/mariadb:latest";
       environmentFiles = [ config.sops.templates."nextcloud-db.env".path ];
       volumes = [
         "/arespool/appdata/nextcloud-mariadb:/config"
