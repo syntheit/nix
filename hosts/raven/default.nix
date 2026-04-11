@@ -8,7 +8,13 @@
 {
   imports = [
     inputs.nixos-avf.nixosModules.avf
+    ../../modules/server-safety.nix
   ];
+
+  services.serverSafety = {
+    enable = true;
+    user = "droid";
+  };
 
   # Override deprecated option set by nixos-avf module
   services.resolved.settings.Resolve.DNSSEC = lib.mkForce "false";
@@ -44,7 +50,7 @@
   virtualisation.oci-containers.containers = {
     website = {
       image = "synzeit/website:arm64";
-      ports = [ "3000:3000" ];
+      ports = [ "127.0.0.1:3000:3000" ];
       environment = {
         NODE_ENV = "production";
       };
@@ -156,7 +162,7 @@
         conditions:
           - "[STATUS] < 500"
 
-      - name: Transmission
+      - name: qBittorrent
         group: harbor
         url: https://downloader.matv.io
         interval: 2m
@@ -295,21 +301,6 @@
     htop
     mosh
     cloudflared
-
-    # Dead man's switch — arm before risky rebuilds, disarm after verifying access
-    (writeShellScriptBin "arm-watchdog" ''
-      mkdir -p /var/lib/nixos-watchdog
-      readlink /run/current-system > /var/lib/nixos-watchdog/rollback-target
-      echo "Saved rollback target: $(cat /var/lib/nixos-watchdog/rollback-target)"
-      systemctl start nixos-watchdog.timer
-      echo "Watchdog armed. You have 10 minutes to disarm with: sudo disarm-watchdog"
-    '')
-    (writeShellScriptBin "disarm-watchdog" ''
-      systemctl stop nixos-watchdog.timer
-      systemctl stop nixos-watchdog.service 2>/dev/null || true
-      rm -f /var/lib/nixos-watchdog/rollback-target
-      echo "Watchdog disarmed. Config is permanent."
-    '')
   ];
 
   # Shell
@@ -330,60 +321,6 @@
 
   # Prevent cloudflared tunnel from restarting during rebuilds
   systemd.services.cloudflared-tunnel-raven.restartIfChanged = false;
-
-  # Rescue SSH — independent of services.openssh, reachable over Tailscale on port 64830.
-  # If main sshd or tunnel breaks, this still works.
-  systemd.services.sshd-rescue = {
-    description = "Rescue SSH daemon";
-    after = [ "network.target" ];
-    wantedBy = [ "multi-user.target" ];
-    restartIfChanged = false;
-    serviceConfig = {
-      ExecStart = "${pkgs.openssh}/bin/sshd -D -f /etc/ssh/sshd_rescue_config";
-      Restart = "always";
-      RestartSec = "5s";
-    };
-  };
-
-  environment.etc."ssh/sshd_rescue_config".text = ''
-    Port 64830
-    PidFile /run/sshd-rescue.pid
-    HostKey /etc/ssh/ssh_host_ed25519_key
-    PasswordAuthentication no
-    KbdInteractiveAuthentication no
-    AuthorizedKeysFile /etc/ssh/authorized_keys.d/%u
-    AllowUsers droid
-    StrictModes yes
-  '';
-
-  # Dead man's switch — rolls back to saved generation if not disarmed
-  systemd.services.nixos-watchdog = {
-    description = "Dead man's switch - rolls back to saved generation";
-    serviceConfig = {
-      Type = "oneshot";
-      ExecStart = pkgs.writeShellScript "watchdog-rollback" ''
-        if [ -f /var/lib/nixos-watchdog/rollback-target ]; then
-          TARGET=$(cat /var/lib/nixos-watchdog/rollback-target)
-          echo "Watchdog triggered! Rolling back to: $TARGET"
-          nix-env -p /nix/var/nix/profiles/system --set "$TARGET"
-          "$TARGET/bin/switch-to-configuration" switch
-          rm -f /var/lib/nixos-watchdog/rollback-target
-        else
-          echo "No rollback target found, rebooting as fallback"
-          systemctl reboot
-        fi
-      '';
-    };
-  };
-
-  systemd.timers.nixos-watchdog = {
-    description = "Dead man's switch timer (10 min)";
-    timerConfig = {
-      OnActiveSec = "10min";
-      Unit = "nixos-watchdog.service";
-      RemainAfterElapse = false;
-    };
-  };
 
   # Security
   security.sudo = {

@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ ... }:
 
 {
   # =====================================================
@@ -48,57 +48,4 @@
   networking.firewall.trustedInterfaces = [ "tailscale0" ];
   systemd.services.tailscaled.restartIfChanged = false;
 
-  # Rescue SSH — independent of services.openssh, reachable over Tailscale on port 64830.
-  # If main sshd or tunnel breaks, this still works.
-  systemd.services.sshd-rescue = {
-    description = "Rescue SSH daemon";
-    after = [ "network.target" ];
-    wantedBy = [ "multi-user.target" ];
-    restartIfChanged = false;
-    serviceConfig = {
-      ExecStart = "${pkgs.openssh}/bin/sshd -D -f /etc/ssh/sshd_rescue_config";
-      Restart = "always";
-      RestartSec = "5s";
-    };
-  };
-
-  environment.etc."ssh/sshd_rescue_config".text = ''
-    Port 64830
-    PidFile /run/sshd-rescue.pid
-    HostKey /etc/ssh/ssh_host_ed25519_key
-    PasswordAuthentication no
-    KbdInteractiveAuthentication no
-    AuthorizedKeysFile /etc/ssh/authorized_keys.d/%u
-    AllowUsers matv
-    StrictModes yes
-  '';
-
-  # Dead man's switch — rolls back to saved generation if not disarmed
-  systemd.services.nixos-watchdog = {
-    description = "Dead man's switch - rolls back to saved generation";
-    serviceConfig = {
-      Type = "oneshot";
-      ExecStart = pkgs.writeShellScript "watchdog-rollback" ''
-        if [ -f /var/lib/nixos-watchdog/rollback-target ]; then
-          TARGET=$(cat /var/lib/nixos-watchdog/rollback-target)
-          echo "Watchdog triggered! Rolling back to: $TARGET"
-          nix-env -p /nix/var/nix/profiles/system --set "$TARGET"
-          "$TARGET/bin/switch-to-configuration" switch
-          rm -f /var/lib/nixos-watchdog/rollback-target
-        else
-          echo "No rollback target found, rebooting as fallback"
-          systemctl reboot
-        fi
-      '';
-    };
-  };
-
-  systemd.timers.nixos-watchdog = {
-    description = "Dead man's switch timer (10 min)";
-    timerConfig = {
-      OnActiveSec = "10min";
-      Unit = "nixos-watchdog.service";
-      RemainAfterElapse = false;
-    };
-  };
 }

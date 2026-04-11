@@ -1,5 +1,12 @@
 { config, pkgs, ... }:
 
+let
+  linuxserverEnv = {
+    PUID = "1000";
+    PGID = "1000";
+    TZ = "America/New_York";
+  };
+in
 {
   # Seerr — media request management (native NixOS service, no Docker)
   services.seerr.enable = true;
@@ -7,11 +14,7 @@
   virtualisation.oci-containers.containers = {
     nextcloud = {
       image = "lscr.io/linuxserver/nextcloud:latest";
-      environment = {
-        PUID = "1000";
-        PGID = "1000";
-        TZ = "America/New_York";
-      };
+      environment = linuxserverEnv;
       ports = [ "127.0.0.1:9787:443" ];
       volumes = [
         "/arespool/appdata/nextcloud_config:/config"
@@ -38,10 +41,7 @@
     };
     jellyfin = {
       image = "lscr.io/linuxserver/jellyfin:latest";
-      environment = {
-        PUID = "1000";
-        PGID = "1000";
-        TZ = "America/New_York";
+      environment = linuxserverEnv // {
         JELLYFIN_PublishedServerUrl = "watch.matv.io";
         NVIDIA_VISIBLE_DEVICES = "all";
         NVIDIA_DRIVER_CAPABILITIES = "all";
@@ -117,11 +117,7 @@
     # Seerr runs as a native NixOS service (see services.seerr above)
     prowlarr = {
       image = "linuxserver/prowlarr:latest";
-      environment = {
-        PUID = "1000";
-        PGID = "1000";
-        TZ = "America/New_York";
-      };
+      environment = linuxserverEnv;
       ports = [ "127.0.0.1:9696:9696" ];
       volumes = [
         "/arespool/appdata/prowlarr:/config"
@@ -132,11 +128,7 @@
     };
     sonarr = {
       image = "linuxserver/sonarr";
-      environment = {
-        PUID = "1000";
-        PGID = "1000";
-        TZ = "America/New_York";
-      };
+      environment = linuxserverEnv;
       ports = [ "127.0.0.1:8989:8989" ];
       volumes = [
         "/arespool/appdata/sonarr:/config"
@@ -154,11 +146,7 @@
     };
     radarr = {
       image = "linuxserver/radarr";
-      environment = {
-        PUID = "1000";
-        PGID = "1000";
-        TZ = "America/New_York";
-      };
+      environment = linuxserverEnv;
       ports = [ "127.0.0.1:7878:7878" ];
       volumes = [
         "/arespool/appdata/radarr:/config"
@@ -176,11 +164,7 @@
     };
     bazarr = {
       image = "linuxserver/bazarr";
-      environment = {
-        PUID = "1000";
-        PGID = "1000";
-        TZ = "America/New_York";
-      };
+      environment = linuxserverEnv;
       ports = [ "127.0.0.1:6767:6767" ];
       volumes = [
         "/arespool/appdata/bazarr:/config"

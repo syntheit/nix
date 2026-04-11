@@ -1,5 +1,12 @@
 { config, ... }:
 
+let
+  linuxserverEnv = {
+    PUID = "1000";
+    PGID = "1000";
+    TZ = "America/New_York";
+  };
+in
 {
   virtualisation.oci-containers.containers = {
     # ===== VAULTWARDEN (standalone, SQLite) =====
@@ -55,11 +62,7 @@
     # ===== SYNCTHING =====
     syncthing = {
       image = "lscr.io/linuxserver/syncthing:latest";
-      environment = {
-        PUID = "1000";
-        PGID = "1000";
-        TZ = "America/New_York";
-      };
+      environment = linuxserverEnv;
       ports = [
         "127.0.0.1:8384:8384"
         "22000:22000/tcp"
