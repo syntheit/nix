@@ -122,8 +122,7 @@
         "/arespool/appdata/immich"
         "/arespool/appdata/nextcloud_config"
         "/arespool/appdata/nextcloud-mariadb"
-        "/arespool/appdata/bitwarden"
-        "/arespool/appdata/bitwarden_db"
+        "/arespool/appdata/vaultwarden"
         "/arespool/appdata/linkding"
         "/arespool/appdata/memos"
         "/arespool/appdata/syncthing"
@@ -132,31 +131,44 @@
         "/arespool/appdata/vpn"
         "/arespool/appdata/jellyseerr_config"
         "/arespool/photos-videos"
+        "/arespool/appdata/karakeep"
+        "/arespool/appdata/docmost"
+        "/arespool/appdata/prowlarr"
 
-        # Radarr/Sonarr/Bazarr/Jackett (DBs only, exclude MediaCover)
+        # Radarr/Sonarr/Bazarr (DBs only, exclude MediaCover)
         "/arespool/appdata/radarr"
         "/arespool/appdata/sonarr"
         "/arespool/appdata/bazarr"
-        "/arespool/appdata/jackett"
 
         # Jellyfin (DB + config only, exclude metadata/cache)
         "/arespool/appdata/jellyfin_config"
 
+        # Radicale (contacts + calendars)
+        "/arespool/appdata/radicale"
+
         # Seerr (native NixOS service)
         "/var/lib/private/jellyseerr"
+
+        # Paperless-ngx (native NixOS service)
+        "/arespool/appdata/paperless"
+
+        # Grafana (native NixOS service)
+        "/var/lib/grafana"
 
         # DB dumps (created by pre-backup hook)
         "/var/lib/harbor-backups/db-dumps"
 
-        # Docker named volumes (retrospend, tracearr, bitwarden)
+        # Docker named volumes
         "/var/lib/docker/volumes/retrospend_postgres_data"
         "/var/lib/docker/volumes/retrospend_uploads"
         "/var/lib/docker/volumes/retrospend_sidecar_data"
         "/var/lib/docker/volumes/retrospend_backup_data"
-        "/var/lib/docker/volumes/retrospend_importer_data"
+        "/var/lib/docker/volumes/retrospend_ollama_data"
         "/var/lib/docker/volumes/tracearr_tracearr_postgres"
         "/var/lib/docker/volumes/tracearr_tracearr_data"
-        "/var/lib/docker/volumes/bitwarden_data"
+        "/var/lib/docker/volumes/tracearr_tracearr_redis"
+        "/var/lib/docker/volumes/karakeep_meilisearch_data"
+        "/var/lib/docker/volumes/docmost_redis_data"
       ];
 
       exclude = [
@@ -203,9 +215,13 @@
         ${pkgs.docker}/bin/docker exec nextcloud_db sh -c 'mariadb-dump -u root -p"$MYSQL_ROOT_PASSWORD" --all-databases' \
           > /var/lib/harbor-backups/db-dumps/nextcloud.sql 2>/dev/null || true
 
-        echo "Dumping Bitwarden MariaDB..."
-        ${pkgs.docker}/bin/docker exec bitwarden_db sh -c 'mariadb-dump -u bitwarden -p"$MARIADB_PASSWORD" bitwarden_vault' \
-          > /var/lib/harbor-backups/db-dumps/bitwarden.sql 2>/dev/null || true
+        echo "Dumping Docmost postgres..."
+        ${pkgs.docker}/bin/docker exec docmost_postgres pg_dump -U docmost docmost \
+          > /var/lib/harbor-backups/db-dumps/docmost.sql 2>/dev/null || true
+
+        echo "Dumping Paperless postgres..."
+        ${pkgs.docker}/bin/docker exec -e PGHOST=/run/postgresql paperless-web pg_dump -U paperless paperless \
+          > /var/lib/harbor-backups/db-dumps/paperless.sql 2>/dev/null || true
 
         echo "DB dumps complete."
       '';
