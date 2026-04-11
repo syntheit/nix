@@ -37,6 +37,12 @@
         user = "droid";
         proxyCommand = "${pkgs.cloudflared}/bin/cloudflared access ssh --hostname %h";
       };
+      "conduit" = {
+        hostname = "192.3.203.146";
+        identityFile = "~/.ssh/mainkey";
+        user = "matv";
+        port = 64829;
+      };
       "github.com" = {
         hostname = "github.com";
         user = "git";
