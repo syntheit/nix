@@ -52,7 +52,7 @@
     settings = {
       PasswordAuthentication = false;
       KbdInteractiveAuthentication = false;
-      PermitRootLogin = "prohibit-password";
+      PermitRootLogin = "no";
     };
   };
 
@@ -66,9 +66,6 @@
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdRcH2UWe31VdU62j3Ksbb6LDyS1APNW1BQMM8mvsej daniel@matv.io"
       ];
     };
-    users.root.openssh.authorizedKeys.keys = [
-      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdRcH2UWe31VdU62j3Ksbb6LDyS1APNW1BQMM8mvsej daniel@matv.io"
-    ];
   };
 
   # Nix
@@ -85,6 +82,9 @@
       options = "--delete-older-than 14d";
     };
   };
+
+  # Passwordless sudo for remote deploys via nixos-rebuild --use-remote-sudo
+  security.sudo.wheelNeedsPassword = false;
 
   nixpkgs.config.allowUnfree = true;
 
