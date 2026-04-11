@@ -52,7 +52,7 @@
     settings = {
       PasswordAuthentication = false;
       KbdInteractiveAuthentication = false;
-      PermitRootLogin = "prohibit-password"; # TODO: change to "no" after initial setup
+      PermitRootLogin = "prohibit-password";
     };
   };
 
