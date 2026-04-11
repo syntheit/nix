@@ -43,5 +43,14 @@
       };
       security.secret_key = "$__file{${config.sops.secrets.grafana_secret_key.path}}";
     };
+    provision.datasources.settings.datasources = [
+      {
+        name = "Prometheus";
+        type = "prometheus";
+        url = "http://127.0.0.1:9090";
+        access = "proxy";
+        isDefault = true;
+      }
+    ];
   };
 }

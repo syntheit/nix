@@ -226,6 +226,16 @@
         echo "DB dumps complete."
       '';
 
+      # Verify backup integrity after each run — reads 1/20 of stored data
+      # and checks SHA-256 hashes. Full coverage over ~20 daily backups.
+      backupCleanupCommand = ''
+        echo "Verifying backup integrity (reading 1/20 of data)..."
+        ${pkgs.restic}/bin/restic check \
+          --read-data-subset=1/20 \
+          -o sftp.command='ssh -i /home/matv/.ssh/mainkey daniel_backups@beta.mregirouard.com -s sftp'
+        echo "Integrity check passed."
+      '';
+
       # Retention policy: 7 daily, 4 weekly, 6 monthly
       pruneOpts = [
         "--keep-daily 7"

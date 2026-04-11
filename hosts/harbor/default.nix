@@ -13,7 +13,13 @@
     ./containers
     ./access.nix
     ./monitoring.nix
+    ../../modules/server-safety.nix
   ];
+
+  services.serverSafety = {
+    enable = true;
+    user = "matv";
+  };
 
   # Networking configuration
   networking = {
@@ -127,27 +133,12 @@
     plocate
     tmux
     ncdu
-    curl
     wget
     jq
     iotop
     nethogs
     tcpdump
 
-    # Dead man's switch — arm before risky rebuilds, disarm after verifying access
-    (writeShellScriptBin "arm-watchdog" ''
-      mkdir -p /var/lib/nixos-watchdog
-      readlink /run/current-system > /var/lib/nixos-watchdog/rollback-target
-      echo "Saved rollback target: $(cat /var/lib/nixos-watchdog/rollback-target)"
-      systemctl start nixos-watchdog.timer
-      echo "Watchdog armed. You have 10 minutes to disarm with: sudo disarm-watchdog"
-    '')
-    (writeShellScriptBin "disarm-watchdog" ''
-      systemctl stop nixos-watchdog.timer
-      systemctl stop nixos-watchdog.service 2>/dev/null || true
-      rm -f /var/lib/nixos-watchdog/rollback-target
-      echo "Watchdog disarmed. Config is permanent."
-    '')
   ];
 
   programs.zsh.enable = true;
@@ -157,6 +148,7 @@
     openssh = {
       enable = true;
       settings = {
+        PermitRootLogin = "no";
         PasswordAuthentication = false;
         KbdInteractiveAuthentication = false;
       };

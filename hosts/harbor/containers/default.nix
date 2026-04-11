@@ -52,7 +52,7 @@
 
   # Watchtower — auto-update labeled containers
   virtualisation.oci-containers.containers.watchtower = {
-    image = "containrrr/watchtower:1.7.1";
+    image = "ghcr.io/nicholas-fedor/watchtower:latest";
     volumes = [
       "/var/run/docker.sock:/var/run/docker.sock"
     ];
