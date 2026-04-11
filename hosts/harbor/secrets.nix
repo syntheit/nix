@@ -50,7 +50,7 @@
   sops.templates."vaultwarden.env".content = ''
     ADMIN_TOKEN=${config.sops.placeholder.vaultwarden_admin_token}
     DOMAIN=https://vault.matv.io
-    SIGNUPS_ALLOWED=true
+    SIGNUPS_ALLOWED=false
   '';
 
   # Retrospend env file (shared by app + sidecar)
@@ -146,6 +146,7 @@
     CRAWLER_FULL_PAGE_SCREENSHOT=true
     OLLAMA_BASE_URL=http://ollama:11434
     INFERENCE_TEXT_MODEL=qwen2.5:7b
+    DISABLE_SIGNUPS=true
   '';
 
   # Karakeep Meilisearch env file
