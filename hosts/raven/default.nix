@@ -92,6 +92,8 @@
     storage:
       type: sqlite
       path: /var/lib/gatus/data.db
+      maximum-number-of-results: 64800
+      maximum-number-of-events: 500
 
     web:
       address: 127.0.0.1
