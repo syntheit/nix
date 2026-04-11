@@ -43,6 +43,12 @@
   virtualisation.docker = {
     enable = true;
     enableOnBoot = true;
+    liveRestore = true;
+    autoPrune = {
+      enable = true;
+      dates = "weekly";
+      flags = [ "--all" ];
+    };
   };
   virtualisation.oci-containers.backend = "docker";
 
@@ -110,6 +116,7 @@
       description: Service status for matv.io infrastructure
       header: Status
       link: https://status.matv.io
+      hide-response-time: true
 
     endpoints:
       # ===== HARBOR SERVICES =====

@@ -19,8 +19,7 @@
     hostName = "conduit";
     # Static IP — RackNerd VPS does not use DHCP
     useDHCP = false;
-    usePredictableInterfaceNames = false; # Single NIC VPS — keep eth0
-    interfaces.eth0 = {
+    interfaces.ens3 = {
       ipv4.addresses = [{
         address = "192.3.203.146";
         prefixLength = 26;
@@ -28,7 +27,7 @@
     };
     defaultGateway = {
       address = "192.3.203.129";
-      interface = "eth0";
+      interface = "ens3";
     };
     nameservers = [ "1.1.1.1" "8.8.8.8" ];
     firewall = {
@@ -151,5 +150,5 @@
   time.timeZone = "America/New_York";
   i18n.defaultLocale = "en_US.UTF-8";
 
-  system.stateVersion = "25.05";
+  system.stateVersion = "23.11"; # Set by nixos-infect
 }
