@@ -126,7 +126,7 @@
         conditions:
           - "[STATUS] < 500"
 
-      - name: Bitwarden
+      - name: Vaultwarden
         group: harbor
         url: https://vault.matv.io
         interval: 2m
@@ -147,7 +147,7 @@
         conditions:
           - "[STATUS] < 500"
 
-      - name: Overseerr
+      - name: Seerr
         group: harbor
         url: https://request.matv.io
         interval: 2m
@@ -161,9 +161,9 @@
         conditions:
           - "[STATUS] < 500"
 
-      - name: Jackett
+      - name: Prowlarr
         group: harbor
-        url: https://jackett.matv.io
+        url: https://prowlarr.matv.io
         interval: 2m
         conditions:
           - "[STATUS] < 500"
@@ -210,9 +210,44 @@
         conditions:
           - "[STATUS] < 500"
 
-      - name: Trackarr
+      - name: Tracearr
         group: harbor
         url: https://tracearr.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Radicale
+        group: harbor
+        url: https://dav.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Grafana
+        group: harbor
+        url: https://grafana.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Paperless
+        group: harbor
+        url: https://paperless.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Karakeep
+        group: harbor
+        url: https://keep.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Docmost
+        group: harbor
+        url: https://docs.matv.io
         interval: 2m
         conditions:
           - "[STATUS] < 500"
