@@ -38,6 +38,13 @@
       "vm.vfs_cache_pressure" = 50; # ZFS handles its own caching
       "vm.dirty_bytes" = 268435456; # 256MB — flush dirty pages at fixed thresholds
       "vm.dirty_background_bytes" = 67108864; # 64MB
+      # BBR congestion control — better for WireGuard tunnel + streaming
+      "net.core.default_qdisc" = "fq";
+      "net.ipv4.tcp_congestion_control" = "bbr";
+      # Increase buffers for WireGuard throughput
+      "net.core.rmem_max" = 16777216;
+      "net.core.wmem_max" = 16777216;
+      "net.ipv4.tcp_fastopen" = 3;
     };
   };
 

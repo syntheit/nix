@@ -42,7 +42,7 @@
     hms = "home-manager switch";
     k = "kubectl";
     highlight = "grep --color=always -e \"^\"";
-    deploy-conduit = "nixos-rebuild switch --flake ~/nix#conduit --target-host conduit --use-remote-sudo";
+    deploy-conduit = "nixos-rebuild switch --flake ~/nix#conduit --target-host conduit --sudo";
   };
 
   programs.home-manager.enable = true;
