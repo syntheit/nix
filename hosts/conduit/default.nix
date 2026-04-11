@@ -88,6 +88,23 @@
 
   nixpkgs.config.allowUnfree = true;
 
+  # Network performance tuning
+  boot.kernel.sysctl = {
+    # BBR congestion control — much better for long-distance connections (BA→NYC)
+    "net.core.default_qdisc" = "fq";
+    "net.ipv4.tcp_congestion_control" = "bbr";
+    # Increase UDP/TCP buffer sizes for WireGuard throughput
+    "net.core.rmem_max" = 16777216;
+    "net.core.wmem_max" = 16777216;
+    "net.core.rmem_default" = 1048576;
+    "net.core.wmem_default" = 1048576;
+    # TCP buffer auto-tuning
+    "net.ipv4.tcp_rmem" = "4096 1048576 16777216";
+    "net.ipv4.tcp_wmem" = "4096 1048576 16777216";
+    # Enable TCP fast open
+    "net.ipv4.tcp_fastopen" = 3;
+  };
+
   programs.zsh.enable = true;
 
   # System packages
@@ -121,14 +138,31 @@
   # Caddy reverse proxy — auto TLS via Let's Encrypt
   services.caddy = {
     enable = true;
+    globalConfig = ''
+      servers {
+        protocols h1 h2 h3
+      }
+    '';
     virtualHosts."watch.matv.io" = {
       extraConfig = ''
-        reverse_proxy 10.100.0.2:8096
+        encode gzip zstd
+        reverse_proxy 10.100.0.2:8096 {
+          flush_interval -1
+          transport http {
+            read_buffer 16KiB
+          }
+        }
       '';
     };
     virtualHosts."photos.matv.io" = {
       extraConfig = ''
-        reverse_proxy 10.100.0.2:2283
+        encode gzip zstd
+        reverse_proxy 10.100.0.2:2283 {
+          flush_interval -1
+          transport http {
+            read_buffer 16KiB
+          }
+        }
       '';
     };
   };
