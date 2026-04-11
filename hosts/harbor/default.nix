@@ -29,10 +29,23 @@
     nftables.enable = true;
     firewall = {
       enable = true;
+      trustedInterfaces = [ "tailscale0" "wg0" ];
       extraInputRules = ''
         ip saddr 172.31.0.0/16 tcp dport {2283,8096} accept
       '';
     };
+  };
+
+  # WireGuard tunnel to conduit (VPS gateway)
+  networking.wg-quick.interfaces.wg0 = {
+    address = [ "10.100.0.2/24" ];
+    privateKeyFile = config.sops.secrets.wg_conduit_private_key.path;
+    peers = [{
+      publicKey = "bhXOmLJsZDR0ZeF/Wnzt116Jw0tHzbfhoe2kG2+ZDAw=";
+      endpoint = "192.3.203.146:51820";
+      allowedIPs = [ "10.100.0.1/32" ];
+      persistentKeepalive = 25;
+    }];
   };
 
   # NextDNS — ID loaded from sops secret at runtime

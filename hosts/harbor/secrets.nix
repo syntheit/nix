@@ -28,6 +28,7 @@
   sops.secrets.vpn_wireguard_endpoint = { };
   sops.secrets.vpn_wireguard_preshared_key = { };
   sops.secrets.restic_backup_password = { };
+  sops.secrets.wg_conduit_private_key = { };
   sops.secrets.paperless_admin_password = {
     mode = "0444"; # readable by paperless service user
   };

@@ -49,7 +49,7 @@
   hardware = {
     graphics = {
       enable = true;
-      enable32Bit = true;
+      enable32Bit = false;
       extraPackages = with pkgs; [
         intel-media-driver
         intel-vaapi-driver

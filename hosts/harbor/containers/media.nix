@@ -31,7 +31,7 @@ in
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
     nextcloud_db = {
-      image = "linuxserver/mariadb:latest";
+      image = "linuxserver/mariadb:11";
       environmentFiles = [ config.sops.templates."nextcloud-db.env".path ];
       volumes = [
         "/arespool/appdata/nextcloud-mariadb:/config"
@@ -47,8 +47,8 @@ in
         NVIDIA_DRIVER_CAPABILITIES = "all";
       };
       ports = [
-        "127.0.0.1:8096:8096"
-        "127.0.0.1:8920:8920"
+        "8096:8096" # Accessible via WireGuard (wg0 is trusted)
+        "8920:8920"
       ];
       volumes = [
         "/arespool/appdata/jellyfin_config:/config"

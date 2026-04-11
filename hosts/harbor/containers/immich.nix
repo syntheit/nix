@@ -36,7 +36,7 @@
         NVIDIA_DRIVER_CAPABILITIES = "all";
         NVIDIA_VISIBLE_DEVICES = "all";
       };
-      ports = [ "127.0.0.1:2283:2283" ];
+      ports = [ "2283:2283" ]; # Accessible via WireGuard (wg0 is trusted)
       volumes = [
         "/arespool/nextcloud/data/topikzero/files/ImmichUpload:/usr/src/app/upload"
         "/arespool/nextcloud/data/topikzero/files/Photos/Google Photos:/mnt/media/Google Photos:ro"
@@ -88,7 +88,6 @@
         "--network-alias=database"
         "--shm-size=512m"
       ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
     immich_redis = {
       image = "valkey/valkey:9";
