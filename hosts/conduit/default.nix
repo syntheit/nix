@@ -7,7 +7,13 @@
 {
   imports = [
     ./hardware.nix
+    ../../modules/server-safety.nix
   ];
+
+  services.serverSafety = {
+    enable = true;
+    user = "matv";
+  };
 
   networking = {
     hostName = "conduit";
@@ -31,6 +37,7 @@
         80    # Caddy ACME HTTP-01
         443   # Caddy HTTPS
         64829 # SSH
+        64830 # Rescue SSH
       ];
       allowedUDPPorts = [
         51820 # WireGuard
@@ -97,51 +104,7 @@
     jq
     bat
     duf
-
-    # Dead man's switch
-    (writeShellScriptBin "arm-watchdog" ''
-      mkdir -p /var/lib/nixos-watchdog
-      readlink /run/current-system > /var/lib/nixos-watchdog/rollback-target
-      echo "Saved rollback target: $(cat /var/lib/nixos-watchdog/rollback-target)"
-      systemctl start nixos-watchdog.timer
-      echo "Watchdog armed. You have 10 minutes to disarm with: sudo disarm-watchdog"
-    '')
-    (writeShellScriptBin "disarm-watchdog" ''
-      systemctl stop nixos-watchdog.timer
-      systemctl stop nixos-watchdog.service 2>/dev/null || true
-      rm -f /var/lib/nixos-watchdog/rollback-target
-      echo "Watchdog disarmed. Config is permanent."
-    '')
   ];
-
-  # Dead man's switch
-  systemd.services.nixos-watchdog = {
-    description = "Dead man's switch - rolls back to saved generation";
-    serviceConfig = {
-      Type = "oneshot";
-      ExecStart = pkgs.writeShellScript "watchdog-rollback" ''
-        if [ -f /var/lib/nixos-watchdog/rollback-target ]; then
-          TARGET=$(cat /var/lib/nixos-watchdog/rollback-target)
-          echo "Watchdog triggered! Rolling back to: $TARGET"
-          nix-env -p /nix/var/nix/profiles/system --set "$TARGET"
-          "$TARGET/bin/switch-to-configuration" switch
-          rm -f /var/lib/nixos-watchdog/rollback-target
-        else
-          echo "No rollback target found, rebooting as fallback"
-          systemctl reboot
-        fi
-      '';
-    };
-  };
-
-  systemd.timers.nixos-watchdog = {
-    description = "Dead man's switch timer (10 min)";
-    timerConfig = {
-      OnActiveSec = "10min";
-      Unit = "nixos-watchdog.service";
-      RemainAfterElapse = false;
-    };
-  };
 
   # WireGuard tunnel to harbor
   networking.wg-quick.interfaces.wg0 = {
