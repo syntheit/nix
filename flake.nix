@@ -68,6 +68,11 @@
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    disko = {
+      url = "github:nix-community/disko";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -165,6 +170,30 @@
                 hostName = "harbor";
               };
               home-manager.users."matv" = import ./hosts/harbor/home.nix;
+            }
+          ];
+        };
+
+        conduit = nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          specialArgs = specialArgs // {
+            hostName = "conduit";
+          };
+          modules = [
+            ./hosts/conduit
+            inputs.home-manager.nixosModules.home-manager
+            {
+              nixpkgs.overlays = [
+                (import ./overlays { inherit inputs lib; }).modifications
+                (import ./overlays { inherit inputs lib; }).additions
+              ];
+              home-manager.useGlobalPkgs = true;
+              home-manager.useUserPackages = true;
+              home-manager.backupFileExtension = "bkp";
+              home-manager.extraSpecialArgs = specialArgs // {
+                hostName = "conduit";
+              };
+              home-manager.users."matv" = import ./hosts/conduit/home.nix;
             }
           ];
         };
