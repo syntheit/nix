@@ -40,6 +40,8 @@
     owner = "grafana";
     group = "grafana";
   };
+  sops.secrets.pelican_db_root_pw = { };
+  sops.secrets.pelican_db_pw = { };
 
   # qBittorrent env file
   sops.templates."qbittorrent.env".content = ''
@@ -169,6 +171,17 @@
     POSTGRES_USER=docmost
     POSTGRES_PASSWORD=${config.sops.placeholder.docmost_db_password}
     POSTGRES_DB=docmost
+  '';
+
+  # Pelican Panel DB env file
+  sops.templates."pelican-db.env".content = ''
+    MYSQL_ROOT_PASSWORD=${config.sops.placeholder.pelican_db_root_pw}
+    MYSQL_PASSWORD=${config.sops.placeholder.pelican_db_pw}
+  '';
+
+  # Pelican Panel env file (DB password for the app)
+  sops.templates."pelican-panel.env".content = ''
+    DB_PASSWORD=${config.sops.placeholder.pelican_db_pw}
   '';
 
   # NextDNS resolved config
