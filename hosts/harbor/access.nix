@@ -28,7 +28,6 @@
           "vault.matv.io" = "http://localhost:29446";
           "drivehealth.matv.io" = "http://localhost:5153";
           "sync.matv.io" = "http://localhost:8384";
-          "watch.matv.io" = "http://localhost:8096";
           "retrospend.app" = "http://localhost:1997";
           "tracearr.matv.io" = "http://localhost:7898";
           "dav.matv.io" = "http://localhost:5232";
