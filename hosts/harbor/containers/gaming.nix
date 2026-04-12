@@ -113,7 +113,6 @@
         "--tty"
         "--network=pelican_default"
       ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
   };
 
