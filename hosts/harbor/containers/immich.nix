@@ -2,33 +2,7 @@
 
 {
   virtualisation.oci-containers.containers = {
-    # ===== IMMICH + VPN (shared immich_default network) =====
-    vpn = {
-      image = "qmcgaw/gluetun";
-      environmentFiles = [ config.sops.templates."vpn.env".path ];
-      environment = {
-        HEALTH_RESTART_VPN = "on"; # Auto-restart VPN if health check fails
-        HEALTH_TARGET_ADDRESSES = "cloudflare.com:443,github.com:443";
-        HEALTH_SMALL_CHECK_TYPE = "icmp";
-      };
-      ports = [
-        "12283:2283"
-        "15096:5096"
-      ];
-      volumes = [
-        "/arespool/appdata/vpn/ovpn/windscribe.ovpn:/gluetun/custom.conf:ro"
-      ];
-      extraOptions = [
-        "--network=immich_default"
-        "--cap-add=NET_ADMIN"
-        "--device=/dev/net/tun"
-        "--health-cmd" "wget -q -O /dev/null https://cloudflare.com || exit 1"
-        "--health-interval" "30s"
-        "--health-timeout" "10s"
-        "--health-retries" "3"
-      ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
-    };
+    # ===== IMMICH (shared immich_default network) =====
     immich_server = {
       image = "ghcr.io/immich-app/immich-server:release";
       environmentFiles = [ config.sops.templates."immich.env".path ];
@@ -97,23 +71,9 @@
       ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
-    edge = {
-      image = "caddy:2-alpine";
-      dependsOn = [ "vpn" ];
-      volumes = [
-        "/arespool/appdata/vpn/caddy/config:/etc/caddy"
-        "/arespool/appdata/vpn/caddy/data:/data"
-        "/arespool/appdata/vpn/certs/photos.matv.io:/certs:ro"
-      ];
-      extraOptions = [ "--network=container:vpn" "--entrypoint" "/bin/sh" ];
-      cmd = [ "-lc" "echo 'Waiting for Immich...'; until nc -z immich_server 2283; do sleep 1; done; exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile" ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
-    };
   };
 
   # Network + NVIDIA dependencies
-  systemd.services.docker-vpn.after = [ "docker-networks.service" ];
-  systemd.services.docker-edge.after = [ "docker-vpn.service" ];
   systemd.services.docker-immich_server.after = [ "docker-networks.service" "nvidia-container-toolkit-cdi-generator.service" ];
   systemd.services.docker-immich_server.wants = [ "nvidia-container-toolkit-cdi-generator.service" ];
   systemd.services.docker-immich_machine_learning.after = [ "docker-networks.service" "nvidia-container-toolkit-cdi-generator.service" ];
