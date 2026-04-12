@@ -149,6 +149,9 @@
         encode gzip zstd
         reverse_proxy 10.100.0.2:8096 {
           flush_interval -1
+          header_up X-Real-IP {remote_host}
+          header_up X-Forwarded-For {remote_host}
+          header_up X-Forwarded-Proto {scheme}
           transport http {
             read_buffer 16KiB
           }
@@ -160,6 +163,9 @@
         encode gzip zstd
         reverse_proxy 10.100.0.2:2283 {
           flush_interval -1
+          header_up X-Real-IP {remote_host}
+          header_up X-Forwarded-For {remote_host}
+          header_up X-Forwarded-Proto {scheme}
           transport http {
             read_buffer 16KiB
           }
