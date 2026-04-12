@@ -9,6 +9,7 @@
 {
   imports = [
     # Cross-platform modules (work on both Linux and Darwin)
+    inputs.nix-index-database.homeModules.nix-index
     ../../home/modules/kitty.nix
     ../../home/modules/git.nix
     ../../home/modules/ssh.nix
