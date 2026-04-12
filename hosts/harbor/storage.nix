@@ -155,6 +155,9 @@
         # Grafana (native NixOS service)
         "/var/lib/grafana"
 
+        # Pelican game servers (panel config, MariaDB, Wings config + game data)
+        "/arespool/appdata/pelican"
+
         # DB dumps (created by pre-backup hook)
         "/var/lib/harbor-backups/db-dumps"
 
@@ -219,9 +222,13 @@
         ${pkgs.docker}/bin/docker exec docmost_postgres pg_dump -U docmost docmost \
           > /var/lib/harbor-backups/db-dumps/docmost.sql 2>/dev/null || true
 
-        echo "Dumping Paperless postgres..."
-        ${pkgs.docker}/bin/docker exec -e PGHOST=/run/postgresql paperless-web pg_dump -U paperless paperless \
-          > /var/lib/harbor-backups/db-dumps/paperless.sql 2>/dev/null || true
+        echo "Dumping Pelican MariaDB..."
+        ${pkgs.docker}/bin/docker exec pelican_db sh -c 'mariadb-dump -u root -p"$MYSQL_ROOT_PASSWORD" --all-databases' \
+          > /var/lib/harbor-backups/db-dumps/pelican.sql 2>/dev/null || true
+
+        echo "Dumping Paperless SQLite..."
+        ${pkgs.sqlite}/bin/sqlite3 /arespool/appdata/paperless/db.sqlite3 \
+          ".backup '/var/lib/harbor-backups/db-dumps/paperless.sqlite3'" 2>/dev/null || true
 
         echo "DB dumps complete."
       '';
