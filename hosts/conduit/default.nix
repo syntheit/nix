@@ -168,6 +168,24 @@
     };
   };
 
+  # Fail2ban — block brute force attempts
+  services.fail2ban = {
+    enable = true;
+    maxretry = 3;
+    bantime = "1h";
+    bantime-increment = {
+      enable = true;
+      maxtime = "168h"; # Max 1 week ban
+      factor = "4";
+    };
+    jails.sshd = {
+      settings = {
+        filter = "sshd[mode=aggressive]";
+        port = "64829";
+      };
+    };
+  };
+
   # Cap journal
   services.journald.extraConfig = ''
     SystemMaxUse=200M
