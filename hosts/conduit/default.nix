@@ -35,12 +35,21 @@
       allowedTCPPorts = [
         80    # Caddy ACME HTTP-01
         443   # Caddy HTTPS
+        8443  # Wings WebSocket/API (via Caddy)
         64829 # SSH
         64830 # Rescue SSH
       ];
       allowedUDPPorts = [
         51820 # WireGuard
       ];
+      # Masquerade game traffic going to harbor via WireGuard
+      # Without this, harbor would route responses via its own gateway
+      extraCommands = ''
+        iptables -t nat -A POSTROUTING -o wg0 -j MASQUERADE
+      '';
+      extraStopCommands = ''
+        iptables -t nat -D POSTROUTING -o wg0 -j MASQUERADE 2>/dev/null || true
+      '';
       trustedInterfaces = [ "wg0" ];
     };
   };
@@ -136,6 +145,16 @@
     }];
   };
 
+  # NAT port forwarding — game traffic through WireGuard to harbor
+  networking.nat = {
+    enable = true;
+    externalInterface = "ens3";
+    forwardPorts = [
+      { destination = "10.100.0.2:25565"; proto = "tcp"; sourcePort = 25565; } # Minecraft
+      { destination = "10.100.0.2:34197"; proto = "udp"; sourcePort = 34197; } # Factorio
+    ];
+  };
+
   # Caddy reverse proxy — auto TLS via Let's Encrypt
   services.caddy = {
     enable = true;
@@ -174,6 +193,27 @@
           transport http {
             read_buffer 16KiB
           }
+        }
+      '';
+    };
+    virtualHosts."games.matv.io" = {
+      extraConfig = ''
+        encode gzip zstd
+        reverse_proxy 10.100.0.2:2080 {
+          header_up X-Real-IP {remote_host}
+          header_up X-Forwarded-For {remote_host}
+          header_up X-Forwarded-Proto {scheme}
+        }
+      '';
+    };
+    # Wings API + WebSocket on separate port (game console, file manager)
+    virtualHosts."games.matv.io:8443" = {
+      extraConfig = ''
+        reverse_proxy 10.100.0.2:8080 {
+          flush_interval -1
+          header_up X-Real-IP {remote_host}
+          header_up X-Forwarded-For {remote_host}
+          header_up X-Forwarded-Proto {scheme}
         }
       '';
     };
@@ -229,7 +269,6 @@
       description: Service status for matv.io infrastructure
       header: Status
       link: https://status.matv.io
-      hide-response-time: true
 
     endpoints:
       # ===== HARBOR SERVICES (via Cloudflare Tunnel) =====

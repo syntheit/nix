@@ -6,6 +6,7 @@
     ./immich.nix
     ./retrospend.nix
     ./utilities.nix
+    ./gaming.nix
   ];
 
   # Docker (start at boot — this is a server)
@@ -49,6 +50,7 @@
         ${pkgs.docker}/bin/docker network create immich_default || true
         ${pkgs.docker}/bin/docker network create karakeep_default || true
         ${pkgs.docker}/bin/docker network create docmost_default || true
+        ${pkgs.docker}/bin/docker network create pelican_default || true
       '';
     };
   };
