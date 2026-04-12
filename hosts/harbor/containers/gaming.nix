@@ -35,7 +35,7 @@
         APP_ENV = "production";
         APP_DEBUG = "false";
         BEHIND_PROXY = "true";
-        TRUSTED_PROXIES = "*";
+        TRUSTED_PROXIES = "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.1";
         DB_CONNECTION = "mariadb";
         DB_HOST = "pelican_db";
         DB_PORT = "3306";
