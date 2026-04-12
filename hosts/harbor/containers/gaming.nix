@@ -8,8 +8,16 @@
     "d /arespool/appdata/pelican 0755 root root -"
     "d /arespool/appdata/pelican/wings-data 0755 root root -"
     "d /arespool/appdata/pelican/wings-config 0755 root root -"
-    "d /arespool/appdata/pelican/panel-data 0755 root root -"
-    "d /arespool/appdata/pelican/panel-logs 0755 root root -"
+    "d /arespool/appdata/pelican/panel-data 0755 82 82 -"
+    "d /arespool/appdata/pelican/panel-data/storage 0755 82 82 -"
+    "d /arespool/appdata/pelican/panel-data/storage/logs 0755 82 82 -"
+    "d /arespool/appdata/pelican/panel-data/storage/logs/supervisord 0755 82 82 -"
+    "d /arespool/appdata/pelican/panel-data/storage/app/public 0755 82 82 -"
+    "d /arespool/appdata/pelican/panel-data/storage/framework/cache 0755 82 82 -"
+    "d /arespool/appdata/pelican/panel-data/storage/framework/sessions 0755 82 82 -"
+    "d /arespool/appdata/pelican/panel-data/storage/framework/views 0755 82 82 -"
+    "d /arespool/appdata/pelican/panel-data/database 0755 82 82 -"
+    "d /arespool/appdata/pelican/panel-data/plugins 0755 82 82 -"
     "d /arespool/appdata/pelican/mariadb 0755 root root -"
     "d /var/log/pelican 0755 root root -"
     "d /tmp/pelican 0755 root root -"
@@ -43,7 +51,6 @@
       ports = [ "2080:80" ]; # Accessible via WireGuard (wg0 is trusted)
       volumes = [
         "/arespool/appdata/pelican/panel-data:/pelican-data"
-        "/arespool/appdata/pelican/panel-logs:/var/www/html/storage/logs"
       ];
       dependsOn = [ "pelican_db" "pelican_cache" ];
       extraOptions = [
