@@ -49,6 +49,7 @@ in
       "raycast"
       "spotify"
       "syncthing-app"
+      "tailscale"
       "telegram"
       "thunderbird"
       "transmission"
