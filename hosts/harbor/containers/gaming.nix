@@ -108,7 +108,10 @@
         "/tmp/pelican:/tmp/pelican"
         "/etc/ssl/certs:/etc/ssl/certs:ro"
       ];
-      extraOptions = [ "--tty" ];
+      extraOptions = [
+        "--tty"
+        "--network=pelican_default"
+      ];
       labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
   };
@@ -117,4 +120,5 @@
   systemd.services.docker-pelican_panel.after = [ "docker-networks.service" ];
   systemd.services.docker-pelican_db.after = [ "docker-networks.service" ];
   systemd.services.docker-pelican_cache.after = [ "docker-networks.service" ];
+  systemd.services.docker-pelican_wings.after = [ "docker-networks.service" ];
 }
