@@ -290,8 +290,8 @@
       "raven" = {
         ingress = {
           "matv.io" = "http://localhost:3000";
-          "status.matv.io" = "http://localhost:3001";
           "raven.matv.io" = "ssh://localhost:22";
+          # status.matv.io moved to conduit VPS
         };
         default = "http_status:404";
         credentialsFile = "/etc/cloudflared/credentials.json";

@@ -158,6 +158,11 @@
         }
       '';
     };
+    virtualHosts."status.matv.io" = {
+      extraConfig = ''
+        reverse_proxy localhost:3001
+      '';
+    };
     virtualHosts."photos.matv.io" = {
       extraConfig = ''
         encode gzip zstd
@@ -191,6 +196,214 @@
       };
     };
   };
+
+  # Gatus — status page monitoring all services from outside the network
+  systemd.services.gatus = {
+    description = "Gatus status monitor";
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      ExecStart = "${pkgs.gatus}/bin/gatus";
+      DynamicUser = true;
+      StateDirectory = "gatus";
+      Environment = "GATUS_CONFIG_PATH=/etc/gatus/config.yaml";
+      Restart = "always";
+      RestartSec = "5s";
+    };
+  };
+
+  environment.etc."gatus/config.yaml".text = ''
+    storage:
+      type: sqlite
+      path: /var/lib/gatus/data.db
+      maximum-number-of-results: 64800
+      maximum-number-of-events: 500
+
+    web:
+      address: 0.0.0.0
+      port: 3001
+
+    ui:
+      title: Status | matv.io
+      description: Service status for matv.io infrastructure
+      header: Status
+      link: https://status.matv.io
+      hide-response-time: true
+
+    endpoints:
+      # ===== HARBOR SERVICES (via Cloudflare Tunnel) =====
+      - name: Nextcloud
+        group: harbor
+        url: https://cloud.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Vaultwarden
+        group: harbor
+        url: https://vault.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Retrospend
+        group: harbor
+        url: https://retrospend.app
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Linkding
+        group: harbor
+        url: https://links.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Seerr
+        group: harbor
+        url: https://request.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: qBittorrent
+        group: harbor
+        url: https://downloader.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Prowlarr
+        group: harbor
+        url: https://prowlarr.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Sonarr
+        group: harbor
+        url: https://sonarr.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Radarr
+        group: harbor
+        url: https://radarr.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Bazarr
+        group: harbor
+        url: https://bazarr.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Memos
+        group: harbor
+        url: https://notes.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Scrutiny
+        group: harbor
+        url: https://drivehealth.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Syncthing
+        group: harbor
+        url: https://sync.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Tracearr
+        group: harbor
+        url: https://tracearr.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Radicale
+        group: harbor
+        url: https://dav.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Grafana
+        group: harbor
+        url: https://grafana.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Paperless
+        group: harbor
+        url: https://paperless.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Karakeep
+        group: harbor
+        url: https://keep.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Docmost
+        group: harbor
+        url: https://docs.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      # ===== CONDUIT SERVICES (via VPS gateway) =====
+      - name: Jellyfin
+        group: conduit
+        url: https://watch.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Immich
+        group: conduit
+        url: https://photos.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      # ===== RAVEN SERVICES =====
+      - name: Website
+        group: raven
+        url: https://matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      # ===== INFRASTRUCTURE =====
+      - name: WireGuard Tunnel
+        group: infra
+        url: icmp://10.100.0.2
+        interval: 1m
+        conditions:
+          - "[CONNECTED] == true"
+
+      - name: Harbor SSH
+        group: infra
+        url: tcp://10.100.0.2:64829
+        interval: 1m
+        conditions:
+          - "[CONNECTED] == true"
+  '';
 
   # Cap journal
   services.journald.extraConfig = ''
