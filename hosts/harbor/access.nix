@@ -35,6 +35,7 @@
           "paperless.matv.io" = "http://localhost:28981";
           "keep.matv.io" = "http://localhost:3030";
           "docs.matv.io" = "http://localhost:3040";
+          "map.matv.io" = "http://localhost:8100";
         };
         default = "http_status:404";
         credentialsFile = "/etc/cloudflared/credentials.json";
