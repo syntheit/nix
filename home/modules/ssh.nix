@@ -45,7 +45,7 @@
       };
       "gandalf" = {
         hostname = "100.64.0.2";
-        identityFile = "~/.ssh/id_ed25519";
+        identityFile = "~/.ssh/conduit_key";
         identitiesOnly = true;
         user = "tars";
       };
