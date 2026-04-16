@@ -7,9 +7,9 @@
 # https://github.com/juanfont/headscale/issues/3060
 #
 # Admin commands:
-#   headscale users create malli
-#   headscale preauthkeys create --user malli --reusable --expiration 720h
-#   headscale nodes list
+#   sudo headscale users create malli
+#   sudo headscale preauthkeys create --user 1 --reusable --expiration 720h
+#   sudo headscale nodes list
 
 { pkgs, ... }:
 
