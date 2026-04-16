@@ -43,6 +43,12 @@
         user = "matv";
         port = 64829;
       };
+      "gandalf" = {
+        hostname = "100.64.0.2";
+        identityFile = "~/.ssh/id_ed25519";
+        identitiesOnly = true;
+        user = "tars";
+      };
       "github.com" = {
         hostname = "github.com";
         user = "git";
