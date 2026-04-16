@@ -22,6 +22,7 @@
     "d /var/log/pelican 0755 root root -"
     "d /tmp/pelican 0755 root root -"
     "L+ /var/lib/pelican - - - - /arespool/appdata/pelican/wings-data"
+    "L+ /etc/pelican - - - - /arespool/appdata/pelican/wings-config"
   ];
 
   virtualisation.oci-containers.containers = {
@@ -112,7 +113,6 @@
         "--tty"
         "--network=pelican_default"
       ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
     };
   };
 
