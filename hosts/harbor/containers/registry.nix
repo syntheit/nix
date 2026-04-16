@@ -1,14 +1,13 @@
 # Docker Registry — private container registry for the Malli fleet.
 # Mac Minis pull pre-built images from here instead of building locally.
 #
-# Access control: Tailscale only. The registry binds to harbor's Tailscale
-# IP, so only machines on the tailnet can reach it. No passwords needed.
+# Access control:
+#   Push — from personal Tailscale (your laptop): docker push harbor:5000/malli/cursor-runner:latest
+#   Pull — from fleet VMs (Headscale): docker pull conduit:5000/malli/cursor-runner:latest
+#          (conduit proxies to harbor:5000 over WireGuard)
 #
-# Push (from your laptop or CI, must be on tailnet):
-#   docker push harbor:5000/malli/cursor-runner:latest
-#
-# Pull (from Mac Mini VMs, on tailnet):
-#   docker pull harbor:5000/malli/cursor-runner:latest
+# No auth — harbor's port 5000 is only reachable from personal Tailscale
+# and WireGuard (conduit). Not exposed to the internet.
 
 { ... }:
 
