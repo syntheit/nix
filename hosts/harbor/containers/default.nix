@@ -7,6 +7,7 @@
     ./retrospend.nix
     ./utilities.nix
     ./gaming.nix
+    ./registry.nix
   ];
 
   # Docker (start at boot — this is a server)
