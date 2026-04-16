@@ -11,9 +11,23 @@
 #   headscale preauthkeys create --user malli --reusable --expiration 720h
 #   headscale nodes list
 
-{ ... }:
+{ pkgs, ... }:
 
 {
+  # ── Conduit is both Headscale server AND a client on its own network ──
+  # This makes conduit reachable from the Malli fleet (Mac Mini VMs),
+  # allowing it to proxy the Docker registry from harbor over WireGuard.
+  services.tailscale = {
+    enable = true;
+    # Auth key created via: headscale preauthkeys create --user 1 --reusable --expiration 8760h
+    # Write to /etc/tailscale/authkey on conduit manually (one-time).
+    authKeyFile = "/etc/tailscale/authkey";
+    extraUpFlags = [
+      "--login-server" "https://headscale.matv.io"
+      "--hostname" "conduit"
+    ];
+  };
+
   services.headscale = {
     enable = true;
     address = "127.0.0.1";
@@ -73,4 +87,27 @@
       reverse_proxy localhost:8085
     '';
   };
+
+  # ── Docker Registry proxy ──────────────────────────────────
+  # Forwards port 5000 from Tailscale interface to harbor's registry
+  # over WireGuard. Only Headscale fleet machines can reach it.
+  #
+  # Mac Minis pull from: http://conduit:5000/malli/cursor-runner:latest
+  systemd.services.registry-proxy = {
+    description = "Proxy Docker registry to harbor over WireGuard";
+    after = [
+      "network-online.target"
+      "tailscaled.service"
+    ];
+    wants = [ "network-online.target" ];
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      ExecStart = "${pkgs.socat}/bin/socat TCP-LISTEN:5000,fork,reuseaddr TCP:10.100.0.2:5000";
+      Restart = "always";
+      RestartSec = "5s";
+    };
+  };
+
+  # Only open port 5000 on the Tailscale interface — blocked from the internet
+  networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 5000 ];
 }
