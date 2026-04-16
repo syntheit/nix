@@ -7,6 +7,7 @@
 {
   imports = [
     ./hardware.nix
+    ./headscale.nix
     ../../modules/server-safety.nix
   ];
 
@@ -427,6 +428,14 @@
         interval: 2m
         conditions:
           - "[STATUS] < 500"
+
+      # ===== CONDUIT SERVICES (native) =====
+      - name: Headscale
+        group: conduit
+        url: https://headscale.matv.io/health
+        interval: 2m
+        conditions:
+          - "[STATUS] == 200"
 
       # ===== INFRASTRUCTURE =====
       - name: WireGuard Tunnel
