@@ -18,6 +18,7 @@
   home.shellAliases = {
     btw = "${pkgs.fastfetch}/bin/fastfetch";
     igrep = "grep -i";
+    deploy-conduit = "nixos-rebuild switch --flake ~/nix#conduit --target-host conduit --sudo";
   };
 
   home.packages = with pkgs; [
