@@ -63,6 +63,7 @@
       PasswordAuthentication = false;
       KbdInteractiveAuthentication = false;
       PermitRootLogin = "no";
+      PrintLastLog = false;
     };
   };
 
