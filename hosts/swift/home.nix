@@ -48,7 +48,10 @@
     awscli2
     aws-sam-cli
     btop
+    claude-code
     coreutils
+    sops
+    ssh-to-age
     fastfetch
     fd
     ffmpeg-full

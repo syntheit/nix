@@ -231,6 +231,7 @@
           };
           modules = [
             ./hosts/swift
+            inputs.sops-nix.darwinModules.sops
             inputs.nix-homebrew.darwinModules.nix-homebrew
             inputs.home-manager.darwinModules.home-manager
             {
