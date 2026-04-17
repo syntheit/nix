@@ -9,6 +9,8 @@ let
   menubarBlocker = pkgs.callPackage ../../packages/menubar-blocker { };
 in
 {
+  nixpkgs.config.allowUnfree = true;
+
   system.primaryUser = vars.user.name;
 
   # Nix daemon managed by Determinate Systems installer
@@ -32,7 +34,7 @@ in
       "antigravity"
       "arc"
       "claude"
-      "claude-code"
+
       "cursor"
       "dbeaver-community"
       "eqmac"
@@ -49,7 +51,7 @@ in
       "raycast"
       "spotify"
       "syncthing-app"
-      "tailscale"
+      "tailscale-app"
       "telegram"
       "thunderbird"
       "transmission"
