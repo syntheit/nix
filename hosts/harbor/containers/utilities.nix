@@ -17,7 +17,7 @@ in
       volumes = [
         "/arespool/appdata/vaultwarden:/data"
       ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
 
     # ===== LINKDING =====
@@ -28,7 +28,7 @@ in
       volumes = [
         "/arespool/appdata/linkding:/etc/linkding/data"
       ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
 
     # ===== SCRUTINY (drive health monitoring) =====
@@ -56,7 +56,7 @@ in
         "--device=/dev/sde"
         "--device=/dev/sdf"
       ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
 
     # ===== SYNCTHING =====
@@ -73,7 +73,7 @@ in
         "/arespool/appdata/syncthing/config:/config"
         "/arespool/nextcloud/data/topikzero/files/Sync:/config/Sync"
       ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
 
     # ===== TRACEARR =====
@@ -93,7 +93,7 @@ in
         "--shm-size=256m"
         "--memory=2g"
       ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
 
     # ===== KARAKEEP (shared karakeep_default network) =====
@@ -106,7 +106,7 @@ in
       ];
       dependsOn = [ "karakeep_meilisearch" "karakeep_chrome" ];
       extraOptions = [ "--network=karakeep_default" ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
     karakeep_meilisearch = {
       image = "getmeili/meilisearch:v1.11";
@@ -115,7 +115,7 @@ in
         "karakeep_meilisearch_data:/meili_data"
       ];
       extraOptions = [ "--network=karakeep_default" ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
     karakeep_chrome = {
       image = "gcr.io/zenika-hub/alpine-chrome:latest";
@@ -124,7 +124,7 @@ in
       };
       cmd = [ "chromium-browser" "--headless" "--disable-gpu" "--no-sandbox" "--disable-dev-shm-usage" "--remote-debugging-address=0.0.0.0" "--remote-debugging-port=9222" ];
       extraOptions = [ "--network=karakeep_default" ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
 
     # ===== DOCMOST (shared docmost_default network) =====
@@ -137,7 +137,7 @@ in
       ];
       dependsOn = [ "docmost_postgres" "docmost_redis" ];
       extraOptions = [ "--network=docmost_default" ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
     docmost_postgres = {
       image = "postgres:16-alpine";
@@ -146,7 +146,7 @@ in
         "/arespool/appdata/docmost/postgres:/var/lib/postgresql/data"
       ];
       extraOptions = [ "--network=docmost_default" ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
     docmost_redis = {
       image = "redis:7-alpine";
@@ -155,7 +155,7 @@ in
         "docmost_redis_data:/data"
       ];
       extraOptions = [ "--network=docmost_default" ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
   };
 

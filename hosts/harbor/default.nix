@@ -14,11 +14,43 @@
     ./access.nix
     ./monitoring.nix
     ../../modules/server-safety.nix
+    ../../modules/argus.nix
   ];
 
   services.serverSafety = {
     enable = true;
     user = "matv";
+  };
+
+  # Argus — container update management (replaces Watchtower)
+  services.argus = {
+    enable = true;
+    exclude = [ "immich_postgres" ];
+
+    containers = {
+      jellyfin = { policy = "manual"; };
+
+      # Containers with database backup associations
+      retrospend = { backups = [ "retrospend" ]; };
+      retrospend_sidecar = { backups = [ "retrospend" ]; };
+      retrospend_postgres = { backups = [ "retrospend" ]; };
+      immich_server = { backups = [ "immich" ]; };
+      immich_machine_learning = { backups = [ "immich" ]; };
+      docmost = { backups = [ "docmost" ]; };
+      docmost_postgres = { backups = [ "docmost" ]; };
+      nextcloud = { backups = [ "nextcloud" ]; };
+      nextcloud_db = { backups = [ "nextcloud" ]; };
+      pelican_panel = { backups = [ "pelican" ]; };
+      pelican_db = { backups = [ "pelican" ]; };
+    };
+
+    backups = {
+      retrospend = { type = "postgres"; container = "retrospend_postgres"; database = "retrospend"; };
+      docmost = { type = "postgres"; container = "docmost_postgres"; database = "docmost"; user = "docmost"; };
+      nextcloud = { type = "mariadb"; container = "nextcloud_db"; };
+      pelican = { type = "mariadb"; container = "pelican_db"; };
+      immich = { type = "postgres"; container = "immich_postgres"; database = "immich"; };
+    };
   };
 
   # Networking configuration

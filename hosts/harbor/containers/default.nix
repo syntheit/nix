@@ -18,7 +18,7 @@
     autoPrune = {
       enable = true;
       dates = "weekly";
-      flags = [ "--all" ];
+      flags = [ ];
     };
     daemon.settings = {
       default-ulimits = {
@@ -58,16 +58,6 @@
 
   virtualisation.oci-containers.backend = "docker";
 
-  # Watchtower — auto-update labeled containers
-  virtualisation.oci-containers.containers.watchtower = {
-    image = "ghcr.io/nicholas-fedor/watchtower:latest";
-    volumes = [
-      "/var/run/docker.sock:/var/run/docker.sock"
-    ];
-    cmd = [ "--label-enable" "--cleanup" "--interval" "3600" ];
-    labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
-  };
-
   # Shared Ollama — GPU-accelerated LLM inference for Retrospend + Karakeep
   virtualisation.oci-containers.containers.ollama = {
     image = "ollama/ollama:latest";
@@ -81,7 +71,6 @@
       "--dns=1.1.1.1"
       "--dns=1.0.0.1"
     ];
-    labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
   };
 
   systemd.services.docker-ollama.after = [ "docker-networks.service" "nvidia-container-toolkit-cdi-generator.service" ];

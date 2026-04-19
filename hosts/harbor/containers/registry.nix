@@ -21,8 +21,6 @@
     environment = {
       REGISTRY_STORAGE_DELETE_ENABLED = "true";
     };
-    labels = {
-      "com.centurylinklabs.watchtower.enable" = "true";
-    };
+
   };
 }

@@ -23,7 +23,7 @@
         "--network=immich_default"
         "--device=nvidia.com/gpu=all"
       ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
     immich_machine_learning = {
       image = "ghcr.io/immich-app/immich-machine-learning:release-cuda";
@@ -37,7 +37,7 @@
         "--network-alias=immich-machine-learning"
         "--device=nvidia.com/gpu=all"
       ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
     immich_postgres = {
       image = "ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0";
@@ -69,7 +69,7 @@
         "--network=immich_default"
         "--network-alias=redis"
       ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
   };
 

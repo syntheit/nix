@@ -58,7 +58,7 @@
         "--network=pelican_default"
         "--add-host=host.docker.internal:host-gateway"
       ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
 
     # MariaDB — database for Panel
