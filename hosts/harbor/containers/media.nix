@@ -28,7 +28,7 @@ in
       ];
       dependsOn = [ "nextcloud_db" ];
       extraOptions = [ "--network=nextcloud_default" ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
     nextcloud_db = {
       image = "linuxserver/mariadb:latest";
@@ -37,7 +37,7 @@ in
         "/arespool/appdata/nextcloud-mariadb:/config"
       ];
       extraOptions = [ "--network=nextcloud_default" ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
     jellyfin = {
       image = "lscr.io/linuxserver/jellyfin:latest";
@@ -112,7 +112,7 @@ in
         "--sysctl=net.ipv4.conf.all.src_valid_mark=1"
         "--sysctl=net.ipv6.conf.all.disable_ipv6=0"
       ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
     # Seerr runs as a native NixOS service (see services.seerr above)
     prowlarr = {
@@ -124,7 +124,7 @@ in
       ];
       dependsOn = [ "qbittorrent" ];
       extraOptions = [ "--network=downloader_media_network" ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
     sonarr = {
       image = "linuxserver/sonarr";
@@ -142,7 +142,7 @@ in
         "/platapool:/platapool"
       ];
       extraOptions = [ "--network=downloader_media_network" ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
     radarr = {
       image = "linuxserver/radarr";
@@ -160,7 +160,7 @@ in
         "/platapool:/platapool"
       ];
       extraOptions = [ "--network=downloader_media_network" ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
     bazarr = {
       image = "linuxserver/bazarr";
@@ -177,7 +177,7 @@ in
         "/platapool:/platapool"
       ];
       extraOptions = [ "--network=downloader_media_network" ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
     memos = {
       image = "neosmemo/memos:stable";
@@ -186,7 +186,7 @@ in
       volumes = [
         "/arespool/appdata/memos:/var/opt/memos"
       ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
   };
 

@@ -12,7 +12,7 @@
       ];
       dependsOn = [ "retrospend_postgres" "retrospend_sidecar" ];
       extraOptions = [ "--network=retrospend_default" ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
     retrospend_sidecar = {
       image = "synzeit/retrospend-sidecar:latest";
@@ -26,7 +26,7 @@
         "--network=retrospend_default"
         "--network-alias=sidecar"
       ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
     retrospend_postgres = {
       image = "postgres:16-alpine";
@@ -38,7 +38,7 @@
         "--network=retrospend_default"
         "--network-alias=postgres"
       ];
-      labels = { "com.centurylinklabs.watchtower.enable" = "true"; };
+
     };
   };
 
