@@ -79,11 +79,28 @@
     gc = {
       automatic = true;
       dates = "weekly";
-      options = "--delete-older-than 30d";
+      options = "--delete-older-than 14d";
     };
   };
 
   nixpkgs.config.allowUnfree = true;
+
+  # Journal — cap size to reduce journald memory footprint
+  services.journald.extraConfig = ''
+    SystemMaxUse=200M
+    MaxRetentionSec=1month
+  '';
+
+  # Network tunables — BBR congestion control + larger buffers for tunnel traffic
+  boot.kernel.sysctl = {
+    "net.ipv4.tcp_congestion_control" = "bbr";
+    "net.core.default_qdisc" = "fq";
+    "net.core.rmem_max" = 16777216;
+    "net.core.wmem_max" = 16777216;
+    "net.core.rmem_default" = 1048576;
+    "net.core.wmem_default" = 1048576;
+    "net.ipv4.tcp_fastopen" = 3;
+  };
 
   # Gatus — declarative status page monitoring harbor + raven services
   systemd.services.gatus = {
