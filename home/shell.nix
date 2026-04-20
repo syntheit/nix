@@ -97,6 +97,39 @@
       # h 2, h work, h claude — each opens a separate session
       h() { mosh harbor -- tmux new-session -A -s "''${1:-1}"; }
 
+      cheat() {
+        cat <<'CHEAT'
+  ── Remote Dev ──────────────────────────────────────
+  h                 harbor tmux session "1"
+  h 2 / h work      separate named sessions
+  Shift+Cmd+X       screenshot → harbor:~/screenshots/swift/
+
+  ── Tmux (no prefix needed) ─────────────────────────
+  Alt-h/j/k/l       navigate panes
+  Alt-H/J/K/L       resize panes
+  Alt-\             split vertical
+  Alt--             split horizontal
+  Alt-t             new window (tab)
+  Alt-1..5          switch to window N
+  Alt-n / Alt-p     next / prev window
+  Alt-w             close pane
+  Alt-f             toggle pane fullscreen
+  Ctrl-Space [      scroll mode (q to exit)
+
+  ── Dev Servers (from Air browser) ──────────────────
+  http://harbor:PORT    any port, auto-exposed via Tailscale
+  Dev servers must bind to 0.0.0.0 (not 127.0.0.1)
+
+  ── Raven Failover ──────────────────────────────────
+  mosh raven -- tmux new-session -A -s 1
+  emergency-push              push all dirty repos
+  emergency-push my-app       push one repo
+
+  ── Project Setup ───────────────────────────────────
+  echo "use flake" > .envrc && direnv allow
+CHEAT
+      }
+
       # --- Cursor shape (blinking underline) ---
       printf '\e[3 q'
 

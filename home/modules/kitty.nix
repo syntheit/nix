@@ -32,6 +32,7 @@
       hide_window_decorations = "yes"; # Remove title bar
       window_margin_width = 0;
       window_padding_width = 0;
+      macos_option_as_alt = "yes"; # Send Alt escape sequences instead of macOS special characters
     };
   };
 }
