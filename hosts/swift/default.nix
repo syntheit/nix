@@ -236,37 +236,59 @@ in
       sudo -u ${vars.user.name} defaults write "$@"
     }
 
-    # Hide menu bar (per-user defaults, must use activation script)
+    GUI_UID="$(id -u "${vars.user.name}")"
+
+    # ================================================================
+    # UI defaults (not animations — keep those)
+    # ================================================================
     set_default NSGlobalDomain _HIHideMenuBar -bool true
     set_default NSGlobalDomain AppleMenuBarVisibleInFullscreen -bool false
-    # Opaque menu bar when it appears (reduce transparency)
     set_default NSGlobalDomain AppleReduceTransparency -bool true
-    # Disable all window animations (minimize, resize, open/close)
-    set_default NSGlobalDomain NSAutomaticWindowAnimationsEnabled -bool false
-    defaults write com.apple.dock expose-animation-duration -float 0
-    killall Dock 2>/dev/null || true
-    killall SystemUIServer || true
-    killall Finder || true
+
+    # Don't write .DS_Store on network/USB volumes
+    defaults write com.apple.desktopservices DSDontWriteNetworkStores -bool true
+    defaults write com.apple.desktopservices DSDontWriteUSBStores -bool true
+
+    # Don't reopen windows on login
+    defaults write com.apple.loginwindow TALLogoutSavesState -bool false
+    defaults write com.apple.loginwindow LoginwindowLaunchesRelaunchApps -bool false
 
     # Disable Spotlight shortcut (Cmd+Space) — complex nested dict not supported declaratively
     set_default com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 64 "{enabled = 0; value = { parameters = (32, 49, 1048576); type = 'standard'; }; }"
 
-    # === Privacy & Telemetry (system-level) ===
+    killall Dock 2>/dev/null || true
+    killall SystemUIServer 2>/dev/null || true
+    killall Finder 2>/dev/null || true
 
-    # Disable Siri data sharing
+    # ================================================================
+    # Privacy & Telemetry defaults
+    # ================================================================
     set_default com.apple.assistant.support "Siri Data Sharing Opt-In Status" -int 2
-
-    # Disable diagnostic data submission to Apple
     defaults write "/Library/Application Support/CrashReporter/DiagnosticMessagesHistory.plist" AutoSubmit -bool false 2>/dev/null || true
     defaults write "/Library/Application Support/CrashReporter/DiagnosticMessagesHistory.plist" ThirdPartyDataSubmit -bool false 2>/dev/null || true
-
-    # Disable captive portal detection (stops Apple knowing when you join networks)
-    # Downside: hotel/airport WiFi login pages won't auto-popup — open a browser manually instead
     defaults write /Library/Preferences/SystemConfiguration/com.apple.captive.control Active -bool false
+
+    # Disable software update auto-downloads
+    defaults write /Library/Preferences/com.apple.SoftwareUpdate AutomaticDownload -bool false
+    defaults write /Library/Preferences/com.apple.SoftwareUpdate AutomaticCheckEnabled -bool false
+    defaults write /Library/Preferences/com.apple.SoftwareUpdate ConfigDataInstall -int 0
+    defaults write /Library/Preferences/com.apple.SoftwareUpdate CriticalUpdateInstall -int 0
+    defaults write /Library/Preferences/com.apple.SoftwareUpdate ScheduleFrequency -int 0
+    defaults write com.apple.commerce AutoUpdate -bool false
 
     /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
 
-    # Grant accessibility permissions (requires SIP disabled)
+    # ================================================================
+    # Power management: no powernap, no hibernation
+    # ================================================================
+    pmset -a powernap 0
+    pmset -a hibernatemode 0
+    pmset -a sms 0
+    rm -f /var/vm/sleepimage 2>/dev/null || true
+
+    # ================================================================
+    # TCC permissions (requires SIP disabled)
+    # ================================================================
     YABAI_BIN=$(readlink -f ${pkgs.yabai}/bin/yabai)
     SKHD_BIN=$(readlink -f ${pkgs.skhd}/bin/skhd)
     MENUBAR_BIN=$(readlink -f ${menubarBlocker}/bin/menubar-blocker)
@@ -275,8 +297,7 @@ in
       sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) VALUES ('kTCCServiceAccessibility', '$BIN', 1, 2, 4, 1);"
     done
 
-    # Restart services after TCC permissions are granted to avoid race condition
-    GUI_UID="$(id -u "${vars.user.name}")"
+    # Restart nix-managed services after TCC grants
     launchctl bootout "gui/$GUI_UID/org.nixos.skhd" 2>/dev/null || true
     launchctl bootout "gui/$GUI_UID/org.nixos.yabai" 2>/dev/null || true
     launchctl bootout "gui/$GUI_UID/org.nixos.menubar-blocker" 2>/dev/null || true
@@ -285,29 +306,234 @@ in
     launchctl bootstrap "gui/$GUI_UID" /Users/${vars.user.name}/Library/LaunchAgents/org.nixos.yabai.plist 2>/dev/null || true
     launchctl bootstrap "gui/$GUI_UID" /Users/${vars.user.name}/Library/LaunchAgents/org.nixos.menubar-blocker.plist 2>/dev/null || true
 
-    # Disable Apple telemetry daemons (system-level)
+    # ================================================================
+    # SYSTEM DAEMONS TO DISABLE
+    # ================================================================
     for daemon in \
       com.apple.analyticsd \
       com.apple.assistantd \
       com.apple.parsecd \
-      com.apple.tipsd; do
+      com.apple.tipsd \
+      com.apple.cloudd \
+      com.apple.icloud.findmydeviced \
+      com.apple.icloud.searchpartyd \
+      com.apple.findmymacd \
+      com.apple.findmymacmessenger \
+      com.apple.findmy.findmybeaconingd \
+      com.apple.modelcatalogd \
+      com.apple.modelmanagerd \
+      com.apple.triald.system \
+      com.apple.biomed \
+      com.apple.coreduetd \
+      com.apple.contextstored \
+      com.apple.wifianalyticsd \
+      com.apple.audioanalyticsd \
+      com.apple.ecosystemanalyticsd \
+      com.apple.ecosystemd \
+      com.apple.SubmitDiagInfo \
+      com.apple.osanalytics.osanalyticshelper \
+      com.apple.rtcreportingd \
+      com.apple.rapportd \
+      com.apple.netbiosd \
+      com.apple.GameController.gamecontrollerd \
+      com.apple.gamepolicyd \
+      com.apple.backupd \
+      com.apple.backupd-helper \
+      com.apple.familycontrols \
+      com.apple.softwareupdated \
+      com.apple.mobile.softwareupdated \
+      com.apple.ReportCrash.Root \
+      com.apple.CrashReporterSupportHelper \
+      com.apple.spindump \
+      com.apple.tailspind \
+      com.apple.mediaremoted \
+      com.apple.siri.acousticsignature \
+      com.apple.siri.morphunassetsupdaterd \
+      com.apple.corespeechd.system \
+      com.apple.ospredictiond \
+      com.apple.uarpassetmanagerd \
+      com.apple.bosreporter \
+      com.apple.boswatcher \
+      com.apple.betaenrollmentd \
+      com.apple.logd_reporter \
+      com.apple.signpost.signpost_reporter \
+      com.apple.csrutil.report \
+      com.apple.gkreport; do
       launchctl bootout system/"$daemon" 2>/dev/null || true
       launchctl disable system/"$daemon" 2>/dev/null || true
     done
 
-    # Disable Apple telemetry agents (user-level)
+    # ================================================================
+    # USER AGENTS TO DISABLE
+    # ================================================================
     for agent in \
       com.apple.ReportCrash \
       com.apple.assistantd \
       com.apple.parsecd \
-      com.apple.tipsd; do
+      com.apple.tipsd \
+      com.apple.cloudd \
+      com.apple.cloudpaird \
+      com.apple.cloudphotod \
+      com.apple.cloudphotosd \
+      com.apple.CloudSettingsSyncAgent \
+      com.apple.cloudsettingssyncagent \
+      com.apple.iCloudNotificationAgent \
+      com.apple.iCloudUserNotifications \
+      com.apple.icloudmailagent \
+      com.apple.itunescloudd \
+      com.apple.iCloudHelper \
+      com.apple.icloud.fmfd \
+      com.apple.icloud.searchpartyuseragent \
+      com.apple.findmy.findmylocateagent \
+      com.apple.findmymacmessenger \
+      com.apple.security.cloudkeychainproxy3 \
+      com.apple.protectedcloudstorage.protectedcloudkeysyncing \
+      com.apple.replicatord \
+      com.apple.bird \
+      com.apple.intelligenceplatformd \
+      com.apple.intelligencetasksd \
+      com.apple.intelligenceflowd \
+      com.apple.intelligencecontextd \
+      com.apple.generativeexperiencesd \
+      com.apple.knowledgeconstructiond \
+      com.apple.naturallanguaged \
+      com.apple.knowledge-agent \
+      com.apple.triald \
+      com.apple.privatecloudcomputed \
+      com.apple.ModelCatalogAgent \
+      com.apple.mlruntimed \
+      com.apple.mlhostd \
+      com.apple.ciphermld \
+      com.apple.translationd \
+      com.apple.photoanalysisd \
+      com.apple.mediaanalysisd \
+      com.apple.photolibraryd \
+      com.apple.mediastream.mstreamd \
+      com.apple.videosubscriptionsd \
+      com.apple.ap.adprivacyd \
+      com.apple.ap.promotedcontentd \
+      com.apple.geoanalyticsd \
+      com.apple.inputanalyticsd \
+      com.apple.analyticsagent \
+      com.apple.BiomeAgent \
+      com.apple.biomesyncd \
+      com.apple.UsageTrackingAgent \
+      com.apple.ScreenTimeAgent \
+      com.apple.contextstored \
+      com.apple.ContextStoreAgent \
+      com.apple.routined \
+      com.apple.duetexpertd \
+      com.apple.proactived \
+      com.apple.proactiveeventtrackerd \
+      com.apple.sharingd \
+      com.apple.rapportd \
+      com.apple.CommCenter \
+      com.apple.imagent \
+      com.apple.imcore.imtransferagent \
+      com.apple.imautomatichistorydeletionagent \
+      com.apple.imdpersistence.IMDPersistenceAgent \
+      com.apple.telephonyutilities.callservicesd \
+      com.apple.callhistoryd \
+      com.apple.callintelligenced \
+      com.apple.avconferenced \
+      com.apple.screensharing.agent \
+      com.apple.screensharing.menuextra \
+      com.apple.sidecar-hid-relay \
+      com.apple.sidecar-relay \
+      com.apple.GameController.gamecontrolleragentd \
+      com.apple.GamePolicyAgent \
+      com.apple.gamed \
+      com.apple.gamesaved \
+      com.apple.homed \
+      com.apple.homeeventsd \
+      com.apple.homeenergyd \
+      com.apple.passd \
+      com.apple.familycircled \
+      com.apple.familycontrols.useragent \
+      com.apple.familynotificationd \
+      com.apple.financed \
+      com.apple.remindd \
+      com.apple.suggestd \
+      com.apple.watchlistd \
+      com.apple.weatherd \
+      com.apple.chronod \
+      com.apple.followupd \
+      com.apple.progressd \
+      com.apple.voicebankingd \
+      com.apple.newsd \
+      com.apple.helpd \
+      com.apple.Maps.pushdaemon \
+      com.apple.Maps.mapssyncd \
+      com.apple.Maps.mapspushd \
+      com.apple.maps.destinationd \
+      com.apple.navd \
+      com.apple.geod \
+      com.apple.geodMachServiceBridge \
+      com.apple.CoreLocationAgent \
+      com.apple.intelligentroutingd \
+      com.apple.notificationcenterui.agent \
+      com.apple.SoftwareUpdateNotificationManager \
+      com.apple.softwareupdate_notify_agent \
+      com.apple.spindump_agent \
+      com.apple.diagnostics_agent \
+      com.apple.diagnosticextensionsd \
+      com.apple.betaenrollmentagent \
+      com.apple.appleseed.seedusaged \
+      com.apple.assistant_service \
+      com.apple.assistant_cdmd \
+      com.apple.Siri.agent \
+      com.apple.siriactionsd \
+      com.apple.siriinferenced \
+      com.apple.sirittsd \
+      com.apple.SiriTTSTrainingAgent \
+      com.apple.siriknowledged \
+      com.apple.corespeechd \
+      com.apple.siri.context.service \
+      com.apple.askpermissiond \
+      com.apple.studentd \
+      com.apple.shazamd \
+      com.apple.AMPDeviceDiscoveryAgent \
+      com.apple.amp.mediasharingd \
+      com.apple.mediacontinuityd \
+      com.apple.sociallayerd \
+      com.apple.email.maild \
+      com.apple.SafariBookmarksSyncAgent \
+      com.apple.SafariNotificationAgent \
+      com.apple.Safari.History \
+      com.apple.Safari.SafeBrowsing.Service \
+      com.apple.SafariLaunchAgent \
+      com.apple.Safari.PasswordBreachAgent \
+      com.apple.commerce \
+      com.apple.appstoreagent \
+      com.apple.amsondevicestoraged \
+      com.apple.amsengagementd \
+      com.apple.amsaccountsd \
+      com.apple.storekitagent \
+      com.apple.managedappdistributionagent \
+      com.apple.WorkflowKit.ShortcutsViewService \
+      com.apple.wallpaper.agent \
+      com.apple.replayd \
+      com.apple.liveactivitiesd \
+      com.apple.LinkedNotesUIService \
+      com.apple.avatarsd \
+      com.apple.contacts.donation-agent \
+      com.apple.dprivacyd \
+      com.apple.feedbackd \
+      com.apple.lockdownmoded \
+      com.apple.businessservicesd \
+      com.apple.RemoteManagementAgent \
+      com.apple.backgroundassets.user \
+      com.apple.BTServer.cloudpairing \
+      com.apple.webprivacyd \
+      com.apple.powerchime; do
       launchctl bootout "gui/$GUI_UID/$agent" 2>/dev/null || true
       launchctl disable "gui/$GUI_UID/$agent" 2>/dev/null || true
     done
 
-    # === Disable Spotlight ===
-    sudo mdutil -a -i off 2>/dev/null || true
-
+    # ================================================================
+    # Disable Spotlight indexing
+    # ================================================================
+    mdutil -a -i off 2>/dev/null || true
     for daemon in \
       com.apple.metadata.mds \
       com.apple.metadata.mds.index \
@@ -316,7 +542,6 @@ in
       launchctl bootout system/"$daemon" 2>/dev/null || true
       launchctl disable system/"$daemon" 2>/dev/null || true
     done
-
     for agent in \
       com.apple.Spotlight \
       com.apple.corespotlightd \
@@ -329,35 +554,12 @@ in
       launchctl disable "gui/$GUI_UID/$agent" 2>/dev/null || true
     done
 
-    # === Disable Siri & related intelligence ===
-    for daemon in \
-      com.apple.siri.acousticsignature \
-      com.apple.siri.morphunassetsupdaterd; do
-      launchctl bootout system/"$daemon" 2>/dev/null || true
-      launchctl disable system/"$daemon" 2>/dev/null || true
-    done
-
-    for agent in \
-      com.apple.assistant_service \
-      com.apple.assistant_cdmd \
-      com.apple.Siri.agent \
-      com.apple.siriactionsd \
-      com.apple.siriinferenced \
-      com.apple.sirittsd \
-      com.apple.SiriTTSTrainingAgent \
-      com.apple.siriknowledged \
-      com.apple.corespeechd \
-      com.apple.duetexpertd; do
-      launchctl bootout "gui/$GUI_UID/$agent" 2>/dev/null || true
-      launchctl disable "gui/$GUI_UID/$agent" 2>/dev/null || true
-    done
-
     # Lock Siri vocabulary folder
     rm -rf /Users/${vars.user.name}/Library/Assistant/SiriVocabulary 2>/dev/null || true
     mkdir -p /Users/${vars.user.name}/Library/Assistant/SiriVocabulary
     chflags uchg /Users/${vars.user.name}/Library/Assistant/SiriVocabulary
 
-    # === Disable Shortcuts ===
+    # Kill Shortcuts
     rm -rf /Users/${vars.user.name}/Library/Shortcuts/ 2>/dev/null || true
     killall BackgroundShortcutRunner ShortcutsViewService ShortcutsMacHelper 2>/dev/null || true
   '';

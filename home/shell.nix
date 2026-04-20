@@ -220,11 +220,11 @@ CHEAT
         truncation_symbol = "…/";
         read_only = " 󰌾";
         use_os_path_sep = true;
-        style = "blue";
+        style = lib.mkDefault "blue";
         format = "[$path]($style)[$read_only](red) ";
         # Repo root pops in bold, parent path fades back
-        repo_root_style = "bold blue";
-        before_repo_root_style = "dimmed blue";
+        repo_root_style = lib.mkDefault "bold blue";
+        before_repo_root_style = lib.mkDefault "dimmed blue";
         repo_root_format = "[$before_root_path]($before_repo_root_style)[$repo_root]($repo_root_style)[$path]($style)[$read_only](red) ";
       };
 
