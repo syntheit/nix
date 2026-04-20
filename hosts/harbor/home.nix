@@ -26,7 +26,6 @@
   home.packages = with pkgs; [
     btop
     fastfetch
-    lazygit
     wget
     tree
     ripgrep
@@ -44,10 +43,10 @@
     restic
   ];
 
-  programs.starship.settings.hostname = {
-    ssh_only = true;
-    format = "[󰒋 $hostname]($style)";
-    style = "dimmed white";
+  programs.starship.settings.directory = {
+    style = "purple";
+    repo_root_style = "bold purple";
+    before_repo_root_style = "dimmed purple";
   };
 
   programs.home-manager.enable = true;

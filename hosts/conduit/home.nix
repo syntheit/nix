@@ -24,7 +24,6 @@
     btop
     fastfetch
     tmux
-    lazygit
     ripgrep
     fd
     jq
@@ -33,10 +32,10 @@
     restic
   ];
 
-  programs.starship.settings.hostname = {
-    ssh_only = true;
-    format = "[ ⋈ $hostname]($style)";
-    style = "bold green";
+  programs.starship.settings.directory = {
+    style = "yellow";
+    repo_root_style = "bold yellow";
+    before_repo_root_style = "dimmed yellow";
   };
 
   programs.home-manager.enable = true;

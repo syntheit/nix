@@ -229,7 +229,6 @@ in
     # CLI tools
     btop
     fastfetch
-    lazygit
     wget
     tree
     ripgrep
@@ -297,10 +296,10 @@ in
     '';
   };
 
-  programs.starship.settings.hostname = {
-    ssh_only = true;
-    format = "[󱗆 $hostname]($style)";
-    style = "dimmed white";
+  programs.starship.settings.directory = {
+    style = "cyan";
+    repo_root_style = "bold cyan";
+    before_repo_root_style = "dimmed cyan";
   };
 
   programs.home-manager.enable = true;

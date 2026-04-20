@@ -94,8 +94,19 @@
 
       # --- Remote dev shortcuts ---
       # h [name] — mosh into harbor, attach to tmux session (default: "1")
-      # h 2, h work, h claude — each opens a separate session
-      h() { mosh harbor -- tmux new-session -A -s "''${1:-1}"; }
+      # If name matches a dir in ~/Projects, auto-cd to it
+      # h website → session "website" in ~/Projects/website
+      # h 2       → session "2" in home dir
+      h() {
+        local name="''${1:-1}"
+        mosh harbor -- bash -c "
+          case $name in
+            nix) cd ~/nix ;;
+            *)   [ -d ~/Projects/$name ] && cd ~/Projects/$name ;;
+          esac
+          exec tmux new-session -A -s $name
+        "
+      }
 
       cheat() {
         cat <<'CHEAT'
@@ -107,7 +118,7 @@
   ── Tmux (no prefix needed) ─────────────────────────
   Alt-h/j/k/l       navigate panes
   Alt-H/J/K/L       resize panes
-  Alt-\             split vertical
+  Alt-v             split vertical
   Alt--             split horizontal
   Alt-t             new window (tab)
   Alt-1..5          switch to window N
@@ -191,7 +202,7 @@ CHEAT
       continuation_prompt = "[∙](dimmed white) ";
 
       format = "$nix_shell$directory$git_branch$git_status$character";
-      right_format = "$jobs$cmd_duration$hostname";
+      right_format = "$jobs$cmd_duration";
 
       character = {
         format = "$symbol ";
@@ -267,6 +278,7 @@ CHEAT
       time.disabled = true;
       battery.disabled = true;
       username.disabled = true;
+      hostname.disabled = true;
       sudo.disabled = true;
     };
   };

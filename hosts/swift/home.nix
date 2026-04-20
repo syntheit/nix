@@ -67,6 +67,7 @@
     pnpm
     ripgrep
     mosh
+    spotify-player
   ];
 
   programs.yazi = {

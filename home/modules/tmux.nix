@@ -51,7 +51,7 @@
       bind -n M-l select-pane -R
 
       # Splits
-      bind -n M-\\ split-window -h -c "#{pane_current_path}"
+      bind -n M-v split-window -h -c "#{pane_current_path}"
       bind -n M-- split-window -v -c "#{pane_current_path}"
 
       # Windows (tabs)
@@ -73,6 +73,9 @@
 
       # Zoom (toggle fullscreen pane)
       bind -n M-f resize-pane -Z
+
+      # Detach
+      bind -n M-d detach-client
     '';
   };
 }
