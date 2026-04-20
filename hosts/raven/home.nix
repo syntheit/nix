@@ -211,6 +211,8 @@ in
     ../../home/shell.nix
     ../../home/modules/git.nix
     ../../home/modules/ssh.nix
+    ../../home/modules/neovim.nix
+    ../../home/modules/tmux.nix
   ];
 
   home.username = "droid";
@@ -227,7 +229,6 @@ in
     # CLI tools
     btop
     fastfetch
-    tmux
     lazygit
     wget
     tree
@@ -253,6 +254,48 @@ in
     # Android status
     raven-status
   ];
+
+  # Emergency push — when harbor is down, push syncthing-received code upstream
+  # Usage: emergency-push                (pushes all repos with changes)
+  #        emergency-push my-app          (pushes a specific repo)
+  home.file.".local/bin/emergency-push" = {
+    executable = true;
+    text = ''
+      #!/bin/bash
+      set -euo pipefail
+      PROJECTS="$HOME/Projects"
+
+      push_repo() {
+        local dir="$1"
+        local name="$(basename "$dir")"
+        cd "$dir"
+
+        if ! git rev-parse --is-inside-work-tree &>/dev/null; then
+          return
+        fi
+
+        if git diff --quiet && git diff --cached --quiet && [ -z "$(git ls-files --others --exclude-standard)" ]; then
+          echo "  $name — clean, skipping"
+          return
+        fi
+
+        echo "  $name — pushing changes..."
+        git add -A
+        git commit -m "emergency commit from raven (harbor down)" || true
+        git push || echo "  ⚠ push failed for $name"
+      }
+
+      if [ -n "''${1:-}" ]; then
+        push_repo "$PROJECTS/$1"
+      else
+        echo "Scanning $PROJECTS for uncommitted changes..."
+        for dir in "$PROJECTS"/*/; do
+          push_repo "$dir"
+        done
+      fi
+      echo "Done."
+    '';
+  };
 
   programs.starship.settings.hostname = {
     ssh_only = true;

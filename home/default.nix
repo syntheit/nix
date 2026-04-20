@@ -14,6 +14,7 @@
     ./modules/stylix.nix              # Load Stylix configuration
     ./modules/ssh.nix
     ./modules/git.nix
+    ./modules/neovim.nix
     ./modules/packages.nix
     ./modules/hyprland.nix
     ./modules/rofi.nix

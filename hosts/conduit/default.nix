@@ -51,7 +51,7 @@
       extraStopCommands = ''
         iptables -t nat -D POSTROUTING -o wg0 -j MASQUERADE 2>/dev/null || true
       '';
-      trustedInterfaces = [ "wg0" ];
+      trustedInterfaces = [ "wg0" "tailscale0" ];
     };
   };
 
@@ -117,6 +117,7 @@
     "net.ipv4.tcp_fastopen" = 3;
   };
 
+  programs.mosh.enable = true;
   programs.zsh.enable = true;
 
   # System packages

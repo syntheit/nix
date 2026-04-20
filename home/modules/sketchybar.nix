@@ -12,6 +12,73 @@ lib.mkIf pkgs.stdenv.isDarwin {
     pkgs.macmon
   ];
 
+  home.file.".local/bin/toggle-dnd" = {
+    executable = true;
+    text = ''
+      #!/bin/bash
+      DB="$HOME/Library/DoNotDisturb/DB/Assertions.json"
+      ACTIVE=$(${pkgs.jq}/bin/jq '.data[0].storeAssertionRecords // [] | length' "$DB" 2>/dev/null)
+
+      if [ "$ACTIVE" -gt 0 ] 2>/dev/null; then
+        # DND is ON → disable
+        ${pkgs.python3}/bin/python3 -c "
+import json, time
+with open('$DB') as f: data = json.load(f)
+data['data'][0]['storeAssertionRecords'] = []
+data['header']['timestamp'] = time.time() - 978307200
+with open('$DB', 'w') as f: json.dump(data, f)
+"
+      else
+        # DND is OFF → enable
+        ${pkgs.python3}/bin/python3 -c "
+import json, uuid, time
+with open('$DB') as f: data = json.load(f)
+now = time.time() - 978307200
+data['data'][0]['storeAssertionRecords'] = [{
+    'assertionUUID': str(uuid.uuid4()).upper(),
+    'assertionSource': {'assertionClientIdentifier': 'com.apple.controlcenter.dnd'},
+    'assertionStartDateTimestamp': now,
+    'assertionDetails': {
+        'assertionDetailsIdentifier': 'com.apple.controlcenter.dnd',
+        'assertionDetailsModeIdentifier': 'com.apple.donotdisturb.mode.default',
+        'assertionDetailsReason': 'user-action'
+    }
+}]
+data['header']['timestamp'] = now
+with open('$DB', 'w') as f: json.dump(data, f)
+"
+      fi
+
+      /usr/bin/notifyutil -p com.apple.DoNotDisturb.stateChanged
+      sketchybar --trigger dnd_change
+    '';
+  };
+
+  home.file.".local/bin/toggle-privacy" = {
+    executable = true;
+    text = ''
+      #!/bin/bash
+      STATE_FILE="/tmp/.privacy-mode"
+
+      if [ -f "$STATE_FILE" ]; then
+        # Privacy mode ON → restore
+        PREV_VOL=$(cat "$STATE_FILE")
+        osascript -e "set volume input volume $PREV_VOL"
+        rm -f "$STATE_FILE"
+      else
+        # Privacy mode OFF → kill mic + camera
+        CURRENT_VOL=$(osascript -e 'input volume of (get volume settings)')
+        [ "$CURRENT_VOL" = "0" ] && CURRENT_VOL=75
+        echo "$CURRENT_VOL" > "$STATE_FILE"
+        osascript -e 'set volume input volume 0'
+        sudo /usr/bin/killall VDCAssistant 2>/dev/null
+        sudo /usr/bin/killall AppleCameraAssistant 2>/dev/null
+      fi
+
+      sketchybar --trigger privacy_change
+    '';
+  };
+
   xdg.configFile."sketchybar/sketchybarrc" = {
     executable = true;
     text = ''
@@ -43,6 +110,7 @@ lib.mkIf pkgs.stdenv.isDarwin {
         icon.padding_right=6 \
         label.font="JetBrainsMono Nerd Font:Bold:13.0" \
         label.color=$WHITE \
+        label.y_offset=-1 \
         padding_left=9 \
         padding_right=9
 
@@ -122,6 +190,41 @@ lib.mkIf pkgs.stdenv.isDarwin {
           icon="󰤨" \
           script="$CONFIG_DIR/plugins/network.sh" \
           click_script="open 'x-apple.systempreferences:com.apple.wifi-settings-extension'"
+
+      sketchybar --add event privacy_change
+      sketchybar --add event dnd_change
+
+      sketchybar --add item camera right \
+        --set camera \
+          update_freq=0 \
+          icon.padding_right=0 \
+          label.drawing=off \
+          icon="󰄀" \
+          script="$CONFIG_DIR/plugins/privacy.sh" \
+          click_script="${config.home.homeDirectory}/.local/bin/toggle-privacy" \
+        --subscribe camera privacy_change
+
+      sketchybar --add item mic right \
+        --set mic \
+          update_freq=0 \
+          icon.padding_right=0 \
+          label.drawing=off \
+          icon="󰍬" \
+          script="$CONFIG_DIR/plugins/privacy.sh" \
+          click_script="${config.home.homeDirectory}/.local/bin/toggle-privacy" \
+        --subscribe mic privacy_change
+
+      sketchybar --add item dnd right \
+        --set dnd \
+          update_freq=0 \
+          icon.padding_right=0 \
+          label.drawing=off \
+          icon="󰤄" \
+          icon.color=$WHITE \
+          drawing=off \
+          script="$CONFIG_DIR/plugins/dnd.sh" \
+          click_script="${config.home.homeDirectory}/.local/bin/toggle-dnd" \
+        --subscribe dnd dnd_change
 
       sketchybar --add item clock right \
         --set clock \
@@ -316,6 +419,33 @@ lib.mkIf pkgs.stdenv.isDarwin {
         sketchybar --set $NAME label="''${TEMP}°C"
       else
         sketchybar --set $NAME label="N/A"
+      fi
+    '';
+  };
+
+  # DND Plugin — only shows icon when DND is active
+  xdg.configFile."sketchybar/plugins/dnd.sh" = {
+    executable = true;
+    text = ''
+      #!/bin/bash
+      ACTIVE=$(${pkgs.jq}/bin/jq '.data[0].storeAssertionRecords // [] | length' "$HOME/Library/DoNotDisturb/DB/Assertions.json" 2>/dev/null)
+      if [ "$ACTIVE" -gt 0 ] 2>/dev/null; then
+        sketchybar --set dnd drawing=on
+      else
+        sketchybar --set dnd drawing=off
+      fi
+    '';
+  };
+
+  # Privacy (mic/camera) Plugin — visible when devices are active, hidden when killed
+  xdg.configFile."sketchybar/plugins/privacy.sh" = {
+    executable = true;
+    text = ''
+      #!/bin/bash
+      if [ -f /tmp/.privacy-mode ]; then
+        sketchybar --set mic drawing=off --set camera drawing=off
+      else
+        sketchybar --set mic drawing=on --set camera drawing=on
       fi
     '';
   };
