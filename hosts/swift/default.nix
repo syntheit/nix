@@ -5,9 +5,6 @@
   ...
 }:
 
-let
-  menubarBlocker = pkgs.callPackage ../../packages/menubar-blocker { };
-in
 {
   nixpkgs.config.allowUnfree = true;
 
@@ -291,20 +288,17 @@ in
     # ================================================================
     YABAI_BIN=$(readlink -f ${pkgs.yabai}/bin/yabai)
     SKHD_BIN=$(readlink -f ${pkgs.skhd}/bin/skhd)
-    MENUBAR_BIN=$(readlink -f ${menubarBlocker}/bin/menubar-blocker)
     TCC_DB="/Library/Application Support/com.apple.TCC/TCC.db"
-    for BIN in "$YABAI_BIN" "$SKHD_BIN" "$MENUBAR_BIN"; do
+    for BIN in "$YABAI_BIN" "$SKHD_BIN"; do
       sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) VALUES ('kTCCServiceAccessibility', '$BIN', 1, 2, 4, 1);"
     done
 
     # Restart nix-managed services after TCC grants
     launchctl bootout "gui/$GUI_UID/org.nixos.skhd" 2>/dev/null || true
     launchctl bootout "gui/$GUI_UID/org.nixos.yabai" 2>/dev/null || true
-    launchctl bootout "gui/$GUI_UID/org.nixos.menubar-blocker" 2>/dev/null || true
     sleep 1
     launchctl bootstrap "gui/$GUI_UID" /Users/${vars.user.name}/Library/LaunchAgents/org.nixos.skhd.plist 2>/dev/null || true
     launchctl bootstrap "gui/$GUI_UID" /Users/${vars.user.name}/Library/LaunchAgents/org.nixos.yabai.plist 2>/dev/null || true
-    launchctl bootstrap "gui/$GUI_UID" /Users/${vars.user.name}/Library/LaunchAgents/org.nixos.menubar-blocker.plist 2>/dev/null || true
 
     # ================================================================
     # SYSTEM DAEMONS TO DISABLE
@@ -372,7 +366,6 @@ in
       com.apple.parsecd \
       com.apple.tipsd \
       com.apple.cloudd \
-      com.apple.cloudpaird \
       com.apple.cloudphotod \
       com.apple.cloudphotosd \
       com.apple.CloudSettingsSyncAgent \
@@ -511,7 +504,6 @@ in
       com.apple.storekitagent \
       com.apple.managedappdistributionagent \
       com.apple.WorkflowKit.ShortcutsViewService \
-      com.apple.wallpaper.agent \
       com.apple.replayd \
       com.apple.liveactivitiesd \
       com.apple.LinkedNotesUIService \
@@ -525,7 +517,8 @@ in
       com.apple.backgroundassets.user \
       com.apple.BTServer.cloudpairing \
       com.apple.webprivacyd \
-      com.apple.powerchime; do
+      com.apple.powerchime \
+      com.apple.accessibility.heard; do
       launchctl bootout "gui/$GUI_UID/$agent" 2>/dev/null || true
       launchctl disable "gui/$GUI_UID/$agent" 2>/dev/null || true
     done
@@ -572,14 +565,6 @@ in
     };
   };
 
-  launchd.user.agents.menubar-blocker = {
-    serviceConfig = {
-      ProgramArguments = [ "${menubarBlocker}/bin/menubar-blocker" ];
-      KeepAlive = true;
-      RunAtLoad = true;
-      ProcessType = "Interactive";
-    };
-  };
 
   fonts.packages = with pkgs; [
     nerd-fonts.jetbrains-mono
@@ -595,7 +580,6 @@ in
     sketchybar
     jq
     nixfmt
-    menubarBlocker
   ];
 
   system.stateVersion = 5;
