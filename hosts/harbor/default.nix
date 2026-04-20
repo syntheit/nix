@@ -59,6 +59,7 @@
     hostName = "harbor";
     networkmanager.enable = true;
     nftables.enable = true;
+    nftables.flushRuleset = false;
     firewall = {
       enable = true;
       trustedInterfaces = [ "tailscale0" "wg0" ];
