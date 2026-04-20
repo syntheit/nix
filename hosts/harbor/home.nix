@@ -44,9 +44,9 @@
   ];
 
   programs.starship.settings.directory = {
-    style = "purple";
-    repo_root_style = "bold purple";
-    before_repo_root_style = "dimmed purple";
+    style = "#FF6E6E";
+    repo_root_style = "bold #FF6E6E";
+    before_repo_root_style = "dimmed #FF6E6E";
   };
 
   programs.home-manager.enable = true;
