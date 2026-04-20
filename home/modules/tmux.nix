@@ -9,6 +9,7 @@
     historyLimit = 50000;
     baseIndex = 1;
     keyMode = "vi";
+    prefix = "C-Space";
 
     extraConfig = ''
       # True color support
@@ -37,24 +38,41 @@
       set -g pane-border-style "fg=brightblack"
       set -g pane-active-border-style "fg=blue"
 
-      # Intuitive splits (| and -)
+      # ── Prefix bindings (Ctrl-Space then key) ──
       bind | split-window -h -c "#{pane_current_path}"
       bind - split-window -v -c "#{pane_current_path}"
-
-      # New windows inherit current directory
       bind c new-window -c "#{pane_current_path}"
 
-      # Vim-style pane navigation
-      bind h select-pane -L
-      bind j select-pane -D
-      bind k select-pane -U
-      bind l select-pane -R
+      # ── Direct Alt bindings (no prefix needed) ──
+      # Pane navigation
+      bind -n M-h select-pane -L
+      bind -n M-j select-pane -D
+      bind -n M-k select-pane -U
+      bind -n M-l select-pane -R
 
-      # Pane resizing (repeatable)
-      bind -r H resize-pane -L 5
-      bind -r J resize-pane -D 5
-      bind -r K resize-pane -U 5
-      bind -r L resize-pane -R 5
+      # Splits
+      bind -n M-\\ split-window -h -c "#{pane_current_path}"
+      bind -n M-- split-window -v -c "#{pane_current_path}"
+
+      # Windows (tabs)
+      bind -n M-t new-window -c "#{pane_current_path}"
+      bind -n M-w kill-pane
+      bind -n M-1 select-window -t 1
+      bind -n M-2 select-window -t 2
+      bind -n M-3 select-window -t 3
+      bind -n M-4 select-window -t 4
+      bind -n M-5 select-window -t 5
+      bind -n M-n next-window
+      bind -n M-p previous-window
+
+      # Resize panes
+      bind -n M-H resize-pane -L 5
+      bind -n M-J resize-pane -D 5
+      bind -n M-K resize-pane -U 5
+      bind -n M-L resize-pane -R 5
+
+      # Zoom (toggle fullscreen pane)
+      bind -n M-f resize-pane -Z
     '';
   };
 }
