@@ -48,6 +48,8 @@
       "net.core.rmem_max" = 16777216;
       "net.core.wmem_max" = 16777216;
       "net.ipv4.tcp_fastopen" = 3;
+      # Jellyfin watches media libraries via inotify; default 524288 isn't enough during image generation
+      "fs.inotify.max_user_watches" = 2097152;
     };
   };
 
