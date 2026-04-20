@@ -9,7 +9,7 @@ lib.mkIf pkgs.stdenv.isDarwin {
   home.packages = [
     pkgs.sketchybar
     pkgs.blueutil
-    pkgs.macmon
+    pkgs.systemstats
   ];
 
   home.file.".local/bin/toggle-dnd" = {
@@ -150,21 +150,19 @@ with open('$DB', 'w') as f: json.dump(data, f)
 
       sketchybar --add item ram right \
         --set ram \
-          update_freq=5 \
-          icon="󰘚" \
-          script="$CONFIG_DIR/plugins/ram.sh"
+          update_freq=0 \
+          icon="󰘚"
 
       sketchybar --add item cpu right \
         --set cpu \
-          update_freq=5 \
-          icon="󰍛" \
-          script="$CONFIG_DIR/plugins/cpu.sh"
+          update_freq=0 \
+          icon="󰍛"
 
       sketchybar --add item cpu_temp right \
         --set cpu_temp \
-          update_freq=15 \
+          update_freq=5 \
           icon="" \
-          script="$CONFIG_DIR/plugins/cpu_temp.sh"
+          script="$CONFIG_DIR/plugins/stats.sh"
 
       sketchybar --add item volume right \
         --set volume \
@@ -296,13 +294,18 @@ with open('$DB', 'w') as f: json.dump(data, f)
     '';
   };
 
-  xdg.configFile."sketchybar/plugins/cpu.sh" = {
+  # System stats plugin — single systemstats call updates cpu, ram, and temp
+  xdg.configFile."sketchybar/plugins/stats.sh" = {
     executable = true;
     text = ''
       #!/bin/bash
-      NCPU=$(sysctl -n hw.logicalcpu)
-      CPU=$(ps -A -o %cpu | awk -v n="$NCPU" 'NR>1{s+=$1} END {printf "%d", s/n}')
-      sketchybar --set $NAME label="''${CPU}%"
+      STATS=$(systemstats 2>/dev/null)
+      if [ -n "$STATS" ]; then
+        eval $(echo "$STATS" | ${pkgs.jq}/bin/jq -r '"CPU=\(.cpu) RAM=\(.ram) TEMP=\(.temp)"')
+        sketchybar --set cpu label="''${CPU}%" \
+                   --set ram label="''${RAM}%" \
+                   --set cpu_temp label="''${TEMP}°C"
+      fi
     '';
   };
 
@@ -388,40 +391,6 @@ with open('$DB', 'w') as f: json.dump(data, f)
     '';
   };
 
-  # RAM Plugin
-  xdg.configFile."sketchybar/plugins/ram.sh" = {
-    executable = true;
-    text = ''
-      #!/bin/bash
-      TOTAL_RAM=$(sysctl -n hw.memsize)
-      VMSTAT=$(vm_stat)
-
-      FREE_PAGES=$(echo "$VMSTAT" | awk '/Pages free/ {gsub(/\./,"",$3); print $3}')
-      SPEC_PAGES=$(echo "$VMSTAT" | awk '/Pages speculative/ {gsub(/\./,"",$3); print $3}')
-      INACTIVE_PAGES=$(echo "$VMSTAT" | awk '/Pages inactive/ {gsub(/\./,"",$3); print $3}')
-
-      FREE_MEM_BYTES=$(( (FREE_PAGES + SPEC_PAGES + INACTIVE_PAGES) * 16384 ))
-      PERCENTAGE=$(( (TOTAL_RAM - FREE_MEM_BYTES) * 100 / TOTAL_RAM ))
-
-      sketchybar --set $NAME label="''${PERCENTAGE}%"
-    '';
-  };
-
-  # CPU Temp Plugin
-  xdg.configFile."sketchybar/plugins/cpu_temp.sh" = {
-    executable = true;
-    text = ''
-      #!/bin/bash
-      # Use macmon to get actual CPU temperature on Apple Silicon
-      TEMP=$(macmon pipe --interval 100 2>/dev/null | head -n 1 | jq -r '.temp.cpu_temp_avg | round' 2>/dev/null)
-
-      if [ -n "$TEMP" ] && [ "$TEMP" != "null" ]; then
-        sketchybar --set $NAME label="''${TEMP}°C"
-      else
-        sketchybar --set $NAME label="N/A"
-      fi
-    '';
-  };
 
   # DND Plugin — only shows icon when DND is active
   xdg.configFile."sketchybar/plugins/dnd.sh" = {
@@ -461,7 +430,7 @@ with open('$DB', 'w') as f: json.dump(data, f)
       KeepAlive = true;
       RunAtLoad = true;
       EnvironmentVariables = {
-        PATH = "${pkgs.sketchybar}/bin:${pkgs.yabai}/bin:${pkgs.jq}/bin:${pkgs.macmon}/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+        PATH = "${pkgs.sketchybar}/bin:${pkgs.yabai}/bin:${pkgs.jq}/bin:${pkgs.systemstats}/bin:/usr/bin:/bin:/usr/sbin:/sbin";
         CONFIG_DIR = "${config.home.homeDirectory}/.config/sketchybar";
       };
     };

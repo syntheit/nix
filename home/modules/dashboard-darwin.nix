@@ -202,15 +202,17 @@ let
     $T -L $S set set-titles off
     $T -L $S set allow-rename off
 
-    # Layout: btop left (60%), clock/info/pipes stacked right (40%)
+    # Auto-respawn crashed panes (e.g. btop exits → restarts automatically)
+    $T -L $S set remain-on-exit on
+    $T -L $S set-hook pane-died "respawn-pane"
+
+    # Layout: btop left (60%), clock/info stacked right (40%)
     $T -L $S split-window -h -l 40%
-    $T -L $S split-window -v -l 90%
-    $T -L $S split-window -v -l 40%
+    $T -L $S split-window -v -l 85%
 
     $T -L $S send-keys -t 0 "btop" Enter
     $T -L $S send-keys -t 1 "${clockScript}" Enter
     $T -L $S send-keys -t 2 "${dashboardInfoScript}" Enter
-    $T -L $S send-keys -t 3 "${pkgs.pipes}/bin/pipes.sh -t 0 -t 1 -p 2 -R -f 30 -r 3000 -c 1 -c 2 -c 3 -c 4 -c 5 -c 6 -c 7" Enter
 
     $T -L $S select-pane -t 2
 
@@ -221,7 +223,6 @@ in
   home.packages = with pkgs; [
     tmux
     toilet
-    pipes
   ];
 
   # Toggle script at a fixed path so skhd can find it
