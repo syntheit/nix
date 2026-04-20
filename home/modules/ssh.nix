@@ -14,6 +14,19 @@
     matchBlocks = {
       "*" = {
         identityFile = "~/.ssh/mainkey";
+        extraOptions = {
+          # Reuse connections — eliminates handshake on subsequent sessions
+          ControlMaster = "auto";
+          ControlPath = "~/.ssh/sockets/%r@%h-%p";
+          ControlPersist = "10m";
+          # Don't wait for TCP ACK to send data
+          TCPKeepAlive = "yes";
+          # Detect dead connections faster
+          ServerAliveInterval = "15";
+          ServerAliveCountMax = "3";
+          # Disable compression on fast links (adds latency)
+          Compression = "no";
+        };
       };
       "harbor" = {
         hostname = "100.109.63.87";
@@ -63,6 +76,7 @@
   # In some Nix environments (like this one), the nix store is owned by 'nobody',
   # which makes SSH complain. This activation script replaces the symlink with a real copy.
   home.activation.fixSshConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    $DRY_RUN_CMD mkdir -p "$HOME/.ssh/sockets"
     SSH_CONFIG="$HOME/.ssh/config"
     if [ -L "$SSH_CONFIG" ]; then
       SRC=$(readlink -f "$SSH_CONFIG")

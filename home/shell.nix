@@ -92,6 +92,11 @@
       zle -N sudo-command-line
       bindkey '\e\e' sudo-command-line
 
+      # --- Remote dev shortcuts ---
+      # h [name] — mosh into harbor, attach to tmux session (default: "1")
+      # h 2, h work, h claude — each opens a separate session
+      h() { mosh harbor -- tmux new-session -A -s "''${1:-1}"; }
+
       # --- Cursor shape (blinking underline) ---
       printf '\e[3 q'
 

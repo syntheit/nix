@@ -163,7 +163,7 @@
     zsh
     btop
     cloudflared
-    mosh
+    mosh # also enabled via programs.mosh for firewall + utempter
     curl
     git
     speedtest-cli
@@ -186,6 +186,7 @@
 
   ];
 
+  programs.mosh.enable = true;
   programs.zsh.enable = true;
 
   # Services configuration

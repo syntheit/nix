@@ -24,6 +24,9 @@
       # Use xterm-256color for SSH sessions to avoid terminfo errors
       term = "xterm-256color";
       tab_bar_style = "hidden";
+      single_instance = "yes";
+      allow_remote_control = "yes";
+      listen_on = "unix:/tmp/kitty-sock";
     }
     // lib.optionalAttrs pkgs.stdenv.isDarwin {
       hide_window_decorations = "yes"; # Remove title bar

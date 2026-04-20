@@ -44,8 +44,10 @@ in
       "kiro"
       "kitty"
       "lulu"
+      "marta"
       "macwhisper"
       "nextcloud"
+      "notunes"
       "obsidian"
       "orbstack"
       "raycast"
@@ -78,6 +80,8 @@ in
       autohide-time-modifier = 0.0;
       static-only = true;
       show-recents = false;
+      minimize-to-application = true;
+      mineffect = "scale";
     };
 
     finder = {
@@ -200,6 +204,7 @@ in
       yabai -m rule --add app="^Raycast$" manage=off
       yabai -m rule --add app="^Archive Utility$" manage=off
       yabai -m rule --add app="^Finder$" title="(Copy|Move|Delete|Connect)" manage=off
+      yabai -m rule --add title="^dashboard$" manage=off
     '';
   };
 
@@ -211,6 +216,10 @@ in
 
   environment.etc."sudoers.d/yabai".text = ''
     ${vars.user.name} ALL=(root) NOPASSWD: /run/current-system/sw/bin/yabai --load-sa
+  '';
+
+  environment.etc."sudoers.d/privacy".text = ''
+    ${vars.user.name} ALL=(root) NOPASSWD: /usr/bin/killall VDCAssistant, /usr/bin/killall AppleCameraAssistant
   '';
 
   programs.zsh.enable = true;
@@ -230,6 +239,12 @@ in
     # Hide menu bar (per-user defaults, must use activation script)
     set_default NSGlobalDomain _HIHideMenuBar -bool true
     set_default NSGlobalDomain AppleMenuBarVisibleInFullscreen -bool false
+    # Opaque menu bar when it appears (reduce transparency)
+    set_default NSGlobalDomain AppleReduceTransparency -bool true
+    # Disable all window animations (minimize, resize, open/close)
+    set_default NSGlobalDomain NSAutomaticWindowAnimationsEnabled -bool false
+    defaults write com.apple.dock expose-animation-duration -float 0
+    killall Dock 2>/dev/null || true
     killall SystemUIServer || true
     killall Finder || true
 
@@ -289,7 +304,71 @@ in
       launchctl bootout "gui/$GUI_UID/$agent" 2>/dev/null || true
       launchctl disable "gui/$GUI_UID/$agent" 2>/dev/null || true
     done
+
+    # === Disable Spotlight ===
+    sudo mdutil -a -i off 2>/dev/null || true
+
+    for daemon in \
+      com.apple.metadata.mds \
+      com.apple.metadata.mds.index \
+      com.apple.metadata.mds.scan \
+      com.apple.metadata.mds.spindump; do
+      launchctl bootout system/"$daemon" 2>/dev/null || true
+      launchctl disable system/"$daemon" 2>/dev/null || true
+    done
+
+    for agent in \
+      com.apple.Spotlight \
+      com.apple.corespotlightd \
+      com.apple.corespotlightservice \
+      com.apple.spotlightknowledged \
+      com.apple.spotlightknowledged.importer \
+      com.apple.spotlightknowledged.updater \
+      com.apple.managedcorespotlightd; do
+      launchctl bootout "gui/$GUI_UID/$agent" 2>/dev/null || true
+      launchctl disable "gui/$GUI_UID/$agent" 2>/dev/null || true
+    done
+
+    # === Disable Siri & related intelligence ===
+    for daemon in \
+      com.apple.siri.acousticsignature \
+      com.apple.siri.morphunassetsupdaterd; do
+      launchctl bootout system/"$daemon" 2>/dev/null || true
+      launchctl disable system/"$daemon" 2>/dev/null || true
+    done
+
+    for agent in \
+      com.apple.assistant_service \
+      com.apple.assistant_cdmd \
+      com.apple.Siri.agent \
+      com.apple.siriactionsd \
+      com.apple.siriinferenced \
+      com.apple.sirittsd \
+      com.apple.SiriTTSTrainingAgent \
+      com.apple.siriknowledged \
+      com.apple.corespeechd \
+      com.apple.duetexpertd; do
+      launchctl bootout "gui/$GUI_UID/$agent" 2>/dev/null || true
+      launchctl disable "gui/$GUI_UID/$agent" 2>/dev/null || true
+    done
+
+    # Lock Siri vocabulary folder
+    rm -rf /Users/${vars.user.name}/Library/Assistant/SiriVocabulary 2>/dev/null || true
+    mkdir -p /Users/${vars.user.name}/Library/Assistant/SiriVocabulary
+    chflags uchg /Users/${vars.user.name}/Library/Assistant/SiriVocabulary
+
+    # === Disable Shortcuts ===
+    rm -rf /Users/${vars.user.name}/Library/Shortcuts/ 2>/dev/null || true
+    killall BackgroundShortcutRunner ShortcutsViewService ShortcutsMacHelper 2>/dev/null || true
   '';
+
+  launchd.user.agents.notunes = {
+    serviceConfig = {
+      ProgramArguments = [ "/Applications/noTunes.app/Contents/MacOS/noTunes" ];
+      KeepAlive = true;
+      RunAtLoad = true;
+    };
+  };
 
   launchd.user.agents.menubar-blocker = {
     serviceConfig = {

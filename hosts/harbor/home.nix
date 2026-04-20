@@ -9,6 +9,8 @@
     ../../home/shell.nix
     ../../home/modules/git.nix
     ../../home/modules/ssh.nix
+    ../../home/modules/neovim.nix
+    ../../home/modules/tmux.nix
   ];
 
   home.username = "matv";
@@ -24,7 +26,6 @@
   home.packages = with pkgs; [
     btop
     fastfetch
-    tmux
     lazygit
     wget
     tree

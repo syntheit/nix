@@ -12,12 +12,15 @@
     inputs.nix-index-database.homeModules.nix-index
     ../../home/modules/kitty.nix
     ../../home/modules/git.nix
+    ../../home/modules/neovim.nix
     ../../home/modules/ssh.nix
     ../../home/shell.nix
 
     # macOS-specific modules
     ../../home/modules/sketchybar.nix
     ../../home/modules/app-tweaks.nix
+    ../../home/modules/dashboard-darwin.nix
+    ../../home/modules/tmux.nix
   ];
 
   home.username = vars.user.name;
@@ -63,34 +66,90 @@
     nodejs
     pnpm
     ripgrep
+    mosh
   ];
+
+  programs.yazi = {
+    enable = true;
+    shellWrapperName = "y";
+    settings.mgr = {
+      sort_by = "mtime";
+      sort_reverse = true;
+      sort_dir_first = false;
+    };
+  };
+
+  # Screenshot to harbor — Shift+Cmd+X triggers interactive selection,
+  # uploads to ~/screenshots/swift/ on harbor for Claude Code to read
+  home.file.".local/bin/screenshot-to-harbor" = {
+    executable = true;
+    text = ''
+      #!/bin/bash
+      FILE="$(date +%Y%m%d-%H%M%S).png"
+      LOCAL="/tmp/$FILE"
+      REMOTE="screenshots/swift"
+
+      # Interactive selection screenshot
+      screencapture -i "$LOCAL" 2>/dev/null
+
+      # User cancelled the selection
+      [ ! -f "$LOCAL" ] && exit 0
+
+      # Ensure remote dir exists and upload
+      ssh harbor "mkdir -p ~/$REMOTE"
+      scp -q "$LOCAL" "harbor:~/$REMOTE/$FILE"
+      rm "$LOCAL"
+
+      # Notification
+      osascript -e "display notification \"$FILE uploaded to harbor\" with title \"Screenshot\""
+    '';
+  };
 
   programs.home-manager.enable = true;
 
-  xdg.configFile."karabiner/assets/complex_modifications/caps_lock_to_fn.json".text =
-    builtins.toJSON
-      {
-        title = "Caps Lock to Fn";
-        rules = [
-          {
-            description = "Change caps_lock to fn";
-            manipulators = [
-              {
-                type = "basic";
-                from = {
-                  key_code = "caps_lock";
-                  modifiers = {
-                    optional = [ "any" ];
-                  };
-                };
-                to = [
-                  {
-                    key_code = "fn";
-                  }
-                ];
-              }
-            ];
-          }
-        ];
-      };
+  # Karabiner config managed declaratively — overwrites on each rebuild
+  # fn_function_keys: converts F3/F4 from vendor keys to standard keycodes (skhd can catch these)
+  # complex_modifications: caps_lock→fn
+  home.activation.karabinerConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    mkdir -p "$HOME/.config/karabiner"
+    cat > "$HOME/.config/karabiner/karabiner.json" << 'KARABINER_EOF'
+{
+    "profiles": [
+        {
+            "name": "Default profile",
+            "selected": true,
+            "virtual_hid_keyboard": { "keyboard_type_v2": "ansi" },
+            "fn_function_keys": [
+                { "from": { "key_code": "f1" }, "to": [{ "consumer_key_code": "display_brightness_decrement" }] },
+                { "from": { "key_code": "f2" }, "to": [{ "consumer_key_code": "display_brightness_increment" }] },
+                { "from": { "key_code": "f3" }, "to": [{ "key_code": "f3" }] },
+                { "from": { "key_code": "f4" }, "to": [{ "key_code": "f4" }] },
+                { "from": { "key_code": "f5" }, "to": [{ "key_code": "f5" }] },
+                { "from": { "key_code": "f6" }, "to": [{ "key_code": "f6" }] },
+                { "from": { "key_code": "f7" }, "to": [{ "consumer_key_code": "rewind" }] },
+                { "from": { "key_code": "f8" }, "to": [{ "consumer_key_code": "play_or_pause" }] },
+                { "from": { "key_code": "f9" }, "to": [{ "consumer_key_code": "fast_forward" }] },
+                { "from": { "key_code": "f10" }, "to": [{ "consumer_key_code": "mute" }] },
+                { "from": { "key_code": "f11" }, "to": [{ "consumer_key_code": "volume_decrement" }] },
+                { "from": { "key_code": "f12" }, "to": [{ "consumer_key_code": "volume_increment" }] }
+            ],
+            "complex_modifications": {
+                "rules": [
+                    {
+                        "description": "Change caps_lock to fn",
+                        "manipulators": [
+                            {
+                                "type": "basic",
+                                "from": { "key_code": "caps_lock", "modifiers": { "optional": ["any"] } },
+                                "to": [{ "key_code": "fn" }]
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+    ]
+}
+KARABINER_EOF
+  '';
 }

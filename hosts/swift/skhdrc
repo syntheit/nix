@@ -1,11 +1,17 @@
+# Function row overrides (F3/F4 converted to standard keycodes via Karabiner fn_function_keys)
+f3 : $HOME/.local/bin/toggle-dashboard
+f4 : if [ "$(osascript -e 'tell application "System Events" to count of windows of process "Raycast"')" -gt 0 ] 2>/dev/null; then osascript -e 'tell application "System Events" to key code 53'; else open -a Raycast; fi
+f5 : $HOME/.local/bin/toggle-privacy
+f6 : $HOME/.local/bin/toggle-dnd
+
 # Application launchers
 fn - return : open -na kitty
 fn - t : open -na kitty
 fn - r : open -a Raycast
 fn - c : open -g "raycast://extensions/raycast/clipboard-history/clipboard-history"
-cmd - space : open -a Raycast
+# cmd+space: handled natively by Raycast (set in Raycast Settings > General > Hotkey)
 fn - b : open -a "Zen Browser"
-fn - e : open -a Finder
+fn - e : open -na kitty --args yazi
 
 # Window management
 fn - q : yabai -m window --close
@@ -60,6 +66,9 @@ shift + fn - 0x2B : yabai -m window --space prev  # shift + cmd + ,
 
 # Screenshots
 shift + cmd - s : open -a Screenshot
+
+# Screenshot to harbor — interactive selection, uploads to ~/screenshots/swift/ on harbor
+shift + cmd - x : $HOME/.local/bin/screenshot-to-harbor
 
 # Lock screen
 shift + fn - escape : pmset displaysleepnow
