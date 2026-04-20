@@ -48,14 +48,14 @@
       cmd = [
         "postgres"
         "-c" "shared_preload_libraries=vchord.so"
-        "-c" "shared_buffers=4GB"
-        "-c" "effective_cache_size=48GB"
-        "-c" "work_mem=128MB"
-        "-c" "maintenance_work_mem=2GB"
-        "-c" "wal_buffers=64MB"
+        "-c" "shared_buffers=1GB"
+        "-c" "effective_cache_size=8GB"
+        "-c" "work_mem=64MB"
+        "-c" "maintenance_work_mem=512MB"
+        "-c" "wal_buffers=16MB"
         "-c" "random_page_cost=1.1"
         "-c" "effective_io_concurrency=200"
-        "-c" "max_connections=200"
+        "-c" "max_connections=50"
       ];
       extraOptions = [
         "--network=immich_default"

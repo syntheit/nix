@@ -11,6 +11,22 @@ in
   # Seerr — media request management (native NixOS service, no Docker)
   services.seerr.enable = true;
 
+  # Restart Seerr daily at 5am to curb Node.js memory creep
+  systemd.timers.seerr-restart = {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnCalendar = "*-*-* 05:00:00";
+      Persistent = true;
+    };
+  };
+  systemd.services.seerr-restart = {
+    description = "Restart Seerr to reclaim memory";
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = "/run/current-system/sw/bin/systemctl restart seerr.service";
+    };
+  };
+
   virtualisation.oci-containers.containers = {
     nextcloud = {
       image = "lscr.io/linuxserver/nextcloud:latest";
