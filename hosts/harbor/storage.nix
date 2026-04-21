@@ -155,6 +155,9 @@
         # Grafana (native NixOS service)
         "/var/lib/grafana"
 
+        # Seafile (file data + config + MariaDB)
+        "/arespool/appdata/seafile"
+
         # Pelican game servers (panel config, MariaDB, Wings config + game data)
         "/arespool/appdata/pelican"
 
@@ -194,16 +197,21 @@
       ];
 
       extraOptions = [
-        "sftp.command='ssh -i /home/matv/.ssh/mainkey daniel_backups@beta.mregirouard.com -s sftp'"
+        "sftp.command='ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -i /home/matv/.ssh/mainkey daniel_backups@beta.mregirouard.com -s sftp'"
       ];
 
       extraBackupArgs = [
         "--compression=auto"
         "--verbose"
+        "--retry-lock=5m"
       ];
 
       # Dump databases before backing up
       backupPrepareCommand = ''
+        echo "Clearing any stale repo locks..."
+        ${pkgs.restic}/bin/restic unlock \
+          -o sftp.command='ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -i /home/matv/.ssh/mainkey daniel_backups@beta.mregirouard.com -s sftp' || true
+
         ${pkgs.coreutils}/bin/mkdir -p /var/lib/harbor-backups/db-dumps
 
         echo "Dumping Immich postgres..."
@@ -226,6 +234,10 @@
         ${pkgs.docker}/bin/docker exec pelican_db sh -c 'mariadb-dump -u root -p"$MYSQL_ROOT_PASSWORD" --all-databases' \
           > /var/lib/harbor-backups/db-dumps/pelican.sql 2>/dev/null || true
 
+        echo "Dumping Seafile MariaDB..."
+        ${pkgs.docker}/bin/docker exec seafile_db sh -c 'mariadb-dump -u root -p"$MYSQL_ROOT_PASSWORD" --all-databases' \
+          > /var/lib/harbor-backups/db-dumps/seafile.sql 2>/dev/null || true
+
         echo "Dumping Paperless SQLite..."
         ${pkgs.sqlite}/bin/sqlite3 /arespool/appdata/paperless/db.sqlite3 \
           ".backup '/var/lib/harbor-backups/db-dumps/paperless.sqlite3'" 2>/dev/null || true
@@ -239,7 +251,7 @@
         echo "Verifying backup integrity (reading 1/20 of data)..."
         ${pkgs.restic}/bin/restic check \
           --read-data-subset=1/20 \
-          -o sftp.command='ssh -i /home/matv/.ssh/mainkey daniel_backups@beta.mregirouard.com -s sftp'
+          -o sftp.command='ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -i /home/matv/.ssh/mainkey daniel_backups@beta.mregirouard.com -s sftp'
         echo "Integrity check passed."
       '';
 
@@ -251,4 +263,8 @@
       ];
     };
   };
+
+  # Give the post-backup integrity check enough time to download and verify
+  # data over SFTP. The default TimeoutStopSec=90s kills it mid-check.
+  systemd.services.restic-backups-offsite.serviceConfig.TimeoutStopSec = "30min";
 }

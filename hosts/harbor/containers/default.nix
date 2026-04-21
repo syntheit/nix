@@ -8,6 +8,7 @@
     ./utilities.nix
     ./gaming.nix
     ./registry.nix
+    ./seafile.nix
   ];
 
   # Docker (start at boot — this is a server)
@@ -52,6 +53,7 @@
         ${pkgs.docker}/bin/docker network create karakeep_default || true
         ${pkgs.docker}/bin/docker network create docmost_default || true
         ${pkgs.docker}/bin/docker network create pelican_default || true
+        ${pkgs.docker}/bin/docker network create seafile_default || true
       '';
     };
   };
