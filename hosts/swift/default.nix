@@ -340,7 +340,6 @@
       com.apple.CrashReporterSupportHelper \
       com.apple.spindump \
       com.apple.tailspind \
-      com.apple.mediaremoted \
       com.apple.siri.acousticsignature \
       com.apple.siri.morphunassetsupdaterd \
       com.apple.corespeechd.system \
@@ -418,8 +417,9 @@
       com.apple.duetexpertd \
       com.apple.proactived \
       com.apple.proactiveeventtrackerd \
-      com.apple.sharingd \
       com.apple.rapportd \
+      com.apple.sharingd \
+      com.apple.avconferenced \
       com.apple.CommCenter \
       com.apple.imagent \
       com.apple.imcore.imtransferagent \
@@ -428,7 +428,6 @@
       com.apple.telephonyutilities.callservicesd \
       com.apple.callhistoryd \
       com.apple.callintelligenced \
-      com.apple.avconferenced \
       com.apple.screensharing.agent \
       com.apple.screensharing.menuextra \
       com.apple.sidecar-hid-relay \
@@ -462,9 +461,7 @@
       com.apple.navd \
       com.apple.geod \
       com.apple.geodMachServiceBridge \
-      com.apple.CoreLocationAgent \
       com.apple.intelligentroutingd \
-      com.apple.notificationcenterui.agent \
       com.apple.SoftwareUpdateNotificationManager \
       com.apple.softwareupdate_notify_agent \
       com.apple.spindump_agent \
@@ -504,7 +501,6 @@
       com.apple.storekitagent \
       com.apple.managedappdistributionagent \
       com.apple.WorkflowKit.ShortcutsViewService \
-      com.apple.replayd \
       com.apple.liveactivitiesd \
       com.apple.LinkedNotesUIService \
       com.apple.avatarsd \
