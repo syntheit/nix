@@ -21,6 +21,7 @@
     btw = "${pkgs.fastfetch}/bin/fastfetch";
     igrep = "grep -i";
     deploy-conduit = "nixos-rebuild switch --flake ~/nix#conduit --target-host conduit --sudo";
+    sops = "sudo SOPS_AGE_KEY=$(sudo ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key) sops";
   };
 
   home.packages = with pkgs; [

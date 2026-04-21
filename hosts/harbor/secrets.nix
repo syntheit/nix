@@ -42,6 +42,11 @@
   };
   sops.secrets.pelican_db_root_pw = { };
   sops.secrets.pelican_db_pw = { };
+  sops.secrets.seafile_mysql_root_pw = { };
+  sops.secrets.seafile_mysql_db_pw = { };
+  sops.secrets.seafile_jwt_private_key = { };
+  sops.secrets.seafile_admin_email = { };
+  sops.secrets.seafile_admin_password = { };
 
   # qBittorrent env file
   sops.templates."qbittorrent.env".content = ''
@@ -171,6 +176,20 @@
     POSTGRES_USER=docmost
     POSTGRES_PASSWORD=${config.sops.placeholder.docmost_db_password}
     POSTGRES_DB=docmost
+  '';
+
+  # Seafile env file
+  sops.templates."seafile.env".content = ''
+    SEAFILE_MYSQL_DB_PASSWORD=${config.sops.placeholder.seafile_mysql_db_pw}
+    JWT_PRIVATE_KEY=${config.sops.placeholder.seafile_jwt_private_key}
+    INIT_SEAFILE_MYSQL_ROOT_PASSWORD=${config.sops.placeholder.seafile_mysql_root_pw}
+    INIT_SEAFILE_ADMIN_EMAIL=${config.sops.placeholder.seafile_admin_email}
+    INIT_SEAFILE_ADMIN_PASSWORD=${config.sops.placeholder.seafile_admin_password}
+  '';
+
+  # Seafile MariaDB env file
+  sops.templates."seafile-db.env".content = ''
+    MYSQL_ROOT_PASSWORD=${config.sops.placeholder.seafile_mysql_root_pw}
   '';
 
   # Pelican Panel DB env file

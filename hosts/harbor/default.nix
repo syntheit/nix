@@ -42,6 +42,8 @@
       nextcloud_db = { backups = [ "nextcloud" ]; };
       pelican_panel = { backups = [ "pelican" ]; };
       pelican_db = { backups = [ "pelican" ]; };
+      seafile = { backups = [ "seafile" ]; };
+      seafile_db = { backups = [ "seafile" ]; };
     };
 
     backups = {
@@ -50,6 +52,7 @@
       nextcloud = { type = "mariadb"; container = "nextcloud_db"; };
       pelican = { type = "mariadb"; container = "pelican_db"; };
       immich = { type = "postgres"; container = "immich_postgres"; database = "immich"; };
+      seafile = { type = "mariadb"; container = "seafile_db"; };
     };
   };
 
@@ -184,6 +187,8 @@
     iotop
     nethogs
     tcpdump
+    sops
+    ssh-to-age
 
   ];
 
