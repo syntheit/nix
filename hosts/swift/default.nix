@@ -304,6 +304,12 @@
     # SYSTEM DAEMONS TO DISABLE
     # ================================================================
     for daemon in \
+      com.apple.adid \
+      com.apple.AssetCache.builtin \
+      com.apple.AssetCacheLocatorService \
+      com.apple.AssetCacheTetheratorService \
+      com.apple.AssetCacheManagerService \
+      com.apple.AirPlayXPCHelper \
       com.apple.analyticsd \
       com.apple.assistantd \
       com.apple.parsecd \
@@ -518,6 +524,20 @@
       launchctl bootout "gui/$GUI_UID/$agent" 2>/dev/null || true
       launchctl disable "gui/$GUI_UID/$agent" 2>/dev/null || true
     done
+
+    # ================================================================
+    # Disable Adobe background services
+    # ================================================================
+    for f in /Library/LaunchAgents/com.adobe.*.plist; do
+      sudo launchctl unload -w "$f" 2>/dev/null || true
+    done
+    for f in /Library/LaunchDaemons/com.adobe.*.plist; do
+      sudo launchctl unload -w "$f" 2>/dev/null || true
+    done
+    for f in /Users/${vars.user.name}/Library/LaunchAgents/com.adobe.*.plist; do
+      launchctl unload -w "$f" 2>/dev/null || true
+    done
+    killall "ACCFinderSync" "Core Sync" "Creative Cloud" "Adobe Desktop Service" "CCXProcess" 2>/dev/null || true
 
     # ================================================================
     # Disable Spotlight indexing
