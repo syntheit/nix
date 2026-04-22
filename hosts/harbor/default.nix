@@ -15,6 +15,7 @@
     ./monitoring.nix
     ../../modules/server-safety.nix
     ../../modules/argus.nix
+    ../../modules/foyer.nix
   ];
 
   services.serverSafety = {
@@ -53,6 +54,48 @@
       pelican = { type = "mariadb"; container = "pelican_db"; };
       immich = { type = "postgres"; container = "immich_postgres"; database = "immich"; };
       seafile = { type = "mariadb"; container = "seafile_db"; };
+    };
+  };
+
+  # Foyer — server dashboard
+  services.foyer = {
+    enable = true;
+    domain = "harbor.matv.io";
+    jwtSecretFile = config.sops.secrets.foyer_jwt_secret.path;
+    apiKeyFiles = [ config.sops.secrets.foyer_api_key.path ];
+    authorizedKeys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdRcH2UWe31VdU62j3Ksbb6LDyS1APNW1BQMM8mvsej daniel@matv.io"
+    ];
+    services = {
+      "Nextcloud" = { url = "https://cloud.matv.io"; };
+      "Jellyfin" = { url = "https://watch.matv.io"; };
+      "Immich" = { url = "https://photos.matv.io"; };
+      "Vaultwarden" = { url = "https://vault.matv.io"; };
+      "Retrospend" = { url = "https://retrospend.app"; };
+      "Linkding" = { url = "https://links.matv.io"; };
+      "Seerr" = { url = "https://request.matv.io"; };
+      "qBittorrent" = { url = "https://downloader.matv.io"; };
+      "Prowlarr" = { url = "https://prowlarr.matv.io"; };
+      "Sonarr" = { url = "https://sonarr.matv.io"; };
+      "Radarr" = { url = "https://radarr.matv.io"; };
+      "Bazarr" = { url = "https://bazarr.matv.io"; };
+      "Memos" = { url = "https://notes.matv.io"; };
+      "Scrutiny" = { url = "https://drivehealth.matv.io"; };
+      "Syncthing" = { url = "https://sync.matv.io"; };
+      "Tracearr" = { url = "https://tracearr.matv.io"; };
+      "Radicale" = { url = "https://dav.matv.io"; };
+      "Grafana" = { url = "https://grafana.matv.io"; };
+      "Paperless" = { url = "https://paperless.matv.io"; };
+      "Karakeep" = { url = "https://keep.matv.io"; };
+      "Docmost" = { url = "https://docs.matv.io"; };
+      "Seafile" = { url = "https://files.matv.io"; };
+      "Website" = { url = "https://matv.io"; };
+      "Headscale" = { url = "https://headscale.matv.io/health"; };
+    };
+    jellyfin = {
+      enable = true;
+      url = "http://localhost:8096";
+      apiKeyFile = config.sops.secrets.foyer_jellyfin_api_key.path;
     };
   };
 

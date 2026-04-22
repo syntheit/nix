@@ -151,50 +151,133 @@ enum AsyncData {
         }
     }
 
-    // MARK: - Server Health (via SSH)
+    // MARK: - Server Health
 
     struct ServerHealth: Identifiable {
         var id: String { name }
         var name: String
-        var info: String
+        var info: String   // Summary line for display
         var ok: Bool
+        // Structured fields (populated by Foyer API, nil for SSH-only servers)
+        var cpuPercent: Int?
+        var ramPercent: Int?
+        var containers: Int?
     }
 
-    static func getServers(_ names: [String], healthScript: String) async -> [ServerHealth] {
-        if let cached = readCachedServers(names), !cached.isEmpty {
+    struct FoyerConfig {
+        var name: String   // Display name (e.g. "harbor")
+        var url: String    // Foyer API base URL
+    }
+
+    static func getServers(
+        sshServers: [String],
+        healthScript: String,
+        foyerServers: [FoyerConfig]
+    ) async -> [ServerHealth] {
+        // Check cache first
+        let allNames = foyerServers.map(\.name) + sshServers
+        if let cached = readCachedServers(allNames), !cached.isEmpty {
             return cached
         }
+
         return await withTaskGroup(of: ServerHealth.self) { group in
-            for name in names {
-                group.addTask {
-                    await fetchServer(name, script: healthScript)
-                }
+            for cfg in foyerServers {
+                group.addTask { await fetchFoyerServer(cfg) }
+            }
+            for name in sshServers {
+                group.addTask { await fetchSSHServer(name, script: healthScript) }
             }
             var results: [ServerHealth] = []
-            for await result in group {
-                results.append(result)
-            }
-            // Sort to match input order
-            return names.compactMap { n in results.first { $0.name == n } }
+            for await result in group { results.append(result) }
+            return allNames.compactMap { n in results.first { $0.name == n } }
         }
+    }
+
+    static func getCachedServers(_ names: [String]) -> [ServerHealth] {
+        var results: [ServerHealth] = []
+        for name in names {
+            if let cached = readCache("server_\(name)") {
+                let h = parseServerCache(name: name, raw: cached)
+                results.append(h)
+            }
+        }
+        return results
     }
 
     private static func readCachedServers(_ names: [String]) -> [ServerHealth]? {
         var results: [ServerHealth] = []
         for name in names {
             guard let cached = readCache("server_\(name)") else { return nil }
-            results.append(ServerHealth(name: name, info: cached.trimmingCharacters(in: .whitespacesAndNewlines), ok: true))
+            results.append(parseServerCache(name: name, raw: cached))
         }
         return results
     }
 
-    private static func fetchServer(_ name: String, script: String) async -> ServerHealth {
+    // MARK: Foyer API fetch (via foyer-api binary which handles SSH key signing)
+
+    private static func fetchFoyerServer(_ cfg: FoyerConfig) async -> ServerHealth {
+        // foyer-api reads ~/.ssh/id_ed25519 (or mainkey) and signs the request
+        let cmd = "foyer-api --host \(cfg.url) /api/health"
+        guard let output = shell(cmd, timeout: 10),
+              let data = output.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return ServerHealth(name: cfg.name, info: "unreachable", ok: false)
+        }
+
+        // Parse structured fields
+        let cpu = (json["cpu"] as? [String: Any])?["usage_percent"] as? Double ?? 0
+        let mem = (json["memory"] as? [String: Any])?["usage_percent"] as? Double ?? 0
+        let sys = json["system"] as? [String: Any]
+        let uptimeSec = sys?["uptime_seconds"] as? Double ?? 0
+        let load = (sys?["load_avg"] as? [Double])?.first ?? 0
+        let containers = ((json["docker"] as? [String: Any])?["containers"] as? [[String: Any]])?
+            .filter { ($0["state"] as? String) == "running" }.count ?? 0
+
+        let days = Int(uptimeSec) / 86400
+        let info = "\(days)d  cpu \(Int(cpu))%  ram \(Int(mem))%  load \(String(format: "%.1f", load))  containers \(containers)"
+
+        // Cache as structured format: foyer|cpu|ram|uptime|load|containers
+        let cacheStr = "foyer|\(Int(cpu))|\(Int(mem))|\(Int(uptimeSec))|\(String(format: "%.2f", load))|\(containers)"
+        writeCache("server_\(cfg.name)", cacheStr)
+
+        return ServerHealth(
+            name: cfg.name, info: info, ok: true,
+            cpuPercent: Int(cpu), ramPercent: Int(mem), containers: containers
+        )
+    }
+
+    // MARK: SSH fetch (unchanged, for raven)
+
+    private static func fetchSSHServer(_ name: String, script: String) async -> ServerHealth {
         let cmd = "ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no \(name) bash -c '\(script)'"
         guard let output = shell(cmd, timeout: 8) else {
             return ServerHealth(name: name, info: "unreachable", ok: false)
         }
         let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
         writeCache("server_\(name)", trimmed)
+        return ServerHealth(name: name, info: trimmed, ok: !trimmed.isEmpty)
+    }
+
+    // MARK: Cache parsing
+
+    private static func parseServerCache(name: String, raw: String) -> ServerHealth {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Detect foyer-format cache: "foyer|cpu|ram|uptime|load|containers"
+        if trimmed.hasPrefix("foyer|") {
+            let parts = trimmed.split(separator: "|")
+            if parts.count >= 6 {
+                let cpu = Int(parts[1]) ?? 0
+                let ram = Int(parts[2]) ?? 0
+                let uptimeSec = Int(parts[3]) ?? 0
+                let load = parts[4]
+                let ct = Int(parts[5]) ?? 0
+                let days = uptimeSec / 86400
+                let info = "\(days)d  cpu \(cpu)%  ram \(ram)%  load \(load)  containers \(ct)"
+                return ServerHealth(name: name, info: info, ok: true, cpuPercent: cpu, ramPercent: ram, containers: ct)
+            }
+        }
+        // SSH-format cache: plain text
         return ServerHealth(name: name, info: trimmed, ok: !trimmed.isEmpty)
     }
 

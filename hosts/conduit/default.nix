@@ -199,6 +199,17 @@
         }
       '';
     };
+    virtualHosts."harbor.matv.io" = {
+      extraConfig = ''
+        encode gzip zstd
+        reverse_proxy 10.100.0.2:8420 {
+          flush_interval -1
+          header_up X-Real-IP {remote_host}
+          header_up X-Forwarded-For {remote_host}
+          header_up X-Forwarded-Proto {scheme}
+        }
+      '';
+    };
     virtualHosts."games.matv.io" = {
       extraConfig = ''
         encode gzip zstd

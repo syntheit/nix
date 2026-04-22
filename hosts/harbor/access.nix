@@ -12,7 +12,7 @@
     tunnels = {
       "harbor" = {
         ingress = {
-          "harbor.matv.io" = "ssh://localhost:64829";
+          "harbor-ssh.matv.io" = "ssh://localhost:64829";
           "request.matv.io" = "http://localhost:5055";
           "links.matv.io" = "http://localhost:28793";
           "cloud.matv.io" = {

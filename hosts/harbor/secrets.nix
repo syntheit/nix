@@ -4,6 +4,9 @@
   # sops-nix — secrets decrypted at activation time to /run/secrets/
   sops.defaultSopsFile = ../../secrets/harbor.yaml;
   sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
+  sops.secrets.foyer_jwt_secret = { owner = "foyer"; };
+  sops.secrets.foyer_api_key = { owner = "foyer"; };
+  sops.secrets.foyer_jellyfin_api_key = { owner = "foyer"; };
   sops.secrets.nextdns_id = { };
   sops.secrets.nextcloud_db_root_pw = { };
   sops.secrets.nextcloud_db_name = { };
