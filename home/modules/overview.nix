@@ -38,7 +38,7 @@
       KeepAlive = true;
       RunAtLoad = true;
       EnvironmentVariables = {
-        PATH = "${pkgs.yabai}/bin:${pkgs.jq}/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+        PATH = "${pkgs.yabai}/bin:${pkgs.sketchybar}/bin:${pkgs.jq}/bin:/usr/bin:/bin:/usr/sbin:/sbin";
       };
     };
   };
