@@ -204,7 +204,7 @@ require("lazy").setup({
     priority = 1000, -- Load before everything else
     opts = {
       style = "night", -- Darkest variant
-      transparent = true, -- Let kitty's background/blur show through
+      transparent = true, -- Let terminal's background/blur show through
       terminal_colors = true,
       styles = {
         comments = { italic = true },

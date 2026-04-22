@@ -176,3 +176,96 @@ struct BluetoothView: View {
         return Accent.red
     }
 }
+
+// MARK: - Compact Dropdown View
+
+struct BluetoothDropdownView: View {
+    @ObservedObject var manager: BluetoothManager
+    var onOpenSettings: () -> Void
+    var onDismiss: () -> Void
+
+    private var connectedDevices: [BluetoothManager.Device] {
+        manager.devices.filter { $0.isConnected }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Bluetooth")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer()
+                ToggleSwitch(isOn: manager.isPowered) {
+                    manager.togglePower()
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
+
+            dropdownSeparator
+
+            if manager.isPowered && !connectedDevices.isEmpty {
+                VStack(spacing: 2) {
+                    ForEach(connectedDevices) { device in
+                        dropdownDeviceRow(device)
+                    }
+                }
+                .padding(.vertical, 6)
+
+                dropdownSeparator
+            }
+
+            Button(action: {
+                onDismiss()
+                onOpenSettings()
+            }) {
+                HStack {
+                    Text("Bluetooth Settings...")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.primary)
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(width: 252)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func dropdownDeviceRow(_ device: BluetoothManager.Device) -> some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(Color.white.opacity(0.12))
+                .frame(width: 28, height: 28)
+                .overlay(
+                    Image(systemName: device.icon)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white)
+                )
+
+            Text(device.name)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.primary)
+
+            Spacer()
+
+            if let battery = device.batteryLevel {
+                Text("\(battery)%")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 6)
+    }
+
+    private var dropdownSeparator: some View {
+        Rectangle()
+            .fill(.white.opacity(0.08))
+            .frame(height: 1)
+    }
+}

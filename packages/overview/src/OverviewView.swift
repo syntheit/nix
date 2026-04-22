@@ -15,10 +15,19 @@ struct OverviewView: View {
 
     var body: some View {
         ZStack {
-            // Background dims with progress
-            Color.black
-                .opacity(state.progress * 0.85)
-                .allowsHitTesting(false)
+            // Desktop background
+            Group {
+                if let wp = state.wallpaper {
+                    Image(nsImage: wp)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
+                } else {
+                    Color.black
+                }
+            }
+            .allowsHitTesting(false)
 
             // Content fades/slides in with progress
             VStack(spacing: 0) {
@@ -46,6 +55,7 @@ struct OverviewView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onContinuousHover { _ in NSCursor.arrow.set() }
     }
+
 }
 
 // MARK: - Preference key for workspace bar frame tracking

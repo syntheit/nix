@@ -18,7 +18,7 @@
     ./modules/packages.nix
     ./modules/hyprland.nix
     ./modules/rofi.nix
-    ./modules/kitty.nix
+    ./modules/ghostty.nix
     ./modules/thunderbird.nix
     ./modules/mime-apps.nix
     ./modules/services.nix

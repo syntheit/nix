@@ -10,7 +10,9 @@
   imports = [
     # Cross-platform modules (work on both Linux and Darwin)
     inputs.nix-index-database.homeModules.nix-index
-    ../../home/modules/kitty.nix
+    inputs.stylix.homeModules.stylix
+    ../../home/modules/stylix.nix
+    ../../home/modules/ghostty.nix
     ../../home/modules/git.nix
     ../../home/modules/neovim.nix
     ../../home/modules/ssh.nix
@@ -26,6 +28,9 @@
     ../../home/modules/volume-panel.nix
     ../../home/modules/bluetooth-panel.nix
     ../../home/modules/wifi-panel.nix
+    ../../home/modules/brightness-panel.nix
+    ../../home/modules/search-panel.nix
+    ../../home/modules/wallpaper-darwin.nix
   ];
 
   home.username = vars.user.name;
@@ -111,6 +116,9 @@
       osascript -e "display notification \"$FILE uploaded to harbor\" with title \"Screenshot\""
     '';
   };
+
+  # Suppress "Last login: ..." message in new terminal windows
+  home.file.".hushlogin".text = "";
 
   programs.home-manager.enable = true;
 

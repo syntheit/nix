@@ -15,7 +15,7 @@
       # True color support
       set -as terminal-features ",xterm-256color:RGB"
 
-      # OSC 52 clipboard — enables copy/paste between tmux and kitty
+      # OSC 52 clipboard — enables copy/paste between tmux and terminal (ghostty)
       set -g set-clipboard on
       set -g allow-passthrough on
       # Force tmux to use the 'c' (clipboard) selection for OSC 52.

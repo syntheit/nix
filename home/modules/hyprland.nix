@@ -313,7 +313,7 @@ let
 
     # Relaunch if dashboard window was closed
     if ! $hyprctl clients -j | $jq -e '.[] | select(.class == "dashboard")' > /dev/null 2>&1; then
-      ${pkgs.kitty}/bin/kitty --class dashboard -e ${dashboardScript} &
+      ${pkgs.ghostty}/bin/ghostty --class=dashboard -e ${dashboardScript} &
     fi
 
     $hyprctl dispatch togglespecialworkspace dashboard
@@ -346,7 +346,7 @@ let
  ├─────────────────────────────────────────────────────────┤
  │  Apps                                                   │
  │    Super + R          Rofi launcher                     │
- │    Super + T          Terminal (Kitty)                  │
+ │    Super + T          Terminal (Ghostty)                │
  │    Super + B          Bluetooth (bluetuith)             │
  │    Super + N          Network (nmtui)                   │
  │    Super + E          File manager (Nautilus)           │
@@ -398,7 +398,7 @@ let
  │    Next/Prev key      Next/previous track               │
  │    MX Vertical btn    Toggle Spotify                    │
  ├─────────────────────────────────────────────────────────┤
- │  Kitty                                                  │
+ │  Ghostty                                                │
  │    Ctrl + Tab         Next tab                          │
  │    Ctrl + Shift + Tab Previous tab                      │
  │    Ctrl + Shift + T   New tab                           │
@@ -458,9 +458,9 @@ in
       bind = [
         "$mod, R, exec, rofi -show drun"
         "CTRL $mod, Space, togglefloating"
-        "$mod, T, exec, kitty"
-        "$mod, B, exec, kitty --class tui-bluetooth --override confirm_os_window_close=0 -e bluetuith"
-        "$mod, N, exec, kitty --class tui-network --override confirm_os_window_close=0 -e nmtui"
+        "$mod, T, exec, ghostty"
+        "$mod, B, exec, ghostty --class=tui-bluetooth confirm-close-surface=false -e bluetuith"
+        "$mod, N, exec, ghostty --class=tui-network confirm-close-surface=false -e nmtui"
         "$mod, E, exec, nautilus"
         "$mod, C, exec, ${pkgs.copyq}/bin/copyq toggle"
         "$mod SHIFT, L, exec, ${pkgs.hyprlock}/bin/hyprlock"
@@ -551,7 +551,7 @@ in
         "${pkgs.bash}/bin/bash -c 'sleep 1 && ${pkgs.copyq}/bin/copyq loadTheme ~/.config/copyq/themes/tokyodark.ini && ${pkgs.copyq}/bin/copyq hide'"
         "${pkgs.hyprpolkitagent}/libexec/hyprpolkitagent"
         # Start dashboard in background
-        "${pkgs.kitty}/bin/kitty --class dashboard -e ${dashboardScript}"
+        "${pkgs.ghostty}/bin/ghostty --class=dashboard -e ${dashboardScript}"
         # hyprsunset is managed by systemd (see below)
       ];
       binds = {

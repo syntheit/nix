@@ -4,9 +4,9 @@ import SwiftUI
 class AppDelegate: NSObject, NSApplicationDelegate {
     let manager = NetworkManager()
     var panel: SystemPanel!
+    var dropdown: SystemPanel!
     var ipcServer: IPCServer!
 
-    // speedtest-cli path injected via SPEEDTEST_PATH env var
     let speedtestPath: String = ProcessInfo.processInfo.environment["SPEEDTEST_PATH"] ?? "/usr/bin/speedtest-cli"
 
     static let socketPath: String = {
@@ -19,6 +19,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         panel = SystemPanel(size: NSSize(width: 560, height: 620))
         rebuildContent()
+
+        dropdown = SystemPanel(size: NSSize(width: 252, height: 200))
 
         ipcServer = IPCServer(path: Self.socketPath)
         ipcServer.handler = { [weak self] cmd in
@@ -33,17 +35,58 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         panel.setContent(WiFiView(manager: manager, speedtestPath: speedtestPath))
     }
 
+    func rebuildDropdown() {
+        dropdown.setContent(
+            WiFiDropdownView(
+                manager: manager,
+                onOpenSettings: { [weak self] in
+                    self?.showFullPanel()
+                },
+                onDismiss: { [weak self] in
+                    self?.dropdown.dismiss()
+                }
+            )
+        )
+    }
+
+    func showFullPanel() {
+        manager.requestLocationIfNeeded()
+        manager.refreshCurrent()
+        manager.scan()
+        rebuildContent()
+        panel.showCentered()
+    }
+
+    func dropdownHeight() -> CGFloat {
+        var h: CGFloat = 76  // header (43) + separator (1) + settings (32)
+        if manager.isWiFiOn {
+            if manager.currentNetwork != nil {
+                h += 63  // known network label (26) + row (36) + separator (1)
+            }
+            h += 33  // other networks (32) + separator (1)
+        }
+        return h
+    }
+
     func handleCommand(_ cmd: String) -> String {
         switch cmd {
+        case "dropdown":
+            if dropdown.isVisible {
+                dropdown.dismiss()
+            } else {
+                if panel.isVisible { panel.dismiss() }
+                manager.refreshCurrent()
+                let size = NSSize(width: 252, height: dropdownHeight())
+                dropdown.setFrame(NSRect(origin: dropdown.frame.origin, size: size), display: false)
+                rebuildDropdown()
+                dropdown.showAt(position: .belowCursor)
+            }
         case "toggle":
             if panel.isVisible {
                 panel.dismiss()
             } else {
-                manager.requestLocationIfNeeded()
-                manager.refreshCurrent()
-                manager.scan()
-                rebuildContent()
-                panel.showCentered()
+                if dropdown.isVisible { dropdown.dismiss() }
+                showFullPanel()
             }
         case "refresh":
             manager.refreshCurrent()
@@ -66,7 +109,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         signal(SIGUSR1) { _ in
             DispatchQueue.main.async {
                 let delegate = NSApp.delegate as! AppDelegate
-                _ = delegate.handleCommand("toggle")
+                _ = delegate.handleCommand("dropdown")
             }
         }
     }
@@ -77,7 +120,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 let args = Array(CommandLine.arguments.dropFirst())
 
 if args.isEmpty {
-    fputs("usage: wifi-panel daemon|toggle\n", stderr)
+    fputs("usage: wifi-panel daemon|dropdown|toggle\n", stderr)
     exit(1)
 }
 

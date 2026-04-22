@@ -48,7 +48,7 @@
     executable = true;
     text = ''
       #!/bin/bash
-      pkill -SIGUSR1 overview
+      pkill -SIGUSR1 -x overview
     '';
   };
 }

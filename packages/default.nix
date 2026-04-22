@@ -16,5 +16,8 @@
   volume-panel = pkgs.callPackage ./volume-panel { };
   bluetooth-panel = pkgs.callPackage ./bluetooth-panel { };
   wifi-panel = pkgs.callPackage ./wifi-panel { };
+  brightness-panel = pkgs.callPackage ./brightness-panel { };
+  search-panel = pkgs.callPackage ./search-panel { };
+  wallpaper-cycle = pkgs.callPackage ./wallpaper-cycle { };
 }
 

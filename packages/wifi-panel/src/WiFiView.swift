@@ -402,3 +402,116 @@ struct WiFiView: View {
         }
     }
 }
+
+// MARK: - Compact Dropdown View
+
+struct WiFiDropdownView: View {
+    @ObservedObject var manager: NetworkManager
+    var onOpenSettings: () -> Void
+    var onDismiss: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Wi-Fi")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer()
+                ToggleSwitch(isOn: manager.isWiFiOn) {
+                    manager.toggleWiFi()
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
+
+            dropdownSeparator
+
+            if manager.isWiFiOn {
+                if let net = manager.currentNetwork {
+                    HStack {
+                        Text("Known Network")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.top, 8)
+                    .padding(.bottom, 4)
+
+                    HStack(spacing: 10) {
+                        Circle()
+                            .fill(Accent.blue)
+                            .frame(width: 28, height: 28)
+                            .overlay(
+                                Image(systemName: "wifi")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(.white)
+                            )
+
+                        Text(net.ssid)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.primary)
+
+                        Spacer()
+
+                        if net.security != "Open" {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 8)
+
+                    dropdownSeparator
+                }
+
+                Button(action: {
+                    onDismiss()
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.wifi-settings-extension")!)
+                }) {
+                    HStack {
+                        Text("Other Networks")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                dropdownSeparator
+            }
+
+            Button(action: {
+                onDismiss()
+                onOpenSettings()
+            }) {
+                HStack {
+                    Text("Wi-Fi Settings...")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.primary)
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(width: 252)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private var dropdownSeparator: some View {
+        Rectangle()
+            .fill(.white.opacity(0.08))
+            .frame(height: 1)
+    }
+}

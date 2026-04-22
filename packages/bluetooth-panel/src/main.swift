@@ -4,6 +4,7 @@ import SwiftUI
 class AppDelegate: NSObject, NSApplicationDelegate {
     let manager = BluetoothManager()
     var panel: SystemPanel!
+    var dropdown: SystemPanel!
     var ipcServer: IPCServer!
 
     static let socketPath: String = {
@@ -16,6 +17,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         panel = SystemPanel(size: NSSize(width: 560, height: 440))
         rebuildContent()
+
+        dropdown = SystemPanel(size: NSSize(width: 252, height: 150))
 
         ipcServer = IPCServer(path: Self.socketPath)
         ipcServer.handler = { [weak self] cmd in
@@ -30,12 +33,55 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         panel.setContent(BluetoothView(manager: manager))
     }
 
+    func rebuildDropdown() {
+        dropdown.setContent(
+            BluetoothDropdownView(
+                manager: manager,
+                onOpenSettings: { [weak self] in
+                    self?.showFullPanel()
+                },
+                onDismiss: { [weak self] in
+                    self?.dropdown.dismiss()
+                }
+            )
+        )
+    }
+
+    func showFullPanel() {
+        manager.refresh()
+        rebuildContent()
+        panel.showCentered()
+    }
+
+    func dropdownHeight() -> CGFloat {
+        var h: CGFloat = 76  // header (43) + separator (1) + settings (32)
+        if manager.isPowered {
+            let connected = manager.devices.filter { $0.isConnected }
+            if !connected.isEmpty {
+                h += 13 + CGFloat(connected.count) * 40 + CGFloat(max(0, connected.count - 1)) * 2
+            }
+        }
+        return h
+    }
+
     func handleCommand(_ cmd: String) -> String {
         switch cmd {
+        case "dropdown":
+            if dropdown.isVisible {
+                dropdown.dismiss()
+            } else {
+                if panel.isVisible { panel.dismiss() }
+                manager.refresh()
+                let size = NSSize(width: 252, height: dropdownHeight())
+                dropdown.setFrame(NSRect(origin: dropdown.frame.origin, size: size), display: false)
+                rebuildDropdown()
+                dropdown.showAt(position: .belowCursor)
+            }
         case "toggle":
             if panel.isVisible {
                 panel.dismiss()
             } else {
+                if dropdown.isVisible { dropdown.dismiss() }
                 manager.refresh()
                 rebuildContent()
                 panel.showCentered()
@@ -57,11 +103,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             unlink(AppDelegate.socketPath)
             exit(0)
         }
-        // SIGUSR1 as backup toggle
         signal(SIGUSR1) { _ in
             DispatchQueue.main.async {
                 let delegate = NSApp.delegate as! AppDelegate
-                _ = delegate.handleCommand("toggle")
+                _ = delegate.handleCommand("dropdown")
             }
         }
     }
@@ -72,7 +117,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 let args = Array(CommandLine.arguments.dropFirst())
 
 if args.isEmpty {
-    fputs("usage: bluetooth-panel daemon|toggle\n", stderr)
+    fputs("usage: bluetooth-panel daemon|dropdown|toggle\n", stderr)
     exit(1)
 }
 
