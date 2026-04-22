@@ -11,7 +11,6 @@ class OverviewState: ObservableObject {
     @Published var progress: CGFloat = 0
 
     @Published var wallpaper: NSImage? = nil
-    var blurredWallpaperCG: CGImage? = nil  // pre-blurred for window compositing
     @Published var draggedWindowID: Int? = nil
     @Published var dropTargetSpaceIndex: Int? = nil
     @Published var spaceFrames: [Int: CGRect] = [:]
@@ -56,33 +55,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         gm.onPrepare = { [weak self] in
             guard let self, !isVisible, !isPreparing else { return }
             isPreparing = true
+            // Refresh wallpaper from disk
+            if let wp = WindowManager.loadWallpaper() { state.wallpaper = wp }
+            // Pre-cache: metadata + display composite (captures windows WITH blur intact)
+            // Runs on background thread so main thread stays responsive for gestures
             DispatchQueue.global(qos: .userInteractive).async {
-                // Refresh wallpaper from disk (instant — no SCK needed)
-                var blurredWP: CGImage? = self.state.blurredWallpaperCG
-                if let wp = WindowManager.loadWallpaper(),
-                   let cg = wp.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-                    blurredWP = WindowManager.blurImage(cg, radius: 40)
-                    DispatchQueue.main.async {
-                        self.state.wallpaper = wp
-                        self.state.blurredWallpaperCG = blurredWP
-                    }
-                }
-
                 let spaces = WindowManager.querySpaces()
-                var windows = WindowManager.captureWindowsFast()
-                let screen = NSScreen.main?.frame.size ?? CGSize(width: 1920, height: 1243)
-
-                // Composite transparent windows onto blurred wallpaper
-                if let blurred = blurredWP {
-                    windows = windows.map { win in
-                        guard let img = win.image else { return win }
-                        let composited = WindowManager.compositeWindow(
-                            screenshot: img, blurredWP: blurred, frame: win.frame, screenSize: screen)
-                        return WindowInfo(id: win.id, pid: win.pid, app: win.app, title: win.title,
-                                          space: win.space, frame: win.frame, image: composited, icon: win.icon)
-                    }
-                }
-
+                let windows = WindowManager.captureFromComposite()
                 DispatchQueue.main.async {
                     self.cachedSpaces = spaces
                     self.cachedWindows = windows.isEmpty ? nil : windows
@@ -133,13 +112,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         src.resume()
         signalSource = src
 
-        // Load wallpaper + blur on launch (synchronous — reads file from disk)
-        if let wp = WindowManager.loadWallpaper() {
-            state.wallpaper = wp
-            if let cg = wp.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-                state.blurredWallpaperCG = WindowManager.blurImage(cg, radius: 40)
-            }
-        }
+        // Load wallpaper on launch
+        state.wallpaper = WindowManager.loadWallpaper()
 
         print("[overview] daemon ready")
     }
@@ -161,30 +135,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func createOverlay() {
         guard !isVisible else { return }
 
-        // Use cached data if ready, otherwise get metadata instantly (no screenshots)
-        let allWindows: [WindowInfo]
-        let spaces: [SpaceInfo]
-        if let cached = cachedWindows {
-            allWindows = cached
-            spaces = cachedSpaces ?? WindowManager.querySpaces()
-            cachedWindows = nil; cachedSpaces = nil
-        } else {
-            allWindows = WindowManager.queryWindowInfo()
-            spaces = WindowManager.querySpaces()
-        }
+        let allWindows = cachedWindows ?? WindowManager.queryWindowInfo()
+        let spaces = cachedSpaces ?? WindowManager.querySpaces()
+        cachedWindows = nil; cachedSpaces = nil
         guard !allWindows.isEmpty else { return }
 
         buildOverlay(spaces: spaces, windows: allWindows)
 
-        // Load per-window captures only for windows that have NO screenshot yet
-        // (off-screen windows). Don't replace composite crops — they preserve blur/vibrancy.
+        // Load per-window captures for off-screen windows only (composite already has current space)
         Task { @MainActor in
-            let needsCapture = state.windows.filter { $0.image == nil }.map(\.id)
-            guard isVisible, !needsCapture.isEmpty else { return }
+            let missing = state.windows.filter { $0.image == nil }.map(\.id)
+            guard isVisible, !missing.isEmpty else { return }
             let captured = await WindowManager.captureAllWindowsAsync()
             guard isVisible else { return }
             for newWin in captured {
-                guard newWin.image != nil, needsCapture.contains(newWin.id) else { continue }
+                guard newWin.image != nil, missing.contains(newWin.id) else { continue }
                 if let idx = state.windows.firstIndex(where: { $0.id == newWin.id }) {
                     state.windows[idx] = newWin
                 }

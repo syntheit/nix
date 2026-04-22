@@ -1,21 +1,18 @@
 import AppKit
-import SwiftUI
 
-// Apps that already handle their own corners well (dark backgrounds, etc.)
+let kR: CGFloat = 11  // slightly > macOS ~10pt window corner radius for margin
+
 let excludedApps: Set<String> = [
-    "Ghostty",
+    // Apps that already handle corners well (dark backgrounds, etc.)
 ]
 
-let kCornerRadius: CGFloat = 10
+// MARK: - Window query
 
-// MARK: - Yabai query
-
-struct WinFrame {
+struct WinRect: Equatable {
     let x, y, w, h: CGFloat
-    let app: String
 }
 
-func getVisibleWindows() -> [WinFrame] {
+func queryWindows() -> [WinRect] {
     let p = Process()
     let pipe = Pipe()
     p.executableURL = URL(fileURLWithPath: "/run/current-system/sw/bin/yabai")
@@ -29,135 +26,130 @@ func getVisibleWindows() -> [WinFrame] {
     else { return [] }
 
     return wins.compactMap { w in
-        guard let frame = w["frame"] as? [String: Any],
-              let x = frame["x"] as? Double,
-              let y = frame["y"] as? Double,
-              let width = frame["w"] as? Double,
-              let height = frame["h"] as? Double,
+        guard let f = w["frame"] as? [String: Any],
+              let x = f["x"] as? Double, let y = f["y"] as? Double,
+              let ww = f["w"] as? Double, let hh = f["h"] as? Double,
               let app = w["app"] as? String,
               let floating = w["is-floating"] as? Int, floating == 0,
-              let minimized = w["is-minimized"] as? Int, minimized == 0
+              let minimized = w["is-minimized"] as? Int, minimized == 0,
+              !excludedApps.contains(app)
         else { return nil }
-        if excludedApps.contains(app) { return nil }
-        return WinFrame(x: CGFloat(x), y: CGFloat(y),
-                        w: CGFloat(width), h: CGFloat(height), app: app)
+        return WinRect(x: CGFloat(x), y: CGFloat(y), w: CGFloat(ww), h: CGFloat(hh))
     }
 }
 
 // MARK: - Corner drawing
 
-struct CornerCanvas: View {
-    let windows: [WinFrame]
+class CornerView: NSView {
+    var windows: [WinRect] = []
 
-    var body: some View {
-        Canvas { ctx, size in
-            for win in windows {
-                drawCorners(ctx: ctx, win: win)
-            }
+    override func draw(_ dirtyRect: NSRect) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let screenH = bounds.height
+        let r = kR
+
+        ctx.setFillColor(NSColor.black.cgColor)
+
+        for win in windows {
+            let left = win.x
+            let right = win.x + win.w
+            let top = screenH - win.y
+            let bottom = screenH - (win.y + win.h)
+
+            // Each corner: R×R square + quarter-circle pie, even-odd filled.
+            // Result = only the ear (gap between square corner and arc) is filled.
+
+            // Top-left
+            var cp = CGMutablePath()
+            cp.addRect(CGRect(x: left, y: top - r, width: r, height: r))
+            cp.move(to: CGPoint(x: left + r, y: top - r))
+            cp.addArc(center: CGPoint(x: left + r, y: top - r), radius: r,
+                      startAngle: .pi / 2, endAngle: .pi, clockwise: false)
+            cp.closeSubpath()
+            ctx.addPath(cp); ctx.fillPath(using: .evenOdd)
+
+            // Top-right
+            cp = CGMutablePath()
+            cp.addRect(CGRect(x: right - r, y: top - r, width: r, height: r))
+            cp.move(to: CGPoint(x: right - r, y: top - r))
+            cp.addArc(center: CGPoint(x: right - r, y: top - r), radius: r,
+                      startAngle: .pi / 2, endAngle: 0, clockwise: true)
+            cp.closeSubpath()
+            ctx.addPath(cp); ctx.fillPath(using: .evenOdd)
+
+            // Bottom-left
+            cp = CGMutablePath()
+            cp.addRect(CGRect(x: left, y: bottom, width: r, height: r))
+            cp.move(to: CGPoint(x: left + r, y: bottom + r))
+            cp.addArc(center: CGPoint(x: left + r, y: bottom + r), radius: r,
+                      startAngle: .pi, endAngle: -.pi / 2, clockwise: false)
+            cp.closeSubpath()
+            ctx.addPath(cp); ctx.fillPath(using: .evenOdd)
+
+            // Bottom-right
+            cp = CGMutablePath()
+            cp.addRect(CGRect(x: right - r, y: bottom, width: r, height: r))
+            cp.move(to: CGPoint(x: right - r, y: bottom + r))
+            cp.addArc(center: CGPoint(x: right - r, y: bottom + r), radius: r,
+                      startAngle: 0, endAngle: -.pi / 2, clockwise: true)
+            cp.closeSubpath()
+            ctx.addPath(cp); ctx.fillPath(using: .evenOdd)
         }
-        .allowsHitTesting(false)
-    }
-
-    func drawCorners(ctx: GraphicsContext, win: WinFrame) {
-        let r = kCornerRadius
-        // Top-left
-        var p = Path()
-        p.move(to: CGPoint(x: win.x, y: win.y))
-        p.addLine(to: CGPoint(x: win.x + r, y: win.y))
-        p.addArc(center: CGPoint(x: win.x + r, y: win.y + r),
-                 radius: r, startAngle: .degrees(-90),
-                 endAngle: .degrees(180), clockwise: true)
-        p.addLine(to: CGPoint(x: win.x, y: win.y))
-        p.closeSubpath()
-        ctx.fill(p, with: .color(.black))
-
-        // Top-right
-        p = Path()
-        p.move(to: CGPoint(x: win.x + win.w, y: win.y))
-        p.addLine(to: CGPoint(x: win.x + win.w - r, y: win.y))
-        p.addArc(center: CGPoint(x: win.x + win.w - r, y: win.y + r),
-                 radius: r, startAngle: .degrees(-90),
-                 endAngle: .degrees(0), clockwise: false)
-        p.addLine(to: CGPoint(x: win.x + win.w, y: win.y))
-        p.closeSubpath()
-        ctx.fill(p, with: .color(.black))
-
-        // Bottom-left
-        p = Path()
-        p.move(to: CGPoint(x: win.x, y: win.y + win.h))
-        p.addLine(to: CGPoint(x: win.x + r, y: win.y + win.h))
-        p.addArc(center: CGPoint(x: win.x + r, y: win.y + win.h - r),
-                 radius: r, startAngle: .degrees(90),
-                 endAngle: .degrees(180), clockwise: false)
-        p.addLine(to: CGPoint(x: win.x, y: win.y + win.h))
-        p.closeSubpath()
-        ctx.fill(p, with: .color(.black))
-
-        // Bottom-right
-        p = Path()
-        p.move(to: CGPoint(x: win.x + win.w, y: win.y + win.h))
-        p.addLine(to: CGPoint(x: win.x + win.w - r, y: win.y + win.h))
-        p.addArc(center: CGPoint(x: win.x + win.w - r, y: win.y + win.h - r),
-                 radius: r, startAngle: .degrees(90),
-                 endAngle: .degrees(0), clockwise: true)
-        p.addLine(to: CGPoint(x: win.x + win.w, y: win.y + win.h))
-        p.closeSubpath()
-        ctx.fill(p, with: .color(.black))
     }
 }
 
 // MARK: - Overlay window
 
 class OverlayWindow: NSWindow {
+    let cornerView: CornerView
+
     init(screen: NSScreen) {
+        cornerView = CornerView(frame: screen.frame)
         super.init(contentRect: screen.frame, styleMask: [.borderless],
                    backing: .buffered, defer: false)
-        self.level = NSWindow.Level(rawValue: 1) // just above normal windows
+        self.level = .screenSaver
         self.isOpaque = false
         self.backgroundColor = .clear
         self.ignoresMouseEvents = true
         self.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         self.hasShadow = false
-        self.title = "corner-mask"
     }
 
     func refresh() {
-        let windows = getVisibleWindows()
-        let view = CornerCanvas(windows: windows)
-        self.contentView = NSHostingView(rootView: view)
+        let newWindows = queryWindows()
+        if newWindows != cornerView.windows {
+            cornerView.windows = newWindows
+            cornerView.needsDisplay = true
+        }
     }
 }
 
-// MARK: - App delegate
+// MARK: - App
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var overlay: OverlayWindow!
-    var timer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-
         guard let screen = NSScreen.main else { return }
         overlay = OverlayWindow(screen: screen)
         overlay.orderFrontRegardless()
         overlay.refresh()
 
-        // Poll for window changes
-        timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+        Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
             self?.overlay.refresh()
         }
 
-        // Also refresh on space change
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.activeSpaceDidChangeNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            self?.overlay.refresh()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                self?.overlay.refresh()
+            }
         }
     }
 }
-
-// MARK: - Main
 
 let app = NSApplication.shared
 let delegate = AppDelegate()
