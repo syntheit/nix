@@ -35,7 +35,7 @@
         port = 64829;
       };
       "harbor.tunnel" = {
-        hostname = "harbor.matv.io";
+        hostname = "harbor-ssh.matv.io";
         identityFile = "~/.ssh/mainkey";
         user = "matv";
         port = 64829;

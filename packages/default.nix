@@ -7,6 +7,7 @@
 {
   hyprland-dynamic-borders = pkgs.callPackage ./hyprland-dynamic-borders { };
   argus = pkgs.callPackage ./argus { };
+  foyer = pkgs.callPackage ./foyer { };
   cputemp = pkgs.callPackage ./cputemp { };
   systemstats = pkgs.callPackage ./systemstats { };
   eq = pkgs.callPackage ./eq { };

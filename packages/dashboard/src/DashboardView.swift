@@ -33,10 +33,18 @@ struct DashboardView: View {
     @State private var spotify = SystemBridge.getCachedSpotify()
 
     // Slow data loaded from cache synchronously (instant if cached, empty if not)
-    private static let serverNames = ["raven", "harbor"]
+    private static let allServerNames = ["harbor", "raven"]
+    private static let foyerServers: [AsyncData.FoyerConfig] = [
+        AsyncData.FoyerConfig(name: "harbor", url: "https://harbor.matv.io")
+    ]
+    // Servers without a Foyer config get SSH
+    private static let sshServers: [String] = allServerNames.filter { name in
+        !foyerServers.contains { $0.name == name }
+    }
+
     @State private var weather = AsyncData.getCachedWeather()
     @State private var exchange = AsyncData.getCachedExchange()
-    @State private var servers = AsyncData.getCachedServers(serverNames)
+    @State private var servers = AsyncData.getCachedServers(allServerNames)
     @State private var agenda = AsyncData.getCachedCalendar()
 
     private let serverScript = "days=$(( $(cut -d. -f1 /proc/uptime) / 86400 )); load=$(cut -d\\\" \\\" -f1 /proc/loadavg); eval $(awk \\'/MemTotal/{printf \\\"total=%d \\\", $2/1048576} /MemAvailable/{printf \\\"avail=%d\\\", $2/1048576}\\' /proc/meminfo); used=$((total-avail)); ct=$(docker ps -q 2>/dev/null | wc -l | tr -d \\\" \\\"); echo \"${days}d  load $load  ${used}/${total}G  containers $ct\""
@@ -106,7 +114,7 @@ struct DashboardView: View {
         .task(id: "slow") {
             async let w = AsyncData.getWeather()
             async let e = AsyncData.getExchange()
-            async let s = AsyncData.getServers(Self.serverNames, healthScript: serverScript)
+            async let s = AsyncData.getServers(sshServers: Self.sshServers, healthScript: serverScript, foyerServers: Self.foyerServers)
             async let c = AsyncData.getTodayEvents()
             let newWeather = await w
             let newExchange = await e
@@ -362,9 +370,21 @@ struct DashboardView: View {
                         .font(.system(size: 13, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white)
                         .frame(width: 60, alignment: .leading)
-                    Text(server.info)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Color.subtle)
+                    if let cpu = server.cpuPercent, let ram = server.ramPercent {
+                        // Rich display for Foyer-connected servers
+                        MiniBar(value: cpu, color: .gaugeCyan, label: "CPU")
+                        MiniBar(value: ram, color: .gaugePurple, label: "RAM")
+                        if let ct = server.containers {
+                            Text("\(ct) ct")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(Color.subtle)
+                        }
+                    } else {
+                        // Simple text for SSH-only servers
+                        Text(server.info)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(Color.subtle)
+                    }
                     Spacer()
                 }
             }
@@ -426,6 +446,33 @@ struct SectionHeader: View {
             Rectangle()
                 .fill(Color.dimmed)
                 .frame(height: 0.5)
+        }
+    }
+}
+
+struct MiniBar: View {
+    let value: Int
+    let color: Color
+    var label: String = ""
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(label)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(Color.dimmed)
+                .frame(width: 24, alignment: .trailing)
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(color.opacity(0.15))
+                    .frame(width: 48, height: 6)
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(color)
+                    .frame(width: 48 * CGFloat(min(value, 100)) / 100, height: 6)
+            }
+            Text("\(value)%")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(Color.subtle)
+                .frame(width: 30, alignment: .leading)
         }
     }
 }
