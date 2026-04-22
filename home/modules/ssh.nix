@@ -52,7 +52,7 @@
         user = "droid";
       };
       "raven.tunnel" = {
-        hostname = "raven.matv.io";
+        hostname = "raven-ssh.matv.io";
         identityFile = "~/.ssh/mainkey";
         user = "droid";
         proxyCommand = "${pkgs.cloudflared}/bin/cloudflared access ssh --hostname %h";

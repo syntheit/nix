@@ -13,6 +13,16 @@
 
 { pkgs, ... }:
 
+let
+  # Static SPA — no server process, just files served by Caddy.
+  # User enters Headscale URL + API key in the browser on first visit.
+  # Credentials are stored in browser local storage only.
+  headscale-ui = pkgs.fetchzip {
+    url = "https://github.com/gurucomputing/headscale-ui/releases/download/2025.01.20/headscale-ui.zip";
+    hash = "sha256-Kr1Zvzyvo6SM/gDJ4M65XdW1LkHDxWQoC9FRbN7yiMU=";
+    stripRoot = false;
+  };
+in
 {
   # ── Conduit is both Headscale server AND a client on its own network ──
   # This makes conduit reachable from the Malli fleet (Mac Mini VMs),
@@ -82,9 +92,16 @@
 
   # Caddy reverse proxy — handles TLS automatically via Let's Encrypt.
   # WebSocket upgrades work natively with Caddy (no special config).
+  # Headscale-UI served at /web — same origin as API, no CORS needed.
   services.caddy.virtualHosts."headscale.matv.io" = {
     extraConfig = ''
-      reverse_proxy localhost:8085
+      handle_path /web* {
+        root * ${headscale-ui}
+        file_server
+      }
+      handle {
+        reverse_proxy localhost:8085
+      }
     '';
   };
 

@@ -1,4 +1,5 @@
 {
+  config,
   lib,
   pkgs,
   vars,
@@ -9,11 +10,28 @@
   imports = [
     inputs.nixos-avf.nixosModules.avf
     ../../modules/server-safety.nix
+    ../../modules/foyer.nix
+    ./secrets.nix
   ];
 
   services.serverSafety = {
     enable = true;
     user = "droid";
+  };
+
+  # Foyer — server dashboard
+  services.foyer = {
+    enable = true;
+    domain = "raven.matv.io";
+    jwtSecretFile = config.sops.secrets.foyer_jwt_secret.path;
+    apiKeyFiles = [ config.sops.secrets.foyer_api_key.path ];
+    authorizedKeys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdRcH2UWe31VdU62j3Ksbb6LDyS1APNW1BQMM8mvsej daniel@matv.io"
+    ];
+    services = {
+      "Website" = { url = "https://matv.io"; };
+      "Status" = { url = "https://status.matv.io"; };
+    };
   };
 
   # Override deprecated option set by nixos-avf module
@@ -293,6 +311,13 @@
         conditions:
           - "[STATUS] < 500"
 
+      - name: Dashboard
+        group: raven
+        url: https://raven.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
       - name: Status Page
         group: raven
         url: https://status.matv.io
@@ -301,15 +326,15 @@
           - "[STATUS] < 500"
   '';
 
-  # Cloudflared tunnel for remote SSH
+  # Cloudflared tunnel
   services.cloudflared = {
     enable = true;
     tunnels = {
       "raven" = {
         ingress = {
           "matv.io" = "http://localhost:3000";
-          "raven.matv.io" = "ssh://localhost:22";
-          # status.matv.io moved to conduit VPS
+          "raven.matv.io" = "http://localhost:8420";
+          "raven-ssh.matv.io" = "ssh://localhost:22";
         };
         default = "http_status:404";
         credentialsFile = "/etc/cloudflared/credentials.json";

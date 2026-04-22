@@ -442,6 +442,13 @@
         conditions:
           - "[STATUS] < 500"
 
+      - name: Dashboard
+        group: raven
+        url: https://raven.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
       # ===== CONDUIT SERVICES (native) =====
       - name: Headscale
         group: conduit
