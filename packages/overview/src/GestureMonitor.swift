@@ -1,164 +1,115 @@
 import Foundation
 import Darwin
 
-private let kNormXOff = 32, kNormYOff = 36, kStateOff = 20, kStride = 96
-private weak var sharedMonitor: GestureMonitor?
+private let kNormYOff = 36, kStateOff = 20, kStride = 96
+private weak var shared: GestureMonitor?
 
 class GestureMonitor {
-    // Discrete callbacks (horizontal swipes, dismiss)
-    var onSwipeLeft: () -> Void = {}
-    var onSwipeRight: () -> Void = {}
-
-    // Continuous vertical gesture callbacks (1:1 tracking)
-    var onVerticalBegin: (() -> Void)?
-    var onVerticalUpdate: ((CGFloat) -> Void)?   // progress: 0 = start, 1 = fully open
-    var onVerticalEnd: ((CGFloat) -> Void)?       // final progress on release
-    var onDismissUpdate: ((CGFloat) -> Void)?     // progress for downward dismiss
-    var onDismissEnd: ((CGFloat) -> Void)?
+    /// Called the instant 3 fingers touch — use to start async capture early
+    var onPrepare: (() -> Void)?
+    /// Called on each touch frame with the vertical delta (0 = start position)
+    var onThreeFingerVertical: ((CGFloat) -> Void)?
+    /// Called when 3 fingers lift after a vertical gesture was active
+    var onThreeFingerEnd: (() -> Void)?
+    /// Discrete horizontal swipes
+    var onSwipeLeft: (() -> Void)?
+    var onSwipeRight: (() -> Void)?
 
     private var handle: UnsafeMutableRawPointer?
-
-    // Tracking state
-    private var startX: [Float] = [0, 0, 0]
-    private var startY: [Float] = [0, 0, 0]
-    private var startTime: Double = 0
+    private var startY: Float = 0
     private var tracking = false
-    private var gestureActive = false  // continuous gesture in progress
-    private var lastDiscreteTrigger: Double = 0
-    private var dominantAxis: Axis? = nil
+    private var verticalActive = false
+    private var axisDecided = false
+    private var isVertical = false
+    private var lastHorizTrigger: Double = 0
 
-    private enum Axis { case horizontal, vertical }
-
-    // Tuning
-    private let lockDistance: Float = 0.03        // 3% to lock axis
-    private let fullSwipeDistance: Float = 0.20   // 20% of trackpad = full overview
-    private let discreteThreshold: Float = 0.10  // for horizontal swipes
-    private let discreteCooldown: Double = 0.4
-    private let perFingerMin: Float = 0.03
+    private let fullSwipe: Float = 0.22
+    private let horizThreshold: Float = 0.10
 
     func start() {
         let path = "/System/Library/PrivateFrameworks/MultitouchSupport.framework/MultitouchSupport"
         handle = dlopen(path, RTLD_LAZY)
-        guard handle != nil else { return }
-        guard let cSym = dlsym(handle, "MTDeviceCreateList"),
-              let rSym = dlsym(handle, "MTRegisterContactFrameCallback"),
-              let sSym = dlsym(handle, "MTDeviceStart") else { return }
-
-        typealias CreateFn = @convention(c) () -> Unmanaged<CFArray>
-        typealias CbFn     = @convention(c) (Int32, UnsafeMutableRawPointer, Int32, Double, Int32) -> Int32
-        typealias RegFn    = @convention(c) (UnsafeMutableRawPointer, CbFn) -> Void
-        typealias StartFn  = @convention(c) (UnsafeMutableRawPointer, Int32) -> Void
-
-        sharedMonitor = self
-        let devices = unsafeBitCast(cSym, to: CreateFn.self)().takeUnretainedValue() as [AnyObject]
-        for d in devices {
-            unsafeBitCast(rSym, to: RegFn.self)(Unmanaged.passUnretained(d).toOpaque(), mtCb)
-            unsafeBitCast(sSym, to: StartFn.self)(Unmanaged.passUnretained(d).toOpaque(), 0)
+        guard handle != nil,
+              let c = dlsym(handle, "MTDeviceCreateList"),
+              let r = dlsym(handle, "MTRegisterContactFrameCallback"),
+              let s = dlsym(handle, "MTDeviceStart") else { return }
+        typealias C = @convention(c) () -> Unmanaged<CFArray>
+        typealias F = @convention(c) (Int32, UnsafeMutableRawPointer, Int32, Double, Int32) -> Int32
+        typealias R = @convention(c) (UnsafeMutableRawPointer, F) -> Void
+        typealias S = @convention(c) (UnsafeMutableRawPointer, Int32) -> Void
+        shared = self
+        let devs = unsafeBitCast(c, to: C.self)().takeUnretainedValue() as [AnyObject]
+        for d in devs {
+            unsafeBitCast(r, to: R.self)(Unmanaged.passUnretained(d).toOpaque(), cb)
+            unsafeBitCast(s, to: S.self)(Unmanaged.passUnretained(d).toOpaque(), 0)
         }
-        print("[overview] gesture monitoring active (\(devices.count) device\(devices.count == 1 ? "" : "s"))")
+        print("[overview] gesture active (\(devs.count) device\(devs.count == 1 ? "" : "s"))")
     }
 
-    fileprivate func processTouches(_ data: UnsafeMutableRawPointer, count: Int32) {
+    fileprivate func process(_ data: UnsafeMutableRawPointer, count: Int32) {
         guard count == 3 else {
-            if gestureActive { endGesture() }
-            tracking = false
-            dominantAxis = nil
+            if verticalActive {
+                verticalActive = false
+                DispatchQueue.main.async { [self] in onThreeFingerEnd?() }
+            }
+            tracking = false; axisDecided = false
             return
         }
 
-        var xs: [Float] = [], ys: [Float] = [], allTouch = true
+        // All 3 must be touching (state 4)
+        var avgY: Float = 0, avgX: Float = 0, allTouch = true
         for i in 0..<3 {
             let b = i * kStride
             if data.load(fromByteOffset: b + kStateOff, as: Int32.self) != 4 { allTouch = false }
-            xs.append(data.load(fromByteOffset: b + kNormXOff, as: Float.self))
-            ys.append(data.load(fromByteOffset: b + kNormYOff, as: Float.self))
+            avgY += data.load(fromByteOffset: b + kNormYOff, as: Float.self)
+            avgX += data.load(fromByteOffset: b + 32, as: Float.self)  // kNormXOff
         }
-
         guard allTouch else {
-            if gestureActive { endGesture() }
-            tracking = false
-            dominantAxis = nil
+            if verticalActive {
+                verticalActive = false
+                DispatchQueue.main.async { [self] in onThreeFingerEnd?() }
+            }
+            tracking = false; axisDecided = false
             return
         }
+        avgY /= 3; avgX /= 3
 
         if !tracking {
-            tracking = true
-            startX = xs; startY = ys
-            startTime = ProcessInfo.processInfo.systemUptime
-            dominantAxis = nil
+            tracking = true; startY = avgY; startX = avgX; axisDecided = false
+            DispatchQueue.main.async { [self] in onPrepare?() }
             return
         }
 
-        let dx = (0..<3).map { xs[$0] - startX[$0] }.reduce(0, +) / 3
-        let dy = (0..<3).map { ys[$0] - startY[$0] }.reduce(0, +) / 3
+        let dy = avgY - startY
+        let dx = avgX - startX
 
-        // Lock axis once movement exceeds threshold
-        if dominantAxis == nil {
-            if abs(dy) > lockDistance && abs(dy) > abs(dx) * 1.5 {
-                dominantAxis = .vertical
-            } else if abs(dx) > lockDistance && abs(dx) > abs(dy) * 1.5 {
-                dominantAxis = .horizontal
-            } else {
-                return  // not enough movement to determine axis
-            }
+        // Decide axis once (very low threshold for responsiveness)
+        if !axisDecided {
+            if abs(dy) > 0.015 && abs(dy) > abs(dx) {
+                axisDecided = true; isVertical = true
+            } else if abs(dx) > 0.015 && abs(dx) > abs(dy) {
+                axisDecided = true; isVertical = false
+            } else { return }
         }
 
-        switch dominantAxis {
-        case .vertical:
-            handleVertical(dy: dy, ys: ys)
-        case .horizontal:
-            handleHorizontal(dx: dx, xs: xs)
-        case .none:
-            break
-        }
-    }
-
-    private func handleVertical(dy: Float, ys: [Float]) {
-        let progress = CGFloat(dy / fullSwipeDistance)
-
-        if dy > 0 {
-            // Upward — show overview (continuous tracking)
-            if !gestureActive {
-                gestureActive = true
-                DispatchQueue.main.async { [self] in onVerticalBegin?() }
-            }
-            DispatchQueue.main.async { [self] in
-                onVerticalUpdate?(min(max(progress, 0), 1.5))
-            }
-        } else if gestureActive {
-            // Downward while active — dismiss tracking
-            let dismissProgress = CGFloat(-dy / fullSwipeDistance)
-            DispatchQueue.main.async { [self] in
-                onDismissUpdate?(min(max(dismissProgress, 0), 1.5))
+        if isVertical {
+            verticalActive = true
+            let progress = CGFloat(dy / fullSwipe)
+            DispatchQueue.main.async { [self] in onThreeFingerVertical?(progress) }
+        } else {
+            let now = ProcessInfo.processInfo.systemUptime
+            if abs(dx) > horizThreshold && now - lastHorizTrigger > 0.4 {
+                lastHorizTrigger = now
+                tracking = false; axisDecided = false
+                DispatchQueue.main.async { [self] in dx > 0 ? onSwipeRight?() : onSwipeLeft?() }
             }
         }
     }
 
-    private func handleHorizontal(dx: Float, xs: [Float]) {
-        let now = ProcessInfo.processInfo.systemUptime
-        guard abs(dx) > discreteThreshold, now - lastDiscreteTrigger > discreteCooldown else { return }
-        let allSameDir = (0..<3).allSatisfy {
-            let d = xs[$0] - startX[$0]
-            return abs(d) >= perFingerMin && (d > 0) == (dx > 0)
-        }
-        guard allSameDir else { return }
-        lastDiscreteTrigger = now
-        tracking = false
-        dominantAxis = nil
-        DispatchQueue.main.async { [self] in dx > 0 ? onSwipeRight() : onSwipeLeft() }
-    }
-
-    private func endGesture() {
-        gestureActive = false
-        DispatchQueue.main.async { [self] in
-            onVerticalEnd?(0)
-        }
-    }
-
+    private var startX: Float = 0
     deinit { if let h = handle { dlclose(h) } }
 }
 
-private func mtCb(_ d: Int32, _ data: UnsafeMutableRawPointer, _ n: Int32, _ t: Double, _ f: Int32) -> Int32 {
-    sharedMonitor?.processTouches(data, count: n)
-    return 0
+private func cb(_ d: Int32, _ data: UnsafeMutableRawPointer, _ n: Int32, _ t: Double, _ f: Int32) -> Int32 {
+    shared?.process(data, count: n); return 0
 }

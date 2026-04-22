@@ -211,7 +211,7 @@ The **Right Alt** key is configured as the **Compose key** for typing accented c
 ## 🎯 Common Workflows
 
 **Opening a terminal:**
-- `SUPER + Shift + Enter` (direct) or `SUPER + Enter` then type "kitty"
+- `SUPER + T` (direct) or `SUPER + R` then type "ghostty"
 
 **Opening a file manager:**
 - `SUPER + E` opens Nemo

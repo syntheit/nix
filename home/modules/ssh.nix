@@ -41,6 +41,11 @@
         port = 64829;
         proxyCommand = "${pkgs.cloudflared}/bin/cloudflared access ssh --hostname %h";
       };
+      "swift" = {
+        hostname = "100.78.114.100";
+        identityFile = "~/.ssh/mainkey";
+        user = "daniel";
+      };
       "raven" = {
         hostname = "100.98.64.97";
         identityFile = "~/.ssh/mainkey";

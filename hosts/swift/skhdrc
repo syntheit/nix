@@ -9,18 +9,22 @@ sound_up : volume-panel up
 sound_down : volume-panel down
 mute : volume-panel mute
 
+# Brightness control (intercepts media keys, suppresses macOS HUD)
+brightness_up : brightness-panel up
+brightness_down : brightness-panel down
+
 # Application launchers
-fn - return : open -na kitty
-fn - t : open -na kitty
+fn - return : open -na Ghostty
+fn - t : open -na Ghostty
 fn - r : open -a Raycast
 fn - c : open -g "raycast://extensions/raycast/clipboard-history/clipboard-history"
-# cmd+space: handled natively by Raycast (set in Raycast Settings > General > Hotkey)
+cmd - space : search-panel toggle
 fn - w : open -a "Zen Browser"
-fn - e : open -na kitty --args yazi
+fn - e : open -na Ghostty --args -e yazi
 
 # System panels
-fn - b : bluetooth-panel toggle
-fn - n : wifi-panel toggle
+fn - b : bluetooth-panel dropdown
+fn - n : wifi-panel dropdown
 
 # Window management
 fn - q : yabai -m window --close
@@ -73,8 +77,11 @@ fn - 0x2B : yabai -m space --focus prev  # cmd + ,
 shift + fn - 0x2F : yabai -m window --space next  # shift + cmd + .
 shift + fn - 0x2B : yabai -m window --space prev  # shift + cmd + ,
 
-# Screenshots
-shift + cmd - s : open -a Screenshot
+# Screenshots (screencapture -i freezes screen during selection)
+shift + cmd - s : screencapture -ic                                                                                      # Area → clipboard
+shift + cmd - d : mkdir -p ~/Pictures/Screenshots && screencapture -i ~/Pictures/Screenshots/screenshot-$(date +%Y%m%d-%H%M%S).png  # Area → file
+shift + cmd - a : screencapture -c                                                                                       # Full screen → clipboard
+shift + cmd - w : screencapture -wc                                                                                      # Window → clipboard
 
 # Screenshot to harbor — interactive selection, uploads to ~/screenshots/swift/ on harbor
 shift + cmd - x : $HOME/.local/bin/screenshot-to-harbor
@@ -87,3 +94,7 @@ fn + alt - space : yabai -m space --layout $(yabai -m query --spaces --space | j
 
 # Balance windows
 fn + alt - b : yabai -m space --balance
+
+# Wallpaper cycling
+fn + alt - 0x2F : wallpaper-cycle next   # fn + alt + .
+fn + alt - 0x2B : wallpaper-cycle prev   # fn + alt + ,

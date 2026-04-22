@@ -179,7 +179,7 @@ with open('$DB', 'w') as f: json.dump(data, f)
           label.drawing=off \
           icon="" \
           script="$CONFIG_DIR/plugins/bluetooth.sh" \
-          click_script="bluetooth-panel toggle"
+          click_script="bluetooth-panel dropdown"
 
       sketchybar --add item network right \
         --set network \
@@ -188,7 +188,7 @@ with open('$DB', 'w') as f: json.dump(data, f)
           label.drawing=off \
           icon="󰤨" \
           script="$CONFIG_DIR/plugins/network.sh" \
-          click_script="wifi-panel toggle"
+          click_script="wifi-panel dropdown"
 
       sketchybar --add event privacy_change
       sketchybar --add event dnd_change

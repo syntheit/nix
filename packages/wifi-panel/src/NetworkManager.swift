@@ -53,6 +53,7 @@ class NetworkManager: ObservableObject {
     @Published var isTestingSpeed = false
     @Published var qrImage: NSImage?
     @Published var revealedPassword: String?
+    @Published var isWiFiOn = true
 
     private let wifiClient = CWWiFiClient.shared()
     private let locationManager = CLLocationManager()
@@ -69,10 +70,33 @@ class NetworkManager: ObservableObject {
         }
     }
 
+    func toggleWiFi() {
+        guard let iface = wifiClient.interface() else { return }
+        let newState = !isWiFiOn
+        try? iface.setPower(newState)
+        isWiFiOn = newState
+        if newState {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                self?.refreshCurrent()
+            }
+        } else {
+            currentNetwork = nil
+            availableNetworks = []
+        }
+    }
+
     // MARK: - Current Network
 
     func refreshCurrent() {
-        guard let iface = wifiClient.interface() else { return }
+        guard let iface = wifiClient.interface() else {
+            isWiFiOn = false
+            return
+        }
+        isWiFiOn = iface.powerOn()
+        guard isWiFiOn else {
+            currentNetwork = nil
+            return
+        }
 
         // Use CachedScanRecord from SCDynamicStore — bypasses Location requirement on macOS 26
         let ifName = iface.interfaceName ?? "en0"

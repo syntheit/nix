@@ -374,7 +374,12 @@ struct DashboardView: View {
                         // Rich display for Foyer-connected servers
                         MiniBar(value: cpu, color: .gaugeCyan, label: "CPU")
                         MiniBar(value: ram, color: .gaugePurple, label: "RAM")
-                        if let ct = server.containers {
+                        if let temp = server.cpuTemp, temp > 0 {
+                            Text("\(temp)°")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(temp >= 80 ? Color.red : Color.subtle)
+                        }
+                        if let ct = server.containers, ct > 0 {
                             Text("\(ct) ct")
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundStyle(Color.subtle)

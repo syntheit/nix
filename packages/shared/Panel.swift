@@ -32,7 +32,8 @@ class SystemPanel: NSPanel {
         standardWindowButton(.zoomButton)?.isHidden = true
     }
 
-    override var canBecomeKey: Bool { true }
+    private var _canBecomeKey = true
+    override var canBecomeKey: Bool { _canBecomeKey }
     override var canBecomeMain: Bool { false }
 
     func setContent<V: View>(_ view: V) {
@@ -46,7 +47,7 @@ class SystemPanel: NSPanel {
         showAt(position: .center)
     }
 
-    func showAt(position: PanelPosition) {
+    func showAt(position: PanelPosition, passive: Bool = false) {
         guard let screen = NSScreen.main else { return }
         let sf = screen.visibleFrame
         let origin: NSPoint
@@ -58,11 +59,22 @@ class SystemPanel: NSPanel {
             origin = NSPoint(x: sf.maxX - frame.width - 16, y: sf.maxY - frame.height - 16)
         case .topCenter:
             origin = NSPoint(x: sf.midX - frame.width / 2, y: sf.maxY - frame.height - 16)
+        case .belowCursor:
+            let mouse = NSEvent.mouseLocation
+            var x = mouse.x - frame.width / 2
+            x = max(sf.minX + 8, min(x, sf.maxX - frame.width - 8))
+            origin = NSPoint(x: x, y: mouse.y - frame.height - 6)
         }
 
+        _canBecomeKey = !passive
         setFrameOrigin(origin)
         alphaValue = 0
-        makeKeyAndOrderFront(nil)
+
+        if passive {
+            orderFrontRegardless()
+        } else {
+            makeKeyAndOrderFront(nil)
+        }
 
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.2
@@ -70,11 +82,11 @@ class SystemPanel: NSPanel {
             self.animator().alphaValue = 1
         }
 
-        installMonitors()
+        installMonitors(passive: passive)
     }
 
     enum PanelPosition {
-        case center, topRight, topCenter
+        case center, topRight, topCenter, belowCursor
     }
 
     func dismiss() {
@@ -102,6 +114,11 @@ class SystemPanel: NSPanel {
             newOrigin = NSPoint(x: sf.maxX - size.width - 16, y: sf.maxY - size.height - 16)
         case .topCenter:
             newOrigin = NSPoint(x: sf.midX - size.width / 2, y: sf.maxY - size.height - 16)
+        case .belowCursor:
+            let top = self.frame.maxY
+            var x = self.frame.midX - size.width / 2
+            x = max(sf.minX + 8, min(x, sf.maxX - size.width - 8))
+            newOrigin = NSPoint(x: x, y: top - size.height)
         }
         let newFrame = NSRect(origin: newOrigin, size: size)
 
@@ -116,7 +133,7 @@ class SystemPanel: NSPanel {
         }
     }
 
-    private func installMonitors() {
+    private func installMonitors(passive: Bool = false) {
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             guard let self = self else { return }
             if !self.frame.contains(NSEvent.mouseLocation) {
@@ -124,12 +141,19 @@ class SystemPanel: NSPanel {
             }
         }
 
-        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 {
+        if passive {
+            // Any keystroke dismisses — panel never had focus so use global monitor
+            escapeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] _ in
                 self?.dismiss()
-                return nil
             }
-            return event
+        } else {
+            escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                if event.keyCode == 53 {
+                    self?.dismiss()
+                    return nil
+                }
+                return event
+            }
         }
     }
 
@@ -241,4 +265,28 @@ enum Accent {
     static let red = Color(red: 0.96, green: 0.51, blue: 0.53)      // #f7768e
     static let yellow = Color(red: 0.88, green: 0.77, blue: 0.42)   // #e0af68
     static let subtext = Color(red: 0.45, green: 0.48, blue: 0.58)  // #737aa2
+}
+
+// MARK: - Toggle Switch
+
+struct ToggleSwitch: View {
+    var isOn: Bool
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Capsule()
+                .fill(isOn ? Color(red: 0.25, green: 0.52, blue: 1.0) : Color.white.opacity(0.22))
+                .frame(width: 42, height: 25)
+                .overlay(
+                    Circle()
+                        .fill(.white)
+                        .shadow(color: .black.opacity(0.15), radius: 1, y: 1)
+                        .frame(width: 21, height: 21)
+                        .offset(x: isOn ? 8.5 : -8.5)
+                )
+                .animation(.easeInOut(duration: 0.15), value: isOn)
+        }
+        .buttonStyle(.plain)
+    }
 }

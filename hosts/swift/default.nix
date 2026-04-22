@@ -39,7 +39,7 @@
       "iina"
       "karabiner-elements"
       "kiro"
-      "kitty"
+      "ghostty"
       "lulu"
       "marta"
       "macwhisper"
@@ -163,6 +163,32 @@
   # Firewall: block incoming, stealth mode (don't respond to probes)
   networking.applicationFirewall.enable = true;
   networking.applicationFirewall.enableStealthMode = true;
+
+  networking.hostName = "swift";
+
+  # SSH — Tailscale-only, key-only
+  environment.etc."ssh/sshd_tailscale_config".text = ''
+    Port 22
+    ListenAddress 100.78.114.100
+    AuthorizedKeysFile /etc/ssh/authorized_keys.d/%u
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    UsePAM no
+    Subsystem sftp /usr/libexec/sftp-server
+  '';
+
+  environment.etc."ssh/authorized_keys.d/${vars.user.name}".text = ''
+    ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdRcH2UWe31VdU62j3Ksbb6LDyS1APNW1BQMM8mvsej daniel@matv.io
+  '';
+
+  launchd.daemons.sshd-tailscale = {
+    serviceConfig = {
+      Label = "org.nixos.sshd-tailscale";
+      ProgramArguments = [ "/usr/sbin/sshd" "-D" "-f" "/etc/ssh/sshd_tailscale_config" ];
+      RunAtLoad = true;
+      KeepAlive = true;
+    };
+  };
 
   # Generic names for mDNS/Bonjour — hides real hostname from local network
   networking.computerName = "Mac";
@@ -448,7 +474,6 @@
       com.apple.proactiveeventtrackerd \
       com.apple.rapportd \
       com.apple.sharingd \
-      com.apple.avconferenced \
       com.apple.CommCenter \
       com.apple.imagent \
       com.apple.imcore.imtransferagent \

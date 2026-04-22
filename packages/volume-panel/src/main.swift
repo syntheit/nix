@@ -82,7 +82,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     onDismissRestore: { [weak self] in self?.scheduleDismiss() }
                 )
             )
-            panel.showAt(position: .topRight)
+            panel.showAt(position: .topRight, passive: true)
         }
         // Reset dismiss timer on every volume change
         scheduleDismiss()

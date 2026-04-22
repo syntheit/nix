@@ -137,6 +137,8 @@ in
       wants = [ "network-online.target" ];
       wantedBy = [ "multi-user.target" ];
 
+      path = lib.optional config.virtualisation.docker.enable config.virtualisation.docker.package;
+
       serviceConfig = {
         Type = "simple";
         User = "foyer";
@@ -148,7 +150,8 @@ in
         NoNewPrivileges = true;
         ProtectSystem = "strict";
         ProtectHome = true;
-        ReadWritePaths = [ cfg.dataDir ];
+        ReadWritePaths = [ cfg.dataDir ]
+          ++ lib.optional config.virtualisation.docker.enable "/run/docker.sock";
         PrivateTmp = true;
         ProtectClock = true;
         ProtectKernelTunables = true;
