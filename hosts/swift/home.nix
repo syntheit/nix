@@ -21,6 +21,11 @@
     ../../home/modules/app-tweaks.nix
     ../../home/modules/dashboard-darwin.nix
     ../../home/modules/tmux.nix
+    ../../home/modules/eq.nix
+    ../../home/modules/overview.nix
+    ../../home/modules/volume-panel.nix
+    ../../home/modules/bluetooth-panel.nix
+    ../../home/modules/wifi-panel.nix
   ];
 
   home.username = vars.user.name;

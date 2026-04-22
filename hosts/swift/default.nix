@@ -34,7 +34,7 @@
 
       "cursor"
       "dbeaver-community"
-      "eqmac"
+      "blackhole-2ch"
       "font-jetbrains-mono-nerd-font"
       "iina"
       "karabiner-elements"
@@ -48,6 +48,7 @@
       "obsidian"
       "orbstack"
       "raycast"
+      "seafile-client"
       "spotify"
       "syncthing-app"
       "tailscale-app"
@@ -117,6 +118,13 @@
 
     # Privacy & telemetry defaults
     CustomUserPreferences = {
+      # Disable Mission Control three-finger swipe (overview app handles this gesture)
+      "com.apple.AppleMultitouchTrackpad" = {
+        TrackpadThreeFingerVertSwipeGesture = 0;
+      };
+      "com.apple.driver.AppleBluetoothMultitouch.trackpad" = {
+        TrackpadThreeFingerVertSwipeGesture = 0;
+      };
       # Disable personalized ads
       "com.apple.AdLib" = {
         allowApplePersonalizedAdvertising = false;
@@ -202,6 +210,9 @@
       yabai -m rule --add app="^Archive Utility$" manage=off
       yabai -m rule --add app="^Finder$" title="(Copy|Move|Delete|Connect)" manage=off
       yabai -m rule --add title="^dashboard$" manage=off
+
+      # Spotify → scratchpad (floating overlay, toggled with F4)
+      yabai -m rule --add app="^Spotify$" scratchpad=spotify
     '';
   };
 
@@ -288,10 +299,22 @@
     # ================================================================
     YABAI_BIN=$(readlink -f ${pkgs.yabai}/bin/yabai)
     SKHD_BIN=$(readlink -f ${pkgs.skhd}/bin/skhd)
+    OVERVIEW_BIN=$(readlink -f ${pkgs.overview}/bin/overview)
+    BT_PANEL_BIN=$(readlink -f ${pkgs.bluetooth-panel}/bin/bluetooth-panel)
+    WIFI_PANEL_BIN=$(readlink -f ${pkgs.wifi-panel}/bin/wifi-panel)
+    EQ_BIN=$(readlink -f ${pkgs.eq}/bin/eq)
     TCC_DB="/Library/Application Support/com.apple.TCC/TCC.db"
     for BIN in "$YABAI_BIN" "$SKHD_BIN"; do
       sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) VALUES ('kTCCServiceAccessibility', '$BIN', 1, 2, 4, 1);"
     done
+    # Screen capture permission for overview (window thumbnails via ScreenCaptureKit)
+    sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) VALUES ('kTCCServiceScreenCapture', '$OVERVIEW_BIN', 1, 2, 4, 1);"
+    # Bluetooth permission for bluetooth-panel (IOBluetooth device management)
+    sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) VALUES ('kTCCServiceBluetoothAlways', '$BT_PANEL_BIN', 1, 2, 4, 1);"
+    # Location permission for wifi-panel (CoreWLAN SSID access)
+    sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) VALUES ('kTCCServiceLocation', '$WIFI_PANEL_BIN', 1, 2, 4, 1);"
+    # Microphone permission for eq daemon (AVAudioEngine reads from BlackHole input)
+    sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) VALUES ('kTCCServiceMicrophone', '$EQ_BIN', 1, 2, 4, 1);"
 
     # Restart nix-managed services after TCC grants
     launchctl bootout "gui/$GUI_UID/org.nixos.skhd" 2>/dev/null || true
