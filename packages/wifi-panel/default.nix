@@ -1,16 +1,18 @@
 {
   stdenv,
-  swift,
 }:
 
 stdenv.mkDerivation {
   pname = "wifi-panel";
   version = "0.1.0";
   src = ./src;
-  nativeBuildInputs = [ swift ];
   unpackPhase = "true";
   buildPhase = ''
+    # Use system Swift compiler with macOS 26 SDK for liquid glass APIs
+    export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk
+    export PATH=/Library/Developer/CommandLineTools/usr/bin:$PATH
     swiftc -O \
+      -sdk $SDKROOT \
       -framework AppKit \
       -framework SwiftUI \
       -framework CoreWLAN \

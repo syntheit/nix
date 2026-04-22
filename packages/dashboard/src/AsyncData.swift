@@ -42,16 +42,6 @@ enum AsyncData {
         return parsed
     }
 
-    static func getCachedServers(_ names: [String]) -> [ServerHealth] {
-        var results: [ServerHealth] = []
-        for name in names {
-            if let cached = readCache("server_\(name)") {
-                results.append(ServerHealth(name: name, info: cached.trimmingCharacters(in: .whitespacesAndNewlines), ok: true))
-            }
-        }
-        return results
-    }
-
     // MARK: - Weather
 
     struct WeatherInfo {

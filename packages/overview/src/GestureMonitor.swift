@@ -1,168 +1,164 @@
 import Foundation
 import Darwin
 
-// MultitouchSupport.framework touch data (stable across macOS versions, matches MiddleClick/Jitouch)
-private struct MTPoint {
-    var x: Float
-    var y: Float
-}
-
-private struct MTTouch {
-    var frame: Int32
-    var timestamp: Double
-    var identifier: Int32
-    var state: Int32       // 4 = touching, 7 = lifted
-    var fingerID: Int32
-    var handID: Int32
-    var normalized: MTPoint // 0..1 position on trackpad surface
-    var size: MTPoint
-    var zero1: Int32
-    var angle: Float
-    var majorAxis: Float
-    var minorAxis: Float
-    var absolutePos: MTPoint
-    var zero2: Int32
-    var zero3: Int32
-    var density: Float
-}
-
-// Known struct layout offsets (ARM64 natural alignment)
-// State and normalized position offsets are stable across macOS versions.
-// Stride grew from 88 (macOS 14) to 96 (macOS 26) — Apple added fields at the end.
-private let kNormalizedXOffset = 32 // Float at byte 32
-private let kNormalizedYOffset = 36 // Float at byte 36
-private let kStateOffset       = 20 // Int32 at byte 20
-private let kTouchStride       = 96 // sizeof(MTTouch) on macOS 26 (Tahoe)
-
-// Global reference for the C callback (MultitouchSupport callbacks have no refcon parameter)
+private let kNormXOff = 32, kNormYOff = 36, kStateOff = 20, kStride = 96
 private weak var sharedMonitor: GestureMonitor?
 
 class GestureMonitor {
-    private let onSwipeUp: () -> Void
-    private let onSwipeDown: () -> Void
+    // Discrete callbacks (horizontal swipes, dismiss)
+    var onSwipeLeft: () -> Void = {}
+    var onSwipeRight: () -> Void = {}
+
+    // Continuous vertical gesture callbacks (1:1 tracking)
+    var onVerticalBegin: (() -> Void)?
+    var onVerticalUpdate: ((CGFloat) -> Void)?   // progress: 0 = start, 1 = fully open
+    var onVerticalEnd: ((CGFloat) -> Void)?       // final progress on release
+    var onDismissUpdate: ((CGFloat) -> Void)?     // progress for downward dismiss
+    var onDismissEnd: ((CGFloat) -> Void)?
+
     private var handle: UnsafeMutableRawPointer?
 
-    // Gesture tracking state (only accessed from the MT callback thread)
-    private var fingerStartY: [Float] = [0, 0, 0] // per-finger start Y
+    // Tracking state
+    private var startX: [Float] = [0, 0, 0]
+    private var startY: [Float] = [0, 0, 0]
     private var startTime: Double = 0
     private var tracking = false
-    private var lastTrigger: Double = 0
+    private var gestureActive = false  // continuous gesture in progress
+    private var lastDiscreteTrigger: Double = 0
+    private var dominantAxis: Axis? = nil
+
+    private enum Axis { case horizontal, vertical }
 
     // Tuning
-    private let swipeThreshold: Float = 0.10  // 10% of trackpad height
-    private let perFingerMin: Float = 0.04    // each finger must move at least 4%
-    private let maxSwipeDuration: Double = 0.5 // must complete within 500ms
-    private let cooldown: Double = 0.4         // ignore retriggering for 400ms
-
-    init(onSwipeUp: @escaping () -> Void, onSwipeDown: @escaping () -> Void) {
-        self.onSwipeUp = onSwipeUp
-        self.onSwipeDown = onSwipeDown
-    }
+    private let lockDistance: Float = 0.03        // 3% to lock axis
+    private let fullSwipeDistance: Float = 0.20   // 20% of trackpad = full overview
+    private let discreteThreshold: Float = 0.10  // for horizontal swipes
+    private let discreteCooldown: Double = 0.4
+    private let perFingerMin: Float = 0.03
 
     func start() {
         let path = "/System/Library/PrivateFrameworks/MultitouchSupport.framework/MultitouchSupport"
         handle = dlopen(path, RTLD_LAZY)
-        guard handle != nil else {
-            print("[overview] cannot load MultitouchSupport.framework")
-            return
-        }
+        guard handle != nil else { return }
+        guard let cSym = dlsym(handle, "MTDeviceCreateList"),
+              let rSym = dlsym(handle, "MTRegisterContactFrameCallback"),
+              let sSym = dlsym(handle, "MTDeviceStart") else { return }
 
-        guard let createSym  = dlsym(handle, "MTDeviceCreateList"),
-              let regSym     = dlsym(handle, "MTRegisterContactFrameCallback"),
-              let startSym   = dlsym(handle, "MTDeviceStart")
-        else {
-            print("[overview] cannot resolve MultitouchSupport symbols")
-            return
-        }
-
-        typealias CreateFn   = @convention(c) () -> Unmanaged<CFArray>
-        typealias CallbackFn = @convention(c) (Int32, UnsafeMutableRawPointer, Int32, Double, Int32) -> Int32
-        typealias RegisterFn = @convention(c) (UnsafeMutableRawPointer, CallbackFn) -> Void
-        typealias StartFn    = @convention(c) (UnsafeMutableRawPointer, Int32) -> Void
-
-        let create   = unsafeBitCast(createSym,  to: CreateFn.self)
-        let register = unsafeBitCast(regSym,     to: RegisterFn.self)
-        let start    = unsafeBitCast(startSym,   to: StartFn.self)
+        typealias CreateFn = @convention(c) () -> Unmanaged<CFArray>
+        typealias CbFn     = @convention(c) (Int32, UnsafeMutableRawPointer, Int32, Double, Int32) -> Int32
+        typealias RegFn    = @convention(c) (UnsafeMutableRawPointer, CbFn) -> Void
+        typealias StartFn  = @convention(c) (UnsafeMutableRawPointer, Int32) -> Void
 
         sharedMonitor = self
-
-        let devices = create().takeUnretainedValue() as [AnyObject]
-        for device in devices {
-            let ptr = Unmanaged.passUnretained(device).toOpaque()
-            register(ptr, mtCallback)
-            start(ptr, 0)
+        let devices = unsafeBitCast(cSym, to: CreateFn.self)().takeUnretainedValue() as [AnyObject]
+        for d in devices {
+            unsafeBitCast(rSym, to: RegFn.self)(Unmanaged.passUnretained(d).toOpaque(), mtCb)
+            unsafeBitCast(sSym, to: StartFn.self)(Unmanaged.passUnretained(d).toOpaque(), 0)
         }
         print("[overview] gesture monitoring active (\(devices.count) device\(devices.count == 1 ? "" : "s"))")
     }
 
     fileprivate func processTouches(_ data: UnsafeMutableRawPointer, count: Int32) {
-        let n = Int(count)
-
-        // Must be exactly 3 fingers
-        guard n == 3 else {
+        guard count == 3 else {
+            if gestureActive { endGesture() }
             tracking = false
+            dominantAxis = nil
             return
         }
 
-        // Read per-finger positions — all must be actively touching (state 4)
-        var ys: [Float] = []
-        var allTouching = true
+        var xs: [Float] = [], ys: [Float] = [], allTouch = true
         for i in 0..<3 {
-            let base = i * kTouchStride
-            let state = data.load(fromByteOffset: base + kStateOffset, as: Int32.self)
-            let ny    = data.load(fromByteOffset: base + kNormalizedYOffset, as: Float.self)
-            ys.append(ny)
-            if state != 4 { allTouching = false }
+            let b = i * kStride
+            if data.load(fromByteOffset: b + kStateOff, as: Int32.self) != 4 { allTouch = false }
+            xs.append(data.load(fromByteOffset: b + kNormXOff, as: Float.self))
+            ys.append(data.load(fromByteOffset: b + kNormYOff, as: Float.self))
         }
 
-        guard allTouching else {
+        guard allTouch else {
+            if gestureActive { endGesture() }
             tracking = false
+            dominantAxis = nil
             return
         }
-
-        let now = ProcessInfo.processInfo.systemUptime
 
         if !tracking {
             tracking = true
-            fingerStartY = ys
-            startTime = now
+            startX = xs; startY = ys
+            startTime = ProcessInfo.processInfo.systemUptime
+            dominantAxis = nil
             return
         }
 
-        // Timeout — not a quick swipe
-        if now - startTime > maxSwipeDuration {
-            tracking = false
-            return
+        let dx = (0..<3).map { xs[$0] - startX[$0] }.reduce(0, +) / 3
+        let dy = (0..<3).map { ys[$0] - startY[$0] }.reduce(0, +) / 3
+
+        // Lock axis once movement exceeds threshold
+        if dominantAxis == nil {
+            if abs(dy) > lockDistance && abs(dy) > abs(dx) * 1.5 {
+                dominantAxis = .vertical
+            } else if abs(dx) > lockDistance && abs(dx) > abs(dy) * 1.5 {
+                dominantAxis = .horizontal
+            } else {
+                return  // not enough movement to determine axis
+            }
         }
 
-        // Check that ALL fingers moved in the same direction (not palm + 2-finger scroll)
-        let avgDelta = (0..<3).map { ys[$0] - fingerStartY[$0] }.reduce(0, +) / 3
-        let allMovedSameDir = (0..<3).allSatisfy { i in
-            let d = ys[i] - fingerStartY[i]
-            return abs(d) >= perFingerMin && (d > 0) == (avgDelta > 0)
-        }
-
-        if allMovedSameDir, abs(avgDelta) > swipeThreshold, now - lastTrigger > cooldown {
-            lastTrigger = now
-            tracking = false
-            let handler = avgDelta > 0 ? onSwipeUp : onSwipeDown
-            DispatchQueue.main.async { handler() }
+        switch dominantAxis {
+        case .vertical:
+            handleVertical(dy: dy, ys: ys)
+        case .horizontal:
+            handleHorizontal(dx: dx, xs: xs)
+        case .none:
+            break
         }
     }
 
-    deinit {
-        if let h = handle { dlclose(h) }
+    private func handleVertical(dy: Float, ys: [Float]) {
+        let progress = CGFloat(dy / fullSwipeDistance)
+
+        if dy > 0 {
+            // Upward — show overview (continuous tracking)
+            if !gestureActive {
+                gestureActive = true
+                DispatchQueue.main.async { [self] in onVerticalBegin?() }
+            }
+            DispatchQueue.main.async { [self] in
+                onVerticalUpdate?(min(max(progress, 0), 1.5))
+            }
+        } else if gestureActive {
+            // Downward while active — dismiss tracking
+            let dismissProgress = CGFloat(-dy / fullSwipeDistance)
+            DispatchQueue.main.async { [self] in
+                onDismissUpdate?(min(max(dismissProgress, 0), 1.5))
+            }
+        }
     }
+
+    private func handleHorizontal(dx: Float, xs: [Float]) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard abs(dx) > discreteThreshold, now - lastDiscreteTrigger > discreteCooldown else { return }
+        let allSameDir = (0..<3).allSatisfy {
+            let d = xs[$0] - startX[$0]
+            return abs(d) >= perFingerMin && (d > 0) == (dx > 0)
+        }
+        guard allSameDir else { return }
+        lastDiscreteTrigger = now
+        tracking = false
+        dominantAxis = nil
+        DispatchQueue.main.async { [self] in dx > 0 ? onSwipeRight() : onSwipeLeft() }
+    }
+
+    private func endGesture() {
+        gestureActive = false
+        DispatchQueue.main.async { [self] in
+            onVerticalEnd?(0)
+        }
+    }
+
+    deinit { if let h = handle { dlclose(h) } }
 }
 
-// Plain C callback bridged to the shared GestureMonitor instance
-private func mtCallback(
-    _ device: Int32,
-    _ data: UnsafeMutableRawPointer,
-    _ nFingers: Int32,
-    _ timestamp: Double,
-    _ frame: Int32
-) -> Int32 {
-    sharedMonitor?.processTouches(data, count: nFingers)
+private func mtCb(_ d: Int32, _ data: UnsafeMutableRawPointer, _ n: Int32, _ t: Double, _ f: Int32) -> Int32 {
+    sharedMonitor?.processTouches(data, count: n)
     return 0
 }
