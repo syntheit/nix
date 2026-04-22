@@ -19,7 +19,7 @@ let
   # Credentials are stored in browser local storage only.
   headscale-ui = pkgs.fetchzip {
     url = "https://github.com/gurucomputing/headscale-ui/releases/download/2025.01.20/headscale-ui.zip";
-    hash = "sha256-Kr1Zvzyvo6SM/gDJ4M65XdW1LkHDxWQoC9FRbN7yiMU=";
+    hash = "sha256-eMT3/UsTYkiJFzoWlNPOM6hgbyGoBbPi3cs/u71KJ0c=";
     stripRoot = false;
   };
 in
