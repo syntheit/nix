@@ -125,6 +125,7 @@ in
     users.users.foyer = {
       isSystemUser = true;
       group = "foyer";
+      extraGroups = lib.optional config.virtualisation.docker.enable "docker";
       home = cfg.dataDir;
     };
     users.groups.foyer = { };

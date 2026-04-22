@@ -9,77 +9,80 @@ struct BluetoothView: View {
             // Header
             HStack {
                 Image(systemName: "antenna.radiowaves.left.and.right")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(Accent.blue)
 
                 Text("Bluetooth")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.primary)
 
                 Spacer()
 
                 Button(action: { manager.togglePower() }) {
                     Text(manager.isPowered ? "ON" : "OFF")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundColor(manager.isPowered ? Accent.green : .secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(manager.isPowered ? Accent.green : .secondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
                         .background(
-                            RoundedRectangle(cornerRadius: 5)
+                            RoundedRectangle(cornerRadius: 6)
                                 .fill(manager.isPowered ? Accent.green.opacity(0.15) : Color.white.opacity(0.1))
                         )
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 28)
+            .padding(.top, 24)
+            .padding(.bottom, 16)
+
+            Rectangle()
+                .fill(.white.opacity(0.08))
+                .frame(height: 1)
+                .padding(.horizontal, 20)
 
             if manager.isPowered {
                 if manager.devices.isEmpty {
-                    VStack(spacing: 8) {
+                    Spacer()
+                    VStack(spacing: 12) {
                         Image(systemName: "bluetooth")
-                            .font(.system(size: 28))
-                            .foregroundColor(.secondary)
+                            .font(.system(size: 36))
+                            .foregroundStyle(.secondary)
                         Text("No paired devices")
-                            .font(.system(size: 13))
-                            .foregroundColor(.secondary)
+                            .font(.system(size: 15))
+                            .foregroundStyle(.secondary)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 30)
+                    Spacer()
                 } else {
-                    deviceList
+                    ScrollView {
+                        VStack(spacing: 4) {
+                            ForEach(Array(manager.devices.enumerated()), id: \.element.id) { index, device in
+                                deviceRow(device, isSelected: index == selectedIndex)
+                                    .onTapGesture {
+                                        selectedIndex = index
+                                        toggleConnection(device)
+                                    }
+                            }
+                        }
+                        .padding(.top, 12)
+                        .padding(.horizontal, 8)
+                    }
                 }
             } else {
-                VStack(spacing: 8) {
+                Spacer()
+                VStack(spacing: 12) {
                     Image(systemName: "bluetooth")
-                        .font(.system(size: 28))
-                        .foregroundColor(Accent.subtext)
+                        .font(.system(size: 36))
+                        .foregroundStyle(Accent.subtext)
                     Text("Bluetooth is off")
-                        .font(.system(size: 13))
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 15))
+                        .foregroundStyle(.secondary)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 30)
+                Spacer()
             }
-
-            Spacer(minLength: 8)
         }
-        .padding(.bottom, 8)
+        .frame(width: 560, height: 440)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
         .onAppear { manager.refresh() }
-    }
-
-    private var deviceList: some View {
-        VStack(spacing: 2) {
-            ForEach(Array(manager.devices.enumerated()), id: \.element.id) { index, device in
-                deviceRow(device, isSelected: index == selectedIndex)
-                    .onTapGesture {
-                        selectedIndex = index
-                        toggleConnection(device)
-                    }
-            }
-        }
         .onKeyPress(.upArrow) {
             selectedIndex = max(0, selectedIndex - 1)
             return .handled
@@ -97,32 +100,32 @@ struct BluetoothView: View {
     }
 
     private func deviceRow(_ device: BluetoothManager.Device, isSelected: Bool) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 16) {
             Image(systemName: device.icon)
-                .font(.system(size: 16))
-                .foregroundColor(device.isConnected ? Accent.blue : .secondary)
-                .frame(width: 24)
+                .font(.system(size: 22))
+                .foregroundStyle(device.isConnected ? Accent.blue : .secondary)
+                .frame(width: 32)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(device.name)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.primary)
 
                 Text(device.isConnected ? "Connected" : "Not Connected")
-                    .font(.system(size: 11))
-                    .foregroundColor(device.isConnected ? Accent.green : .secondary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(device.isConnected ? Accent.green : .secondary)
             }
 
             Spacer()
 
             if let battery = device.batteryLevel {
-                HStack(spacing: 3) {
+                HStack(spacing: 5) {
                     Image(systemName: batteryIcon(battery))
-                        .font(.system(size: 12))
-                        .foregroundColor(batteryColor(battery))
+                        .font(.system(size: 14))
+                        .foregroundStyle(batteryColor(battery))
                     Text("\(battery)%")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 13, design: .monospaced))
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -130,18 +133,26 @@ struct BluetoothView: View {
                 ProgressView()
                     .controlSize(.small)
             } else {
-                Image(systemName: device.isConnected ? "xmark.circle" : "link.circle")
-                    .font(.system(size: 16))
-                    .foregroundColor(device.isConnected ? Accent.red.opacity(0.7) : Accent.blue.opacity(0.7))
+                Button(action: { toggleConnection(device) }) {
+                    Text(device.isConnected ? "Disconnect" : "Connect")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(device.isConnected ? Accent.red : Accent.blue)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(device.isConnected ? Accent.red.opacity(0.1) : Accent.blue.opacity(0.1))
+                        )
+                }
+                .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: 10)
                 .fill(isSelected ? Color.white.opacity(0.08) : Color.clear)
         )
-        .padding(.horizontal, 4)
     }
 
     private func toggleConnection(_ device: BluetoothManager.Device) {

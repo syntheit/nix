@@ -71,6 +71,7 @@
     nodejs
     pnpm
     ripgrep
+    foyer
     mosh
     spotify-player
   ];

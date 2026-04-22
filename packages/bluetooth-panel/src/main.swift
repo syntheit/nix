@@ -14,7 +14,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
-        panel = SystemPanel(size: NSSize(width: 340, height: 420))
+        panel = SystemPanel(size: NSSize(width: 560, height: 440))
         rebuildContent()
 
         ipcServer = IPCServer(path: Self.socketPath)

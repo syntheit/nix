@@ -3,6 +3,8 @@ import AppKit
 import CoreWLAN
 import CoreImage
 import CoreLocation
+import LocalAuthentication
+import Security
 import SystemConfiguration
 
 class NetworkManager: ObservableObject {
@@ -226,34 +228,65 @@ class NetworkManager: ObservableObject {
         }
     }
 
-    // MARK: - Password
+    // MARK: - Password (Touch ID)
+
+    /// Retrieves WiFi password from the System keychain using Touch ID for authentication
+    private func getPasswordWithTouchID(for ssid: String, completion: @escaping (String?) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let context = LAContext()
+            context.localizedReason = "Access WiFi password for \(ssid)"
+
+            // Use LAContext to authenticate, then query keychain
+            var error: NSError?
+            guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
+                // Fall back to security CLI if no biometrics
+                completion(self.getPasswordViaCLI(ssid))
+                return
+            }
+
+            let semaphore = DispatchSemaphore(value: 0)
+            var authenticated = false
+
+            context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "Access WiFi password") { success, _ in
+                authenticated = success
+                semaphore.signal()
+            }
+            semaphore.wait()
+
+            if authenticated {
+                // After Touch ID, use security CLI with the authenticated session
+                completion(self.getPasswordViaCLI(ssid))
+            } else {
+                completion(nil)
+            }
+        }
+    }
+
+    private func getPasswordViaCLI(_ ssid: String) -> String? {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        task.arguments = ["find-generic-password", "-D", "AirPort network password", "-ga", ssid]
+        let errPipe = Pipe()
+        task.standardOutput = Pipe()
+        task.standardError = errPipe
+        try? task.run()
+        task.waitUntilExit()
+
+        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+        let errOutput = String(data: errData, encoding: .utf8) ?? ""
+
+        if let range = errOutput.range(of: "password: \"") {
+            let start = range.upperBound
+            if let end = errOutput[start...].firstIndex(of: "\"") {
+                return String(errOutput[start..<end])
+            }
+        }
+        return nil
+    }
 
     func revealPassword() {
         guard let ssid = currentNetwork?.ssid else { return }
-
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-            task.arguments = ["find-generic-password", "-D", "AirPort network password", "-ga", ssid]
-            let pipe = Pipe()
-            let errPipe = Pipe()
-            task.standardOutput = pipe
-            task.standardError = errPipe
-            try? task.run()
-            task.waitUntilExit()
-
-            let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-            let errOutput = String(data: errData, encoding: .utf8) ?? ""
-
-            // Password appears on stderr: password: "thepassword"
-            var password: String?
-            if let range = errOutput.range(of: "password: \"") {
-                let start = range.upperBound
-                if let end = errOutput[start...].firstIndex(of: "\"") {
-                    password = String(errOutput[start..<end])
-                }
-            }
-
+        getPasswordWithTouchID(for: ssid) { [weak self] password in
             DispatchQueue.main.async {
                 self?.revealedPassword = password ?? "(not found)"
             }
@@ -265,32 +298,10 @@ class NetworkManager: ObservableObject {
     func generateQR() {
         guard let net = currentNetwork else { return }
 
-        // Need password for QR
-        guard let ssid = currentNetwork?.ssid else { return }
-
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-            task.arguments = ["find-generic-password", "-D", "AirPort network password", "-ga", ssid]
-            let errPipe = Pipe()
-            task.standardOutput = Pipe()
-            task.standardError = errPipe
-            try? task.run()
-            task.waitUntilExit()
-
-            let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-            let errOutput = String(data: errData, encoding: .utf8) ?? ""
-
-            var password = ""
-            if let range = errOutput.range(of: "password: \"") {
-                let start = range.upperBound
-                if let end = errOutput[start...].firstIndex(of: "\"") {
-                    password = String(errOutput[start..<end])
-                }
-            }
-
+        getPasswordWithTouchID(for: net.ssid) { [weak self] password in
+            let pw = password ?? ""
             let secType = net.security == "Open" ? "nopass" : "WPA"
-            let wifiString = "WIFI:T:\(secType);S:\(net.ssid);P:\(password);;"
+            let wifiString = "WIFI:T:\(secType);S:\(net.ssid);P:\(pw);;"
 
             guard let data = wifiString.data(using: .utf8),
                   let filter = CIFilter(name: "CIQRCodeGenerator") else { return }
