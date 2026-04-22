@@ -169,6 +169,7 @@ with open('$DB', 'w') as f: json.dump(data, f)
           update_freq=0 \
           icon="" \
           script="$CONFIG_DIR/plugins/volume.sh" \
+          click_script="volume-panel show" \
         --subscribe volume volume_change
 
       sketchybar --add item bluetooth right \
@@ -178,7 +179,7 @@ with open('$DB', 'w') as f: json.dump(data, f)
           label.drawing=off \
           icon="" \
           script="$CONFIG_DIR/plugins/bluetooth.sh" \
-          click_script="open 'x-apple.systempreferences:com.apple.BluetoothSettings'"
+          click_script="bluetooth-panel toggle"
 
       sketchybar --add item network right \
         --set network \
@@ -187,7 +188,7 @@ with open('$DB', 'w') as f: json.dump(data, f)
           label.drawing=off \
           icon="󰤨" \
           script="$CONFIG_DIR/plugins/network.sh" \
-          click_script="open 'x-apple.systempreferences:com.apple.wifi-settings-extension'"
+          click_script="wifi-panel toggle"
 
       sketchybar --add event privacy_change
       sketchybar --add event dnd_change
@@ -430,7 +431,7 @@ with open('$DB', 'w') as f: json.dump(data, f)
       KeepAlive = true;
       RunAtLoad = true;
       EnvironmentVariables = {
-        PATH = "${pkgs.sketchybar}/bin:${pkgs.yabai}/bin:${pkgs.jq}/bin:${pkgs.systemstats}/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+        PATH = "${pkgs.sketchybar}/bin:${pkgs.yabai}/bin:${pkgs.jq}/bin:${pkgs.systemstats}/bin:${pkgs.volume-panel}/bin:${pkgs.bluetooth-panel}/bin:${pkgs.wifi-panel}/bin:/usr/bin:/bin:/usr/sbin:/sbin";
         CONFIG_DIR = "${config.home.homeDirectory}/.config/sketchybar";
       };
     };

@@ -1,8 +1,13 @@
 # Function row overrides (F3/F4 converted to standard keycodes via Karabiner fn_function_keys)
 f3 : $HOME/.local/bin/toggle-dashboard
-f4 : if [ "$(osascript -e 'tell application "System Events" to count of windows of process "Raycast"')" -gt 0 ] 2>/dev/null; then osascript -e 'tell application "System Events" to key code 53'; else open -a Raycast; fi
+f4 : yabai -m window --toggle spotify
 f5 : $HOME/.local/bin/toggle-privacy
 f6 : $HOME/.local/bin/toggle-dnd
+
+# Volume control (intercepts media keys, suppresses macOS HUD)
+sound_up : volume-panel up
+sound_down : volume-panel down
+mute : volume-panel mute
 
 # Application launchers
 fn - return : open -na kitty
@@ -10,8 +15,12 @@ fn - t : open -na kitty
 fn - r : open -a Raycast
 fn - c : open -g "raycast://extensions/raycast/clipboard-history/clipboard-history"
 # cmd+space: handled natively by Raycast (set in Raycast Settings > General > Hotkey)
-fn - b : open -a "Zen Browser"
+fn - w : open -a "Zen Browser"
 fn - e : open -na kitty --args yazi
+
+# System panels
+fn - b : bluetooth-panel toggle
+fn - n : wifi-panel toggle
 
 # Window management
 fn - q : yabai -m window --close
