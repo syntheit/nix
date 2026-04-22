@@ -170,16 +170,14 @@
   environment.etc."ssh/sshd_tailscale_config".text = ''
     Port 22
     ListenAddress 100.78.114.100
-    AuthorizedKeysFile /etc/ssh/authorized_keys.d/%u
+    AuthorizedKeysCommand /bin/cat /etc/ssh/nix_authorized_keys.d/%u
+    AuthorizedKeysCommandUser _sshd
     PasswordAuthentication no
     KbdInteractiveAuthentication no
     UsePAM no
     Subsystem sftp /usr/libexec/sftp-server
   '';
 
-  environment.etc."ssh/authorized_keys.d/${vars.user.name}".text = ''
-    ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdRcH2UWe31VdU62j3Ksbb6LDyS1APNW1BQMM8mvsej daniel@matv.io
-  '';
 
   launchd.daemons.sshd-tailscale = {
     serviceConfig = {
@@ -263,6 +261,9 @@
     name = vars.user.name;
     home = "/Users/${vars.user.name}";
     shell = pkgs.zsh;
+    openssh.authorizedKeys.keys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdRcH2UWe31VdU62j3Ksbb6LDyS1APNW1BQMM8mvsej daniel@matv.io"
+    ];
   };
 
   system.activationScripts.postActivation.text = ''

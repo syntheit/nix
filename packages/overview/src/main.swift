@@ -46,6 +46,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var cachedWindows: [WindowInfo]?
     private var cachedSpaces: [SpaceInfo]?
     private var isPreparing = false
+    private var pendingProgress: CGFloat? = nil
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let gm = GestureMonitor()
@@ -66,6 +67,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     self.cachedSpaces = spaces
                     self.cachedWindows = windows.isEmpty ? nil : windows
                     self.isPreparing = false
+                    // If gesture was waiting for us, create overlay now
+                    if let p = self.pendingProgress, !self.isVisible {
+                        self.pendingProgress = nil
+                        self.createOverlay()
+                        self.gestureOffset = 0
+                        self.state.progress = max(0, min(p, 1.2))
+                    }
                 }
             }
         }
@@ -73,19 +81,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         gm.onThreeFingerVertical = { [weak self] (delta: CGFloat) in
             guard let self else { return }
             if !isVisible && delta > 0.01 {
-                // Create overlay with metadata (instant), screenshots from cache or async
-                createOverlay()
-                gestureOffset = delta
-                gestureBaseProgress = 0
+                if cachedWindows != nil {
+                    createOverlay()
+                    gestureOffset = delta
+                    gestureBaseProgress = 0
+                } else if pendingProgress == nil {
+                    pendingProgress = delta
+                }
             }
             if isVisible {
                 let p = gestureBaseProgress + delta - gestureOffset
                 state.progress = max(0, min(p, 1.2))
+            } else if pendingProgress != nil {
+                pendingProgress = delta
             }
         }
 
         gm.onThreeFingerEnd = { [weak self] in
             guard let self else { return }
+            pendingProgress = nil
             cachedWindows = nil; cachedSpaces = nil
             guard isVisible else { return }
             if state.progress > 0.35 {
@@ -192,6 +206,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         isVisible = true
+        WindowManager.run(["sketchybar", "--bar", "hidden=true"])
 
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             self?.handleKey(event)
@@ -215,13 +230,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func tearDown() {
         isVisible = false
         gestureBaseProgress = 0
+        pendingProgress = nil
         if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil }
         if let m = globalKeyMonitor { NSEvent.removeMonitor(m); globalKeyMonitor = nil }
         overlayWindow?.orderOut(nil)
         overlayWindow = nil
         state.windows = []; state.spaces = []
         state.progress = 0; state.appeared = false
-        // wallpaper stays cached — refreshed on next prepare
+        WindowManager.run(["sketchybar", "--bar", "hidden=false"])
     }
 
     // MARK: - Actions

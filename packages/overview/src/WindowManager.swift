@@ -217,7 +217,7 @@ enum WindowManager {
     }
 
     @discardableResult
-    private static func run(_ args: [String]) -> Int32 {
+    static func run(_ args: [String]) -> Int32 {
         let t = Process()
         t.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         t.arguments = args
