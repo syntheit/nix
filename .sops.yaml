@@ -1,5 +1,6 @@
 keys:
   - &harbor age1c6c5ez6luwjjlhvvxtuwfc8ju6nw6jt6czrnw6t35ggz8nmzy3cs8zt5hs
+  - &raven age1yhx9yq5xqhs4n7jnejq2mu5nmn40ts6pwjrm60tdumm3w002kanq3vrfxs
   - &daniel age179l0hwpm4h40raspjng5hscgfnl4ycng8sragp9kfsyu8ej849mqn4797w
 
 creation_rules:
@@ -7,4 +8,9 @@ creation_rules:
     key_groups:
       - age:
           - *harbor
+          - *daniel
+  - path_regex: secrets/raven\.yaml$
+    key_groups:
+      - age:
+          - *raven
           - *daniel

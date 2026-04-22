@@ -5,6 +5,7 @@
 let
   isLinux = stdenv.hostPlatform.isLinux;
   isDarwin = stdenv.hostPlatform.isDarwin;
+  isAarch64 = stdenv.hostPlatform.isAarch64;
 in
 stdenv.mkDerivation {
   pname = "foyer";
@@ -13,14 +14,16 @@ stdenv.mkDerivation {
   dontUnpack = true;
   installPhase = ''
     mkdir -p $out/bin
-    ${if isLinux then ''
+    ${if isLinux && isAarch64 then ''
+      cp $src/foyer-bin-arm64 $out/bin/foyer
+      chmod +x $out/bin/foyer
+    '' else if isLinux then ''
       cp $src/foyer-bin $out/bin/foyer
       chmod +x $out/bin/foyer
-    '' else ""}
-    ${if isDarwin then ''
+    '' else if isDarwin then ''
       cp $src/foyer-api-darwin $out/bin/foyer-api
       chmod +x $out/bin/foyer-api
     '' else ""}
   '';
-  meta.platforms = [ "x86_64-linux" "aarch64-darwin" ];
+  meta.platforms = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
 }

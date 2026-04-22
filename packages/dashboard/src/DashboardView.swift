@@ -35,7 +35,8 @@ struct DashboardView: View {
     // Slow data loaded from cache synchronously (instant if cached, empty if not)
     private static let allServerNames = ["harbor", "raven"]
     private static let foyerServers: [AsyncData.FoyerConfig] = [
-        AsyncData.FoyerConfig(name: "harbor", url: "https://harbor.matv.io")
+        AsyncData.FoyerConfig(name: "harbor", url: "https://harbor.matv.io"),
+        AsyncData.FoyerConfig(name: "raven", url: "https://raven.matv.io"),
     ]
     // Servers without a Foyer config get SSH
     private static let sshServers: [String] = allServerNames.filter { name in
