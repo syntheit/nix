@@ -58,44 +58,41 @@ enum WindowManager {
             }
     }
 
-    /// Fast capture: yabai query + per-window SCK for current-space windows (preserves alpha/blur).
+    /// Fast capture: display composite + crop. Captures windows WITH their blur/vibrancy intact.
     /// MUST be called from a background thread (uses semaphore for SCK).
-    static func captureWindowsFast() -> [WindowInfo] {
+    static func captureFromComposite() -> [WindowInfo] {
         guard let yabai: [YabaiWindow] = queryYabai(["--windows"]) else { return [] }
         let valid = yabai.filter { !$0.isHidden && !$0.isMinimized && $0.app != "overview" && $0.app != "sketchybar" && $0.scratchpad.isEmpty }
         guard !valid.isEmpty else { return [] }
 
-        // Per-window capture for visible windows (preserves transparency/blur)
-        var captures: [Int: CGImage] = [:]
+        // Single display composite capture (fast ~100ms)
+        var composite: CGImage?
         let sem = DispatchSemaphore(value: 0)
         Task.detached {
-            if let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false) {
-                let scMap = Dictionary(uniqueKeysWithValues: content.windows.map { ($0.windowID, $0) })
-                await withTaskGroup(of: (Int, CGImage?).self) { group in
-                    for win in valid where win.isVisible {
-                        guard let scw = scMap[CGWindowID(win.id)] else { continue }
-                        group.addTask {
-                            let f = SCContentFilter(desktopIndependentWindow: scw)
-                            let c = SCStreamConfiguration()
-                            c.width = Int(win.frame.w) * 2; c.height = Int(win.frame.h) * 2; c.showsCursor = false
-                            let img = try? await SCScreenshotManager.captureImage(contentFilter: f, configuration: c)
-                            return (win.id, img)
-                        }
-                    }
-                    for await (id, img) in group {
-                        if let img { captures[id] = img }
-                    }
-                }
+            if let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true),
+               let display = content.displays.first {
+                let f = SCContentFilter(display: display, excludingWindows: [])
+                let c = SCStreamConfiguration()
+                c.width = display.width * 2; c.height = display.height * 2; c.showsCursor = false
+                composite = try? await SCScreenshotManager.captureImage(contentFilter: f, configuration: c)
             }
             sem.signal()
         }
         sem.wait()
 
+        let scale: CGFloat
+        if let c = composite, let s = NSScreen.main { scale = CGFloat(c.width) / s.frame.width }
+        else { scale = 2.0 }
+
         return valid.map { win in
             let frame = CGRect(x: win.frame.x, y: win.frame.y, width: win.frame.w, height: win.frame.h)
             var img: NSImage? = nil
-            if let cg = captures[win.id] {
-                img = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+            if win.isVisible, let c = composite {
+                let crop = CGRect(x: frame.minX * scale, y: frame.minY * scale,
+                                  width: frame.width * scale, height: frame.height * scale)
+                if let cropped = c.cropping(to: crop) {
+                    img = NSImage(cgImage: cropped, size: NSSize(width: cropped.width, height: cropped.height))
+                }
             }
             let icon: NSImage
             if let r = NSRunningApplication(processIdentifier: pid_t(win.pid)) {
