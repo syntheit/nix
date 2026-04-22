@@ -17,11 +17,18 @@ let
   # Static SPA — no server process, just files served by Caddy.
   # User enters Headscale URL + API key in the browser on first visit.
   # Credentials are stored in browser local storage only.
-  headscale-ui = pkgs.fetchzip {
+  headscale-ui-src = pkgs.fetchzip {
     url = "https://github.com/gurucomputing/headscale-ui/releases/download/2025.01.20/headscale-ui.zip";
     hash = "sha256-eMT3/UsTYkiJFzoWlNPOM6hgbyGoBbPi3cs/u71KJ0c=";
     stripRoot = false;
   };
+  # The SPA hardcodes all asset paths to /web/... so the files must
+  # live under a web/ subdirectory. This lets Caddy serve them at
+  # /web/* without any prefix stripping.
+  headscale-ui = pkgs.runCommand "headscale-ui" {} ''
+    mkdir -p $out/web
+    cp -r ${headscale-ui-src}/* $out/web/
+  '';
 in
 {
   # ── Conduit is both Headscale server AND a client on its own network ──
@@ -95,10 +102,12 @@ in
   # Headscale-UI served at /web — same origin as API, no CORS needed.
   services.caddy.virtualHosts."headscale.matv.io" = {
     extraConfig = ''
-      handle_path /web* {
+      handle /web/* {
         root * ${headscale-ui}
         file_server
+        try_files {path} /web/index.html
       }
+      redir /web /web/ permanent
       handle {
         reverse_proxy localhost:8085
       }
