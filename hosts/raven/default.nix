@@ -33,9 +33,13 @@
       "Status" = { url = "https://status.matv.io"; };
     };
     # Read CPU temperature from Android host via SSH
-    temperatureCommand = "ssh -p 8022 -i /home/droid/.ssh/mainkey -o BatchMode=yes -o ConnectTimeout=3 -o StrictHostKeyChecking=no $(ip route | awk '/default/ {print $3}') 'for z in /sys/class/thermal/thermal_zone*/; do t=$(cat \"$z/type\" 2>/dev/null); case \"$t\" in BIG|MID|LITTLE) echo $(( $(cat \"$z/temp\") / 1000 ));; esac; done' | sort -rn | head -1";
-    extraReadPaths = [ "/home/droid/.ssh" ];
+    temperatureCommand = "ssh -p 8022 -i /var/lib/foyer/android-ssh-key -o BatchMode=yes -o ConnectTimeout=3 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $(ip route | awk '/default/ {print $3}') 'for z in /sys/class/thermal/thermal_zone*/; do t=$(cat \"$z/type\" 2>/dev/null); case \"$t\" in BIG|MID|LITTLE) echo $(( $(cat \"$z/temp\") / 1000 ));; esac; done' | sort -rn | head -1";
   };
+
+  # Copy SSH key so the foyer user can read it (SSH rejects keys not owned by the caller)
+  systemd.services.foyer.serviceConfig.ExecStartPre = [
+    "+${pkgs.coreutils}/bin/install -m 0600 -o foyer -g foyer /home/droid/.ssh/mainkey /var/lib/foyer/android-ssh-key"
+  ];
 
   # Override deprecated option set by nixos-avf module
   services.resolved.settings.Resolve.DNSSEC = lib.mkForce "false";

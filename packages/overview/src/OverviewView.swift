@@ -46,6 +46,8 @@ struct OverviewView: View {
                     .padding(32)
             }
         }
+        // Fade overlay in/out with progress to prevent flash on show/dismiss
+        .opacity(min(Double(state.progress) * 4, 1.0))
         // Tap empty space to dismiss (only when fully open)
         .onTapGesture {
             if state.progress >= 1.0 { state.onDismiss?() }

@@ -151,6 +151,7 @@ enum AsyncData {
         // Structured fields (populated by Foyer API, nil for SSH-only servers)
         var cpuPercent: Int?
         var ramPercent: Int?
+        var memPressure: Int?  // compressed memory as % of total RAM
         var cpuTemp: Int?
         var containers: Int?
     }
@@ -278,10 +279,11 @@ enum AsyncData {
     // MARK: - Calendar (today's agenda via EventKit — handles recurring events)
 
     struct CalendarEvent: Identifiable {
-        var id: String { "\(title)\(time)" }
+        var id: String { "\(title)\(Int(startDate.timeIntervalSince1970))" }
         var title: String
-        var time: String     // "14:30"
+        var time: String     // "14:30" or "" for all-day
         var startDate: Date
+        var isAllDay: Bool
     }
 
     private static let calendarCacheTTL: TimeInterval = 300 // 5 minutes
@@ -322,11 +324,16 @@ enum AsyncData {
             .prefix(5)
 
         let events = ekEvents.map { e in
-            CalendarEvent(title: e.title ?? "", time: timeFmt.string(from: e.startDate), startDate: e.startDate)
+            CalendarEvent(
+                title: e.title ?? "",
+                time: e.isAllDay ? "" : timeFmt.string(from: e.startDate),
+                startDate: e.startDate,
+                isAllDay: e.isAllDay
+            )
         }
 
         // Cache
-        let cacheStr = events.map { "\($0.title)|\(timeFmt.string(from: $0.startDate))|\(Int($0.startDate.timeIntervalSince1970))" }.joined(separator: "\n")
+        let cacheStr = events.map { "\($0.title)|\($0.time)|\(Int($0.startDate.timeIntervalSince1970))|\($0.isAllDay ? "1" : "0")" }.joined(separator: "\n")
         ensureCacheDir()
         writeCache("calendar", cacheStr)
         return events
@@ -337,7 +344,8 @@ enum AsyncData {
             let parts = line.split(separator: "|", omittingEmptySubsequences: false)
             guard parts.count >= 3, let epoch = Double(parts[2]) else { return nil }
             let date = Date(timeIntervalSince1970: epoch)
-            return CalendarEvent(title: String(parts[0]), time: String(parts[1]), startDate: date)
+            let allDay = parts.count >= 4 && parts[3] == "1"
+            return CalendarEvent(title: String(parts[0]), time: String(parts[1]), startDate: date, isAllDay: allDay)
         }
     }
 
