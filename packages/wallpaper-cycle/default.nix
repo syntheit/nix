@@ -13,7 +13,9 @@ stdenv.mkDerivation {
     swiftc -O \
       -sdk $SDKROOT \
       -framework AppKit \
+      -framework AVFoundation \
       -framework CoreGraphics \
+      -framework CoreMedia \
       -framework ImageIO \
       -framework UniformTypeIdentifiers \
       -o wallpaper-cycle \

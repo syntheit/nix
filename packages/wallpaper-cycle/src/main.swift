@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
@@ -37,7 +38,7 @@ func screenPixels() -> (w: Int, h: Int, scale: CGFloat) {
 
 // MARK: - Find wallpapers
 
-func findWallpapers() -> [URL] {
+func findStaticWallpapers() -> [URL] {
     let base = URL(fileURLWithPath: "/System/Library/Desktop Pictures")
     guard let en = fm.enumerator(at: base, includingPropertiesForKeys: [.fileSizeKey])
     else { return [] }
@@ -46,6 +47,49 @@ func findWallpapers() -> [URL] {
         ["heic", "jpg", "jpeg", "png"].contains(url.pathExtension.lowercased()) &&
         ((try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0) > 500_000
     }
+}
+
+func findAerialWallpapers() -> [URL] {
+    let videosDir = home
+        .appendingPathComponent("Library/Application Support/com.apple.wallpaper/aerials/videos")
+    guard let contents = try? fm.contentsOfDirectory(
+        at: videosDir, includingPropertiesForKeys: nil)
+    else { return [] }
+    return contents.filter { $0.pathExtension.lowercased() == "mov" }
+}
+
+func findWallpapers() -> [URL] {
+    findStaticWallpapers() + findAerialWallpapers()
+}
+
+// MARK: - Extract frame from video
+
+func extractFrame(_ src: URL) -> CGImage? {
+    let asset = AVURLAsset(url: src)
+    let gen = AVAssetImageGenerator(asset: asset)
+    gen.appliesPreferredTrackTransform = true
+    gen.requestedTimeToleranceBefore = .zero
+    gen.requestedTimeToleranceAfter = CMTime(seconds: 5, preferredTimescale: 600)
+    // Grab a frame ~30% into the video for a representative shot
+    var duration = CMTime.zero
+    let semaphore = DispatchSemaphore(value: 0)
+    Task {
+        duration = (try? await asset.load(.duration)) ?? CMTime.zero
+        semaphore.signal()
+    }
+    semaphore.wait()
+    guard duration.seconds > 0 else { return nil }
+    let target = CMTime(
+        seconds: duration.seconds * 0.3,
+        preferredTimescale: duration.timescale)
+    var result: CGImage?
+    let sem2 = DispatchSemaphore(value: 0)
+    gen.generateCGImagesAsynchronously(forTimes: [NSValue(time: target)]) { _, image, _, _, _ in
+        result = image
+        sem2.signal()
+    }
+    sem2.wait()
+    return result
 }
 
 // MARK: - Process wallpaper
@@ -77,8 +121,15 @@ func process(_ src: URL) -> URL? {
     let dest = processedDir.appendingPathComponent("\(px.w)x\(px.h)_\(name).png")
     if fm.fileExists(atPath: dest.path) { return dest }
 
-    guard let isrc = CGImageSourceCreateWithURL(src as CFURL, nil),
-          let img = CGImageSourceCreateImageAtIndex(isrc, 0, nil),
+    let img: CGImage?
+    if src.pathExtension.lowercased() == "mov" {
+        img = extractFrame(src)
+    } else {
+        guard let isrc = CGImageSourceCreateWithURL(src as CFURL, nil) else { return nil }
+        img = CGImageSourceCreateImageAtIndex(isrc, 0, nil)
+    }
+
+    guard let img,
           let ctx = CGContext(
               data: nil, width: px.w, height: px.h,
               bitsPerComponent: 8, bytesPerRow: 0,

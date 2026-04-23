@@ -50,9 +50,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var gestureOffset: CGFloat = 0
     private var cachedWindows: [WindowInfo]?
     private var cachedSpaces: [SpaceInfo]?
-    private var pendingProgress: CGFloat? = nil
 
-    private enum Phase { case hidden, preparing, visible, dismissing }
+    private enum Phase { case hidden, visible, dismissing }
     private var phase: Phase = .hidden
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -61,7 +60,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Create persistent overlay window (hidden until needed)
         let window = NSWindow(contentRect: screen.frame, styleMask: [.borderless],
                               backing: .buffered, defer: false)
-        window.level = .floating
+        window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = false
@@ -81,25 +80,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let gm = GestureMonitor()
 
-        // Pre-cache screenshots on first touch (before swipe direction is known)
+        // Pre-cache on first touch: metadata synchronously (fast), screenshots async
         gm.onPrepare = { [weak self] in
             guard let self, phase == .hidden else { return }
-            phase = .preparing
             if let wp = WindowManager.loadWallpaper() { state.wallpaper = wp }
+            // Query metadata synchronously (~10ms) so overlay can show on next gesture frame
+            let spaces = WindowManager.querySpaces()
+            let windows = WindowManager.queryWindowInfo()
+            cachedSpaces = spaces
+            cachedWindows = windows.isEmpty ? nil : windows
+            // Start async composite capture — updates images when ready
             Task {
-                let spaces = WindowManager.querySpaces()
-                let windows = await WindowManager.captureFromComposite()
+                let captured = await WindowManager.captureFromComposite()
                 await MainActor.run {
-                    guard self.phase == .preparing else { return }
-                    self.cachedSpaces = spaces
-                    self.cachedWindows = windows.isEmpty ? nil : windows
-                    self.phase = .hidden
-                    // If gesture was waiting for us, show overlay now
-                    if let p = self.pendingProgress {
-                        self.pendingProgress = nil
-                        self.showOverlay()
-                        self.gestureOffset = p
-                        self.gestureBaseProgress = 0
+                    guard !captured.isEmpty else { return }
+                    if self.phase == .visible {
+                        // Overlay already showing — fade in screenshots
+                        withAnimation(.easeIn(duration: 0.15)) {
+                            for win in captured where win.image != nil {
+                                if let idx = self.state.windows.firstIndex(where: { $0.id == win.id }) {
+                                    self.state.windows[idx].image = win.image
+                                }
+                            }
+                        }
+                    } else if self.cachedWindows != nil {
+                        // Not yet shown — upgrade cache with screenshots
+                        self.cachedWindows = captured
                     }
                 }
             }
@@ -107,31 +113,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         gm.onThreeFingerVertical = { [weak self] (delta: CGFloat) in
             guard let self else { return }
-            if phase == .hidden && delta > 0.01 {
-                if cachedWindows != nil {
-                    showOverlay()
-                    gestureOffset = delta
-                    gestureBaseProgress = 0
-                } else if pendingProgress == nil {
-                    pendingProgress = delta
-                }
+            if phase == .hidden && delta > 0.01 && cachedWindows != nil {
+                showOverlay()
+                gestureOffset = delta
+                gestureBaseProgress = 0
             }
             if phase == .visible {
                 let p = gestureBaseProgress + delta - gestureOffset
                 state.progress = max(0, min(p, 1.0))
-            } else if phase == .preparing {
-                pendingProgress = delta
             }
         }
 
         gm.onThreeFingerEnd = { [weak self] in
             guard let self else { return }
-            pendingProgress = nil
             cachedWindows = nil; cachedSpaces = nil
-            guard phase == .visible else {
-                phase = .hidden
-                return
-            }
+            guard phase == .visible else { return }
             if state.progress > 0.35 {
                 withAnimation(.easeOut(duration: 0.2)) { self.state.progress = 1.0 }
                 gestureBaseProgress = 1.0
@@ -177,7 +173,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Show overlay with current data, reusing the persistent window
 
     private func showOverlay() {
-        guard phase == .hidden || phase == .preparing else { return }
+        guard phase == .hidden else { return }
 
         let allWindows = cachedWindows ?? WindowManager.queryWindowInfo()
         let spaces = cachedSpaces ?? WindowManager.querySpaces()
@@ -196,6 +192,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         state.progress = 0
         state.updateSpaces(spaces)
 
+        WindowManager.run(["sketchybar", "--bar", "hidden=true"])
         overlayWindow.alphaValue = 0
         overlayWindow.makeKeyAndOrderFront(nil)
         NSApp.activate()
@@ -206,7 +203,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
             self.overlayWindow.animator().alphaValue = 1.0
         }
-        WindowManager.run(["sketchybar", "--bar", "hidden=true"])
 
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             self?.handleKey(event)
@@ -255,7 +251,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func tearDown() {
         phase = .hidden
         gestureBaseProgress = 0
-        pendingProgress = nil
         if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil }
         if let m = globalKeyMonitor { NSEvent.removeMonitor(m); globalKeyMonitor = nil }
         overlayWindow.alphaValue = 0
