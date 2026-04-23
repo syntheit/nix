@@ -22,13 +22,10 @@ let
     hash = "sha256-eMT3/UsTYkiJFzoWlNPOM6hgbyGoBbPi3cs/u71KJ0c=";
     stripRoot = false;
   };
-  # The SPA hardcodes all asset paths to /web/... so the files must
-  # live under a web/ subdirectory. This lets Caddy serve them at
-  # /web/* without any prefix stripping.
-  headscale-ui = pkgs.runCommand "headscale-ui" {} ''
-    mkdir -p $out/web
-    cp -r ${headscale-ui-src}/* $out/web/
-  '';
+  # The SPA ships with assets already under /web/ paths, so we
+  # serve the zip contents directly — Caddy root points here and
+  # requests to /web/* resolve to the web/ directory inside.
+  headscale-ui = headscale-ui-src;
 in
 {
   # ── Conduit is both Headscale server AND a client on its own network ──
@@ -108,6 +105,15 @@ in
         try_files {path} /web/index.html
       }
       redir /web /web/ permanent
+      handle /api/* {
+        @options method OPTIONS
+        header @options Access-Control-Allow-Origin "*"
+        header @options Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        header @options Access-Control-Allow-Headers "Authorization, Content-Type"
+        header @options Access-Control-Max-Age "86400"
+        respond @options 204
+        reverse_proxy localhost:8085
+      }
       handle {
         reverse_proxy localhost:8085
       }

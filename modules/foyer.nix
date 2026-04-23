@@ -30,6 +30,7 @@ let
       url = host.url;
       api_key = ""; # Loaded at runtime via host API key files
     }) cfg.hosts;
+    temperature_command = cfg.temperatureCommand;
     jellyfin =
       if cfg.jellyfin.enable then {
         url = cfg.jellyfin.url;
@@ -101,6 +102,18 @@ in
       default = { };
     };
 
+    temperatureCommand = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = "External command that outputs CPU temperature in °C as an integer";
+    };
+
+    extraReadPaths = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      description = "Additional read-only paths for the foyer service (e.g. SSH keys for temperature_command)";
+    };
+
     jellyfin = {
       enable = lib.mkEnableOption "Jellyfin streams API";
       url = lib.mkOption {
@@ -137,7 +150,8 @@ in
       wants = [ "network-online.target" ];
       wantedBy = [ "multi-user.target" ];
 
-      path = lib.optional config.virtualisation.docker.enable config.virtualisation.docker.package;
+      path = lib.optional config.virtualisation.docker.enable config.virtualisation.docker.package
+        ++ lib.optional (cfg.temperatureCommand != "") pkgs.openssh;
 
       serviceConfig = {
         Type = "simple";
@@ -149,7 +163,7 @@ in
 
         NoNewPrivileges = true;
         ProtectSystem = "strict";
-        ProtectHome = true;
+        ProtectHome = if cfg.extraReadPaths != [ ] then "read-only" else true;
         ReadWritePaths = [ cfg.dataDir ]
           ++ lib.optional config.virtualisation.docker.enable "/run/docker.sock";
         PrivateTmp = true;
@@ -160,7 +174,7 @@ in
         RestrictSUIDSGID = true;
 
         # Read /proc and /sys for health metrics
-        ReadOnlyPaths = [ "/proc" "/sys" ];
+        ReadOnlyPaths = [ "/proc" "/sys" ] ++ cfg.extraReadPaths;
 
         # Docker socket access for container listing
         SupplementaryGroups = lib.optional config.virtualisation.docker.enable "docker";
