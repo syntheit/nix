@@ -186,6 +186,7 @@
           };
           modules = [
             ./hosts/conduit
+            inputs.sops-nix.nixosModules.sops
             inputs.home-manager.nixosModules.home-manager
             {
               nixpkgs.overlays = [

@@ -34,10 +34,11 @@ struct DashboardView: View {
     @State private var spotify = SystemBridge.getCachedSpotify()
 
     // Slow data loaded from cache synchronously (instant if cached, empty if not)
-    private static let allServerNames = ["harbor", "raven"]
+    private static let allServerNames = ["harbor", "raven", "conduit"]
     private static let foyerServers: [AsyncData.FoyerConfig] = [
         AsyncData.FoyerConfig(name: "harbor", url: "https://harbor.matv.io"),
         AsyncData.FoyerConfig(name: "raven", url: "https://raven.matv.io"),
+        AsyncData.FoyerConfig(name: "conduit", url: "https://conduit.matv.io"),
     ]
     // Servers without a Foyer config get SSH
     private static let sshServers: [String] = allServerNames.filter { name in
@@ -204,6 +205,16 @@ struct DashboardView: View {
                     Text("\(b.percent)%")
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(Color.subtle)
+                    if b.charging {
+                        Text("charging")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.dimmed)
+                    } else if let mins = b.timeRemaining {
+                        let h = mins / 60, m = mins % 60
+                        Text(h > 0 ? "\(h)h \(m)m" : "\(m)m")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.dimmed)
+                    }
                 }
             }
             Spacer()
@@ -338,9 +349,16 @@ struct DashboardView: View {
         let local = AsyncData.ServerHealth(
             name: "swift", info: "", ok: true,
             cpuPercent: cpu, ramPercent: ram, memPressure: memPressure,
-            cpuTemp: temp, containers: nil
+            cpuTemp: temp, uptimeSecs: Int(ProcessInfo.processInfo.systemUptime)
         )
         return [local] + servers
+    }
+
+    private func formatUptime(_ secs: Int) -> String {
+        let d = secs / 86400
+        let h = (secs % 86400) / 3600
+        if d > 0 { return "\(d)d" }
+        return "\(h)h"
     }
 
     private var systemsSection: some View {
@@ -348,33 +366,28 @@ struct DashboardView: View {
             SectionHeader(title: "Systems")
             ForEach(allSystems) { server in
                 HStack(spacing: 10) {
-                    Circle()
-                        .fill(server.ok ? Color.green : Color.red)
-                        .frame(width: 6, height: 6)
+                    if !server.ok {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 6, height: 6)
+                    }
                     Text(server.name)
                         .font(.system(size: 13, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white)
                         .frame(width: 60, alignment: .leading)
                     if let cpu = server.cpuPercent, let ram = server.ramPercent {
                         MiniBar(value: cpu, color: .gaugeCyan, label: "CPU")
-                        MiniBar(value: ram, color: .gaugePurple, label: "RAM")
-                        if let pressure = server.memPressure, pressure > 0 {
-                            Text("\(pressure)%")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(pressure >= 50 ? Color.yellow : Color.subtle)
-                            + Text(" cmpr")
-                                .font(.system(size: 9))
-                                .foregroundStyle(Color.dimmed)
-                        }
+                        MiniBar(value: ram, color: .gaugePurple, label: "RAM",
+                               overlay: server.memPressure ?? 0)
                         if let temp = server.cpuTemp, temp > 0 {
                             Text("\(temp)°")
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundStyle(temp >= 80 ? Color.red : Color.subtle)
                         }
-                        if let ct = server.containers, ct > 0 {
-                            Text("\(ct) ct")
+                        if let secs = server.uptimeSecs {
+                            Text(formatUptime(secs))
                                 .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(Color.subtle)
+                                .foregroundStyle(Color.dimmed)
                         }
                     } else {
                         // Simple text for SSH-only servers
@@ -451,6 +464,7 @@ struct MiniBar: View {
     let value: Int
     let color: Color
     var label: String = ""
+    var overlay: Int = 0
 
     var body: some View {
         HStack(spacing: 4) {
@@ -465,6 +479,11 @@ struct MiniBar: View {
                 RoundedRectangle(cornerRadius: 2)
                     .fill(color)
                     .frame(width: 48 * CGFloat(min(value, 100)) / 100, height: 6)
+                if overlay > 0 {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color(white: 1.0, opacity: 0.2))
+                        .frame(width: 48 * CGFloat(min(overlay, 100)) / 100, height: 6)
+                }
             }
             Text("\(value)%")
                 .font(.system(size: 10, design: .monospaced))
