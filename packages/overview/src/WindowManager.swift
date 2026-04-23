@@ -6,9 +6,9 @@ struct WindowInfo: Identifiable {
     let pid: Int
     let app: String
     let title: String
-    let space: Int
+    var space: Int
     let frame: CGRect
-    let image: NSImage?
+    var image: NSImage?
     let icon: NSImage
 }
 
@@ -42,43 +42,31 @@ enum WindowManager {
             .sorted { $0.index < $1.index }
     }
 
-    /// Synchronous metadata-only query (no screenshots). Instant.
+    /// Synchronous metadata-only query (no screenshots).
     static func queryWindowInfo() -> [WindowInfo] {
         guard let yabai: [YabaiWindow] = queryYabai(["--windows"]) else { return [] }
-        return yabai
-            .filter { !$0.isHidden && !$0.isMinimized && $0.app != "overview" && $0.app != "sketchybar" && $0.scratchpad.isEmpty }
-            .map { win in
-                let frame = CGRect(x: win.frame.x, y: win.frame.y, width: win.frame.w, height: win.frame.h)
-                let icon: NSImage
-                if let r = NSRunningApplication(processIdentifier: pid_t(win.pid)) {
-                    icon = r.icon ?? NSWorkspace.shared.icon(for: .applicationBundle)
-                } else { icon = NSWorkspace.shared.icon(for: .applicationBundle) }
-                return WindowInfo(id: win.id, pid: win.pid, app: win.app, title: win.title,
-                                  space: win.space, frame: frame, image: nil, icon: icon)
-            }
+        return validWindows(yabai).map { win in
+            let frame = CGRect(x: win.frame.x, y: win.frame.y, width: win.frame.w, height: win.frame.h)
+            return WindowInfo(id: win.id, pid: win.pid, app: win.app, title: win.title,
+                              space: win.space, frame: frame, image: nil, icon: appIcon(for: win.pid))
+        }
     }
 
     /// Fast capture: display composite + crop. Captures windows WITH their blur/vibrancy intact.
-    /// MUST be called from a background thread (uses semaphore for SCK).
-    static func captureFromComposite() -> [WindowInfo] {
+    static func captureFromComposite() async -> [WindowInfo] {
         guard let yabai: [YabaiWindow] = queryYabai(["--windows"]) else { return [] }
-        let valid = yabai.filter { !$0.isHidden && !$0.isMinimized && $0.app != "overview" && $0.app != "sketchybar" && $0.scratchpad.isEmpty }
+        let valid = validWindows(yabai)
         guard !valid.isEmpty else { return [] }
 
-        // Single display composite capture (fast ~100ms)
+        // Single display composite capture (~100ms)
         var composite: CGImage?
-        let sem = DispatchSemaphore(value: 0)
-        Task.detached {
-            if let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true),
-               let display = content.displays.first {
-                let f = SCContentFilter(display: display, excludingWindows: [])
-                let c = SCStreamConfiguration()
-                c.width = display.width * 2; c.height = display.height * 2; c.showsCursor = false
-                composite = try? await SCScreenshotManager.captureImage(contentFilter: f, configuration: c)
-            }
-            sem.signal()
+        if let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true),
+           let display = content.displays.first {
+            let f = SCContentFilter(display: display, excludingWindows: [])
+            let c = SCStreamConfiguration()
+            c.width = display.width * 2; c.height = display.height * 2; c.showsCursor = false
+            composite = try? await SCScreenshotManager.captureImage(contentFilter: f, configuration: c)
         }
-        sem.wait()
 
         let scale: CGFloat
         if let c = composite, let s = NSScreen.main { scale = CGFloat(c.width) / s.frame.width }
@@ -94,19 +82,15 @@ enum WindowManager {
                     img = NSImage(cgImage: cropped, size: NSSize(width: cropped.width, height: cropped.height))
                 }
             }
-            let icon: NSImage
-            if let r = NSRunningApplication(processIdentifier: pid_t(win.pid)) {
-                icon = r.icon ?? NSWorkspace.shared.icon(for: .applicationBundle)
-            } else { icon = NSWorkspace.shared.icon(for: .applicationBundle) }
             return WindowInfo(id: win.id, pid: win.pid, app: win.app, title: win.title,
-                              space: win.space, frame: frame, image: img, icon: icon)
+                              space: win.space, frame: frame, image: img, icon: appIcon(for: win.pid))
         }
     }
 
-    /// Slow async per-window capture — gets screenshots for ALL windows including off-screen.
+    /// Async per-window capture — gets screenshots for ALL windows including off-screen.
     static func captureAllWindowsAsync() async -> [WindowInfo] {
         guard let yabai: [YabaiWindow] = queryYabai(["--windows"]) else { return [] }
-        let valid = yabai.filter { !$0.isHidden && !$0.isMinimized && $0.app != "overview" && $0.app != "sketchybar" && $0.scratchpad.isEmpty }
+        let valid = validWindows(yabai)
         guard !valid.isEmpty,
               let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
         else { return [] }
@@ -125,12 +109,8 @@ enum WindowManager {
                             img = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
                         }
                     }
-                    let icon: NSImage
-                    if let r = NSRunningApplication(processIdentifier: pid_t(win.pid)) {
-                        icon = r.icon ?? NSWorkspace.shared.icon(for: .applicationBundle)
-                    } else { icon = NSWorkspace.shared.icon(for: .applicationBundle) }
                     return WindowInfo(id: win.id, pid: win.pid, app: win.app, title: win.title,
-                                      space: win.space, frame: frame, image: img, icon: icon)
+                                      space: win.space, frame: frame, image: img, icon: appIcon(for: win.pid))
                 }
             }
             var results: [WindowInfo] = []
@@ -141,58 +121,18 @@ enum WindowManager {
 
     /// Load the desktop wallpaper image file.
     static func loadWallpaper() -> NSImage? {
-        // NSWorkspace returns the actual current wallpaper path
         if let screen = NSScreen.main,
            let url = NSWorkspace.shared.desktopImageURL(for: screen),
            url.path != "/System/Library/CoreServices/DefaultDesktop.heic",
            let img = NSImage(contentsOf: url) {
             return img
         }
-        // Fallback: wallpaper-cycle state file
         let stateFile = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".cache/wallpapers/current")
         guard let path = try? String(contentsOf: stateFile, encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines),
               !path.isEmpty else { return nil }
         return NSImage(contentsOfFile: path)
-    }
-
-    /// Blur a CGImage using CIFilter (for wallpaper backdrop behind transparent windows).
-    static func blurImage(_ image: CGImage, radius: CGFloat = 40) -> CGImage? {
-        let ci = CIImage(cgImage: image)
-        guard let filter = CIFilter(name: "CIGaussianBlur") else { return nil }
-        filter.setValue(ci, forKey: kCIInputImageKey)
-        filter.setValue(radius, forKey: kCIInputRadiusKey)
-        guard let output = filter.outputImage else { return nil }
-        let ctx = CIContext()
-        // CIGaussianBlur extends the image bounds — crop back to original
-        return ctx.createCGImage(output, from: ci.extent)
-    }
-
-    /// Composite a window screenshot (with alpha) onto a blurred wallpaper crop.
-    /// Produces an opaque image that looks like the window with wallpaper blur showing through.
-    static func compositeWindow(screenshot: NSImage, blurredWP: CGImage, frame: CGRect, screenSize: CGSize) -> NSImage {
-        let scale = CGFloat(blurredWP.width) / screenSize.width
-        let crop = CGRect(x: frame.minX * scale, y: frame.minY * scale,
-                          width: frame.width * scale, height: frame.height * scale)
-        guard let wpCrop = blurredWP.cropping(to: crop) else { return screenshot }
-
-        let w = Int(frame.width * 2), h = Int(frame.height * 2)  // retina
-        guard let ctx = CGContext(data: nil, width: w, height: h,
-                                  bitsPerComponent: 8, bytesPerRow: 0,
-                                  space: CGColorSpaceCreateDeviceRGB(),
-                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-        else { return screenshot }
-
-        let rect = CGRect(x: 0, y: 0, width: w, height: h)
-        // Draw blurred wallpaper as background
-        ctx.draw(wpCrop, in: rect)
-        // Draw window screenshot on top (alpha composites naturally)
-        if let screenshotCG = screenshot.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-            ctx.draw(screenshotCG, in: rect)
-        }
-        guard let result = ctx.makeImage() else { return screenshot }
-        return NSImage(cgImage: result, size: NSSize(width: w, height: h))
     }
 
     // MARK: - Actions
@@ -204,13 +144,23 @@ enum WindowManager {
 
     // MARK: - Private
 
+    private static func validWindows(_ yabai: [YabaiWindow]) -> [YabaiWindow] {
+        yabai.filter { !$0.isHidden && !$0.isMinimized && $0.app != "overview" && $0.app != "sketchybar" && $0.scratchpad.isEmpty }
+    }
+
+    private static func appIcon(for pid: Int) -> NSImage {
+        if let r = NSRunningApplication(processIdentifier: pid_t(pid)) {
+            return r.icon ?? NSWorkspace.shared.icon(for: .applicationBundle)
+        }
+        return NSWorkspace.shared.icon(for: .applicationBundle)
+    }
+
     private static func queryYabai<T: Decodable>(_ args: [String]) -> T? {
         let p = Pipe(), t = Process()
         t.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         t.arguments = ["yabai", "-m", "query"] + args
         t.standardOutput = p; t.standardError = FileHandle.nullDevice
         do { try t.run() } catch { return nil }
-        // Read before waitUntilExit to avoid pipe buffer deadlock
         let data = p.fileHandleForReading.readDataToEndOfFile()
         t.waitUntilExit()
         return try? JSONDecoder().decode(T.self, from: data)

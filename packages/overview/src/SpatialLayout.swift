@@ -91,8 +91,10 @@ struct DraggableWindowThumbnail: View {
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .clipped()
+                    .transition(.opacity)
             } else {
                 Color.clear
+                    .transition(.opacity)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 6))

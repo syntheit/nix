@@ -80,6 +80,25 @@ enum SystemBridge {
         return Int((total - free) * 100 / total)
     }
 
+    // MARK: - Memory Pressure (compressed pages as % of total RAM)
+
+    static func getMemoryPressure() -> Int {
+        var size = mach_msg_type_number_t(
+            MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
+        var stats = vm_statistics64_data_t()
+        let result = withUnsafeMutablePointer(to: &stats) { ptr in
+            ptr.withMemoryRebound(to: integer_t.self, capacity: Int(size)) { ip in
+                host_statistics64(mach_host_self(), HOST_VM_INFO64, ip, &size)
+            }
+        }
+        guard result == KERN_SUCCESS else { return 0 }
+        let total = ProcessInfo.processInfo.physicalMemory
+        let page = UInt64(vm_kernel_page_size)
+        let compressed = UInt64(stats.compressor_page_count) * page
+        guard total > 0 else { return 0 }
+        return Int(compressed * 100 / total)
+    }
+
     // MARK: - CPU Temperature (via SMC / IOKit)
 
     private struct SMCKeyData {

@@ -22,6 +22,7 @@ struct DashboardView: View {
     @State private var cpu = SystemBridge.getCPU()
     @State private var ram = SystemBridge.getRAM()
     @State private var temp = SystemBridge.getTemp()
+    @State private var memPressure = SystemBridge.getMemoryPressure()
     @State private var battery = SystemBridge.getBattery()
     @State private var time = Date()
     @State private var privacyMode = SystemBridge.isPrivacyMode()
@@ -58,27 +59,20 @@ struct DashboardView: View {
             Color.clear
             VStack(spacing: 0) {
                 clockSection
-                gaugesSection
-                    .padding(.top, 28)
                 systemInfoRow
-                    .padding(.top, 16)
-                mediaSection
-                    .frame(height: 20)
-                    .clipped()
-                    .opacity(spotify.state != "off" ? 1 : 0)
-                    .padding(.top, 20)
-                if battery != nil && !(battery!.acPower && battery!.percent >= 99) {
-                    batterySection
-                        .padding(.top, 16)
+                    .padding(.top, 28)
+                if spotify.state != "off" {
+                    mediaSection
+                        .frame(height: 20)
+                        .clipped()
+                        .padding(.top, 20)
                 }
                 if !agenda.isEmpty {
                     agendaSection
                         .padding(.top, 24)
                 }
-                if !servers.isEmpty {
-                    serversSection
-                        .padding(.top, 24)
-                }
+                systemsSection
+                    .padding(.top, 24)
                 if !exchange.isEmpty {
                     exchangeSection
                         .padding(.top, 24)
@@ -128,18 +122,11 @@ struct DashboardView: View {
         }
     }
 
-    private func formatBatteryTime(_ mins: Int) -> String {
-        let h = mins / 60
-        let m = mins % 60
-        if h > 0 && m > 0 { return "\(h)h \(m)m remaining" }
-        if h > 0 { return "\(h)h remaining" }
-        return "\(m)m remaining"
-    }
-
     private func refreshFast() {
         cpu = SystemBridge.getCPU()
         ram = SystemBridge.getRAM()
         temp = SystemBridge.getTemp()
+        memPressure = SystemBridge.getMemoryPressure()
         battery = SystemBridge.getBattery()
         volume = SystemBridge.getVolume()
         spotify = SystemBridge.getSpotify()
@@ -191,14 +178,6 @@ struct DashboardView: View {
         }
     }
 
-    private var gaugesSection: some View {
-        HStack(spacing: 36) {
-            CircularGauge(value: cpu, label: "CPU", color: .gaugeCyan, suffix: "%", animate: appeared)
-            CircularGauge(value: ram, label: "RAM", color: .gaugePurple, suffix: "%", animate: appeared)
-            CircularGauge(value: temp, label: "TEMP", color: .gaugeTeal, suffix: "°C", animate: appeared)
-        }
-    }
-
     private var systemInfoRow: some View {
         HStack(alignment: .center, spacing: 16) {
             HStack(spacing: 5) {
@@ -216,6 +195,16 @@ struct DashboardView: View {
                 Text(diskFree)
                     .font(.system(size: 12))
                     .foregroundStyle(Color.subtle)
+            }
+            if let b = battery {
+                HStack(spacing: 5) {
+                    Image(systemName: batteryIcon)
+                        .font(.system(size: 10))
+                        .foregroundStyle(b.charging ? Color.yellow : batteryColor)
+                    Text("\(b.percent)%")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Color.subtle)
+                }
             }
             Spacer()
             privacyIndicator
@@ -303,27 +292,6 @@ struct DashboardView: View {
         return "battery.25percent"
     }
 
-    private var batterySection: some View {
-        HStack(spacing: 8) {
-            Image(systemName: batteryIcon)
-                .font(.system(size: 13))
-                .foregroundStyle(battery!.charging ? Color.yellow : batteryColor)
-            Text("\(battery!.percent)%")
-                .font(.system(size: 14, weight: .medium, design: .monospaced))
-                .foregroundStyle(.white)
-            if battery!.charging {
-                Text("charging")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.subtle)
-            } else if let mins = battery?.timeRemaining {
-                Text(formatBatteryTime(mins))
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.subtle)
-            }
-            Spacer()
-        }
-    }
-
     private var batteryColor: Color {
         guard let b = battery else { return .white }
         if b.percent > 50 { return .green }
@@ -332,17 +300,24 @@ struct DashboardView: View {
     }
 
     private var agendaSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let firstTimedIndex = agenda.firstIndex { !$0.isAllDay }
+        return VStack(alignment: .leading, spacing: 8) {
             SectionHeader(title: "Today")
             ForEach(Array(agenda.enumerated()), id: \.element.id) { index, event in
                 HStack(spacing: 10) {
-                    Text(event.time)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Color.subtle)
+                    if !event.isAllDay {
+                        Text(event.time)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(Color.subtle)
+                    }
                     Text(event.title)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.white)
-                    if index == 0 {
+                    if event.isAllDay {
+                        Text("today")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.accent)
+                    } else if index == firstTimedIndex {
                         let mins = Int(event.startDate.timeIntervalSince(time) / 60)
                         let relative: String = {
                             if mins <= 0 { return "now" }
@@ -359,10 +334,19 @@ struct DashboardView: View {
         }
     }
 
-    private var serversSection: some View {
+    private var allSystems: [AsyncData.ServerHealth] {
+        let local = AsyncData.ServerHealth(
+            name: "swift", info: "", ok: true,
+            cpuPercent: cpu, ramPercent: ram, memPressure: memPressure,
+            cpuTemp: temp, containers: nil
+        )
+        return [local] + servers
+    }
+
+    private var systemsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title: "Servers")
-            ForEach(servers) { server in
+            SectionHeader(title: "Systems")
+            ForEach(allSystems) { server in
                 HStack(spacing: 10) {
                     Circle()
                         .fill(server.ok ? Color.green : Color.red)
@@ -372,9 +356,16 @@ struct DashboardView: View {
                         .foregroundStyle(.white)
                         .frame(width: 60, alignment: .leading)
                     if let cpu = server.cpuPercent, let ram = server.ramPercent {
-                        // Rich display for Foyer-connected servers
                         MiniBar(value: cpu, color: .gaugeCyan, label: "CPU")
                         MiniBar(value: ram, color: .gaugePurple, label: "RAM")
+                        if let pressure = server.memPressure, pressure > 0 {
+                            Text("\(pressure)%")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(pressure >= 50 ? Color.yellow : Color.subtle)
+                            + Text(" cmpr")
+                                .font(.system(size: 9))
+                                .foregroundStyle(Color.dimmed)
+                        }
                         if let temp = server.cpuTemp, temp > 0 {
                             Text("\(temp)°")
                                 .font(.system(size: 11, design: .monospaced))
@@ -483,31 +474,3 @@ struct MiniBar: View {
     }
 }
 
-struct CircularGauge: View {
-    let value: Int
-    let label: String
-    let color: Color
-    var suffix: String = ""
-    var animate: Bool = true
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .stroke(color.opacity(0.15), lineWidth: 5)
-            Circle()
-                .trim(from: 0, to: CGFloat(value) / 100)
-                .stroke(color, style: StrokeStyle(lineWidth: 5, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .animation(animate ? .easeInOut(duration: 0.4) : nil, value: value)
-            VStack(spacing: 2) {
-                Text("\(value)\(suffix)")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(.white)
-                Text(label)
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(color.opacity(0.7))
-            }
-        }
-        .frame(width: 80, height: 80)
-    }
-}

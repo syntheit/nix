@@ -14,7 +14,6 @@ class OverviewState: ObservableObject {
     @Published var draggedWindowID: Int? = nil
     @Published var dropTargetSpaceIndex: Int? = nil
     @Published var spaceFrames: [Int: CGRect] = [:]
-    var appeared = false
 
     var onSelect: ((Int) -> Void)?
     var onSelectSpace: ((Int) -> Void)?
@@ -29,48 +28,76 @@ class OverviewState: ObservableObject {
         windows.filter { $0.space == index }
     }
     let screenSize: CGSize = NSScreen.main?.frame.size ?? CGSize(width: 1920, height: 1243)
+
+    /// Filter spaces to those with windows or within the visible cutoff range.
+    func updateSpaces(_ fresh: [SpaceInfo]) {
+        let lastOccupied = fresh.filter { !$0.windowIDs.isEmpty }.map(\.index).max() ?? 0
+        let cutoff = max(lastOccupied, currentSpaceIndex) + 1
+        spaces = fresh.filter { !$0.windowIDs.isEmpty || $0.index <= cutoff }
+    }
 }
 
 // MARK: - App delegate
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    private var overlayWindow: NSWindow?
+    private var overlayWindow: NSWindow!
     private var gestureMonitor: GestureMonitor?
     private var keyMonitor: Any?
     private var globalKeyMonitor: Any?
-    private var isVisible = false
     private let state = OverviewState()
     private var signalSource: DispatchSourceSignal?
     private var gestureBaseProgress: CGFloat = 0
     private var gestureOffset: CGFloat = 0
     private var cachedWindows: [WindowInfo]?
     private var cachedSpaces: [SpaceInfo]?
-    private var isPreparing = false
     private var pendingProgress: CGFloat? = nil
 
+    private enum Phase { case hidden, preparing, visible, dismissing }
+    private var phase: Phase = .hidden
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        guard let screen = NSScreen.main else { return }
+
+        // Create persistent overlay window (hidden until needed)
+        let window = NSWindow(contentRect: screen.frame, styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        window.level = .floating
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = false
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        let hosting = NSHostingView(rootView: OverviewView(state: state))
+        hosting.frame = screen.frame
+        hosting.autoresizingMask = [.width, .height]
+        window.contentView = hosting
+        overlayWindow = window
+
+        // Set up callbacks once
+        state.onSelect = { [weak self] id in self?.selectWindow(id) }
+        state.onSelectSpace = { [weak self] idx in self?.selectSpace(idx) }
+        state.onDismiss = { [weak self] in self?.animateDismiss() }
+        state.onMoveWindow = { [weak self] wid, s in self?.moveWindow(wid, to: s) }
+        state.onReorderSpace = { [weak self] f, t in self?.reorderSpace(f, to: t) }
+
         let gm = GestureMonitor()
 
         // Pre-cache screenshots on first touch (before swipe direction is known)
-        // Uses fast display composite on background thread (~100ms)
         gm.onPrepare = { [weak self] in
-            guard let self, !isVisible, !isPreparing else { return }
-            isPreparing = true
-            // Refresh wallpaper from disk
+            guard let self, phase == .hidden else { return }
+            phase = .preparing
             if let wp = WindowManager.loadWallpaper() { state.wallpaper = wp }
-            // Pre-cache: metadata + display composite (captures windows WITH blur intact)
-            // Runs on background thread so main thread stays responsive for gestures
-            DispatchQueue.global(qos: .userInteractive).async {
+            Task {
                 let spaces = WindowManager.querySpaces()
-                let windows = WindowManager.captureFromComposite()
-                DispatchQueue.main.async {
+                let windows = await WindowManager.captureFromComposite()
+                await MainActor.run {
+                    guard self.phase == .preparing else { return }
                     self.cachedSpaces = spaces
                     self.cachedWindows = windows.isEmpty ? nil : windows
-                    self.isPreparing = false
-                    // If gesture was waiting for us, create overlay now
-                    if let p = self.pendingProgress, !self.isVisible {
+                    self.phase = .hidden
+                    // If gesture was waiting for us, show overlay now
+                    if let p = self.pendingProgress {
                         self.pendingProgress = nil
-                        self.createOverlay()
+                        self.showOverlay()
                         self.gestureOffset = 0
                         self.state.progress = max(0, min(p, 1.2))
                     }
@@ -80,19 +107,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         gm.onThreeFingerVertical = { [weak self] (delta: CGFloat) in
             guard let self else { return }
-            if !isVisible && delta > 0.01 {
+            if phase == .hidden && delta > 0.01 {
                 if cachedWindows != nil {
-                    createOverlay()
+                    showOverlay()
                     gestureOffset = delta
                     gestureBaseProgress = 0
                 } else if pendingProgress == nil {
                     pendingProgress = delta
                 }
             }
-            if isVisible {
+            if phase == .visible {
                 let p = gestureBaseProgress + delta - gestureOffset
                 state.progress = max(0, min(p, 1.2))
-            } else if pendingProgress != nil {
+            } else if phase == .preparing {
                 pendingProgress = delta
             }
         }
@@ -101,10 +128,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             pendingProgress = nil
             cachedWindows = nil; cachedSpaces = nil
-            guard isVisible else { return }
+            guard phase == .visible else {
+                phase = .hidden
+                return
+            }
             if state.progress > 0.35 {
                 withAnimation(.easeOut(duration: 0.2)) { self.state.progress = 1.0 }
-                state.appeared = true
                 gestureBaseProgress = 1.0
                 gestureOffset = 0
             } else {
@@ -126,139 +155,119 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         src.resume()
         signalSource = src
 
-        // Load wallpaper on launch
         state.wallpaper = WindowManager.loadWallpaper()
 
         print("[overview] daemon ready")
     }
 
-    func toggle() { if isVisible { animateDismiss() } else { show() } }
+    func toggle() {
+        if phase == .visible { animateDismiss() }
+        else if phase == .hidden { show() }
+    }
 
     // MARK: - Show (instant for SIGUSR1)
 
     func show() {
-        guard !isVisible else { return }
-        createOverlay()
+        guard phase == .hidden else { return }
+        showOverlay()
         withAnimation(.easeOut(duration: 0.3)) { state.progress = 1.0 }
-        state.appeared = true
         gestureBaseProgress = 1.0
     }
 
-    // MARK: - Create overlay instantly with yabai data, screenshots load async
+    // MARK: - Show overlay with current data, reusing the persistent window
 
-    private func createOverlay() {
-        guard !isVisible else { return }
+    private func showOverlay() {
+        guard phase == .hidden || phase == .preparing else { return }
 
         let allWindows = cachedWindows ?? WindowManager.queryWindowInfo()
         let spaces = cachedSpaces ?? WindowManager.querySpaces()
         cachedWindows = nil; cachedSpaces = nil
         guard !allWindows.isEmpty else { return }
 
-        buildOverlay(spaces: spaces, windows: allWindows)
-
-        // Load per-window captures for off-screen windows only (composite already has current space)
-        Task { @MainActor in
-            let missing = state.windows.filter { $0.image == nil }.map(\.id)
-            guard isVisible, !missing.isEmpty else { return }
-            let captured = await WindowManager.captureAllWindowsAsync()
-            guard isVisible else { return }
-            for newWin in captured {
-                guard newWin.image != nil, missing.contains(newWin.id) else { continue }
-                if let idx = state.windows.firstIndex(where: { $0.id == newWin.id }) {
-                    state.windows[idx] = newWin
-                }
-            }
+        // Update window frame in case screen resolution changed
+        if let screen = NSScreen.main {
+            overlayWindow.setFrame(screen.frame, display: false)
         }
-    }
 
-    private func buildOverlay(spaces: [SpaceInfo], windows allWindows: [WindowInfo]) {
-        guard let screen = NSScreen.main else { return }
-
-        let lastOccupied = spaces.filter({ !$0.windowIDs.isEmpty }).map(\.index).max() ?? 0
         let focusedIdx = spaces.first(where: { $0.hasFocus })?.index ?? 1
-        let cutoff = max(lastOccupied, focusedIdx) + 1
-
-        state.spaces = spaces.filter { !$0.windowIDs.isEmpty || $0.index <= cutoff }
         state.currentSpaceIndex = focusedIdx
         state.windows = allWindows
         state.selectedWindowID = nil
         state.progress = 0
-        state.appeared = false
-        state.onSelect = { [weak self] id in self?.selectWindow(id) }
-        state.onSelectSpace = { [weak self] idx in self?.selectSpace(idx) }
-        state.onDismiss = { [weak self] in self?.animateDismiss() }
-        state.onMoveWindow = { [weak self] wid, s in self?.moveWindow(wid, to: s) }
-        state.onReorderSpace = { [weak self] f, t in self?.reorderSpace(f, to: t) }
+        state.updateSpaces(spaces)
 
-        let window = NSWindow(contentRect: screen.frame, styleMask: [.borderless],
-                              backing: .buffered, defer: false)
-        window.level = .floating
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.hasShadow = false
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-
-        let hosting = NSHostingView(rootView: OverviewView(state: state))
-        hosting.frame = screen.frame
-        hosting.autoresizingMask = [.width, .height]
-        window.contentView = hosting
-        overlayWindow = window
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        isVisible = true
+        overlayWindow.makeKeyAndOrderFront(nil)
+        NSApp.activate()
+        phase = .visible
         WindowManager.run(["sketchybar", "--bar", "hidden=true"])
 
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             self?.handleKey(event)
         }
         globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            self?.handleKey(event)
+            _ = self?.handleKey(event)
         }
 
+        // Load per-window captures for off-screen windows (composite already has current space)
+        Task { @MainActor in
+            let missing = state.windows.filter { $0.image == nil }.map(\.id)
+            guard phase == .visible, !missing.isEmpty else { return }
+            let captured = await WindowManager.captureAllWindowsAsync()
+            guard phase == .visible else { return }
+            withAnimation(.easeIn(duration: 0.15)) {
+                for newWin in captured {
+                    guard newWin.image != nil, missing.contains(newWin.id) else { continue }
+                    if let idx = state.windows.firstIndex(where: { $0.id == newWin.id }) {
+                        state.windows[idx].image = newWin.image
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Dismiss
 
-    func animateDismiss() {
-        guard isVisible else { return }
-        withAnimation(.easeIn(duration: 0.2)) { state.progress = 0 }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { [weak self] in
-            self?.tearDown()
+    func animateDismiss(then action: (() -> Void)? = nil) {
+        guard phase == .visible else { return }
+        phase = .dismissing
+        withAnimation(.easeIn(duration: 0.2)) {
+            self.state.progress = 0
+        } completion: { [weak self] in
+            guard let self, self.phase == .dismissing else { return }
+            self.tearDown()
+            action?()
         }
     }
 
     private func tearDown() {
-        isVisible = false
+        phase = .hidden
         gestureBaseProgress = 0
         pendingProgress = nil
         if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil }
         if let m = globalKeyMonitor { NSEvent.removeMonitor(m); globalKeyMonitor = nil }
-        overlayWindow?.orderOut(nil)
-        overlayWindow = nil
+        overlayWindow.orderOut(nil)
         state.windows = []; state.spaces = []
-        state.progress = 0; state.appeared = false
+        state.progress = 0
         WindowManager.run(["sketchybar", "--bar", "hidden=false"])
     }
 
     // MARK: - Actions
 
     private func selectSpace(_ idx: Int) {
-        animateDismiss()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { WindowManager.focusSpace(idx) }
+        animateDismiss { WindowManager.focusSpace(idx) }
     }
 
     private func selectWindow(_ id: Int) {
-        animateDismiss()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { WindowManager.focusWindow(id) }
+        animateDismiss { WindowManager.focusWindow(id) }
     }
 
     private func switchSpace(to index: Int) {
-        guard isVisible, state.spaces.contains(where: { $0.index == index }) else { return }
+        guard phase == .visible, state.spaces.contains(where: { $0.index == index }) else { return }
         withAnimation(.easeInOut(duration: 0.2)) { state.currentSpaceIndex = index }
     }
 
     private func switchSpace(delta: Int) {
-        guard isVisible else { return }
+        guard phase == .visible else { return }
         let indices = state.spaces.map(\.index).sorted()
         guard let cur = indices.firstIndex(of: state.currentSpaceIndex) else { return }
         let next = cur + delta
@@ -269,19 +278,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func reorderSpace(_ from: Int, to: Int) {
         WindowManager.reorderSpace(from, to: to)
         let s = WindowManager.querySpaces()
-        let last = s.filter({ !$0.windowIDs.isEmpty }).map(\.index).max() ?? 0
-        let cutoff = max(last, state.currentSpaceIndex) + 1
         withAnimation(.easeInOut(duration: 0.2)) {
-            state.spaces = s.filter { !$0.windowIDs.isEmpty || $0.index <= cutoff }
+            state.updateSpaces(s)
         }
     }
 
     private func moveWindow(_ wid: Int, to space: Int) {
         WindowManager.moveWindow(wid, toSpace: space)
         if let i = state.windows.firstIndex(where: { $0.id == wid }) {
-            let w = state.windows[i]
-            state.windows[i] = WindowInfo(id: w.id, pid: w.pid, app: w.app, title: w.title,
-                                          space: space, frame: w.frame, image: nil, icon: w.icon)
+            state.windows[i].space = space
+            state.windows[i].image = nil
         }
     }
 
@@ -289,7 +295,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @discardableResult
     private func handleKey(_ event: NSEvent) -> NSEvent? {
-        guard isVisible else { return event }
+        guard phase == .visible else { return event }
         switch event.keyCode {
         case 53: animateDismiss()
         case 36: if let id = state.selectedWindowID { selectWindow(id) }
@@ -302,7 +308,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case 23: switchSpace(to: 5); case 22: switchSpace(to: 6)
         case 26: switchSpace(to: 7); case 28: switchSpace(to: 8)
         case 25: switchSpace(to: 9); case 29: switchSpace(to: 10)
-        default: return event  // don't swallow unhandled keys (Cmd+Tab, media keys, etc.)
+        default: return event
         }
         return nil
     }

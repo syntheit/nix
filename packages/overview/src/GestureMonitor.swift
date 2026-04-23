@@ -17,6 +17,7 @@ class GestureMonitor {
 
     private var handle: UnsafeMutableRawPointer?
     private var startY: Float = 0
+    private var startX: Float = 0
     private var tracking = false
     private var verticalActive = false
     private var axisDecided = false
@@ -106,7 +107,6 @@ class GestureMonitor {
         }
     }
 
-    private var startX: Float = 0
     deinit { if let h = handle { dlclose(h) } }
 }
 

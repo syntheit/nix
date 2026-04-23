@@ -115,17 +115,13 @@ struct WorkspaceBar: View {
 
     private func refreshAfterReorder() {
         let fresh = WindowManager.querySpaces()
-        let lastOccupied = fresh.filter({ !$0.windowIDs.isEmpty }).map(\.index).max() ?? 0
-        let cutoff = max(lastOccupied, state.currentSpaceIndex) + 1
-        state.spaces = fresh.filter { !$0.windowIDs.isEmpty || $0.index <= cutoff }
+        state.updateSpaces(fresh)
 
         // Update window space assignments
         let freshWindows = WindowManager.queryWindowInfo()
         for fw in freshWindows {
             if let idx = state.windows.firstIndex(where: { $0.id == fw.id }), fw.space != state.windows[idx].space {
-                let old = state.windows[idx]
-                state.windows[idx] = WindowInfo(id: old.id, pid: old.pid, app: old.app, title: old.title,
-                                                 space: fw.space, frame: old.frame, image: old.image, icon: old.icon)
+                state.windows[idx].space = fw.space
             }
         }
     }
@@ -189,8 +185,10 @@ struct SpaceThumbnailContent: View {
                             .resizable()
                             .aspectRatio(contentMode: .fill)
                             .clipped()
+                            .transition(.opacity)
                     } else {
                         Rectangle().fill(.white.opacity(0.15))
+                            .transition(.opacity)
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 1))
