@@ -352,6 +352,26 @@
         "type": "github"
       }
     },
+    "foyer": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1776907137,
+        "narHash": "sha256-L9JoL0JSW6IhNrHX5f7QZXA3ofQEBR/iBIFfB6cXnYQ=",
+        "owner": "syntheit",
+        "repo": "foyer",
+        "rev": "716af1a849923a272704716ac6893127995eb26a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "syntheit",
+        "repo": "foyer",
+        "type": "github"
+      }
+    },
     "fromYaml": {
       "flake": false,
       "locked": {
@@ -688,6 +708,7 @@
         "affinity-nix": "affinity-nix",
         "antigravity": "antigravity",
         "disko": "disko",
+        "foyer": "foyer",
         "home-manager": "home-manager",
         "nix-darwin": "nix-darwin",
         "nix-homebrew": "nix-homebrew",
