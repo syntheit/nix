@@ -359,11 +359,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1776916687,
-        "narHash": "sha256-9AHJO8sImke9+0McsVy5buMX+fpkm1PvIejdkGES8Ss=",
+        "lastModified": 1776917052,
+        "narHash": "sha256-4j/bZaXUWfQ1/z0vawo0hHOHT73qtTAbDGipCYXSAg8=",
         "owner": "syntheit",
         "repo": "foyer",
-        "rev": "033cde1c969c4b8cfe666ef0b36b9df53c57cf74",
+        "rev": "b251e65881b4899c4aa4de9fc074077df3b68262",
         "type": "github"
       },
       "original": {
