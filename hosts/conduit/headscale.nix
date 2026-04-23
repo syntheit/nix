@@ -39,10 +39,6 @@ in
         hostPath = "/var/lib/headscale";
         isReadOnly = false;
       };
-      "/var/lib/tailscale" = {
-        hostPath = "/var/lib/tailscale-container";
-        isReadOnly = false;
-      };
     };
 
     config = { pkgs, ... }: {
@@ -83,18 +79,6 @@ in
           disable_check_updates = true;
           node.expiry = 0;
         };
-      };
-
-      # ── Tailscale (inside container) ──────────────────────
-      # Connected to the headscale network so users who SSH in
-      # can reach all fleet machines directly.
-      services.tailscale = {
-        enable = true;
-        authKeyFile = "/var/lib/tailscale/authkey";
-        extraUpFlags = [
-          "--login-server" "https://headscale.matv.io"
-          "--hostname" "conduit"
-        ];
       };
 
       # ── SSH for fleet operators ───────────────────────────
@@ -148,10 +132,17 @@ in
     };
   };
 
-  # ── Create container tailscale state directory ─────────────
-  systemd.tmpfiles.rules = [
-    "d /var/lib/tailscale-container 0700 root root -"
-  ];
+  # ── Tailscale (on host) ─────────────────────────────────────
+  # Runs on the host so the tailscale0 interface is available for
+  # the registry proxy and SSH routing to fleet machines.
+  services.tailscale = {
+    enable = true;
+    authKeyFile = "/etc/tailscale/authkey";
+    extraUpFlags = [
+      "--login-server" "https://headscale.matv.io"
+      "--hostname" "conduit"
+    ];
+  };
 
   # ── Caddy reverse proxy (on host) ─────────────────────────
   # Proxies to headscale inside the container. Since the container
