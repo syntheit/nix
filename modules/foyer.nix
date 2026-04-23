@@ -151,7 +151,7 @@ in
       wantedBy = [ "multi-user.target" ];
 
       path = lib.optional config.virtualisation.docker.enable config.virtualisation.docker.package
-        ++ lib.optional (cfg.temperatureCommand != "") pkgs.openssh;
+        ++ lib.optionals (cfg.temperatureCommand != "") [ pkgs.openssh pkgs.iproute2 pkgs.coreutils pkgs.gawk ];
 
       serviceConfig = {
         Type = "simple";
