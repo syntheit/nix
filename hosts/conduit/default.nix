@@ -8,12 +8,26 @@
   imports = [
     ./hardware.nix
     ./headscale.nix
+    ./secrets.nix
     ../../modules/server-safety.nix
+    ../../modules/foyer.nix
   ];
 
   services.serverSafety = {
     enable = true;
     user = "matv";
+  };
+
+  # Foyer — server dashboard (API-only, no frontend needed)
+  services.foyer = {
+    enable = true;
+    mode = "api-only";
+    domain = "conduit.matv.io";
+    jwtSecretFile = config.sops.secrets.foyer_jwt_secret.path;
+    apiKeyFiles = [ config.sops.secrets.foyer_api_key.path ];
+    authorizedKeys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdRcH2UWe31VdU62j3Ksbb6LDyS1APNW1BQMM8mvsej daniel@matv.io"
+    ];
   };
 
   networking = {
@@ -208,6 +222,11 @@
           header_up X-Forwarded-For {remote_host}
           header_up X-Forwarded-Proto {scheme}
         }
+      '';
+    };
+    virtualHosts."conduit.matv.io" = {
+      extraConfig = ''
+        reverse_proxy localhost:8420
       '';
     };
     virtualHosts."games.matv.io" = {

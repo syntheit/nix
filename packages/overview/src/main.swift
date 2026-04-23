@@ -98,8 +98,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     if let p = self.pendingProgress {
                         self.pendingProgress = nil
                         self.showOverlay()
-                        self.gestureOffset = 0
-                        self.state.progress = max(0, min(p, 1.2))
+                        self.gestureOffset = p
+                        self.gestureBaseProgress = 0
                     }
                 }
             }
@@ -118,7 +118,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             if phase == .visible {
                 let p = gestureBaseProgress + delta - gestureOffset
-                state.progress = max(0, min(p, 1.2))
+                state.progress = max(0, min(p, 1.0))
             } else if phase == .preparing {
                 pendingProgress = delta
             }
@@ -196,9 +196,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         state.progress = 0
         state.updateSpaces(spaces)
 
+        overlayWindow.alphaValue = 0
         overlayWindow.makeKeyAndOrderFront(nil)
         NSApp.activate()
         phase = .visible
+        // GPU-accelerated fade-in (no SwiftUI re-renders)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.15
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            self.overlayWindow.animator().alphaValue = 1.0
+        }
         WindowManager.run(["sketchybar", "--bar", "hidden=true"])
 
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -230,6 +237,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func animateDismiss(then action: (() -> Void)? = nil) {
         guard phase == .visible else { return }
         phase = .dismissing
+        // GPU-accelerated fade-out alongside SwiftUI animation
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.2
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            self.overlayWindow.animator().alphaValue = 0
+        }
         withAnimation(.easeIn(duration: 0.2)) {
             self.state.progress = 0
         } completion: { [weak self] in
@@ -245,6 +258,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         pendingProgress = nil
         if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil }
         if let m = globalKeyMonitor { NSEvent.removeMonitor(m); globalKeyMonitor = nil }
+        overlayWindow.alphaValue = 0
         overlayWindow.orderOut(nil)
         state.windows = []; state.spaces = []
         state.progress = 0

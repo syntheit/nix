@@ -153,7 +153,7 @@ enum AsyncData {
         var ramPercent: Int?
         var memPressure: Int?  // compressed memory as % of total RAM
         var cpuTemp: Int?
-        var containers: Int?
+        var uptimeSecs: Int?
     }
 
     struct FoyerConfig {
@@ -219,7 +219,9 @@ enum AsyncData {
 
         // Parse structured fields
         let cpu = (json["cpu"] as? [String: Any])?["usage_percent"] as? Double ?? 0
-        let mem = (json["memory"] as? [String: Any])?["usage_percent"] as? Double ?? 0
+        let memObj = json["memory"] as? [String: Any]
+        let mem = memObj?["usage_percent"] as? Double ?? 0
+        let cmpr = memObj?["compressed_percent"] as? Double ?? 0
         let sys = json["system"] as? [String: Any]
         let uptimeSec = sys?["uptime_seconds"] as? Double ?? 0
         let load = (sys?["load_avg"] as? [Double])?.first ?? 0
@@ -231,13 +233,14 @@ enum AsyncData {
         let days = Int(uptimeSec) / 86400
         let info = "\(days)d  cpu \(Int(cpu))%  ram \(Int(mem))%  \(cpuTemp)°  load \(String(format: "%.1f", load))  containers \(containers)"
 
-        // Cache as structured format: foyer|cpu|ram|uptime|load|containers|cpuTemp
-        let cacheStr = "foyer|\(Int(cpu))|\(Int(mem))|\(Int(uptimeSec))|\(String(format: "%.2f", load))|\(containers)|\(cpuTemp)"
+        // Cache as structured format: foyer|cpu|ram|uptime|load|containers|cpuTemp|cmpr
+        let cacheStr = "foyer|\(Int(cpu))|\(Int(mem))|\(Int(uptimeSec))|\(String(format: "%.2f", load))|\(containers)|\(cpuTemp)|\(Int(cmpr))"
         writeCache("server_\(cfg.name)", cacheStr)
 
         return ServerHealth(
             name: cfg.name, info: info, ok: true,
-            cpuPercent: Int(cpu), ramPercent: Int(mem), cpuTemp: cpuTemp, containers: containers
+            cpuPercent: Int(cpu), ramPercent: Int(mem), memPressure: Int(cmpr),
+            cpuTemp: cpuTemp, uptimeSecs: Int(uptimeSec)
         )
     }
 
@@ -257,7 +260,7 @@ enum AsyncData {
 
     private static func parseServerCache(name: String, raw: String) -> ServerHealth {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Detect foyer-format cache: "foyer|cpu|ram|uptime|load|containers|cpuTemp"
+        // Detect foyer-format cache: "foyer|cpu|ram|uptime|load|containers|cpuTemp|cmpr"
         if trimmed.hasPrefix("foyer|") {
             let parts = trimmed.split(separator: "|")
             if parts.count >= 6 {
@@ -265,11 +268,11 @@ enum AsyncData {
                 let ram = Int(parts[2]) ?? 0
                 let uptimeSec = Int(parts[3]) ?? 0
                 let load = parts[4]
-                let ct = Int(parts[5]) ?? 0
                 let temp = parts.count >= 7 ? Int(parts[6]) ?? 0 : 0
+                let cmpr = parts.count >= 8 ? Int(parts[7]) ?? 0 : 0
                 let days = uptimeSec / 86400
-                let info = "\(days)d  cpu \(cpu)%  ram \(ram)%  \(temp)°  load \(load)  containers \(ct)"
-                return ServerHealth(name: name, info: info, ok: true, cpuPercent: cpu, ramPercent: ram, cpuTemp: temp, containers: ct)
+                let info = "\(days)d  cpu \(cpu)%  ram \(ram)%  \(temp)°  load \(load)"
+                return ServerHealth(name: name, info: info, ok: true, cpuPercent: cpu, ramPercent: ram, memPressure: cmpr, cpuTemp: temp, uptimeSecs: uptimeSec)
             }
         }
         // SSH-format cache: plain text
