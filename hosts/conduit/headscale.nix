@@ -44,6 +44,11 @@ in
     config = { pkgs, ... }: {
       system.stateVersion = "23.11";
 
+      # Use Tailscale's DNS so tailnet hostnames resolve
+      # (e.g. ssh tars@m-1w6l works inside the container).
+      networking.nameservers = [ "100.100.100.100" ];
+      networking.search = [ "tail.matv.io" ];
+
       # ── Headscale ────────────────────────────────────────
       services.headscale = {
         enable = true;
