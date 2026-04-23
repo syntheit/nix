@@ -11,9 +11,12 @@ let
     };
     additions =
       final: _prev:
-      import ../packages {
+      (import ../packages {
         inherit lib;
         pkgs = final;
+      })
+      // {
+        foyer = inputs.foyer.packages.${final.stdenv.hostPlatform.system}.default;
       };
   };
 in

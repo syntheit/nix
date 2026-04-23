@@ -59,6 +59,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    foyer = {
+      url = "github:syntheit/foyer";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     nixos-avf = {
       url = "github:nix-community/nixos-avf";
       inputs.nixpkgs.follows = "nixpkgs";
