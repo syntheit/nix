@@ -96,24 +96,6 @@ func extractFrame(_ src: URL) -> CGImage? {
 
 func process(_ src: URL) -> URL? {
     let px = screenPixels()
-    let r = 10.0 * px.scale // macOS window corner radius ≈ 10pt
-
-    // Query yabai for where windows start (bar height + padding).
-    // The wallpaper clip rect matches the window area so black corners
-    // appear exactly where window rounded corners expose the desktop.
-    let windowTopPt: CGFloat = {
-        guard let data = runYabai(["query", "--windows"]),
-              let wins = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
-        else { return 40.0 }
-        return wins.compactMap { w -> CGFloat? in
-            guard let frame = w["frame"] as? [String: Any],
-                  let y = frame["y"] as? Double,
-                  let visible = w["is-visible"] as? Int, visible == 1,
-                  let floating = w["is-floating"] as? Int, floating == 0
-            else { return nil }
-            return CGFloat(y)
-        }.min() ?? 40.0
-    }()
 
     let name = src.deletingPathExtension().lastPathComponent
         .replacingOccurrences(of: " ", with: "_")
@@ -136,25 +118,6 @@ func process(_ src: URL) -> URL? {
               space: CGColorSpaceCreateDeviceRGB(),
               bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
     else { return nil }
-
-    // Black background
-    ctx.setFillColor(red: 0, green: 0, blue: 0, alpha: 1)
-    ctx.fill(CGRect(x: 0, y: 0, width: px.w, height: px.h))
-
-    // Clip to rounded rect matching the window area exactly:
-    // - Flush to left/right/bottom edges (no visible border)
-    // - Top edge at bar bottom (black above is hidden behind the bar)
-    // - Rounded corners at all 4 window corner positions
-    // CG origin is bottom-left, Y increases upward.
-    let topInsetPx = windowTopPt * px.scale
-    let windowRect = CGRect(
-        x: 0, y: 0,
-        width: CGFloat(px.w),
-        height: CGFloat(px.h) - topInsetPx
-    )
-    ctx.addPath(CGPath(roundedRect: windowRect,
-                       cornerWidth: r, cornerHeight: r, transform: nil))
-    ctx.clip()
 
     let (sw, sh) = (CGFloat(img.width), CGFloat(img.height))
     let scale = max(CGFloat(px.w) / sw, CGFloat(px.h) / sh)
@@ -186,45 +149,99 @@ func runYabai(_ args: [String]) -> Data? {
     return pipe.fileHandleForReading.readDataToEndOfFile()
 }
 
-// MARK: - Set wallpaper (all spaces via yabai)
+// MARK: - Set wallpaper (via Index.plist + WallpaperAgent restart)
 
-/// Sets wallpaper for the current space using NSWorkspace (proper macOS API).
-func setForCurrentSpace(_ url: URL) {
-    guard let screen = NSScreen.main else { return }
-    try? NSWorkspace.shared.setDesktopImageURL(url, for: screen, options: [
-        .imageScaling: NSImageScaling.scaleAxesIndependently.rawValue
-    ])
+let indexPlist = home.appendingPathComponent(
+    "Library/Application Support/com.apple.wallpaper/Store/Index.plist")
+
+func makeConfigData(_ imageURL: URL) -> Data {
+    let config: [String: Any] = [
+        "type": "imageFile",
+        "url": ["relative": imageURL.absoluteString],
+    ]
+    return try! PropertyListSerialization.data(
+        fromPropertyList: config, format: .binary, options: 0)
 }
 
-/// Sets the wallpaper across ALL spaces by switching to each space via yabai
-/// and calling NSWorkspace.setDesktopImageURL. This works with WallpaperAgent
-/// instead of fighting its plist.
+func updateDesktop(_ desktop: inout [String: Any], config: Data, now: Date) {
+    guard var content = desktop["Content"] as? [String: Any],
+          var choices = content["Choices"] as? [[String: Any]],
+          !choices.isEmpty
+    else { return }
+    choices[0]["Configuration"] = config
+    choices[0]["Provider"] = "com.apple.wallpaper.choice.image"
+    content["Choices"] = choices
+    desktop["Content"] = content
+    desktop["LastSet"] = now
+    desktop["LastUse"] = now
+}
+
 func setWallpaper(_ url: URL) {
-    guard let spacesData = runYabai(["query", "--spaces"]),
-          let spaces = try? JSONSerialization.jsonObject(with: spacesData) as? [[String: Any]]
-    else {
-        // Fallback: just set current space
-        setForCurrentSpace(url)
-        return
+    guard let data = try? Data(contentsOf: indexPlist),
+          var plist = try? PropertyListSerialization.propertyList(
+              from: data, format: nil) as? [String: Any]
+    else { return }
+
+    let config = makeConfigData(url)
+    let now = Date()
+
+    // Update SystemDefault
+    if var sd = plist["SystemDefault"] as? [String: Any],
+       var desktop = sd["Desktop"] as? [String: Any] {
+        updateDesktop(&desktop, config: config, now: now)
+        sd["Desktop"] = desktop
+        plist["SystemDefault"] = sd
     }
 
-    let currentIndex = spaces.first(where: {
-        ($0["has-focus"] as? Int) == 1
-    })?["index"] as? Int ?? 1
-
-    // Set current space first
-    setForCurrentSpace(url)
-
-    // Visit each other space and set
-    for space in spaces {
-        guard let idx = space["index"] as? Int, idx != currentIndex else { continue }
-        _ = runYabai(["space", "--focus", "\(idx)"])
-        Thread.sleep(forTimeInterval: 0.15)
-        setForCurrentSpace(url)
+    // Update all Displays
+    if var displays = plist["Displays"] as? [String: [String: Any]] {
+        for (did, var dv) in displays {
+            if var desktop = dv["Desktop"] as? [String: Any] {
+                updateDesktop(&desktop, config: config, now: now)
+                dv["Desktop"] = desktop
+                displays[did] = dv
+            }
+        }
+        plist["Displays"] = displays
     }
 
-    // Return to original space
-    _ = runYabai(["space", "--focus", "\(currentIndex)"])
+    // Update all Spaces (Default.Desktop + Displays.*.Desktop)
+    if var spaces = plist["Spaces"] as? [String: [String: Any]] {
+        for (sid, var sv) in spaces {
+            if var def = sv["Default"] as? [String: Any],
+               var desktop = def["Desktop"] as? [String: Any] {
+                updateDesktop(&desktop, config: config, now: now)
+                def["Desktop"] = desktop
+                sv["Default"] = def
+            }
+            if var dispMap = sv["Displays"] as? [String: [String: Any]] {
+                for (did, var dv) in dispMap {
+                    if var desktop = dv["Desktop"] as? [String: Any] {
+                        updateDesktop(&desktop, config: config, now: now)
+                        dv["Desktop"] = desktop
+                        dispMap[did] = dv
+                    }
+                }
+                sv["Displays"] = dispMap
+            }
+            spaces[sid] = sv
+        }
+        plist["Spaces"] = spaces
+    }
+
+    guard let out = try? PropertyListSerialization.data(
+        fromPropertyList: plist, format: .binary, options: 0)
+    else { return }
+    try? out.write(to: indexPlist, options: .atomic)
+
+    // Restart WallpaperAgent to pick up changes
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+    p.arguments = ["WallpaperAgent"]
+    p.standardOutput = FileHandle.nullDevice
+    p.standardError = FileHandle.nullDevice
+    try? p.run()
+    p.waitUntilExit()
 }
 
 // MARK: - Get current wallpaper

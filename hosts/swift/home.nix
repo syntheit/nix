@@ -31,6 +31,7 @@
     ../../home/modules/brightness-panel.nix
     ../../home/modules/search-panel.nix
     ../../home/modules/wallpaper-darwin.nix
+    ../../home/modules/menubar-blocker.nix
   ];
 
   home.username = vars.user.name;

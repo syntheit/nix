@@ -62,7 +62,9 @@ enum WindowManager {
         var composite: CGImage?
         if let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true),
            let display = content.displays.first {
-            let f = SCContentFilter(display: display, excludingWindows: [])
+            let myPID = ProcessInfo.processInfo.processIdentifier
+            let exclude = content.windows.filter { $0.owningApplication?.processID == myPID }
+            let f = SCContentFilter(display: display, excludingWindows: exclude)
             let c = SCStreamConfiguration()
             c.width = display.width * 2; c.height = display.height * 2; c.showsCursor = false
             composite = try? await SCScreenshotManager.captureImage(contentFilter: f, configuration: c)
@@ -145,7 +147,9 @@ enum WindowManager {
     // MARK: - Private
 
     private static func validWindows(_ yabai: [YabaiWindow]) -> [YabaiWindow] {
-        yabai.filter { !$0.isHidden && !$0.isMinimized && $0.app != "overview" && $0.app != "sketchybar" && $0.scratchpad.isEmpty }
+        yabai.filter { !$0.isHidden && !$0.isMinimized
+            && $0.app.lowercased() != "overview" && $0.app.lowercased() != "sketchybar"
+            && $0.scratchpad.isEmpty }
     }
 
     private static func appIcon(for pid: Int) -> NSImage {
