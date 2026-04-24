@@ -137,6 +137,16 @@ in
 
       programs.zsh.enable = true;
 
+      programs.ssh.extraConfig = ''
+        Host github.com
+          IdentityFile /home/fleet/.ssh/deploy_key
+          IdentitiesOnly yes
+
+        Host *
+          IdentityFile /home/fleet/.ssh/id_ed25519
+          StrictHostKeyChecking accept-new
+      '';
+
       nix.settings.experimental-features = [ "nix-command" "flakes" ];
     };
   };
