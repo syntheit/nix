@@ -20,9 +20,8 @@ extension Color {
 struct DashboardView: View {
     // Mach/IOKit calls are <1ms — safe to init synchronously
     @State private var cpu = SystemBridge.getCPU()
-    @State private var ram = SystemBridge.getRAM()
+    @State private var memory = SystemBridge.getMemory()
     @State private var temp = SystemBridge.getTemp()
-    @State private var memPressure = SystemBridge.getMemoryPressure()
     @State private var battery = SystemBridge.getBattery()
     @State private var time = Date()
     @State private var privacyMode = SystemBridge.isPrivacyMode()
@@ -34,23 +33,16 @@ struct DashboardView: View {
     @State private var spotify = SystemBridge.getCachedSpotify()
 
     // Slow data loaded from cache synchronously (instant if cached, empty if not)
-    private static let allServerNames = ["harbor", "raven", "conduit"]
     private static let foyerServers: [AsyncData.FoyerConfig] = [
         AsyncData.FoyerConfig(name: "harbor", url: "https://harbor.matv.io"),
         AsyncData.FoyerConfig(name: "raven", url: "https://raven.matv.io"),
         AsyncData.FoyerConfig(name: "conduit", url: "https://conduit.matv.io"),
     ]
-    // Servers without a Foyer config get SSH
-    private static let sshServers: [String] = allServerNames.filter { name in
-        !foyerServers.contains { $0.name == name }
-    }
 
     @State private var weather = AsyncData.getCachedWeather()
     @State private var exchange = AsyncData.getCachedExchange()
-    @State private var servers = AsyncData.getCachedServers(allServerNames)
+    @State private var servers = AsyncData.getCachedServers(foyerServers.map(\.name))
     @State private var agenda = AsyncData.getCachedCalendar()
-
-    private let serverScript = "days=$(( $(cut -d. -f1 /proc/uptime) / 86400 )); load=$(cut -d\\\" \\\" -f1 /proc/loadavg); eval $(awk \\'/MemTotal/{printf \\\"total=%d \\\", $2/1048576} /MemAvailable/{printf \\\"avail=%d\\\", $2/1048576}\\' /proc/meminfo); used=$((total-avail)); ct=$(docker ps -q 2>/dev/null | wc -l | tr -d \\\" \\\"); echo \"${days}d  load $load  ${used}/${total}G  containers $ct\""
 
     // Tracks whether initial render is done (suppresses entry animations)
     @State private var appeared = false
@@ -78,8 +70,8 @@ struct DashboardView: View {
                     exchangeSection
                         .padding(.top, 24)
                 }
-                if weather != nil {
-                    weatherSection
+                if let w = weather {
+                    weatherSection(w)
                         .padding(.top, 24)
                 }
             }
@@ -93,14 +85,12 @@ struct DashboardView: View {
         .task(id: "clock") {
             while !Task.isCancelled {
                 time = Date()
-                volume = SystemBridge.getVolume()
                 privacyMode = SystemBridge.isPrivacyMode()
                 try? await Task.sleep(for: .seconds(1))
             }
         }
         .task(id: "fast") {
-            volume = SystemBridge.getVolume()
-            spotify = SystemBridge.getSpotify()
+            refreshFast()
             appeared = true
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(3))
@@ -110,7 +100,7 @@ struct DashboardView: View {
         .task(id: "slow") {
             async let w = AsyncData.getWeather()
             async let e = AsyncData.getExchange()
-            async let s = AsyncData.getServers(sshServers: Self.sshServers, healthScript: serverScript, foyerServers: Self.foyerServers)
+            async let s = AsyncData.getServers(foyerServers: Self.foyerServers)
             async let c = AsyncData.getTodayEvents()
             let newWeather = await w
             let newExchange = await e
@@ -125,13 +115,13 @@ struct DashboardView: View {
 
     private func refreshFast() {
         cpu = SystemBridge.getCPU()
-        ram = SystemBridge.getRAM()
+        memory = SystemBridge.getMemory()
         temp = SystemBridge.getTemp()
-        memPressure = SystemBridge.getMemoryPressure()
         battery = SystemBridge.getBattery()
         volume = SystemBridge.getVolume()
         spotify = SystemBridge.getSpotify()
         uptime = SystemBridge.getUptime()
+        diskFree = SystemBridge.getDiskFree()
     }
 
     // MARK: - Sections
@@ -156,14 +146,16 @@ struct DashboardView: View {
         }
     }
 
+    private static let worldClockFmt: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "HH:mm"; return f
+    }()
+
     private var worldClockRow: some View {
         let local = TimeZone.current.identifier
-        let fmt = DateFormatter()
-        fmt.dateFormat = "HH:mm"
         let clocks = Self.worldClocks.filter { $0.tz != local }.compactMap { city -> (String, String)? in
             guard let tz = TimeZone(identifier: city.tz) else { return nil }
-            fmt.timeZone = tz
-            return (city.label, fmt.string(from: time))
+            Self.worldClockFmt.timeZone = tz
+            return (city.label, Self.worldClockFmt.string(from: time))
         }
         return HStack(spacing: 16) {
             ForEach(clocks, id: \.0) { city, t in
@@ -296,11 +288,13 @@ struct DashboardView: View {
 
     private var batteryIcon: String {
         guard let b = battery else { return "battery.100percent" }
-        if b.charging { return "battery.100percent.bolt" }
-        if b.percent > 75 { return "battery.100percent" }
-        if b.percent > 50 { return "battery.75percent" }
-        if b.percent > 25 { return "battery.50percent" }
-        return "battery.25percent"
+        let level: String
+        if b.percent > 87 { level = "100" }
+        else if b.percent > 62 { level = "75" }
+        else if b.percent > 37 { level = "50" }
+        else if b.percent > 12 { level = "25" }
+        else { level = "0" }
+        return b.charging ? "battery.\(level)percent.bolt" : "battery.\(level)percent"
     }
 
     private var batteryColor: Color {
@@ -347,8 +341,8 @@ struct DashboardView: View {
 
     private var allSystems: [AsyncData.ServerHealth] {
         let local = AsyncData.ServerHealth(
-            name: "swift", info: "", ok: true,
-            cpuPercent: cpu, ramPercent: ram, memPressure: memPressure,
+            name: "swift", ok: true,
+            cpuPercent: cpu, ramPercent: memory.ramPercent, memPressure: memory.pressurePercent,
             cpuTemp: temp, uptimeSecs: Int(ProcessInfo.processInfo.systemUptime)
         )
         return [local] + servers
@@ -389,11 +383,6 @@ struct DashboardView: View {
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundStyle(Color.dimmed)
                         }
-                    } else {
-                        // Simple text for SSH-only servers
-                        Text(server.info)
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(Color.subtle)
                     }
                     Spacer()
                 }
@@ -425,21 +414,76 @@ struct DashboardView: View {
         }
     }
 
-    private var weatherSection: some View {
+    private func weatherSection(_ w: AsyncData.WeatherInfo) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionHeader(title: "Weather")
             HStack(spacing: 12) {
-                Text(weather!.location.capitalized)
+                Text(w.location.capitalized)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.white)
-                Text(weather!.condition)
+                Text(w.condition)
                     .font(.system(size: 13))
                     .foregroundStyle(Color.subtle)
-                Text(weather!.temp)
+                Text(w.temp)
                     .font(.system(size: 13, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.white)
             }
+            if w.sunrise != nil || w.sunset != nil {
+                HStack(spacing: 16) {
+                    if let sr = w.sunrise {
+                        HStack(spacing: 4) {
+                            Image(systemName: "sunrise.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(Color.yellow)
+                            Text(sr)
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(Color.subtle)
+                        }
+                    }
+                    if let ss = w.sunset {
+                        HStack(spacing: 4) {
+                            Image(systemName: "sunset.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(Color.yellow)
+                            Text(ss)
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(Color.subtle)
+                        }
+                    }
+                    if let ctx = sunContext(w) {
+                        Text(ctx)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.dimmed)
+                    }
+                }
+            }
         }
+    }
+
+    /// Contextual sun info: "rises in Xh", "sets in Xh Ym", or "Xh Ym daylight"
+    private func sunContext(_ w: AsyncData.WeatherInfo) -> String? {
+        guard let sr = w.sunrise, let ss = w.sunset else { return nil }
+        let srParts = sr.split(separator: ":"), ssParts = ss.split(separator: ":")
+        guard srParts.count == 2, ssParts.count == 2,
+              let srH = Int(srParts[0]), let srM = Int(srParts[1]),
+              let ssH = Int(ssParts[0]), let ssM = Int(ssParts[1]) else { return nil }
+        let cal = Foundation.Calendar.current
+        let nowH = cal.component(.hour, from: time)
+        let nowM = cal.component(.minute, from: time)
+        let now = nowH * 60 + nowM
+        let rise = srH * 60 + srM
+        let set = ssH * 60 + ssM
+        if now < rise {
+            let d = rise - now
+            return d < 60 ? "rises in \(d)m" : "rises in \(d / 60)h \(d % 60)m"
+        }
+        if now < set {
+            let d = set - now
+            return d < 60 ? "sets in \(d)m" : "sets in \(d / 60)h \(d % 60)m"
+        }
+        let daylight = set - rise
+        guard daylight > 0 else { return nil }
+        return "\(daylight / 60)h \(daylight % 60)m daylight"
     }
 }
 

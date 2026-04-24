@@ -16,11 +16,11 @@ enum AsyncData {
             atPath: cacheDir, withIntermediateDirectories: true)
     }
 
-    private static func readCache(_ name: String) -> String? {
+    private static func readCache(_ name: String, ttl: TimeInterval = cacheTTL) -> String? {
         let path = "\(cacheDir)/\(name)"
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
               let modified = attrs[.modificationDate] as? Date,
-              Date().timeIntervalSince(modified) < cacheTTL
+              Date().timeIntervalSince(modified) < ttl
         else { return nil }
         return try? String(contentsOfFile: path, encoding: .utf8)
     }
@@ -48,36 +48,76 @@ enum AsyncData {
         var location: String
         var condition: String
         var temp: String
+        var sunrise: String?  // 24h format "5:42"
+        var sunset: String?   // 24h format "19:15"
     }
 
     static func getWeather() async -> WeatherInfo? {
         if let cached = readCache("weather") {
             return parseWeather(cached)
         }
-        guard let url = URL(string: "https://wttr.in/?m&format=%l|%C|%t") else { return nil }
+        // Use JSON API for reliable location names (%l can return coordinates)
+        guard let url = URL(string: "https://wttr.in/?m&format=j1") else { return nil }
         var request = URLRequest(url: url, timeoutInterval: 10)
         request.setValue("curl", forHTTPHeaderField: "User-Agent")
         guard let (data, _) = try? await URLSession.shared.data(for: request),
-              let text = String(data: data, encoding: .utf8)
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
-        writeCache("weather", text)
-        return parseWeather(text)
+
+        let nearest = (json["nearest_area"] as? [[String: Any]])?.first
+        let current = (json["current_condition"] as? [[String: Any]])?.first
+        let astro = ((json["weather"] as? [[String: Any]])?.first?["astronomy"] as? [[String: Any]])?.first
+
+        let area = (nearest?["areaName"] as? [[String: Any]])?.first?["value"] as? String ?? ""
+        let region = (nearest?["region"] as? [[String: Any]])?.first?["value"] as? String ?? ""
+        let location = region.isEmpty ? area : "\(area), \(region)"
+        let condition = (current?["weatherDesc"] as? [[String: Any]])?.first?["value"] as? String ?? ""
+        let tempC = current?["temp_C"] as? String ?? ""
+        let sunrise = astro?["sunrise"] as? String ?? ""
+        let sunset = astro?["sunset"] as? String ?? ""
+
+        let cacheStr = "\(location)|\(condition)|\(tempC)°C|\(sunrise)|\(sunset)"
+        writeCache("weather", cacheStr)
+        return parseWeather(cacheStr)
+    }
+
+    /// Convert "06:15 AM" / "07:30 PM" / "06:44:45" to 24h "6:15" / "19:30" (strips seconds)
+    private static func cleanTime(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        let tokens = trimmed.components(separatedBy: " ")
+        guard let timePart = tokens.first else { return trimmed }
+        let components = timePart.split(separator: ":")
+        guard components.count >= 2, var hour = Int(components[0]), let min = Int(components[1])
+        else { return trimmed }
+        if tokens.count > 1 {
+            let ampm = tokens[1].uppercased()
+            if ampm == "PM" && hour != 12 { hour += 12 }
+            if ampm == "AM" && hour == 12 { hour = 0 }
+        }
+        return String(format: "%d:%02d", hour, min)
     }
 
     private static func parseWeather(_ raw: String) -> WeatherInfo? {
-        let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "|")
+        let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: "|", omittingEmptySubsequences: false)
         guard parts.count >= 3 else { return nil }
         var tempStr = String(parts[2]).trimmingCharacters(in: .whitespaces)
         if tempStr.hasPrefix("+") { tempStr = String(tempStr.dropFirst()) }
-        // Strip trailing country code (e.g. ", United States" or ", Us")
-        var location = String(parts[0]).trimmingCharacters(in: .whitespaces)
-        if let range = location.range(of: #",\s*\w{2}$"#, options: .regularExpression) {
-            location = String(location[..<range.lowerBound])
+        let location = String(parts[0]).trimmingCharacters(in: .whitespaces)
+        var sunrise: String? = nil
+        var sunset: String? = nil
+        if parts.count >= 5 {
+            let sr = cleanTime(String(parts[3]))
+            let ss = cleanTime(String(parts[4]))
+            if sr.contains(":") { sunrise = sr }
+            if ss.contains(":") { sunset = ss }
         }
         return WeatherInfo(
             location: location,
             condition: String(parts[1]).trimmingCharacters(in: .whitespaces),
-            temp: tempStr
+            temp: tempStr,
+            sunrise: sunrise,
+            sunset: sunset
         )
     }
 
@@ -146,9 +186,7 @@ enum AsyncData {
     struct ServerHealth: Identifiable {
         var id: String { name }
         var name: String
-        var info: String   // Summary line for display
         var ok: Bool
-        // Structured fields (populated by Foyer API, nil for SSH-only servers)
         var cpuPercent: Int?
         var ramPercent: Int?
         var memPressure: Int?  // compressed memory as % of total RAM
@@ -161,14 +199,9 @@ enum AsyncData {
         var url: String    // Foyer API base URL
     }
 
-    static func getServers(
-        sshServers: [String],
-        healthScript: String,
-        foyerServers: [FoyerConfig]
-    ) async -> [ServerHealth] {
-        // Check cache first
-        let allNames = foyerServers.map(\.name) + sshServers
-        if let cached = readCachedServers(allNames), !cached.isEmpty {
+    static func getServers(foyerServers: [FoyerConfig]) async -> [ServerHealth] {
+        let names = foyerServers.map(\.name)
+        if let cached = readCachedServers(names), !cached.isEmpty {
             return cached
         }
 
@@ -176,12 +209,9 @@ enum AsyncData {
             for cfg in foyerServers {
                 group.addTask { await fetchFoyerServer(cfg) }
             }
-            for name in sshServers {
-                group.addTask { await fetchSSHServer(name, script: healthScript) }
-            }
             var results: [ServerHealth] = []
             for await result in group { results.append(result) }
-            return allNames.compactMap { n in results.first { $0.name == n } }
+            return names.compactMap { n in results.first { $0.name == n } }
         }
     }
 
@@ -208,75 +238,58 @@ enum AsyncData {
     // MARK: Foyer API fetch (via foyer-api binary which handles SSH key signing)
 
     private static func fetchFoyerServer(_ cfg: FoyerConfig) async -> ServerHealth {
-        // foyer-api reads ~/.ssh/id_ed25519 (or mainkey) and signs the request
         let cmd = "foyer-api --host \(cfg.url) /api/health"
         guard let output = shell(cmd, timeout: 10),
               let data = output.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
-            return ServerHealth(name: cfg.name, info: "unreachable", ok: false)
+            return ServerHealth(name: cfg.name, ok: false)
         }
 
-        // Parse structured fields
         let cpu = (json["cpu"] as? [String: Any])?["usage_percent"] as? Double ?? 0
         let memObj = json["memory"] as? [String: Any]
         let mem = memObj?["usage_percent"] as? Double ?? 0
         let cmpr = memObj?["compressed_percent"] as? Double ?? 0
         let sys = json["system"] as? [String: Any]
         let uptimeSec = sys?["uptime_seconds"] as? Double ?? 0
-        let load = (sys?["load_avg"] as? [Double])?.first ?? 0
         let temps = json["temperatures"] as? [String: Any]
         let cpuTemp = temps?["cpu"] as? Int ?? 0
+
+        // Cache: foyer|cpu|ram|uptime|load|containers|cpuTemp|cmpr
+        let load = (sys?["load_avg"] as? [Double])?.first ?? 0
         let containers = ((json["docker"] as? [String: Any])?["containers"] as? [[String: Any]])?
             .filter { ($0["state"] as? String) == "running" }.count ?? 0
-
-        let days = Int(uptimeSec) / 86400
-        let info = "\(days)d  cpu \(Int(cpu))%  ram \(Int(mem))%  \(cpuTemp)°  load \(String(format: "%.1f", load))  containers \(containers)"
-
-        // Cache as structured format: foyer|cpu|ram|uptime|load|containers|cpuTemp|cmpr
         let cacheStr = "foyer|\(Int(cpu))|\(Int(mem))|\(Int(uptimeSec))|\(String(format: "%.2f", load))|\(containers)|\(cpuTemp)|\(Int(cmpr))"
         writeCache("server_\(cfg.name)", cacheStr)
 
         return ServerHealth(
-            name: cfg.name, info: info, ok: true,
+            name: cfg.name, ok: true,
             cpuPercent: Int(cpu), ramPercent: Int(mem), memPressure: Int(cmpr),
             cpuTemp: cpuTemp, uptimeSecs: Int(uptimeSec)
         )
-    }
-
-    // MARK: SSH fetch (unchanged, for raven)
-
-    private static func fetchSSHServer(_ name: String, script: String) async -> ServerHealth {
-        let cmd = "ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no \(name) bash -c '\(script)'"
-        guard let output = shell(cmd, timeout: 8) else {
-            return ServerHealth(name: name, info: "unreachable", ok: false)
-        }
-        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-        writeCache("server_\(name)", trimmed)
-        return ServerHealth(name: name, info: trimmed, ok: !trimmed.isEmpty)
     }
 
     // MARK: Cache parsing
 
     private static func parseServerCache(name: String, raw: String) -> ServerHealth {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Detect foyer-format cache: "foyer|cpu|ram|uptime|load|containers|cpuTemp|cmpr"
-        if trimmed.hasPrefix("foyer|") {
-            let parts = trimmed.split(separator: "|")
-            if parts.count >= 6 {
-                let cpu = Int(parts[1]) ?? 0
-                let ram = Int(parts[2]) ?? 0
-                let uptimeSec = Int(parts[3]) ?? 0
-                let load = parts[4]
-                let temp = parts.count >= 7 ? Int(parts[6]) ?? 0 : 0
-                let cmpr = parts.count >= 8 ? Int(parts[7]) ?? 0 : 0
-                let days = uptimeSec / 86400
-                let info = "\(days)d  cpu \(cpu)%  ram \(ram)%  \(temp)°  load \(load)"
-                return ServerHealth(name: name, info: info, ok: true, cpuPercent: cpu, ramPercent: ram, memPressure: cmpr, cpuTemp: temp, uptimeSecs: uptimeSec)
-            }
+        guard trimmed.hasPrefix("foyer|") else {
+            return ServerHealth(name: name, ok: false)
         }
-        // SSH-format cache: plain text
-        return ServerHealth(name: name, info: trimmed, ok: !trimmed.isEmpty)
+        let parts = trimmed.split(separator: "|")
+        guard parts.count >= 6 else {
+            return ServerHealth(name: name, ok: false)
+        }
+        let cpu = Int(parts[1]) ?? 0
+        let ram = Int(parts[2]) ?? 0
+        let uptimeSec = Int(parts[3]) ?? 0
+        let temp = parts.count >= 7 ? Int(parts[6]) ?? 0 : 0
+        let cmpr = parts.count >= 8 ? Int(parts[7]) ?? 0 : 0
+        return ServerHealth(
+            name: name, ok: true,
+            cpuPercent: cpu, ramPercent: ram, memPressure: cmpr,
+            cpuTemp: temp, uptimeSecs: uptimeSec
+        )
     }
 
     // MARK: - Calendar (today's agenda via EventKit — handles recurring events)
@@ -295,12 +308,7 @@ enum AsyncData {
     }()
 
     static func getCachedCalendar() -> [CalendarEvent] {
-        let path = "\(cacheDir)/calendar"
-        guard let raw = try? String(contentsOfFile: path, encoding: .utf8),
-              let attrs = try? FileManager.default.attributesOfItem(atPath: path),
-              let modified = attrs[.modificationDate] as? Date,
-              Date().timeIntervalSince(modified) < calendarCacheTTL
-        else { return [] }
+        guard let raw = readCache("calendar", ttl: calendarCacheTTL) else { return [] }
         return parseCalendarCache(raw)
     }
 
@@ -363,11 +371,12 @@ enum AsyncData {
         process.standardError = FileHandle.nullDevice
         do { try process.run() } catch { return nil }
 
-        let deadline = Date().addingTimeInterval(timeout)
-        while process.isRunning && Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.05)
+        let sem = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in sem.signal() }
+        if sem.wait(timeout: .now() + timeout) == .timedOut {
+            process.terminate()
+            return nil
         }
-        if process.isRunning { process.terminate(); return nil }
 
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         return String(data: data, encoding: .utf8)

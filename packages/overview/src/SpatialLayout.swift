@@ -97,9 +97,9 @@ struct DraggableWindowThumbnail: View {
                     .transition(.opacity)
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: 10)
                 .stroke(isSelected ? Color.accent : .white.opacity(0.12), lineWidth: isSelected ? 2.5 : 0.5)
         )
         .shadow(color: .black.opacity(isDragging ? 0.6 : 0.3), radius: isDragging ? 20 : 8, y: isDragging ? 8 : 3)
@@ -111,7 +111,7 @@ struct DraggableWindowThumbnail: View {
             if hovering { state.selectedWindowID = window.id }
             else if state.selectedWindowID == window.id { state.selectedWindowID = nil }
         }
-        .contentShape(RoundedRectangle(cornerRadius: 6))
+        .contentShape(RoundedRectangle(cornerRadius: 10))
         .highPriorityGesture(TapGesture().onEnded { state.onSelect?(window.id) })
         .simultaneousGesture(
             DragGesture(minimumDistance: 20, coordinateSpace: .named("overview"))

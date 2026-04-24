@@ -61,9 +61,14 @@ enum SystemBridge {
         return min(100, max(0, Int(db * 100 / dt)))
     }
 
-    // MARK: - RAM Usage (via host_statistics64)
+    // MARK: - RAM Usage + Memory Pressure (single host_statistics64 call)
 
-    static func getRAM() -> Int {
+    struct MemoryInfo {
+        var ramPercent: Int       // used RAM as % of total
+        var pressurePercent: Int  // compressed memory as % of total
+    }
+
+    static func getMemory() -> MemoryInfo {
         var size = mach_msg_type_number_t(
             MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
         var stats = vm_statistics64_data_t()
@@ -72,31 +77,17 @@ enum SystemBridge {
                 host_statistics64(mach_host_self(), HOST_VM_INFO64, ip, &size)
             }
         }
-        guard result == KERN_SUCCESS else { return 0 }
+        guard result == KERN_SUCCESS else { return MemoryInfo(ramPercent: 0, pressurePercent: 0) }
         let total = ProcessInfo.processInfo.physicalMemory
+        guard total > 0 else { return MemoryInfo(ramPercent: 0, pressurePercent: 0) }
         let page = UInt64(vm_kernel_page_size)
         let free = (UInt64(stats.free_count) + UInt64(stats.speculative_count)
             + UInt64(stats.inactive_count)) * page
-        return Int((total - free) * 100 / total)
-    }
-
-    // MARK: - Memory Pressure (compressed pages as % of total RAM)
-
-    static func getMemoryPressure() -> Int {
-        var size = mach_msg_type_number_t(
-            MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
-        var stats = vm_statistics64_data_t()
-        let result = withUnsafeMutablePointer(to: &stats) { ptr in
-            ptr.withMemoryRebound(to: integer_t.self, capacity: Int(size)) { ip in
-                host_statistics64(mach_host_self(), HOST_VM_INFO64, ip, &size)
-            }
-        }
-        guard result == KERN_SUCCESS else { return 0 }
-        let total = ProcessInfo.processInfo.physicalMemory
-        let page = UInt64(vm_kernel_page_size)
         let compressed = UInt64(stats.compressor_page_count) * page
-        guard total > 0 else { return 0 }
-        return Int(compressed * 100 / total)
+        return MemoryInfo(
+            ramPercent: Int((total - free) * 100 / total),
+            pressurePercent: Int(compressed * 100 / total)
+        )
     }
 
     // MARK: - CPU Temperature (via SMC / IOKit)
@@ -317,42 +308,40 @@ enum SystemBridge {
         _ = runAppleScript("tell application \"Spotify\" to playpause")
     }
 
-
     private static let spotifyCachePath = "/tmp/dashboard-cache/spotify"
+    private static let spotifyOff = SpotifyInfo(title: "", artist: "", state: "off")
 
     static func getCachedSpotify() -> SpotifyInfo {
         guard let raw = try? String(contentsOfFile: spotifyCachePath, encoding: .utf8) else {
-            return SpotifyInfo(title: "", artist: "", state: "off")
+            return spotifyOff
         }
-        let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "|", omittingEmptySubsequences: false)
-        guard parts.count >= 3 else { return SpotifyInfo(title: "", artist: "", state: "off") }
-        return SpotifyInfo(title: String(parts[1]), artist: String(parts[2]), state: String(parts[0]))
+        return parseSpotifyCache(raw)
     }
 
+    /// Single AppleScript call that checks running state, player state, and track metadata
     static func getSpotify() -> SpotifyInfo {
-        let off = SpotifyInfo(title: "", artist: "", state: "off")
-        guard let running = runAppleScript(
-            "tell application \"System Events\" to (name of processes) contains \"Spotify\""),
-              running == "true"
+        guard let raw = runAppleScript("""
+            if application "Spotify" is not running then return "off||"
+            tell application "Spotify"
+                set s to player state as string
+                if s is "playing" or s is "paused" then
+                    return s & "|" & name of current track & "|" & artist of current track
+                end if
+            end tell
+            return "off||"
+            """)
         else {
             try? "off||".write(toFile: spotifyCachePath, atomically: true, encoding: .utf8)
-            return off
+            return spotifyOff
         }
+        try? raw.write(toFile: spotifyCachePath, atomically: true, encoding: .utf8)
+        return parseSpotifyCache(raw)
+    }
 
-        guard let state = runAppleScript(
-            "tell application \"Spotify\" to player state as string"),
-              state == "playing" || state == "paused"
-        else {
-            try? "off||".write(toFile: spotifyCachePath, atomically: true, encoding: .utf8)
-            return off
-        }
-
-        let title = runAppleScript(
-            "tell application \"Spotify\" to name of current track") ?? ""
-        let artist = runAppleScript(
-            "tell application \"Spotify\" to artist of current track") ?? ""
-        let info = SpotifyInfo(title: title, artist: artist, state: state)
-        try? "\(state)|\(title)|\(artist)".write(toFile: spotifyCachePath, atomically: true, encoding: .utf8)
-        return info
+    private static func parseSpotifyCache(_ raw: String) -> SpotifyInfo {
+        let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: "|", omittingEmptySubsequences: false)
+        guard parts.count >= 3, parts[0] != "off" else { return spotifyOff }
+        return SpotifyInfo(title: String(parts[1]), artist: String(parts[2]), state: String(parts[0]))
     }
 }

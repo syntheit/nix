@@ -23,8 +23,8 @@ fn - w : open -a "Zen Browser"
 fn - e : open -na Ghostty --args -e yazi
 
 # System panels
-fn - b : bluetooth-panel dropdown
-fn - n : wifi-panel dropdown
+fn - b : bluetooth-panel toggle
+fn - n : wifi-panel toggle
 
 # Window management
 fn - q : yabai -m window --close

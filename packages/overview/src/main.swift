@@ -50,8 +50,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var gestureOffset: CGFloat = 0
     private var cachedWindows: [WindowInfo]?
     private var cachedSpaces: [SpaceInfo]?
+    private var latestGestureDelta: CGFloat = 0
+    private var showFullWhenReady = false
 
-    private enum Phase { case hidden, visible, dismissing }
+    private enum Phase { case hidden, preparing, visible, dismissing }
     private var phase: Phase = .hidden
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -80,32 +82,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let gm = GestureMonitor()
 
-        // Pre-cache on first touch: metadata synchronously (fast), screenshots async
+        // Capture composite on first touch (overlay stays hidden until capture ready)
         gm.onPrepare = { [weak self] in
             guard let self, phase == .hidden else { return }
+            phase = .preparing
             if let wp = WindowManager.loadWallpaper() { state.wallpaper = wp }
-            // Query metadata synchronously (~10ms) so overlay can show on next gesture frame
-            let spaces = WindowManager.querySpaces()
-            let windows = WindowManager.queryWindowInfo()
-            cachedSpaces = spaces
-            cachedWindows = windows.isEmpty ? nil : windows
-            // Start async composite capture — updates images when ready
             Task {
-                let captured = await WindowManager.captureFromComposite()
+                let spaces = WindowManager.querySpaces()
+                let windows = await WindowManager.captureFromComposite()
                 await MainActor.run {
-                    guard !captured.isEmpty else { return }
-                    if self.phase == .visible {
-                        // Overlay already showing — fade in screenshots
-                        withAnimation(.easeIn(duration: 0.15)) {
-                            for win in captured where win.image != nil {
-                                if let idx = self.state.windows.firstIndex(where: { $0.id == win.id }) {
-                                    self.state.windows[idx].image = win.image
-                                }
-                            }
-                        }
-                    } else if self.cachedWindows != nil {
-                        // Not yet shown — upgrade cache with screenshots
-                        self.cachedWindows = captured
+                    guard self.phase == .preparing else { return }
+                    self.cachedSpaces = spaces
+                    self.cachedWindows = windows.isEmpty ? nil : windows
+                    self.phase = .hidden
+                    guard self.cachedWindows != nil else { return }
+                    if self.showFullWhenReady {
+                        // Quick swipe completed during capture — show fully open with blur
+                        self.showFullWhenReady = false
+                        self.showOverlay()
+                        withAnimation(.easeOut(duration: 0.3)) { self.state.progress = 1.0 }
+                        self.gestureBaseProgress = 1.0
+                    } else if self.latestGestureDelta > 0.01 {
+                        // Gesture still active — show at progress 0, track from here
+                        self.showOverlay()
+                        self.gestureOffset = self.latestGestureDelta
+                        self.gestureBaseProgress = 0
                     }
                 }
             }
@@ -113,6 +114,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         gm.onThreeFingerVertical = { [weak self] (delta: CGFloat) in
             guard let self else { return }
+            latestGestureDelta = delta
             if phase == .hidden && delta > 0.01 && cachedWindows != nil {
                 showOverlay()
                 gestureOffset = delta
@@ -126,8 +128,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         gm.onThreeFingerEnd = { [weak self] in
             guard let self else { return }
+            let quickDelta = latestGestureDelta
+            latestGestureDelta = 0
             cachedWindows = nil; cachedSpaces = nil
-            guard phase == .visible else { return }
+            guard phase == .visible else {
+                if phase == .preparing && quickDelta > 0.3 {
+                    // Quick swipe — let composite finish, then show with blur intact
+                    showFullWhenReady = true
+                } else {
+                    phase = .hidden
+                }
+                return
+            }
             if state.progress > 0.35 {
                 withAnimation(.easeOut(duration: 0.2)) { self.state.progress = 1.0 }
                 gestureBaseProgress = 1.0
@@ -211,7 +223,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             _ = self?.handleKey(event)
         }
 
-        // Load per-window captures for off-screen windows (composite already has current space)
+        // Load per-window captures for off-screen windows only
         Task { @MainActor in
             let missing = state.windows.filter { $0.image == nil }.map(\.id)
             guard phase == .visible, !missing.isEmpty else { return }
@@ -220,7 +232,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             withAnimation(.easeIn(duration: 0.15)) {
                 for newWin in captured {
                     guard newWin.image != nil, missing.contains(newWin.id) else { continue }
-                    if let idx = state.windows.firstIndex(where: { $0.id == newWin.id }) {
+                    if let idx = state.windows.firstIndex(where: { $0.id == newWin.id }),
+                       state.windows[idx].image == nil {
                         state.windows[idx].image = newWin.image
                     }
                 }
@@ -350,5 +363,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 let delegate = AppDelegate()
+_ = Unmanaged.passRetained(delegate) // prevent -O from releasing the weak app.delegate
 app.delegate = delegate
 app.run()
