@@ -131,9 +131,13 @@ in
         vim
         bat
         tmux
+        colmena
+        git
       ];
 
       programs.zsh.enable = true;
+
+      nix.settings.experimental-features = [ "nix-command" "flakes" ];
     };
   };
 
