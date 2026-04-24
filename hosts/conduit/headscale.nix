@@ -131,7 +131,6 @@ in
         vim
         bat
         tmux
-        colmena
         git
       ];
 
