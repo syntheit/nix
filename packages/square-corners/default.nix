@@ -14,6 +14,7 @@ let
     #import <objc/runtime.h>
     #import <objc/message.h>
     #include <CoreGraphics/CGGeometry.h>
+    #include <string.h>
 
     static double zeroRadius(id self, SEL _cmd) { return 0.0; }
     static CGSize zeroSize(id self, SEL _cmd) { return CGSizeMake(0.0, 0.0); }
@@ -24,8 +25,36 @@ let
         if (m) method_setImplementation(m, imp);
     }
 
+    /* Read the host process's bundle identifier via the ObjC runtime.
+       Returns NULL if there is no bundle (e.g. plain CLI tools). */
+    static const char *hostBundleID(void) {
+        Class bundleClass = objc_getClass("NSBundle");
+        if (!bundleClass) return NULL;
+        id main = ((id(*)(Class,SEL))objc_msgSend)(
+            bundleClass, sel_registerName("mainBundle"));
+        if (!main) return NULL;
+        id bid = ((id(*)(id,SEL))objc_msgSend)(
+            main, sel_registerName("bundleIdentifier"));
+        if (!bid) return NULL;
+        return ((const char*(*)(id,SEL))objc_msgSend)(
+            bid, sel_registerName("UTF8String"));
+    }
+
     __attribute__((constructor))
     static void init(void) {
+        /* Bundle-ID guard: refuse to swizzle in Apple system apps (Dock,
+           Preview, Finder, ControlCenter, etc) — their NSWindow internals
+           depend on real corner radii and crash when zeroed. Also skip
+           Firefox-based browsers, whose tab-tearing pipeline gets confused
+           by the cornerMask removal. Anything else (Ghostty, Marta, etc.)
+           gets the swizzle. */
+        const char *bid = hostBundleID();
+        if (bid) {
+            if (strncmp(bid, "com.apple.", 10) == 0) return;
+            if (strncmp(bid, "org.mozilla.", 12) == 0) return;
+            if (strncmp(bid, "app.zen-browser", 15) == 0) return;
+        }
+
         Class themeFrame = objc_getClass("NSThemeFrame");
         if (!themeFrame) return;
 
@@ -138,7 +167,10 @@ let
             cornerView = CornerView(frame: screen.frame)
             super.init(contentRect: screen.frame, styleMask: [.borderless],
                        backing: .buffered, defer: false)
-            self.level = .screenSaver
+            // Just above standard windows but below floating panels (.floating
+            // is rawValue 3) so the dashboard, sketchybar, popovers all render
+            // on top of the ears instead of being covered by them.
+            self.level = NSWindow.Level(rawValue: NSWindow.Level.normal.rawValue + 1)
             self.isOpaque = false
             self.backgroundColor = .clear
             self.ignoresMouseEvents = true
@@ -192,8 +224,14 @@ stdenv.mkDerivation {
   inherit dylib_src overlay_src;
   unpackPhase = "true";
   buildPhase = ''
-    # Build the dylib (Objective-C)
+    # Build the dylib (Objective-C) as a fat binary supporting BOTH arm64 and
+    # arm64e. Apple's system apps (Dock, Preview, Finder, etc.) run as arm64e
+    # with pointer authentication and refuse to load an arm64-only dylib —
+    # which causes dyld to TERMINATE those processes when DYLD_INSERT_LIBRARIES
+    # points at us. The bundle-ID guard in init() can only run if the dylib
+    # actually loads, so the arch mismatch must be fixed first.
     clang -dynamiclib -lobjc \
+      -arch arm64 -arch arm64e \
       -framework CoreGraphics \
       -framework Foundation \
       -O2 -o libsquarecorners.dylib $dylib_src

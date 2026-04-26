@@ -207,6 +207,26 @@
         "type": "gitlab"
       }
     },
+    "elliot": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1777231966,
+        "narHash": "sha256-vxcDoe1FKrjwHwJcDRAzQ+2EtZYZtD0hUgeeZN5LIW0=",
+        "ref": "refs/heads/main",
+        "rev": "6d91917f2dc6294c69636a3309eba32534b57366",
+        "revCount": 2,
+        "type": "git",
+        "url": "ssh://git@github.com/syntheit/elliot.git"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://git@github.com/syntheit/elliot.git"
+      }
+    },
     "fenix": {
       "inputs": {
         "nixpkgs": [
@@ -470,7 +490,7 @@
     "nix-darwin": {
       "inputs": {
         "nixpkgs": [
-          "nixpkgs"
+          "nixpkgs-darwin"
         ]
       },
       "locked": {
@@ -556,6 +576,22 @@
       },
       "original": {
         "owner": "NixOS",
+        "ref": "nixpkgs-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs-darwin": {
+      "locked": {
+        "lastModified": 1776949667,
+        "narHash": "sha256-GMSVw35Q+294GlrTUKlx087E31z7KurReQ1YHSKp5iw=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "01fbdeef22b76df85ea168fbfe1bfd9e63681b30",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
         "ref": "nixpkgs-unstable",
         "repo": "nixpkgs",
         "type": "github"
@@ -708,6 +744,7 @@
         "affinity-nix": "affinity-nix",
         "antigravity": "antigravity",
         "disko": "disko",
+        "elliot": "elliot",
         "foyer": "foyer",
         "home-manager": "home-manager",
         "nix-darwin": "nix-darwin",
@@ -715,6 +752,7 @@
         "nix-index-database": "nix-index-database",
         "nixos-avf": "nixos-avf",
         "nixpkgs": "nixpkgs_3",
+        "nixpkgs-darwin": "nixpkgs-darwin",
         "nur": "nur",
         "sops-nix": "sops-nix",
         "stylix": "stylix",

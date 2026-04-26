@@ -44,6 +44,7 @@
       window-decoration = false;
       window-padding-x = 0;
       window-padding-y = 0;
+      window-padding-color = "extend";
       # Cursor
       cursor-style = "underline";
       adjust-cursor-thickness = 2;

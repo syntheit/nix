@@ -51,6 +51,9 @@
   sops.secrets.seafile_jwt_private_key = { };
   sops.secrets.seafile_admin_email = { };
   sops.secrets.seafile_admin_password = { };
+  # rclone pull: Seafile "Books-Drop" library → CWA ingest dir.
+  # Value is `rclone obscure '<seafile-password>'` output (NOT plaintext).
+  sops.secrets.seafile_rclone_pass_obscured = { };
 
   # qBittorrent env file
   sops.templates."qbittorrent.env".content = ''
@@ -194,6 +197,17 @@
   # Seafile MariaDB env file
   sops.templates."seafile-db.env".content = ''
     MYSQL_ROOT_PASSWORD=${config.sops.placeholder.seafile_mysql_root_pw}
+  '';
+
+  # rclone config for the cwa-ingest-pull service. Reads the dedicated
+  # Seafile library "Books" via the native seafile backend.
+  sops.templates."rclone-seafile.conf".content = ''
+    [seafile-books]
+    type = seafile
+    url = https://files.matv.io/
+    user = ${config.sops.placeholder.seafile_admin_email}
+    pass = ${config.sops.placeholder.seafile_rclone_pass_obscured}
+    library = Books
   '';
 
   # Pelican Panel DB env file

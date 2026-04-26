@@ -205,6 +205,66 @@ enum SystemBridge {
         return String(format: "%.0f/%.0fGB", freeGB, totalGB)
     }
 
+    // MARK: - Network Activity (delta-based, via getifaddrs)
+
+    struct NetworkRate {
+        var bytesIn: Int64   // bytes per second
+        var bytesOut: Int64  // bytes per second
+    }
+
+    private static let netBytesFile = "/tmp/.dashboard_net_bytes"
+
+    static func getNetwork() -> NetworkRate {
+        var totalIn: Int64 = 0
+        var totalOut: Int64 = 0
+
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddr) == 0, let firstAddr = ifaddr else {
+            return NetworkRate(bytesIn: 0, bytesOut: 0)
+        }
+        defer { freeifaddrs(ifaddr) }
+
+        var ptr: UnsafeMutablePointer<ifaddrs>? = firstAddr
+        while let p = ptr {
+            let name = String(cString: p.pointee.ifa_name)
+            if name != "lo0",
+               let addr = p.pointee.ifa_addr,
+               addr.pointee.sa_family == UInt8(AF_LINK),
+               let data = p.pointee.ifa_data?.assumingMemoryBound(to: if_data.self) {
+                totalIn += Int64(data.pointee.ifi_ibytes)
+                totalOut += Int64(data.pointee.ifi_obytes)
+            }
+            ptr = p.pointee.ifa_next
+        }
+
+        let now = Date().timeIntervalSince1970
+
+        let prev: (time: Double, bytesIn: Int64, bytesOut: Int64)? = {
+            guard let raw = try? String(contentsOfFile: netBytesFile, encoding: .utf8) else { return nil }
+            let p = raw.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: " ")
+            guard p.count == 3,
+                  let t = Double(p[0]),
+                  let bi = Int64(p[1]),
+                  let bo = Int64(p[2]) else { return nil }
+            return (t, bi, bo)
+        }()
+
+        try? "\(now) \(totalIn) \(totalOut)"
+            .write(toFile: netBytesFile, atomically: true, encoding: .utf8)
+
+        guard let prev = prev else {
+            return NetworkRate(bytesIn: 0, bytesOut: 0)
+        }
+
+        let dt = now - prev.time
+        guard dt > 0.1 else { return NetworkRate(bytesIn: 0, bytesOut: 0) }
+
+        return NetworkRate(
+            bytesIn: max(0, Int64(Double(totalIn - prev.bytesIn) / dt)),
+            bytesOut: max(0, Int64(Double(totalOut - prev.bytesOut) / dt))
+        )
+    }
+
     // MARK: - Privacy Mode
 
     static func isPrivacyMode() -> Bool {

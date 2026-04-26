@@ -199,9 +199,9 @@ enum AsyncData {
         var url: String    // Foyer API base URL
     }
 
-    static func getServers(foyerServers: [FoyerConfig]) async -> [ServerHealth] {
+    static func getServers(foyerServers: [FoyerConfig], useCache: Bool = true) async -> [ServerHealth] {
         let names = foyerServers.map(\.name)
-        if let cached = readCachedServers(names), !cached.isEmpty {
+        if useCache, let cached = readCachedServers(names), !cached.isEmpty {
             return cached
         }
 

@@ -12,6 +12,7 @@ let historyFile = cacheDir.appendingPathComponent("history")
 let posFile = cacheDir.appendingPathComponent("history_pos")
 let stateFile = cacheDir.appendingPathComponent("current")
 let lockFile = cacheDir.appendingPathComponent("set_lock")
+let queueFile = cacheDir.appendingPathComponent("queue")
 
 try? fm.createDirectory(at: processedDir, withIntermediateDirectories: true)
 
@@ -137,6 +138,7 @@ func process(_ src: URL) -> URL? {
 
 // MARK: - Yabai helper
 
+@discardableResult
 func runYabai(_ args: [String]) -> Data? {
     let p = Process()
     let pipe = Pipe()
@@ -149,99 +151,55 @@ func runYabai(_ args: [String]) -> Data? {
     return pipe.fileHandleForReading.readDataToEndOfFile()
 }
 
-// MARK: - Set wallpaper (via Index.plist + WallpaperAgent restart)
+// MARK: - Set wallpaper
+//
+// `NSWorkspace.setDesktopImageURL` always targets the *currently visible*
+// Space on the given screen — macOS has no public API for an arbitrary Space.
+// Two modes:
+//
+//   • allSpaces = false  →  set wallpaper on the visible Space only. Cheap,
+//                            no flicker. Used by the watch daemon, which fires
+//                            on every space switch and must NOT yank the user
+//                            around.
+//   • allSpaces = true   →  walk every yabai Space, apply, return to original.
+//                            Visible space-switch flicker. Used by `next` and
+//                            `prev` only.
 
-let indexPlist = home.appendingPathComponent(
-    "Library/Application Support/com.apple.wallpaper/Store/Index.plist")
-
-func makeConfigData(_ imageURL: URL) -> Data {
-    let config: [String: Any] = [
-        "type": "imageFile",
-        "url": ["relative": imageURL.absoluteString],
+func applyToVisibleSpace(_ url: URL) {
+    let opts: [NSWorkspace.DesktopImageOptionKey: Any] = [
+        .imageScaling: NSImageScaling.scaleAxesIndependently.rawValue
     ]
-    return try! PropertyListSerialization.data(
-        fromPropertyList: config, format: .binary, options: 0)
+    for screen in NSScreen.screens {
+        try? NSWorkspace.shared.setDesktopImageURL(url, for: screen, options: opts)
+    }
 }
 
-func updateDesktop(_ desktop: inout [String: Any], config: Data, now: Date) {
-    guard var content = desktop["Content"] as? [String: Any],
-          var choices = content["Choices"] as? [[String: Any]],
-          !choices.isEmpty
-    else { return }
-    choices[0]["Configuration"] = config
-    choices[0]["Provider"] = "com.apple.wallpaper.choice.image"
-    content["Choices"] = choices
-    desktop["Content"] = content
-    desktop["LastSet"] = now
-    desktop["LastUse"] = now
-}
-
-func setWallpaper(_ url: URL) {
-    guard let data = try? Data(contentsOf: indexPlist),
-          var plist = try? PropertyListSerialization.propertyList(
-              from: data, format: nil) as? [String: Any]
-    else { return }
-
-    let config = makeConfigData(url)
-    let now = Date()
-
-    // Update SystemDefault
-    if var sd = plist["SystemDefault"] as? [String: Any],
-       var desktop = sd["Desktop"] as? [String: Any] {
-        updateDesktop(&desktop, config: config, now: now)
-        sd["Desktop"] = desktop
-        plist["SystemDefault"] = sd
+func setWallpaper(_ url: URL, allSpaces: Bool = true) {
+    if !allSpaces {
+        applyToVisibleSpace(url)
+        return
     }
 
-    // Update all Displays
-    if var displays = plist["Displays"] as? [String: [String: Any]] {
-        for (did, var dv) in displays {
-            if var desktop = dv["Desktop"] as? [String: Any] {
-                updateDesktop(&desktop, config: config, now: now)
-                dv["Desktop"] = desktop
-                displays[did] = dv
-            }
-        }
-        plist["Displays"] = displays
+    guard let data = runYabai(["query", "--spaces"]),
+          let spaces = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+          !spaces.isEmpty
+    else {
+        applyToVisibleSpace(url)
+        return
     }
 
-    // Update all Spaces (Default.Desktop + Displays.*.Desktop)
-    if var spaces = plist["Spaces"] as? [String: [String: Any]] {
-        for (sid, var sv) in spaces {
-            if var def = sv["Default"] as? [String: Any],
-               var desktop = def["Desktop"] as? [String: Any] {
-                updateDesktop(&desktop, config: config, now: now)
-                def["Desktop"] = desktop
-                sv["Default"] = def
-            }
-            if var dispMap = sv["Displays"] as? [String: [String: Any]] {
-                for (did, var dv) in dispMap {
-                    if var desktop = dv["Desktop"] as? [String: Any] {
-                        updateDesktop(&desktop, config: config, now: now)
-                        dv["Desktop"] = desktop
-                        dispMap[did] = dv
-                    }
-                }
-                sv["Displays"] = dispMap
-            }
-            spaces[sid] = sv
-        }
-        plist["Spaces"] = spaces
+    let originalIndex = spaces.first { ($0["has-focus"] as? Int) == 1 }?["index"] as? Int
+    let indices = spaces.compactMap { $0["index"] as? Int }.sorted()
+
+    for idx in indices {
+        runYabai(["space", "--focus", "\(idx)"])
+        Thread.sleep(forTimeInterval: 0.18)  // wait for Space switch to settle
+        applyToVisibleSpace(url)
     }
 
-    guard let out = try? PropertyListSerialization.data(
-        fromPropertyList: plist, format: .binary, options: 0)
-    else { return }
-    try? out.write(to: indexPlist, options: .atomic)
-
-    // Restart WallpaperAgent to pick up changes
-    let p = Process()
-    p.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
-    p.arguments = ["WallpaperAgent"]
-    p.standardOutput = FileHandle.nullDevice
-    p.standardError = FileHandle.nullDevice
-    try? p.run()
-    p.waitUntilExit()
+    if let original = originalIndex, indices.last != original {
+        runYabai(["space", "--focus", "\(original)"])
+    }
 }
 
 // MARK: - Get current wallpaper
@@ -284,28 +242,39 @@ func push(_ path: String) {
 
 // MARK: - Commands
 
+/// Refill the persistent queue with every available wallpaper in random order.
+/// Returns the new queue. The queue file persists across invocations so that
+/// each wallpaper is shown exactly once before any repeats.
+func refillQueue() -> [String] {
+    let shuffled = findWallpapers().shuffled().map { $0.path }
+    try? (shuffled.joined(separator: "\n") + "\n")
+        .write(to: queueFile, atomically: true, encoding: .utf8)
+    return shuffled
+}
+
 func next() {
     touchLock()
 
-    let h = lines(historyFile)
-    let p = pos()
+    let currentPath = (try? String(contentsOf: stateFile, encoding: .utf8))?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
 
-    if p >= 0, p < h.count - 1 {
-        setPos(p + 1); save(h[p + 1])
-        setWallpaper(URL(fileURLWithPath: h[p + 1]))
-        return
-    }
-
-    let all = findWallpapers()
-    guard !all.isEmpty else {
-        fputs("no wallpapers found\n", stderr); exit(1)
-    }
-
-    for _ in 0..<3 {
-        if let d = process(all.randomElement()!) {
-            push(d.path); save(d.path); setWallpaper(d)
-            return
+    // Try up to 10 times in case process() fails for a particular source.
+    for _ in 0..<10 {
+        var queue = lines(queueFile)
+        if queue.isEmpty { queue = refillQueue() }
+        guard !queue.isEmpty else {
+            fputs("no wallpapers found\n", stderr); exit(1)
         }
+        let candidate = queue.removeFirst()
+        try? (queue.joined(separator: "\n") + "\n")
+            .write(to: queueFile, atomically: true, encoding: .utf8)
+
+        let url = URL(fileURLWithPath: candidate)
+        guard let processed = process(url) else { continue }
+        // Skip the current wallpaper if it happens to be next in the queue.
+        if processed.path == currentPath { continue }
+        push(processed.path); save(processed.path); setWallpaper(processed)
+        return
     }
     fputs("failed to process wallpaper\n", stderr); exit(1)
 }
@@ -335,12 +304,18 @@ func current() {
 func watch() {
     var lastDetected: URL? = nil
 
-    // Process current wallpaper immediately on start
+    // The watch daemon runs forever and fires on every Space switch (because
+    // each Space has its own desktop image, so currentWallpaperURL changes).
+    // It must NEVER iterate Spaces — that would make the user unable to stay
+    // on a Space whose wallpaper isn't yet processed (the iterate yanks them
+    // back to the original Space). Use allSpaces:false to apply only to the
+    // currently visible Space.
+
     if let cur = currentWallpaperURL() {
         if !cur.path.hasPrefix(processedDir.path) {
             touchLock()
             if let processed = process(cur) {
-                setWallpaper(processed)
+                setWallpaper(processed, allSpaces: false)
                 lastDetected = processed
             }
         } else {
@@ -361,7 +336,7 @@ func watch() {
 
         touchLock()
         if let processed = process(cur) {
-            setWallpaper(processed)
+            setWallpaper(processed, allSpaces: false)
             lastDetected = processed
         }
     }

@@ -8,6 +8,7 @@ let
   overlays = {
     modifications = final: prev: {
       antigravity = inputs.antigravity.packages.${final.stdenv.hostPlatform.system}.default;
+      direnv = prev.direnv.overrideAttrs { doCheck = false; };
     };
     additions =
       final: _prev:

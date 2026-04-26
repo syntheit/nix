@@ -9,6 +9,7 @@
     ./gaming.nix
     ./registry.nix
     ./seafile.nix
+    ./cwa.nix
   ];
 
   # Docker (start at boot — this is a server)
