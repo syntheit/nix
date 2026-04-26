@@ -69,7 +69,7 @@
     ssh-to-age
     fastfetch
     fd
-    ffmpeg-full
+    ffmpeg
     findutils
     gawk
     gnugrep
