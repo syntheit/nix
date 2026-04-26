@@ -4,142 +4,213 @@
 }:
 
 let
-  src = writeText "squarecorners.m" ''
+  dylib_src = writeText "squarecorners.m" ''
+    /*
+     * square-corners dylib — injected via DYLD_INSERT_LIBRARIES
+     * Swizzles NSThemeFrame and NSWindow to return 0 for corner radius.
+     * This makes BOTTOM corners truly square on third-party apps.
+     * Top corners are handled by a separate overlay daemon.
+     */
     #import <objc/runtime.h>
     #import <objc/message.h>
     #include <CoreGraphics/CGGeometry.h>
-    #include <stdio.h>
 
-    static BOOL enabled = YES;
+    static double zeroRadius(id self, SEL _cmd) { return 0.0; }
+    static CGSize zeroSize(id self, SEL _cmd) { return CGSizeMake(0.0, 0.0); }
+    static void* nilReturn(id self, SEL _cmd) { return NULL; }
 
-    /* Check if window is a standard app window (not menus, tooltips, etc) */
-    static inline BOOL isStandardAppWindow(id window) {
-        if (!window) return NO;
-        unsigned long mask = ((unsigned long(*)(id,SEL))objc_msgSend)(
-            window, sel_registerName("styleMask"));
-        /* Must be titled */
-        if (!(mask & (1 << 0))) return NO;  /* NSWindowStyleMaskTitled */
-        /* Skip HUD and utility windows */
-        if (mask & (1 << 13)) return NO;  /* NSWindowStyleMaskHUDWindow */
-        if (mask & (1 << 4)) return NO;   /* NSWindowStyleMaskUtilityWindow */
-        /* Must be normal window level */
-        long level = ((long(*)(id,SEL))objc_msgSend)(window, sel_registerName("level"));
-        if (level != 0) return NO;  /* NSNormalWindowLevel = 0 */
-        return YES;
-    }
-
-    /* Apply corner radius via KVC — this goes through the full internal path
-       including notifying WindowServer */
-    static void applySquareCorners(id window) {
-        if (!window || !enabled) return;
-        if (!isStandardAppWindow(window)) return;
-
-        /* [window setValue:@(0) forKey:@"cornerRadius"] */
-        id zero = ((id(*)(Class,SEL,int))objc_msgSend)(
-            objc_getClass("NSNumber"), sel_registerName("numberWithInteger:"), 0);
-        id key = ((id(*)(Class,SEL,const char*))objc_msgSend)(
-            objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), "cornerRadius");
-        ((void(*)(id,SEL,id,id))objc_msgSend)(
-            window, sel_registerName("setValue:forKey:"), zero, key);
-        /* Force shadow redraw to match new shape */
-        ((void(*)(id,SEL))objc_msgSend)(window, sel_registerName("invalidateShadow"));
-    }
-
-    static void swizzle(Class cls, const char *name, IMP newImp, IMP *origOut) {
+    static void swizzle(Class cls, const char *name, IMP imp) {
         Method m = class_getInstanceMethod(cls, sel_registerName(name));
-        if (!m) return;
-        if (origOut) *origOut = method_getImplementation(m);
-        method_setImplementation(m, newImp);
-        fprintf(stderr, "[square-corners] swizzled %s on %s\n", name, class_getName(cls));
-    }
-
-    /* Swizzled _setCornerRadius: — force to 0 then call original */
-    static IMP orig_setCornerRadius = NULL;
-    static void hook_setCornerRadius(id self, SEL _cmd, double radius) {
-        if (!isStandardAppWindow(self)) {
-            ((void(*)(id,SEL,double))orig_setCornerRadius)(self, _cmd, radius);
-            return;
-        }
-        ((void(*)(id,SEL,double))orig_setCornerRadius)(self, _cmd, 0.0);
-    }
-
-    /* Swizzled _updateCornerMask — call original then reapply our radius */
-    static IMP orig_updateCornerMask = NULL;
-    static void hook_updateCornerMask(id self, SEL _cmd) {
-        ((void(*)(id,SEL))orig_updateCornerMask)(self, _cmd);
-        applySquareCorners(self);
-    }
-
-    /* Swizzled setFrame:display: — call original then reapply */
-    static IMP orig_setFrame = NULL;
-    static void hook_setFrame(id self, SEL _cmd, CGRect frame, int display) {
-        ((void(*)(id,SEL,CGRect,int))orig_setFrame)(self, _cmd, frame, display);
-        applySquareCorners(self);
+        if (m) method_setImplementation(m, imp);
     }
 
     __attribute__((constructor))
     static void init(void) {
+        Class themeFrame = objc_getClass("NSThemeFrame");
+        if (!themeFrame) return;
+
+        swizzle(themeFrame, "_cornerRadius", (IMP)zeroRadius);
+        swizzle(themeFrame, "_getCachedWindowCornerRadius", (IMP)zeroRadius);
+        swizzle(themeFrame, "_topCornerSize", (IMP)zeroSize);
+        swizzle(themeFrame, "_bottomCornerSize", (IMP)zeroSize);
+        swizzle(themeFrame, "_continuousCornerRadius", (IMP)zeroRadius);
+        swizzle(themeFrame, "_cornerMask", (IMP)nilReturn);
+
         Class window = objc_getClass("NSWindow");
-        if (!window) return;
-        fprintf(stderr, "[square-corners] loaded\n");
+        if (window) {
+            swizzle(window, "_cornerRadius", (IMP)zeroRadius);
+            swizzle(window, "_effectiveCornerRadius", (IMP)zeroRadius);
+            swizzle(window, "_cornerMask", (IMP)nilReturn);
 
-        /* Swizzle NSWindow methods */
-        swizzle(window, "_setCornerRadius:", (IMP)hook_setCornerRadius, &orig_setCornerRadius);
-        swizzle(window, "_updateCornerMask", (IMP)hook_updateCornerMask, &orig_updateCornerMask);
-        swizzle(window, "setFrame:display:", (IMP)hook_setFrame, &orig_setFrame);
+            SEL setSel = sel_registerName("_setCornerRadius:");
+            Method setMethod = class_getInstanceMethod(window, setSel);
+            if (setMethod) {
+                typedef void (*SetIMP)(id, SEL, double);
+                static SetIMP origSet = NULL;
+                origSet = (SetIMP)method_getImplementation(setMethod);
+                IMP newSet = imp_implementationWithBlock(^(id self, double radius) {
+                    origSet(self, setSel, 0.0);
+                });
+                method_setImplementation(setMethod, newSet);
+            }
+        }
+    }
+  '';
 
-        /* Listen for window activation events to apply corners */
-        id center = ((id(*)(id,SEL))objc_msgSend)(
-            objc_getClass("NSNotificationCenter"), sel_registerName("defaultCenter"));
+  overlay_src = writeText "overlay.swift" ''
+    /*
+     * square-corners overlay — draws black triangles over the TOP corners
+     * of tiled windows to cover the compositor-level rounding that the
+     * dylib can't fix. Bottom corners are handled by the dylib.
+     */
+    import AppKit
 
-        id mainNote = ((id(*)(Class,SEL,const char*))objc_msgSend)(
-            objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"),
-            "NSWindowDidBecomeMainNotification");
-        id keyNote = ((id(*)(Class,SEL,const char*))objc_msgSend)(
-            objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"),
-            "NSWindowDidBecomeKeyNotification");
+    let kR: CGFloat = 11  // match macOS ~10pt window corner radius + margin
 
-        void (^handler)(id) = ^(id notification) {
-            id window = ((id(*)(id,SEL))objc_msgSend)(notification, sel_registerName("object"));
-            applySquareCorners(window);
-        };
+    struct WinRect: Equatable {
+        let x, y, w, h: CGFloat
+    }
 
-        ((void(*)(id,SEL,id,id,id,id))objc_msgSend)(
-            center, sel_registerName("addObserverForName:object:queue:usingBlock:"),
-            mainNote, nil, nil, handler);
-        ((void(*)(id,SEL,id,id,id,id))objc_msgSend)(
-            center, sel_registerName("addObserverForName:object:queue:usingBlock:"),
-            keyNote, nil, nil, handler);
+    func queryWindows() -> [WinRect] {
+        let p = Process()
+        let pipe = Pipe()
+        p.executableURL = URL(fileURLWithPath: "/run/current-system/sw/bin/yabai")
+        p.arguments = ["-m", "query", "--windows", "--space"]
+        p.standardOutput = pipe
+        p.standardError = FileHandle.nullDevice
+        try? p.run()
+        p.waitUntilExit()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let wins = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+        else { return [] }
 
-        /* Apply to any already-existing windows */
-        id app = ((id(*)(id,SEL))objc_msgSend)(
-            objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-        if (app) {
-            id windows = ((id(*)(id,SEL))objc_msgSend)(app, sel_registerName("windows"));
-            if (windows) {
-                long count = ((long(*)(id,SEL))objc_msgSend)(windows, sel_registerName("count"));
-                for (long i = 0; i < count; i++) {
-                    id w = ((id(*)(id,SEL,long))objc_msgSend)(
-                        windows, sel_registerName("objectAtIndex:"), i);
-                    applySquareCorners(w);
+        return wins.compactMap { w in
+            guard let f = w["frame"] as? [String: Any],
+                  let x = f["x"] as? Double, let y = f["y"] as? Double,
+                  let ww = f["w"] as? Double, let hh = f["h"] as? Double,
+                  let floating = w["is-floating"] as? Int, floating == 0,
+                  let minimized = w["is-minimized"] as? Int, minimized == 0
+            else { return nil }
+            return WinRect(x: CGFloat(x), y: CGFloat(y), w: CGFloat(ww), h: CGFloat(hh))
+        }
+    }
+
+    class CornerView: NSView {
+        var windows: [WinRect] = []
+
+        override func draw(_ dirtyRect: NSRect) {
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+            let screenH = bounds.height
+            let r = kR
+
+            ctx.setFillColor(NSColor.black.cgColor)
+
+            for win in windows {
+                let left = win.x
+                let right = win.x + win.w
+                let top = screenH - win.y
+
+                // Top-left ear
+                var cp = CGMutablePath()
+                cp.addRect(CGRect(x: left, y: top - r, width: r, height: r))
+                cp.move(to: CGPoint(x: left + r, y: top - r))
+                cp.addArc(center: CGPoint(x: left + r, y: top - r), radius: r,
+                          startAngle: .pi / 2, endAngle: .pi, clockwise: false)
+                cp.closeSubpath()
+                ctx.addPath(cp); ctx.fillPath(using: .evenOdd)
+
+                // Top-right ear
+                cp = CGMutablePath()
+                cp.addRect(CGRect(x: right - r, y: top - r, width: r, height: r))
+                cp.move(to: CGPoint(x: right - r, y: top - r))
+                cp.addArc(center: CGPoint(x: right - r, y: top - r), radius: r,
+                          startAngle: .pi / 2, endAngle: 0, clockwise: true)
+                cp.closeSubpath()
+                ctx.addPath(cp); ctx.fillPath(using: .evenOdd)
+            }
+        }
+    }
+
+    class OverlayWindow: NSWindow {
+        let cornerView: CornerView
+
+        init(screen: NSScreen) {
+            cornerView = CornerView(frame: screen.frame)
+            super.init(contentRect: screen.frame, styleMask: [.borderless],
+                       backing: .buffered, defer: false)
+            self.level = .screenSaver
+            self.isOpaque = false
+            self.backgroundColor = .clear
+            self.ignoresMouseEvents = true
+            self.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+            self.hasShadow = false
+            self.contentView = cornerView
+        }
+
+        func refresh() {
+            let newWindows = queryWindows()
+            if newWindows != cornerView.windows {
+                cornerView.windows = newWindows
+                cornerView.needsDisplay = true
+            }
+        }
+    }
+
+    class AppDelegate: NSObject, NSApplicationDelegate {
+        var overlay: OverlayWindow!
+
+        func applicationDidFinishLaunching(_ notification: Notification) {
+            NSApp.setActivationPolicy(.accessory)
+            guard let screen = NSScreen.main else { return }
+            overlay = OverlayWindow(screen: screen)
+            overlay.orderFrontRegardless()
+            overlay.refresh()
+
+            Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
+                self?.overlay.refresh()
+            }
+
+            NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.activeSpaceDidChangeNotification,
+                object: nil, queue: .main
+            ) { [weak self] _ in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    self?.overlay.refresh()
                 }
             }
         }
-
-        fprintf(stderr, "[square-corners] done — notifications registered\n");
     }
+
+    let app = NSApplication.shared
+    let delegate = AppDelegate()
+    app.delegate = delegate
+    app.run()
   '';
 in
 stdenv.mkDerivation {
   name = "square-corners";
-  inherit src;
+  inherit dylib_src overlay_src;
   unpackPhase = "true";
   buildPhase = ''
+    # Build the dylib (Objective-C)
     clang -dynamiclib -lobjc \
       -framework CoreGraphics \
       -framework Foundation \
-      -F/System/Library/PrivateFrameworks -framework SkyLight \
-      -O2 -o libsquarecorners.dylib $src
+      -O2 -o libsquarecorners.dylib $dylib_src
+
+    # Build the overlay daemon (Swift)
+    export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk
+    export PATH=/Library/Developer/CommandLineTools/usr/bin:$PATH
+    swiftc -O \
+      -sdk $SDKROOT \
+      -framework AppKit \
+      -o square-corners-overlay \
+      $overlay_src
   '';
-  installPhase = "mkdir -p $out/lib; cp libsquarecorners.dylib $out/lib/";
+  installPhase = ''
+    mkdir -p $out/lib $out/bin
+    cp libsquarecorners.dylib $out/lib/
+    cp square-corners-overlay $out/bin/
+  '';
+  meta.platforms = [ "aarch64-darwin" "x86_64-darwin" ];
 }
