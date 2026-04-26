@@ -5,27 +5,34 @@ private let kNormYOff = 36, kStateOff = 20, kStride = 96
 private weak var shared: GestureMonitor?
 
 class GestureMonitor {
-    /// Called the instant 3 fingers touch — use to start async capture early
+    /// Called the instant 3+ fingers touch — use to start async capture early
     var onPrepare: (() -> Void)?
     /// Called on each touch frame with the vertical delta (0 = start position)
     var onThreeFingerVertical: ((CGFloat) -> Void)?
-    /// Called when 3 fingers lift after a vertical gesture was active
+    /// Called when fingers lift after a vertical gesture was active
     var onThreeFingerEnd: (() -> Void)?
-    /// Discrete horizontal swipes
-    var onSwipeLeft: (() -> Void)?
-    var onSwipeRight: (() -> Void)?
+    /// Called on each touch frame with the horizontal delta (continuous, normalized)
+    var onThreeFingerHorizontal: ((CGFloat) -> Void)?
+    /// Called when fingers lift after a horizontal gesture was active
+    var onThreeFingerHorizEnd: (() -> Void)?
+
+    /// Current horizontal velocity in normalized units/sec (read on end)
+    private(set) var currentVelocityX: CGFloat = 0
 
     private var handle: UnsafeMutableRawPointer?
     private var startY: Float = 0
     private var startX: Float = 0
     private var tracking = false
     private var verticalActive = false
+    private var horizontalActive = false
     private var axisDecided = false
     private var isVertical = false
-    private var lastHorizTrigger: Double = 0
+
+    // Velocity tracking
+    private var lastDx: Float = 0
+    private var lastDxTime: Double = 0
 
     private let fullSwipe: Float = 0.22
-    private let horizThreshold: Float = 0.10
 
     func start() {
         let path = "/System/Library/PrivateFrameworks/MultitouchSupport.framework/MultitouchSupport"
@@ -48,18 +55,26 @@ class GestureMonitor {
     }
 
     fileprivate func process(_ data: UnsafeMutableRawPointer, count: Int32) {
-        guard count == 3 else {
+        // Support 3 or 4 finger gestures
+        guard count == 3 || count == 4 else {
             if verticalActive {
                 verticalActive = false
                 DispatchQueue.main.async { [self] in onThreeFingerEnd?() }
             }
+            if horizontalActive {
+                horizontalActive = false
+                DispatchQueue.main.async { [self] in onThreeFingerHorizEnd?() }
+            }
             tracking = false; axisDecided = false
+            currentVelocityX = 0
             return
         }
 
-        // All 3 must be touching (state 4)
+        let n = Int(count)
+
+        // All fingers must be touching (state 4)
         var avgY: Float = 0, avgX: Float = 0, allTouch = true
-        for i in 0..<3 {
+        for i in 0..<n {
             let b = i * kStride
             if data.load(fromByteOffset: b + kStateOff, as: Int32.self) != 4 { allTouch = false }
             avgY += data.load(fromByteOffset: b + kNormYOff, as: Float.self)
@@ -70,13 +85,19 @@ class GestureMonitor {
                 verticalActive = false
                 DispatchQueue.main.async { [self] in onThreeFingerEnd?() }
             }
+            if horizontalActive {
+                horizontalActive = false
+                DispatchQueue.main.async { [self] in onThreeFingerHorizEnd?() }
+            }
             tracking = false; axisDecided = false
+            currentVelocityX = 0
             return
         }
-        avgY /= 3; avgX /= 3
+        avgY /= Float(n); avgX /= Float(n)
 
         if !tracking {
             tracking = true; startY = avgY; startX = avgX; axisDecided = false
+            lastDx = 0; lastDxTime = 0; currentVelocityX = 0
             DispatchQueue.main.async { [self] in onPrepare?() }
             return
         }
@@ -98,12 +119,19 @@ class GestureMonitor {
             let progress = CGFloat(dy / fullSwipe)
             DispatchQueue.main.async { [self] in onThreeFingerVertical?(progress) }
         } else {
+            horizontalActive = true
+
+            // Track velocity
             let now = ProcessInfo.processInfo.systemUptime
-            if abs(dx) > horizThreshold && now - lastHorizTrigger > 0.4 {
-                lastHorizTrigger = now
-                tracking = false; axisDecided = false
-                DispatchQueue.main.async { [self] in dx > 0 ? onSwipeRight?() : onSwipeLeft?() }
+            if lastDxTime > 0 && now - lastDxTime > 0.001 {
+                let rawVel = CGFloat((dx - lastDx) / Float(now - lastDxTime) / fullSwipe)
+                // Smooth with previous to reduce noise
+                currentVelocityX = currentVelocityX * 0.3 + rawVel * 0.7
             }
+            lastDx = dx; lastDxTime = now
+
+            let progress = CGFloat(dx / fullSwipe)
+            DispatchQueue.main.async { [self] in onThreeFingerHorizontal?(progress) }
         }
     }
 

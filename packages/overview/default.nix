@@ -18,6 +18,7 @@ stdenv.mkDerivation {
       -framework SwiftUI \
       -framework CoreGraphics \
       -framework ScreenCaptureKit \
+      -framework QuartzCore \
       -o overview \
       $src/*.swift
   '';
