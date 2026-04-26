@@ -39,6 +39,7 @@
   sops.secrets.karakeep_meili_master_key = { };
   sops.secrets.docmost_app_secret = { };
   sops.secrets.docmost_db_password = { };
+  sops.secrets.elliot_telegram_token = { owner = "elliot"; };
   sops.secrets.grafana_secret_key = {
     owner = "grafana";
     group = "grafana";

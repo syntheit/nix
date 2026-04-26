@@ -17,6 +17,7 @@ let
       })
       // {
         foyer = inputs.foyer.packages.${final.stdenv.hostPlatform.system}.default;
+        elliot = inputs.elliot.packages.${final.stdenv.hostPlatform.system}.default;
       };
   };
 in

@@ -64,6 +64,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    elliot = {
+      url = "github:syntheit/elliot";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     nixos-avf = {
       url = "github:nix-community/nixos-avf";
       inputs.nixpkgs.follows = "nixpkgs";

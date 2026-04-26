@@ -16,6 +16,7 @@
     ../../modules/server-safety.nix
     ../../modules/argus.nix
     ../../modules/foyer.nix
+    ../../modules/elliot.nix
   ];
 
   services.serverSafety = {
@@ -97,6 +98,21 @@
       url = "http://localhost:8096";
       apiKeyFile = config.sops.secrets.foyer_jellyfin_api_key.path;
     };
+  };
+
+  # Elliot — Telegram monitoring bot
+  services.elliot = {
+    enable = true;
+    telegramTokenFile = config.sops.secrets.elliot_telegram_token.path;
+    allowedUserIDs = [ ]; # TODO: add Telegram user IDs
+    alertChatID = 0; # TODO: set alert chat ID
+    model = "opus";
+    healthCheck = {
+      enable = true;
+      interval = "4h";
+    };
+    pingAllowlist = [ "10.100.0.1" "conduit" ];
+    gatusURL = "http://10.100.0.1:3001"; # Gatus runs on conduit, reachable via WireGuard
   };
 
   # Networking configuration
