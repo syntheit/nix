@@ -220,8 +220,11 @@
       mouse_action1 = "move";
       mouse_action2 = "resize";
       mouse_drop_action = "swap";
-      mouse_follows_focus = "on";
-      focus_follows_mouse = "autoraise";
+      # Both off: with these on, the cursor sitting over a window in the
+      # original space pulls focus back when programmatically switching to
+      # an empty / less-active space (fn+N bounces back to current space).
+      mouse_follows_focus = "off";
+      focus_follows_mouse = "off";
       active_window_opacity = "1.0";
       normal_window_opacity = "1.0";
     };
@@ -330,6 +333,7 @@
     pmset -a powernap 0
     pmset -a hibernatemode 0
     pmset -a sms 0
+    pmset -a lessbright 0
     rm -f /var/vm/sleepimage 2>/dev/null || true
 
     # ================================================================
@@ -343,8 +347,6 @@
     EQ_BIN=$(readlink -f ${pkgs.eq}/bin/eq)
     MENUBAR_BLOCKER_BIN=$(readlink -f ${pkgs.menubar-blocker}/bin/menubar-blocker)
     TCC_DB="/Library/Application Support/com.apple.TCC/TCC.db"
-    # Purge stale nix store TCC entries from previous rebuilds
-    sqlite3 "$TCC_DB" "DELETE FROM access WHERE client LIKE '/nix/store/%';"
     for BIN in "$YABAI_BIN" "$SKHD_BIN" "$MENUBAR_BLOCKER_BIN"; do
       sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) VALUES ('kTCCServiceAccessibility', '$BIN', 1, 2, 4, 1);"
     done
@@ -356,6 +358,11 @@
     sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) VALUES ('kTCCServiceLocation', '$WIFI_PANEL_BIN', 1, 2, 4, 1);"
     # Microphone permission for eq daemon (AVAudioEngine reads from BlackHole input)
     sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) VALUES ('kTCCServiceMicrophone', '$EQ_BIN', 1, 2, 4, 1);"
+
+    # Force tccd to reload from TCC.db — direct sqlite writes don't invalidate
+    # its in-memory cache, so yabai/skhd would otherwise launch without
+    # effective accessibility until tccd is restarted.
+    killall tccd 2>/dev/null || true
 
     # Restart nix-managed services after TCC grants
     launchctl bootout "gui/$GUI_UID/org.nixos.skhd" 2>/dev/null || true
@@ -589,8 +596,7 @@
       com.apple.BTServer.cloudpairing \
       com.apple.webprivacyd \
       com.apple.powerchime \
-      com.apple.accessibility.heard \
-      com.apple.controlcenter; do
+      com.apple.accessibility.heard; do
       launchctl bootout "gui/$GUI_UID/$agent" 2>/dev/null || true
       launchctl disable "gui/$GUI_UID/$agent" 2>/dev/null || true
     done

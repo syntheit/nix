@@ -53,6 +53,7 @@ enum WindowManager {
     }
 
     /// Fast capture: display composite + crop. Captures windows WITH their blur/vibrancy intact.
+    /// Also saves the full composite into the cache for the currently focused space.
     static func captureFromComposite() async -> [WindowInfo] {
         guard let yabai: [YabaiWindow] = queryYabai(["--windows"]) else { return [] }
         let valid = validWindows(yabai)
@@ -68,6 +69,13 @@ enum WindowManager {
             let c = SCStreamConfiguration()
             c.width = display.width * 2; c.height = display.height * 2; c.showsCursor = false
             composite = try? await SCScreenshotManager.captureImage(contentFilter: f, configuration: c)
+        }
+
+        // Save composite to cache for the current focused space
+        if let composite,
+           let spaces: [YabaiSpace] = queryYabai(["--spaces"]),
+           let focused = spaces.first(where: { $0.hasFocus }) {
+            compositeCache[focused.index] = composite
         }
 
         let scale: CGFloat

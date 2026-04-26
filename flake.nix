@@ -3,6 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    nixpkgs-darwin.url = "github:nixos/nixpkgs/nixpkgs-unstable";
 
     home-manager = {
       url = "github:nix-community/home-manager";
@@ -47,7 +48,7 @@
 
     nix-darwin = {
       url = "github:LnL7/nix-darwin";
-      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.nixpkgs.follows = "nixpkgs-darwin";
     };
 
     nix-homebrew = {
@@ -65,7 +66,7 @@
     };
 
     elliot = {
-      url = "github:syntheit/elliot";
+      url = "git+ssh://git@github.com/syntheit/elliot.git";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 

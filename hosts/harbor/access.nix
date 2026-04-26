@@ -37,6 +37,7 @@
           "docs.matv.io" = "http://localhost:3040";
           "map.matv.io" = "http://localhost:8100";
           "files.matv.io" = "http://localhost:4717";
+          "library.matv.io" = "http://localhost:8083";
         };
         default = "http_status:404";
         credentialsFile = "/etc/cloudflared/credentials.json";

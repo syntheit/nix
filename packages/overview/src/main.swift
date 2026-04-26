@@ -40,9 +40,8 @@ class OverviewState: ObservableObject {
 
 // MARK: - Active spaces helper (shared logic for overview + workspace switching)
 
-/// Returns sorted active space indices: occupied spaces + one extra empty at end.
-func computeActiveSpaces(currentIndex: Int) -> [Int] {
-    let spaces = WindowManager.querySpaces()
+/// Compute sorted active space indices from a spaces snapshot: occupied + one extra empty at end.
+func activeSpaceIndices(from spaces: [SpaceInfo], currentIndex: Int) -> [Int] {
     let lastOccupied = spaces.filter { !$0.windowIDs.isEmpty }.map(\.index).max() ?? 0
     let cutoff = max(lastOccupied, currentIndex) + 1
     return spaces.filter { !$0.windowIDs.isEmpty || $0.index <= cutoff }
@@ -194,8 +193,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 handleOverviewHorizontalSwipe(delta)
                 return
             }
-            // When hidden or preparing: start workspace switch
-            if (phase == .hidden || phase == .preparing) && abs(delta) > 0.02 {
+            // When hidden or preparing: start workspace switch immediately on first horizontal frame
+            if phase == .hidden || phase == .preparing {
                 if phase == .preparing {
                     // Cancel the overview preparation — axis is horizontal, not vertical
                     phase = .hidden
@@ -251,16 +250,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         state.wallpaper = WindowManager.loadWallpaper()
 
-        // Populate composite cache on startup (behind opaque overlay)
-        Task { @MainActor in
-            overlayWindow.backgroundColor = .black
-            overlayWindow.alphaValue = 1
-            overlayWindow.makeKeyAndOrderFront(nil)
-            await WindowManager.populateCache()
-            overlayWindow.alphaValue = 0
-            overlayWindow.orderOut(nil)
-            overlayWindow.backgroundColor = .clear
-        }
+        // Cache builds lazily: captureFromComposite (called on every gesture) saves into cache.
+        // First workspace switch may use wallpaper fallback for current space; after that, cached.
 
         print("[overview] daemon ready")
     }
@@ -425,30 +416,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Workspace switching (1:1 gesture-driven)
 
     private func beginWorkspaceSwitch(initialDelta: CGFloat) {
-        guard let screen = NSScreen.main else { return }
+        guard let screen = NSScreen.main else {
+            print("[overview] beginWorkspaceSwitch: no main screen")
+            return
+        }
 
+        // Single yabai query for spaces
         let spaces = WindowManager.querySpaces()
-        guard let focused = spaces.first(where: { $0.hasFocus }) else { return }
+        guard let focused = spaces.first(where: { $0.hasFocus }) else {
+            print("[overview] beginWorkspaceSwitch: no focused space (yabai not responsive?)")
+            return
+        }
         let focusedIdx = focused.index
 
-        let active = computeActiveSpaces(currentIndex: focusedIdx)
-        guard !active.isEmpty else { return }
+        let active = activeSpaceIndices(from: spaces, currentIndex: focusedIdx)
+        guard let curPos = active.firstIndex(of: focusedIdx) else {
+            print("[overview] beginWorkspaceSwitch: focused space \(focusedIdx) not in active set \(active)")
+            return
+        }
 
         wsActiveSpaces = active
         wsFromSpace = focusedIdx
-        wsStartDelta = initialDelta
+        wsStartDelta = 0  // direct mapping: delta IS the slide position (no offset)
         wsAutoCompleting = false
         wsGestureProgress = 0
 
-        // Direction: swipe right (delta > 0) = go to previous space
-        //            swipe left  (delta < 0) = go to next space
+        // Direction: swipe right (delta > 0) = go to previous space (content slides right)
+        //            swipe left  (delta < 0) = go to next space     (content slides left)
         let dir = initialDelta > 0 ? 1 : -1
         wsDirection = dir
 
-        // Find target
-        guard let curPos = active.firstIndex(of: focusedIdx) else { return }
-        // Swiping right (dir=1) goes to previous: curPos - 1
-        // Swiping left (dir=-1) goes to next: curPos + 1
+        // Target = curPos - dir (swipe right -> previous in active list)
         let targetPos = curPos - dir
         if targetPos < 0 || targetPos >= active.count {
             wsIsEdge = true
@@ -458,18 +456,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             wsTargetSpace = active[targetPos]
         }
 
+        print("[overview] switch begin: \(wsFromSpace) -> \(wsTargetSpace) (dir=\(dir), edge=\(wsIsEdge), active=\(active))")
+
         // Set up CALayers
         setupSwitchLayers(screen: screen)
 
-        // Load composites
-        wsCurrentLayer?.contents = WindowManager.compositeCache[wsFromSpace]
+        // Wallpaper fallback for missing composites
+        let wallpaperCG = WindowManager.loadWallpaper()?
+            .cgImage(forProposedRect: nil, context: nil, hints: nil)
+
+        wsCurrentLayer?.contents = WindowManager.compositeCache[wsFromSpace] ?? wallpaperCG
         if !wsIsEdge {
-            wsTargetLayer?.contents = WindowManager.compositeCache[wsTargetSpace]
-                ?? WindowManager.loadWallpaper()?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            wsTargetLayer?.contents = WindowManager.compositeCache[wsTargetSpace] ?? wallpaperCG
             wsTargetLayer?.isHidden = false
         } else {
             wsTargetLayer?.isHidden = true
         }
+
+        // Position layers at the current finger position (no jump when overlay appears)
+        let W = screen.frame.width
+        var t = initialDelta * CGFloat(dir)
+        if wsIsEdge { t = t > 0 ? t * 0.3 : 0 }
+        wsGestureProgress = t
+        let signedOffset = t * CGFloat(dir)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        wsCurrentLayer?.frame.origin.x = signedOffset * W
+        if !wsIsEdge {
+            wsTargetLayer?.frame.origin.x = CGFloat(-dir) * W + signedOffset * W
+        }
+        CATransaction.commit()
 
         // Show overlay with CALayers, hide SwiftUI hosting view
         overlayWindow.setFrame(screen.frame, display: false)
@@ -566,9 +582,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if wsIsEdge {
             shouldComplete = false
         } else {
-            shouldComplete = wsGestureProgress > 0.35 ||
-                (velocityInDirection > 2.0 && wsGestureProgress > 0.05)
+            shouldComplete = wsGestureProgress > 0.20 ||
+                (velocityInDirection > 1.5 && wsGestureProgress > 0.03)
         }
+        print("[overview] switch end: progress=\(String(format: "%.2f", wsGestureProgress)) velocity=\(String(format: "%.2f", velocityInDirection)) complete=\(shouldComplete)")
 
         phase = .switchAnimating
 

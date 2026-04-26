@@ -27,6 +27,7 @@ struct DashboardView: View {
     @State private var privacyMode = SystemBridge.isPrivacyMode()
     @State private var uptime = SystemBridge.getUptime()
     @State private var diskFree = SystemBridge.getDiskFree()
+    @State private var network = SystemBridge.getNetwork()
 
     // Volume via CoreAudio is instant (<1ms), Spotify needs AppleScript cache
     @State private var volume = SystemBridge.getVolume()
@@ -86,6 +87,7 @@ struct DashboardView: View {
             while !Task.isCancelled {
                 time = Date()
                 privacyMode = SystemBridge.isPrivacyMode()
+                network = SystemBridge.getNetwork()
                 try? await Task.sleep(for: .seconds(1))
             }
         }
@@ -97,18 +99,22 @@ struct DashboardView: View {
                 refreshFast()
             }
         }
+        .task(id: "servers") {
+            while !Task.isCancelled {
+                let fresh = await AsyncData.getServers(foyerServers: Self.foyerServers, useCache: false)
+                if !fresh.isEmpty { servers = fresh }
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
         .task(id: "slow") {
             async let w = AsyncData.getWeather()
             async let e = AsyncData.getExchange()
-            async let s = AsyncData.getServers(foyerServers: Self.foyerServers)
             async let c = AsyncData.getTodayEvents()
             let newWeather = await w
             let newExchange = await e
-            let newServers = await s
             let newAgenda = await c
             if let nw = newWeather { weather = nw }
             if !newExchange.isEmpty { exchange = newExchange }
-            if !newServers.isEmpty { servers = newServers }
             if !newAgenda.isEmpty { agenda = newAgenda }
         }
     }
@@ -187,6 +193,20 @@ struct DashboardView: View {
                     .foregroundStyle(Color.dimmed)
                 Text(diskFree)
                     .font(.system(size: 12))
+                    .foregroundStyle(Color.subtle)
+            }
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.down")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color.dimmed)
+                Text(formatRate(network.bytesIn))
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Color.subtle)
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color.dimmed)
+                Text(formatRate(network.bytesOut))
+                    .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(Color.subtle)
             }
             if let b = battery {
@@ -346,6 +366,13 @@ struct DashboardView: View {
             cpuTemp: temp, uptimeSecs: Int(ProcessInfo.processInfo.systemUptime)
         )
         return [local] + servers
+    }
+
+    private func formatRate(_ bytesPerSec: Int64) -> String {
+        if bytesPerSec >= 1_048_576 {
+            return String(format: "%.1fM", Double(bytesPerSec) / 1_048_576)
+        }
+        return "\(bytesPerSec / 1024)K"
     }
 
     private func formatUptime(_ secs: Int) -> String {
