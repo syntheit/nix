@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import QuartzCore
 
 // MARK: - Shared state
 
@@ -37,15 +38,28 @@ class OverviewState: ObservableObject {
     }
 }
 
+// MARK: - Active spaces helper (shared logic for overview + workspace switching)
+
+/// Returns sorted active space indices: occupied spaces + one extra empty at end.
+func computeActiveSpaces(currentIndex: Int) -> [Int] {
+    let spaces = WindowManager.querySpaces()
+    let lastOccupied = spaces.filter { !$0.windowIDs.isEmpty }.map(\.index).max() ?? 0
+    let cutoff = max(lastOccupied, currentIndex) + 1
+    return spaces.filter { !$0.windowIDs.isEmpty || $0.index <= cutoff }
+        .map(\.index).sorted()
+}
+
 // MARK: - App delegate
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var overlayWindow: NSWindow!
+    private var hostingView: NSHostingView<OverviewView>!
     private var gestureMonitor: GestureMonitor?
     private var keyMonitor: Any?
     private var globalKeyMonitor: Any?
     private let state = OverviewState()
     private var signalSource: DispatchSourceSignal?
+    private var signalSource2: DispatchSourceSignal?
     private var gestureBaseProgress: CGFloat = 0
     private var gestureOffset: CGFloat = 0
     private var cachedWindows: [WindowInfo]?
@@ -53,8 +67,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var latestGestureDelta: CGFloat = 0
     private var showFullWhenReady = false
 
-    private enum Phase { case hidden, preparing, visible, dismissing }
+    private enum Phase { case hidden, preparing, visible, dismissing, switching, switchAnimating }
     private var phase: Phase = .hidden
+
+    // MARK: - Workspace switch state
+
+    private var wsActiveSpaces: [Int] = []
+    private var wsFromSpace: Int = 0
+    private var wsTargetSpace: Int = 0
+    private var wsGestureProgress: CGFloat = 0
+    private var wsDirection: Int = 0           // -1 or 1, locked at gesture start
+    private var wsStartDelta: CGFloat = 0
+    private var wsIsEdge: Bool = false
+    private var wsAutoCompleting: Bool = false
+    private var wsCurrentLayer: CALayer?
+    private var wsTargetLayer: CALayer?
+    private var wsRootLayer: CALayer?
+    private var lastSketchybarUpdate: Double = 0
+    private var lastOverviewHorizSwitch: Double = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard let screen = NSScreen.main else { return }
@@ -72,6 +102,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         hosting.autoresizingMask = [.width, .height]
         window.contentView = hosting
         overlayWindow = window
+        hostingView = hosting
+
+        // Ensure the content view is layer-backed for CALayer workspace switching
+        hosting.wantsLayer = true
 
         // Set up callbacks once
         state.onSelect = { [weak self] id in self?.selectWindow(id) }
@@ -151,19 +185,82 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        gm.onSwipeLeft = { [weak self] in self?.switchSpace(delta: -1) }
-        gm.onSwipeRight = { [weak self] in self?.switchSpace(delta: 1) }
+        // MARK: Horizontal gesture — workspace switching
+
+        gm.onThreeFingerHorizontal = { [weak self] (delta: CGFloat) in
+            guard let self else { return }
+            // When overview is visible, use debounced discrete switching
+            if phase == .visible {
+                handleOverviewHorizontalSwipe(delta)
+                return
+            }
+            // When hidden or preparing: start workspace switch
+            if (phase == .hidden || phase == .preparing) && abs(delta) > 0.02 {
+                if phase == .preparing {
+                    // Cancel the overview preparation — axis is horizontal, not vertical
+                    phase = .hidden
+                    cachedWindows = nil; cachedSpaces = nil
+                    showFullWhenReady = false
+                }
+                beginWorkspaceSwitch(initialDelta: delta)
+            } else if phase == .switching && !wsAutoCompleting {
+                updateWorkspaceSwitch(delta: delta)
+            }
+        }
+
+        gm.onThreeFingerHorizEnd = { [weak self] in
+            guard let self else { return }
+            if phase == .visible { return }
+            if phase == .preparing {
+                // Gesture ended during prepare before axis was decided — clean up
+                phase = .hidden
+                cachedWindows = nil; cachedSpaces = nil
+                showFullWhenReady = false
+                return
+            }
+            if phase == .switching && !wsAutoCompleting {
+                endWorkspaceSwitch()
+            }
+        }
 
         gestureMonitor = gm
         gm.start()
 
+        // SIGUSR1 — toggle overview
         signal(SIGUSR1, SIG_IGN)
         let src = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
         src.setEventHandler { [weak self] in self?.toggle() }
         src.resume()
         signalSource = src
 
+        // SIGUSR2 — space changed externally (fn+number), update composite cache
+        signal(SIGUSR2, SIG_IGN)
+        let src2 = DispatchSource.makeSignalSource(signal: SIGUSR2, queue: .main)
+        src2.setEventHandler { [weak self] in
+            guard let self, self.phase == .hidden else { return }
+            Task { await WindowManager.cacheCurrentSpace() }
+        }
+        src2.resume()
+        signalSource2 = src2
+
+        // Invalidate composite cache on screen resolution change
+        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
+                                               object: nil, queue: .main) { _ in
+            WindowManager.invalidateCache()
+        }
+
         state.wallpaper = WindowManager.loadWallpaper()
+
+        // Populate composite cache on startup (behind opaque overlay)
+        Task { @MainActor in
+            overlayWindow.backgroundColor = .black
+            overlayWindow.alphaValue = 1
+            overlayWindow.makeKeyAndOrderFront(nil)
+            await WindowManager.populateCache()
+            overlayWindow.alphaValue = 0
+            overlayWindow.orderOut(nil)
+            overlayWindow.backgroundColor = .clear
+        }
 
         print("[overview] daemon ready")
     }
@@ -204,6 +301,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         state.progress = 0
         state.updateSpaces(spaces)
 
+        hostingView.isHidden = false
         WindowManager.run(["sketchybar", "--bar", "hidden=true"])
         overlayWindow.alphaValue = 0
         overlayWindow.makeKeyAndOrderFront(nil)
@@ -273,7 +371,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         WindowManager.run(["sketchybar", "--bar", "hidden=false"])
     }
 
-    // MARK: - Actions
+    // MARK: - Overview actions
 
     private func selectSpace(_ idx: Int) {
         animateDismiss { WindowManager.focusSpace(idx) }
@@ -297,6 +395,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         withAnimation(.easeInOut(duration: 0.2)) { state.currentSpaceIndex = indices[next] }
     }
 
+    /// Debounced discrete horizontal switching when overview is visible
+    private func handleOverviewHorizontalSwipe(_ delta: CGFloat) {
+        let now = ProcessInfo.processInfo.systemUptime
+        if abs(delta) > 0.4 && now - lastOverviewHorizSwitch > 0.4 {
+            lastOverviewHorizSwitch = now
+            // In overview: swipe right (delta > 0) = next space, swipe left = previous
+            // (matches old onSwipeRight → switchSpace(delta: 1) behavior)
+            switchSpace(delta: delta > 0 ? 1 : -1)
+        }
+    }
+
     private func reorderSpace(_ from: Int, to: Int) {
         WindowManager.reorderSpace(from, to: to)
         let s = WindowManager.querySpaces()
@@ -311,6 +420,276 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             state.windows[i].space = space
             state.windows[i].image = nil
         }
+    }
+
+    // MARK: - Workspace switching (1:1 gesture-driven)
+
+    private func beginWorkspaceSwitch(initialDelta: CGFloat) {
+        guard let screen = NSScreen.main else { return }
+
+        let spaces = WindowManager.querySpaces()
+        guard let focused = spaces.first(where: { $0.hasFocus }) else { return }
+        let focusedIdx = focused.index
+
+        let active = computeActiveSpaces(currentIndex: focusedIdx)
+        guard !active.isEmpty else { return }
+
+        wsActiveSpaces = active
+        wsFromSpace = focusedIdx
+        wsStartDelta = initialDelta
+        wsAutoCompleting = false
+        wsGestureProgress = 0
+
+        // Direction: swipe right (delta > 0) = go to previous space
+        //            swipe left  (delta < 0) = go to next space
+        let dir = initialDelta > 0 ? 1 : -1
+        wsDirection = dir
+
+        // Find target
+        guard let curPos = active.firstIndex(of: focusedIdx) else { return }
+        // Swiping right (dir=1) goes to previous: curPos - 1
+        // Swiping left (dir=-1) goes to next: curPos + 1
+        let targetPos = curPos - dir
+        if targetPos < 0 || targetPos >= active.count {
+            wsIsEdge = true
+            wsTargetSpace = focusedIdx
+        } else {
+            wsIsEdge = false
+            wsTargetSpace = active[targetPos]
+        }
+
+        // Set up CALayers
+        setupSwitchLayers(screen: screen)
+
+        // Load composites
+        wsCurrentLayer?.contents = WindowManager.compositeCache[wsFromSpace]
+        if !wsIsEdge {
+            wsTargetLayer?.contents = WindowManager.compositeCache[wsTargetSpace]
+                ?? WindowManager.loadWallpaper()?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            wsTargetLayer?.isHidden = false
+        } else {
+            wsTargetLayer?.isHidden = true
+        }
+
+        // Show overlay with CALayers, hide SwiftUI hosting view
+        overlayWindow.setFrame(screen.frame, display: false)
+        hostingView.isHidden = true
+        overlayWindow.alphaValue = 1
+        overlayWindow.makeKeyAndOrderFront(nil)
+
+        phase = .switching
+    }
+
+    private func setupSwitchLayers(screen: NSScreen) {
+        // Clean up any existing layers
+        wsRootLayer?.removeFromSuperlayer()
+
+        let W = screen.frame.width
+        let H = screen.frame.height
+        let scale = screen.backingScaleFactor
+
+        let root = CALayer()
+        root.frame = CGRect(x: 0, y: 0, width: W, height: H)
+        root.masksToBounds = true
+
+        let current = CALayer()
+        current.frame = CGRect(x: 0, y: 0, width: W, height: H)
+        current.contentsScale = scale
+        current.contentsGravity = .resizeAspectFill
+
+        let target = CALayer()
+        target.frame = CGRect(x: 0, y: 0, width: W, height: H)
+        target.contentsScale = scale
+        target.contentsGravity = .resizeAspectFill
+        target.isHidden = true
+
+        root.addSublayer(current)
+        root.addSublayer(target)
+
+        hostingView.layer?.addSublayer(root)
+
+        wsRootLayer = root
+        wsCurrentLayer = current
+        wsTargetLayer = target
+    }
+
+    private func updateWorkspaceSwitch(delta: CGFloat) {
+        guard phase == .switching, let screen = NSScreen.main else { return }
+        let W = screen.frame.width
+
+        let adjustedDelta = delta - wsStartDelta
+        var t = adjustedDelta * CGFloat(wsDirection)
+
+        // Rubber-band damping
+        if wsIsEdge {
+            t = t > 0 ? t * 0.3 : 0
+        } else if t > 1.0 {
+            t = 1.0 + (t - 1.0) * 0.3
+        } else if t < 0 {
+            t = t * 0.3
+        }
+
+        wsGestureProgress = t
+
+        // Update layer positions without implicit animation
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+
+        let signedOffset = t * CGFloat(wsDirection)
+        wsCurrentLayer?.frame.origin.x = signedOffset * W
+        if !wsIsEdge {
+            let targetBaseX: CGFloat = CGFloat(-wsDirection) * W
+            wsTargetLayer?.frame.origin.x = targetBaseX + signedOffset * W
+        }
+
+        CATransaction.commit()
+
+        // Update sketchybar indicator (throttled)
+        updateSketchybarProgress(t)
+
+        // Quick swipe detection
+        let velocity = abs(gestureMonitor?.currentVelocityX ?? 0)
+        if velocity > 5.0 && t > 0.05 && !wsIsEdge {
+            wsAutoCompleting = true
+            endWorkspaceSwitch()
+        }
+    }
+
+    private func endWorkspaceSwitch() {
+        guard phase == .switching, let screen = NSScreen.main else { return }
+        let W = screen.frame.width
+
+        let velocity = abs(gestureMonitor?.currentVelocityX ?? 0)
+        let velocityInDirection = (gestureMonitor?.currentVelocityX ?? 0) * CGFloat(wsDirection)
+
+        let shouldComplete: Bool
+        if wsIsEdge {
+            shouldComplete = false
+        } else {
+            shouldComplete = wsGestureProgress > 0.35 ||
+                (velocityInDirection > 2.0 && wsGestureProgress > 0.05)
+        }
+
+        phase = .switchAnimating
+
+        if shouldComplete {
+            // Animate to completion
+            let remaining = max(0.01, 1.0 - wsGestureProgress)
+            let velocityDuration = velocity > 0.1 ? remaining / velocity : 0.25
+            let duration = max(0.15, min(0.30, velocityDuration))
+
+            let targetCurrentX = CGFloat(wsDirection) * W
+            let targetTargetX: CGFloat = 0
+
+            CATransaction.begin()
+            CATransaction.setAnimationDuration(duration)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
+            CATransaction.setCompletionBlock { [weak self] in
+                guard let self, self.phase == .switchAnimating else { return }
+                // Switch space via yabai
+                WindowManager.focusSpace(self.wsTargetSpace)
+                // Brief delay then dismiss overlay and cache new space
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                    guard let self else { return }
+                    self.tearDownSwitch()
+                    Task { await WindowManager.cacheCurrentSpace() }
+                }
+            }
+
+            wsCurrentLayer?.frame.origin.x = targetCurrentX
+            wsTargetLayer?.frame.origin.x = targetTargetX
+
+            CATransaction.commit()
+
+            finalizeSketchybar(toSpace: wsTargetSpace)
+        } else {
+            // Bounce back
+            let progress = abs(wsGestureProgress)
+            let duration = max(0.15, min(0.30, Double(progress) * 0.5 + 0.1))
+
+            CATransaction.begin()
+            CATransaction.setAnimationDuration(duration)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
+            CATransaction.setCompletionBlock { [weak self] in
+                guard let self, self.phase == .switchAnimating else { return }
+                self.tearDownSwitch()
+            }
+
+            wsCurrentLayer?.frame.origin.x = 0
+            if !wsIsEdge {
+                wsTargetLayer?.frame.origin.x = CGFloat(-wsDirection) * W
+            }
+
+            CATransaction.commit()
+
+            finalizeSketchybar(toSpace: wsFromSpace)
+        }
+    }
+
+    private func tearDownSwitch() {
+        phase = .hidden
+        wsRootLayer?.removeFromSuperlayer()
+        wsRootLayer = nil
+        wsCurrentLayer = nil
+        wsTargetLayer = nil
+        hostingView.isHidden = false
+        overlayWindow.alphaValue = 0
+        overlayWindow.orderOut(nil)
+        wsGestureProgress = 0
+        wsDirection = 0
+        wsAutoCompleting = false
+    }
+
+    // MARK: - Sketchybar indicator during workspace switch
+
+    private func updateSketchybarProgress(_ t: CGFloat) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastSketchybarUpdate > 0.033 else { return }  // ~30fps max
+        lastSketchybarUpdate = now
+
+        guard wsFromSpace != wsTargetSpace, !wsIsEdge else { return }
+
+        let clamped = max(0.0, min(1.0, t))
+        let fromAlpha = UInt32((1.0 - clamped) * 255)
+        let toAlpha = UInt32(clamped * 255)
+
+        let fromBg = String(format: "0x%02x7aa2f7", fromAlpha)
+        let toBg = String(format: "0x%02x7aa2f7", toAlpha)
+
+        // Interpolate icon colors: active = 0x1a1b26 (dark), inactive = 0xa9b1d6 (light)
+        let fromR = UInt32(Double(0x1a) + Double(0xa9 - 0x1a) * clamped)
+        let fromG = UInt32(Double(0x1b) + Double(0xb1 - 0x1b) * clamped)
+        let fromB = UInt32(Double(0x26) + Double(0xd6 - 0x26) * clamped)
+        let toR = UInt32(Double(0xa9) + Double(0x1a - 0xa9) * clamped)
+        let toG = UInt32(Double(0xb1) + Double(0x1b - 0xb1) * clamped)
+        let toB = UInt32(Double(0xd6) + Double(0x26 - 0xd6) * clamped)
+
+        let fromIcon = String(format: "0xff%02x%02x%02x", fromR, fromG, fromB)
+        let toIcon = String(format: "0xff%02x%02x%02x", toR, toG, toB)
+
+        WindowManager.runAsync([
+            "sketchybar",
+            "--animate", "linear", "2",
+            "--set", "space.\(wsFromSpace)",
+            "background.color=\(fromBg)", "icon.color=\(fromIcon)",
+            "--set", "space.\(wsTargetSpace)",
+            "background.color=\(toBg)", "icon.color=\(toIcon)"
+        ])
+    }
+
+    private func finalizeSketchybar(toSpace: Int) {
+        if toSpace == wsFromSpace && wsTargetSpace != wsFromSpace {
+            // Bounce back — restore source highlight, clear target
+            WindowManager.runAsync([
+                "sketchybar",
+                "--animate", "linear", "5",
+                "--set", "space.\(wsFromSpace)",
+                "background.color=0xff7aa2f7", "icon.color=0xff1a1b26",
+                "--set", "space.\(wsTargetSpace)",
+                "background.color=0x00000000", "icon.color=0xffa9b1d6"
+            ])
+        }
+        // For completion, yabai's space_change event + space.sh handles the final state
     }
 
     // MARK: - Keyboard

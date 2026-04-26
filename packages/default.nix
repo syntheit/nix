@@ -19,5 +19,6 @@
   search-panel = pkgs.callPackage ./search-panel { };
   wallpaper-cycle = pkgs.callPackage ./wallpaper-cycle { };
   menubar-blocker = pkgs.callPackage ./menubar-blocker { };
+  square-corners = pkgs.callPackage ./square-corners { };
 }
 

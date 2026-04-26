@@ -121,9 +121,13 @@
       # Disable Mission Control three-finger swipe (overview app handles this gesture)
       "com.apple.AppleMultitouchTrackpad" = {
         TrackpadThreeFingerVertSwipeGesture = 0;
+        TrackpadThreeFingerHorizSwipeGesture = 0;
+        TrackpadFourFingerHorizSwipeGesture = 0;
       };
       "com.apple.driver.AppleBluetoothMultitouch.trackpad" = {
         TrackpadThreeFingerVertSwipeGesture = 0;
+        TrackpadThreeFingerHorizSwipeGesture = 0;
+        TrackpadFourFingerHorizSwipeGesture = 0;
       };
       # Disable personalized ads
       "com.apple.AdLib" = {
@@ -226,6 +230,9 @@
       sudo yabai --load-sa
       yabai -m signal --add event=dock_did_restart action="sudo yabai --load-sa"
 
+      # Notify overview daemon on space change (for composite cache)
+      yabai -m signal --add event=space_changed action="pkill -SIGUSR2 -x overview"
+
       # Window rules
       yabai -m rule --add app="^System Preferences$" manage=off
       yabai -m rule --add app="^System Settings$" manage=off
@@ -280,6 +287,10 @@
     set_default NSGlobalDomain AppleMenuBarVisibleInFullscreen -bool false
     set_default NSGlobalDomain AppleReduceTransparency -bool true
 
+    # Finder: quittable like a normal app, no desktop icons
+    set_default com.apple.finder QuitMenuItem -bool true
+    set_default com.apple.finder CreateDesktop -bool false
+
     # Don't write .DS_Store on network/USB volumes
     defaults write com.apple.desktopservices DSDontWriteNetworkStores -bool true
     defaults write com.apple.desktopservices DSDontWriteUSBStores -bool true
@@ -330,8 +341,11 @@
     BT_PANEL_BIN=$(readlink -f ${pkgs.bluetooth-panel}/bin/bluetooth-panel)
     WIFI_PANEL_BIN=$(readlink -f ${pkgs.wifi-panel}/bin/wifi-panel)
     EQ_BIN=$(readlink -f ${pkgs.eq}/bin/eq)
+    MENUBAR_BLOCKER_BIN=$(readlink -f ${pkgs.menubar-blocker}/bin/menubar-blocker)
     TCC_DB="/Library/Application Support/com.apple.TCC/TCC.db"
-    for BIN in "$YABAI_BIN" "$SKHD_BIN"; do
+    # Purge stale nix store TCC entries from previous rebuilds
+    sqlite3 "$TCC_DB" "DELETE FROM access WHERE client LIKE '/nix/store/%';"
+    for BIN in "$YABAI_BIN" "$SKHD_BIN" "$MENUBAR_BLOCKER_BIN"; do
       sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) VALUES ('kTCCServiceAccessibility', '$BIN', 1, 2, 4, 1);"
     done
     # Screen capture permission for overview (window thumbnails via ScreenCaptureKit)
@@ -378,6 +392,7 @@
       com.apple.contextstored \
       com.apple.wifianalyticsd \
       com.apple.audioanalyticsd \
+      com.apple.audiomxd \
       com.apple.ecosystemanalyticsd \
       com.apple.ecosystemd \
       com.apple.SubmitDiagInfo \
@@ -407,7 +422,11 @@
       com.apple.logd_reporter \
       com.apple.signpost.signpost_reporter \
       com.apple.csrutil.report \
-      com.apple.gkreport; do
+      com.apple.gkreport \
+      com.apple.nfcd \
+      com.apple.seld \
+      com.apple.remotemanagementd \
+      com.apple.screensharing; do
       launchctl bootout system/"$daemon" 2>/dev/null || true
       launchctl disable system/"$daemon" 2>/dev/null || true
     done
@@ -475,6 +494,7 @@
       com.apple.proactiveeventtrackerd \
       com.apple.rapportd \
       com.apple.sharingd \
+      com.apple.avconferenced \
       com.apple.CommCenter \
       com.apple.imagent \
       com.apple.imcore.imtransferagent \
@@ -569,7 +589,8 @@
       com.apple.BTServer.cloudpairing \
       com.apple.webprivacyd \
       com.apple.powerchime \
-      com.apple.accessibility.heard; do
+      com.apple.accessibility.heard \
+      com.apple.controlcenter; do
       launchctl bootout "gui/$GUI_UID/$agent" 2>/dev/null || true
       launchctl disable "gui/$GUI_UID/$agent" 2>/dev/null || true
     done
@@ -587,6 +608,8 @@
       launchctl unload -w "$f" 2>/dev/null || true
     done
     killall "ACCFinderSync" "Core Sync" "Creative Cloud" "Adobe Desktop Service" "CCXProcess" 2>/dev/null || true
+    # Disable Adobe Finder Sync extension (Finder re-spawns it after killall)
+    pluginkit -e ignore -i com.adobe.accmac.ACCFinderSync 2>/dev/null || true
 
     # ================================================================
     # Disable Spotlight indexing

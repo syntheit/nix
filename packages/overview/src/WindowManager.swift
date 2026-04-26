@@ -137,6 +137,79 @@ enum WindowManager {
         return NSImage(contentsOfFile: path)
     }
 
+    // MARK: - Composite cache for workspace switching
+
+    static var compositeCache: [Int: CGImage] = [:]
+
+    /// Capture the full display composite as a raw CGImage (with blur/vibrancy).
+    static func captureDisplayComposite() async -> CGImage? {
+        guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true),
+              let display = content.displays.first else { return nil }
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        let exclude = content.windows.filter { $0.owningApplication?.processID == myPID }
+        let f = SCContentFilter(display: display, excludingWindows: exclude)
+        let c = SCStreamConfiguration()
+        c.width = display.width * 2; c.height = display.height * 2; c.showsCursor = false
+        return try? await SCScreenshotManager.captureImage(contentFilter: f, configuration: c)
+    }
+
+    /// Capture and cache the composite for the currently focused space.
+    static func cacheCurrentSpace() async {
+        guard let spaces: [YabaiSpace] = queryYabai(["--spaces"]),
+              let focused = spaces.first(where: { $0.hasFocus }) else { return }
+        if let img = await captureDisplayComposite() {
+            compositeCache[focused.index] = img
+        }
+    }
+
+    /// Populate the composite cache by visiting each occupied space.
+    /// Call behind an opaque overlay so the user doesn't see rapid switching.
+    static func populateCache() async {
+        let spaces = querySpaces()
+        let occupied = spaces.filter { !$0.windowIDs.isEmpty }
+        guard let focused = spaces.first(where: { $0.hasFocus }) else { return }
+        let originalIndex = focused.index
+
+        // Cache the current space first (no switch needed)
+        if let img = await captureDisplayComposite() {
+            compositeCache[originalIndex] = img
+        }
+
+        // Visit each other occupied space
+        for space in occupied where space.index != originalIndex {
+            focusSpace(space.index)
+            // Brief wait for WindowServer to composite the new space
+            try? await Task.sleep(nanoseconds: 100_000_000)  // 100ms
+            if let img = await captureDisplayComposite() {
+                compositeCache[space.index] = img
+            }
+        }
+
+        // Return to original space
+        if occupied.count > 1 || occupied.first?.index != originalIndex {
+            focusSpace(originalIndex)
+        }
+        print("[overview] composite cache populated: \(compositeCache.count) spaces")
+    }
+
+    /// Invalidate the entire composite cache (e.g., on screen resolution change).
+    static func invalidateCache() {
+        compositeCache.removeAll()
+    }
+
+    // MARK: - Async run (non-blocking, for sketchybar updates during gestures)
+
+    static func runAsync(_ args: [String]) {
+        DispatchQueue.global(qos: .userInteractive).async {
+            let t = Process()
+            t.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            t.arguments = args
+            t.standardOutput = FileHandle.nullDevice; t.standardError = FileHandle.nullDevice
+            do { try t.run() } catch { return }
+            t.waitUntilExit()
+        }
+    }
+
     // MARK: - Actions
 
     static func focusWindow(_ id: Int) { run(["yabai", "-m", "window", "\(id)", "--focus"]) }
