@@ -80,8 +80,17 @@ in
       type = lib.types.nullOr lib.types.path;
       default = null;
       description = ''
-        Path to file containing ANTHROPIC_API_KEY for API-based auth (pay-per-token).
-        If null, Claude uses subscription auth — run `sudo -u elliot claude setup-token` once.
+        Path to env file containing ANTHROPIC_API_KEY for API-based auth (pay-per-token).
+      '';
+    };
+
+    claudeOAuthTokenFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = ''
+        Path to env file containing CLAUDE_CODE_OAUTH_TOKEN (long-lived subscription token).
+        Generate with `claude setup-token` — it prints a token to stdout. Save it in a
+        sops secret as `CLAUDE_CODE_OAUTH_TOKEN=<token>`.
       '';
     };
 
@@ -158,6 +167,7 @@ in
       # Tools that MCP tool handlers exec directly.
       path = [
         pkgs.elliot
+        pkgs.claude-code
       ]
       ++ lib.optional config.virtualisation.docker.enable config.virtualisation.docker.package
       ++ (with pkgs; [
@@ -195,8 +205,9 @@ in
         ] ++ lib.optional config.virtualisation.docker.enable "/run/docker.sock";
 
         SupplementaryGroups = lib.optional config.virtualisation.docker.enable "docker";
-      } // lib.optionalAttrs (cfg.anthropicApiKeyFile != null) {
-        EnvironmentFile = cfg.anthropicApiKeyFile;
+        EnvironmentFile =
+          lib.optional (cfg.anthropicApiKeyFile != null) cfg.anthropicApiKeyFile
+          ++ lib.optional (cfg.claudeOAuthTokenFile != null) cfg.claudeOAuthTokenFile;
       };
     };
   };

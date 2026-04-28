@@ -213,6 +213,25 @@
         }
       '';
     };
+    virtualHosts."library.matv.io" = {
+      extraConfig = ''
+        encode gzip zstd
+        reverse_proxy 10.100.0.2:8083 {
+          flush_interval -1
+          header_up X-Real-IP {remote_host}
+          header_up X-Forwarded-For {remote_host}
+          header_up X-Forwarded-Proto {scheme}
+          # CWA's ReverseProxied wrapper only flips is_proxied=True when
+          # X-Forwarded-Host is present; otherwise it builds Kobo download
+          # URLs with `:8083` appended. Caddy 2.6+ sets this automatically,
+          # but be explicit so a future Caddy quirk can't reintroduce the bug.
+          header_up X-Forwarded-Host {host}
+          transport http {
+            read_buffer 16KiB
+          }
+        }
+      '';
+    };
     virtualHosts."harbor.matv.io" = {
       extraConfig = ''
         encode gzip zstd
@@ -449,6 +468,13 @@
       - name: Immich
         group: conduit
         url: https://photos.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: Library
+        group: conduit
+        url: https://library.matv.io
         interval: 2m
         conditions:
           - "[STATUS] < 500"
