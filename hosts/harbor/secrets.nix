@@ -40,6 +40,7 @@
   sops.secrets.docmost_app_secret = { };
   sops.secrets.docmost_db_password = { };
   sops.secrets.elliot_telegram_token = { owner = "elliot"; };
+  sops.secrets.elliot_claude_oauth_token = { owner = "elliot"; };
   sops.secrets.grafana_secret_key = {
     owner = "grafana";
     group = "grafana";
@@ -51,9 +52,6 @@
   sops.secrets.seafile_jwt_private_key = { };
   sops.secrets.seafile_admin_email = { };
   sops.secrets.seafile_admin_password = { };
-  # rclone pull: Seafile "Books-Drop" library → CWA ingest dir.
-  # Value is `rclone obscure '<seafile-password>'` output (NOT plaintext).
-  sops.secrets.seafile_rclone_pass_obscured = { };
 
   # qBittorrent env file
   sops.templates."qbittorrent.env".content = ''
@@ -185,6 +183,14 @@
     POSTGRES_DB=docmost
   '';
 
+  # Elliot Claude OAuth env file
+  sops.templates."elliot-claude.env" = {
+    owner = "elliot";
+    content = ''
+      CLAUDE_CODE_OAUTH_TOKEN=${config.sops.placeholder.elliot_claude_oauth_token}
+    '';
+  };
+
   # Seafile env file
   sops.templates."seafile.env".content = ''
     SEAFILE_MYSQL_DB_PASSWORD=${config.sops.placeholder.seafile_mysql_db_pw}
@@ -197,17 +203,6 @@
   # Seafile MariaDB env file
   sops.templates."seafile-db.env".content = ''
     MYSQL_ROOT_PASSWORD=${config.sops.placeholder.seafile_mysql_root_pw}
-  '';
-
-  # rclone config for the cwa-ingest-pull service. Reads the dedicated
-  # Seafile library "Books" via the native seafile backend.
-  sops.templates."rclone-seafile.conf".content = ''
-    [seafile-books]
-    type = seafile
-    url = https://files.matv.io/
-    user = ${config.sops.placeholder.seafile_admin_email}
-    pass = ${config.sops.placeholder.seafile_rclone_pass_obscured}
-    library = Books
   '';
 
   # Pelican Panel DB env file

@@ -104,8 +104,9 @@
   services.elliot = {
     enable = true;
     telegramTokenFile = config.sops.secrets.elliot_telegram_token.path;
-    allowedUserIDs = [ ]; # TODO: add Telegram user IDs
-    alertChatID = 0; # TODO: set alert chat ID
+    claudeOAuthTokenFile = config.sops.templates."elliot-claude.env".path;
+    allowedUserIDs = [ 921730321 ]; # Daniel
+    alertChatID = 921730321;
     model = "opus";
     healthCheck = {
       enable = true;
