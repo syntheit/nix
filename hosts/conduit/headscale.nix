@@ -162,11 +162,81 @@ in
       # Fix authorized_keys.d permissions for OpenSSH 10.x.
       # Plus copy the deploy key from the host bind-mount into fleet's
       # home with strict perms so SSH accepts it as an identity file.
+      # Also pre-create the git mirror dir so the systemd timers below
+      # can clone into it on first run.
       systemd.tmpfiles.rules = [
         "d /etc/ssh/authorized_keys.d 0755 root root -"
         "d /home/fleet/.ssh 0700 fleet users -"
         "C+ /home/fleet/.ssh/deploy_key_deus 0600 fleet users - /etc/deus-keys/deploy-malli-deus"
+        "d /var/lib/git-mirror 0755 fleet users -"
       ];
+
+      # ── Tailnet-internal git mirror ───────────────────────
+      # Fleet machines fetch flake sources from `git+git://conduit/...`
+      # rather than GitHub, so they never need GitHub credentials. The
+      # mirror lives in this container because the deploy keys it uses
+      # to fetch from upstream already live here. git:// is plaintext
+      # but the wireguard-encrypted tailnet is the trust boundary.
+      services.gitDaemon = {
+        enable = true;
+        basePath = "/var/lib/git-mirror";
+        exportAll = true;
+        listenAddress = "0.0.0.0";
+      };
+
+      systemd.services.malli-nix-mirror = {
+        description = "Mirror malli-nix from GitHub";
+        after = [ "network-online.target" ];
+        wants = [ "network-online.target" ];
+        serviceConfig = {
+          Type = "oneshot";
+          User = "fleet";
+          Group = "users";
+          ExecStart = pkgs.writeShellScript "malli-nix-mirror" ''
+            set -e
+            cd /var/lib/git-mirror
+            if [ ! -d malli-nix.git ]; then
+              ${pkgs.git}/bin/git clone --mirror git@github.com:syntheit/malli-nix.git
+            fi
+            ${pkgs.git}/bin/git -C malli-nix.git fetch --all --prune
+          '';
+        };
+      };
+
+      systemd.timers.malli-nix-mirror = {
+        wantedBy = [ "timers.target" ];
+        timerConfig = {
+          OnBootSec = "30s";
+          OnUnitActiveSec = "5m";
+        };
+      };
+
+      systemd.services.malli-deus-mirror = {
+        description = "Mirror malli-deus from GitHub";
+        after = [ "network-online.target" ];
+        wants = [ "network-online.target" ];
+        serviceConfig = {
+          Type = "oneshot";
+          User = "fleet";
+          Group = "users";
+          ExecStart = pkgs.writeShellScript "malli-deus-mirror" ''
+            set -e
+            cd /var/lib/git-mirror
+            if [ ! -d malli-deus.git ]; then
+              ${pkgs.git}/bin/git clone --mirror git@github-malli-deus:syntheit/malli-deus.git
+            fi
+            ${pkgs.git}/bin/git -C malli-deus.git fetch --all --prune
+          '';
+        };
+      };
+
+      systemd.timers.malli-deus-mirror = {
+        wantedBy = [ "timers.target" ];
+        timerConfig = {
+          OnBootSec = "45s";
+          OnUnitActiveSec = "5m";
+        };
+      };
 
       # ── Fleet user ────────────────────────────────────────
       users.users.fleet = {
@@ -276,7 +346,7 @@ in
   };
 
   # Only open port 5000 on the Tailscale interface — blocked from the internet
-  networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 5000 8086 ];
+  networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 5000 8086 9418 ];
 
   # Open the container's SSH port to the internet
   networking.firewall.allowedTCPPorts = [ 2222 ];
