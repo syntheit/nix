@@ -12,7 +12,7 @@
 #   ssh tars@m-1w6l                         # SSH to Mac Mini (via tailnet)
 #   ssh lima@m-1w6l-vm                      # SSH to VM (via tailnet)
 
-{ pkgs, ... }:
+{ pkgs, inputs, ... }:
 
 let
   headscale-ui-src = pkgs.fetchzip {
@@ -23,6 +23,30 @@ let
   headscale-ui = headscale-ui-src;
 in
 {
+  systemd.tmpfiles.rules = [
+    "d /var/lib/deus 0750 root root -"
+    # 0755 so the container's deus user can traverse to the world-readable token files inside.
+    "d /var/lib/deus-tokens 0755 root root -"
+    # 0750 — keys are root-only on the host; the container re-permissions for fleet user.
+    "d /var/lib/deus-keys 0750 root root -"
+  ];
+
+  # Sops renders to /run/secrets, a host-only tmpfs the container can't
+  # follow into. Stage actual file contents into bind-mounted paths so
+  # the container reads real files, not dangling symlinks.
+  # mkdir here too because activation runs before systemd.tmpfiles
+  # recreates dirs on first deploy.
+  system.activationScripts.deus-stage = {
+    deps = [ "setupSecrets" ];
+    text = ''
+      ${pkgs.coreutils}/bin/install -d -m 0755 /var/lib/deus-tokens
+      ${pkgs.coreutils}/bin/install -d -m 0750 /var/lib/deus-keys
+      ${pkgs.coreutils}/bin/install -m 0444 -o root -g root /run/secrets/deus_operator_token /var/lib/deus-tokens/operator-token
+      ${pkgs.coreutils}/bin/install -m 0444 -o root -g root /run/secrets/deus_agent_token    /var/lib/deus-tokens/agent-token
+      ${pkgs.coreutils}/bin/install -m 0400 -o root -g root /run/secrets/deus_deploy_key     /var/lib/deus-keys/deploy-malli-deus
+    '';
+  };
+
   # ── Headscale container ────────────────────────────────────
   containers.headscale = {
     autoStart = true;
@@ -39,10 +63,40 @@ in
         hostPath = "/var/lib/headscale";
         isReadOnly = false;
       };
+      "/var/lib/deus" = {
+        hostPath = "/var/lib/deus";
+        isReadOnly = false;
+      };
+      "/var/lib/deus-tokens" = {
+        hostPath = "/var/lib/deus-tokens";
+        isReadOnly = true;
+      };
+      "/etc/deus-keys" = {
+        hostPath = "/var/lib/deus-keys";
+        isReadOnly = true;
+      };
+      # Bind the malli-nix flake input (a /nix/store path on the host)
+      # into the container so deus-server can read registry.nix from it.
+      "/var/lib/deus-registry" = {
+        hostPath = "${inputs.malli-nix}";
+        isReadOnly = true;
+      };
     };
 
     config = { pkgs, ... }: {
+      imports = [ inputs.deus.nixosModules.server ];
+
       system.stateVersion = "23.11";
+
+      # ── Deus fleet control plane ──────────────────────────
+      services.deus.server = {
+        enable = true;
+        address = "0.0.0.0";
+        port = 8086;
+        registryFile = "/var/lib/deus-registry/hosts/registry.nix";
+        operatorTokenFile = "/var/lib/deus-tokens/operator-token";
+        agentTokenFile = "/var/lib/deus-tokens/agent-token";
+      };
 
       # Use Tailscale's DNS so tailnet hostnames resolve
       # (e.g. ssh tars@m-1w6l works inside the container).
@@ -105,9 +159,13 @@ in
         modulePath = "pam_permit.so";
       };
 
-      # Fix authorized_keys.d permissions for OpenSSH 10.x
+      # Fix authorized_keys.d permissions for OpenSSH 10.x.
+      # Plus copy the deploy key from the host bind-mount into fleet's
+      # home with strict perms so SSH accepts it as an identity file.
       systemd.tmpfiles.rules = [
         "d /etc/ssh/authorized_keys.d 0755 root root -"
+        "d /home/fleet/.ssh 0700 fleet users -"
+        "C+ /home/fleet/.ssh/deploy_key_deus 0600 fleet users - /etc/deus-keys/deploy-malli-deus"
       ];
 
       # ── Fleet user ────────────────────────────────────────
@@ -136,9 +194,20 @@ in
 
       programs.zsh.enable = true;
 
+      # GitHub deploy keys are unique per repo, so two of them under
+      # the same Host don't both work — first key wins and scopes the
+      # connection. Use a per-repo alias for malli-deus; keep the
+      # default github.com pointing at the existing malli-nix key so
+      # `git pull` on the cloned malli-nix repo still works unchanged.
       programs.ssh.extraConfig = ''
         Host github.com
           IdentityFile /home/fleet/.ssh/deploy_key
+          IdentitiesOnly yes
+
+        Host github-malli-deus
+          HostName github.com
+          User git
+          IdentityFile /home/fleet/.ssh/deploy_key_deus
           IdentitiesOnly yes
 
         Host *
@@ -207,7 +276,7 @@ in
   };
 
   # Only open port 5000 on the Tailscale interface — blocked from the internet
-  networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 5000 ];
+  networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 5000 8086 ];
 
   # Open the container's SSH port to the internet
   networking.firewall.allowedTCPPorts = [ 2222 ];
