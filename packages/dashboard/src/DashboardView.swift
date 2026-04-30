@@ -28,6 +28,7 @@ struct DashboardView: View {
     @State private var uptime = SystemBridge.getUptime()
     @State private var diskFree = SystemBridge.getDiskFree()
     @State private var network = SystemBridge.getNetwork()
+    @State private var claudeUsage = ClaudeUsage.Snapshot.zero
 
     // Volume via CoreAudio is instant (<1ms), Spotify needs AppleScript cache
     @State private var volume = SystemBridge.getVolume()
@@ -51,6 +52,8 @@ struct DashboardView: View {
     var body: some View {
         ZStack {
             Color.clear
+            AuroraView()
+                .allowsHitTesting(false)
             VStack(spacing: 0) {
                 clockSection
                 systemInfoRow
@@ -116,6 +119,15 @@ struct DashboardView: View {
             if let nw = newWeather { weather = nw }
             if !newExchange.isEmpty { exchange = newExchange }
             if !newAgenda.isEmpty { agenda = newAgenda }
+        }
+        .task(id: "claude") {
+            while !Task.isCancelled {
+                let snapshot = await Task.detached(priority: .utility) {
+                    ClaudeUsage.read()
+                }.value
+                if snapshot != claudeUsage { claudeUsage = snapshot }
+                try? await Task.sleep(for: .seconds(30))
+            }
         }
     }
 
@@ -195,20 +207,6 @@ struct DashboardView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(Color.subtle)
             }
-            HStack(spacing: 5) {
-                Image(systemName: "arrow.down")
-                    .font(.system(size: 9))
-                    .foregroundStyle(Color.dimmed)
-                Text(formatRate(network.bytesIn))
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.subtle)
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 9))
-                    .foregroundStyle(Color.dimmed)
-                Text(formatRate(network.bytesOut))
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.subtle)
-            }
             if let b = battery {
                 HStack(spacing: 5) {
                     Image(systemName: batteryIcon)
@@ -228,6 +226,28 @@ struct DashboardView: View {
                             .foregroundStyle(Color.dimmed)
                     }
                 }
+            }
+            HStack(spacing: 5) {
+                Image(systemName: "hourglass")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.dimmed)
+                Text("\(claudeUsage.blockPercent)% / \(claudeUsage.weeklyPercent)%")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Color.subtle)
+            }
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.down")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color.dimmed)
+                Text(formatRate(network.bytesIn))
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Color.subtle)
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color.dimmed)
+                Text(formatRate(network.bytesOut))
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Color.subtle)
             }
             Spacer()
             privacyIndicator

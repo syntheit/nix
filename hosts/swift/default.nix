@@ -290,9 +290,10 @@
     set_default NSGlobalDomain AppleMenuBarVisibleInFullscreen -bool false
     set_default NSGlobalDomain AppleReduceTransparency -bool true
 
-    # Finder: quittable like a normal app, no desktop icons
+    # Finder: quittable like a normal app. Desktop stays enabled — its hidden
+    # window anchors macOS focus on every space and prevents yabai's empty-space
+    # bounce-back to space 1 (see commit 93813a6).
     set_default com.apple.finder QuitMenuItem -bool true
-    set_default com.apple.finder CreateDesktop -bool false
 
     # Don't write .DS_Store on network/USB volumes
     defaults write com.apple.desktopservices DSDontWriteNetworkStores -bool true

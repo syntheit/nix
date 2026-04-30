@@ -16,6 +16,9 @@ stdenv.mkDerivation {
       -framework IOKit \
       -framework EventKit \
       -framework CoreAudio \
+      -framework Metal \
+      -framework MetalKit \
+      -framework QuartzCore \
       -o dashboard \
       $src/*.swift
   '';
