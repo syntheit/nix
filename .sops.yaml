@@ -20,3 +20,8 @@ creation_rules:
       - age:
           - *conduit
           - *daniel
+  - path_regex: secrets/conduit/.*$
+    key_groups:
+      - age:
+          - *conduit
+          - *daniel

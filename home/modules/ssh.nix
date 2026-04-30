@@ -74,6 +74,14 @@
         user = "git";
         identityFile = "~/.ssh/mainkey";
       };
+      # Alias matching the deploy-key-pinned alias used inside the
+      # headscale container. Points at the same github.com host with
+      # daniel's mainkey so flake updates work from harbor too.
+      "github-malli-deus" = {
+        hostname = "github.com";
+        user = "git";
+        identityFile = "~/.ssh/mainkey";
+      };
     };
   };
 

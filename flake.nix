@@ -84,6 +84,16 @@
       url = "github:nix-community/disko";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    malli-nix = {
+      url = "git+ssh://git@github.com/syntheit/malli-nix.git";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    deus = {
+      url = "git+ssh://git@github.com/syntheit/malli-deus.git";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
