@@ -22,7 +22,6 @@
     ./modules/thunderbird.nix
     ./modules/mime-apps.nix
     ./modules/services.nix
-    ./modules/nextcloud.nix
     ./modules/zen.nix
     ./modules/dunst.nix
     ./modules/copyq.nix

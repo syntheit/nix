@@ -120,7 +120,6 @@
     signal-desktop
     telegram-desktop
     slack
-    nextcloud-client
     virt-manager
     papirus-icon-theme
     popsicle
