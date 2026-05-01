@@ -4,6 +4,13 @@ import SwiftUI
 class AppDelegate: NSObject, NSApplicationDelegate {
     var window: NSWindow!
 
+    /// Single-key shortcut → host name. Built from DashboardView's host list so
+    /// adding a new foyer host doesn't silently break the keymap.
+    private static let hostKeyMap: [String: String] = Dictionary(
+        uniqueKeysWithValues: DashboardView.allHostNames
+            .compactMap { name in name.first.map { (String($0), name) } }
+    )
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard let screen = NSScreen.main else { NSApp.terminate(nil); return }
 
@@ -49,7 +56,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Key event monitor
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == 53 { // Escape
+                if DashboardExpansionState.shared.isOpen {
+                    NotificationCenter.default.post(name: .dashboardCloseExpanded, object: nil)
+                    return nil
+                }
                 self?.gracefulQuit()
+                return nil
+            }
+            if let host = Self.hostKeyMap[event.charactersIgnoringModifiers ?? ""] {
+                NotificationCenter.default.post(
+                    name: .dashboardExpandHost, object: nil,
+                    userInfo: ["host": host]
+                )
                 return nil
             }
             if event.characters == "p" {

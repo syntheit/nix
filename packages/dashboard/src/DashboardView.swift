@@ -29,6 +29,8 @@ struct DashboardView: View {
     @State private var diskFree = SystemBridge.getDiskFree()
     @State private var network = SystemBridge.getNetwork()
     @State private var claudeUsage = ClaudeUsage.Snapshot.zero
+    @State private var expandedHost: String?
+    @State private var expandedDetail: AsyncData.ServerDetail?
 
     // Volume via CoreAudio is instant (<1ms), Spotify needs AppleScript cache
     @State private var volume = SystemBridge.getVolume()
@@ -81,7 +83,16 @@ struct DashboardView: View {
             }
             .padding(48)
             .frame(maxWidth: 680)
+
+            if let host = expandedHost {
+                Color.black.opacity(0.65)
+                    .ignoresSafeArea()
+                    .onTapGesture { expandedHost = nil; expandedDetail = nil }
+                SystemDetailView(detail: expandedDetail, host: host)
+                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
+            }
         }
+        .animation(.easeInOut(duration: 0.18), value: expandedHost)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(appeared ? .easeInOut(duration: 0.3) : nil, value: servers.count)
         .animation(appeared ? .easeInOut(duration: 0.3) : nil, value: exchange.count)
@@ -129,6 +140,78 @@ struct DashboardView: View {
                 try? await Task.sleep(for: .seconds(30))
             }
         }
+        .task(id: expandedHost) {
+            guard let host = expandedHost else {
+                expandedDetail = nil
+                return
+            }
+            while !Task.isCancelled && expandedHost == host {
+                let snapshot = await loadDetail(for: host)
+                if snapshot != expandedDetail { expandedDetail = snapshot }
+                // Foyer's collector refreshes every 5s; polling faster wastes
+                // subprocess invocations against unchanged data.
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .dashboardExpandHost)) { note in
+            if let host = note.userInfo?["host"] as? String {
+                expandedHost = host
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .dashboardCloseExpanded)) { _ in
+            expandedHost = nil
+        }
+        .onChange(of: expandedHost) { _, new in
+            DashboardExpansionState.shared.isOpen = (new != nil)
+        }
+    }
+
+    static let allHostNames = ["swift"] + foyerServers.map(\.name)
+
+    private func loadDetail(for host: String) async -> AsyncData.ServerDetail {
+        if host == "swift" {
+            return localSwiftDetail()
+        }
+        guard let cfg = Self.foyerServers.first(where: { $0.name == host }) else {
+            return AsyncData.ServerDetail(
+                name: host, ok: false,
+                cpuPercent: 0, ramPercent: 0,
+                pools: [], mounts: [],
+                rxBytesPerSec: 0, txBytesPerSec: 0,
+                dockerRunning: nil, jellyfinStreams: nil, minecraft: nil
+            )
+        }
+        return await AsyncData.getServerDetail(name: cfg.name, url: cfg.url)
+    }
+
+    private func localSwiftDetail() -> AsyncData.ServerDetail {
+        var mounts: [AsyncData.MountDetail] = []
+        if let attrs = try? FileManager.default.attributesOfFileSystem(forPath: "/"),
+           let total = attrs[.systemSize] as? Int64,
+           let free = attrs[.systemFreeSize] as? Int64 {
+            let used = total - free
+            let pct = total > 0 ? Int(Double(used) * 100 / Double(total)) : 0
+            mounts.append(AsyncData.MountDetail(
+                mountpoint: "/", usagePercent: pct,
+                totalBytes: total, usedBytes: used
+            ))
+        }
+        return AsyncData.ServerDetail(
+            name: "swift", ok: true,
+            cpuPercent: cpu,
+            ramPercent: memory.ramPercent,
+            memCompressed: memory.pressurePercent,
+            cpuTemp: temp,
+            uptimeSecs: Int(ProcessInfo.processInfo.systemUptime),
+            gpu: nil,
+            pools: [],
+            mounts: mounts,
+            rxBytesPerSec: network.bytesIn,
+            txBytesPerSec: network.bytesOut,
+            dockerRunning: nil,
+            jellyfinStreams: nil,
+            minecraft: nil
+        )
     }
 
     private func refreshFast() {
@@ -388,58 +471,51 @@ struct DashboardView: View {
         return [local] + servers
     }
 
-    private func formatRate(_ bytesPerSec: Int64) -> String {
-        if bytesPerSec >= 1_048_576 {
-            return String(format: "%.1fM", Double(bytesPerSec) / 1_048_576)
-        }
-        return "\(bytesPerSec / 1024)K"
-    }
-
-    private func formatUptime(_ secs: Int) -> String {
-        let d = secs / 86400
-        let h = (secs % 86400) / 3600
-        if d > 0 { return "\(d)d" }
-        return "\(h)h"
-    }
+    private func formatRate(_ bytesPerSec: Int64) -> String { Format.rate(bytesPerSec) }
+    private func formatUptime(_ secs: Int) -> String { Format.uptime(secs) }
 
     private var systemsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionHeader(title: "Systems")
             ForEach(allSystems) { server in
-                HStack(spacing: 10) {
-                    if !server.ok {
-                        Circle()
-                            .fill(Color.red)
-                            .frame(width: 6, height: 6)
-                    }
-                    Text(server.name)
-                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.white)
-                        .frame(width: 60, alignment: .leading)
-                    if let cpu = server.cpuPercent, let ram = server.ramPercent {
-                        MiniBar(value: cpu, color: .gaugeCyan, label: "CPU")
-                        MiniBar(value: ram, color: .gaugePurple, label: "RAM",
-                               overlay: server.memPressure ?? 0)
-                        if let temp = server.cpuTemp, temp > 0 {
-                            Text("\(temp)°")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(temp >= 80 ? Color.red : Color.subtle)
+                Button(action: { expandedHost = server.name }) {
+                    HStack(spacing: 10) {
+                        if !server.ok {
+                            Circle()
+                                .fill(Color.red)
+                                .frame(width: 6, height: 6)
                         }
-                        if let secs = server.uptimeSecs {
-                            Text(formatUptime(secs))
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(Color.dimmed)
+                        Text(server.name)
+                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(.white)
+                            .frame(width: 60, alignment: .leading)
+                        if let cpu = server.cpuPercent, let ram = server.ramPercent {
+                            MiniBar(value: cpu, color: .gaugeCyan, label: "CPU")
+                            MiniBar(value: ram, color: .gaugePurple, label: "RAM",
+                                   overlay: server.memPressure ?? 0)
+                            if let temp = server.cpuTemp, temp > 0 {
+                                Text("\(temp)°")
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(temp >= 80 ? Color.red : Color.subtle)
+                            }
+                            if let secs = server.uptimeSecs {
+                                Text(formatUptime(secs))
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(Color.dimmed)
+                            }
                         }
+                        Spacer()
                     }
-                    Spacer()
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
             }
         }
     }
 
     private var exchangeSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title: "Exchange")
+            SectionHeader(title: "Currencies")
             HStack(spacing: 24) {
                 ForEach(exchange, id: \.label) { rate in
                     VStack(alignment: .center, spacing: 3) {
@@ -584,3 +660,16 @@ struct MiniBar: View {
     }
 }
 
+
+extension Notification.Name {
+    static let dashboardExpandHost = Notification.Name("dashboardExpandHost")
+    static let dashboardCloseExpanded = Notification.Name("dashboardCloseExpanded")
+}
+
+// Read by AppDelegate so the Esc keystroke can choose between closing the
+// popup and quitting the app — NotificationCenter would force async, missing
+// the synchronous "did anyone consume this" decision the keyDown monitor needs.
+final class DashboardExpansionState {
+    static let shared = DashboardExpansionState()
+    var isOpen: Bool = false
+}

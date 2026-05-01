@@ -292,6 +292,155 @@ enum AsyncData {
         )
     }
 
+    // MARK: - Server Detail (full /api/health payload, fetched on demand)
+
+    struct ServerDetail: Equatable {
+        var name: String
+        var ok: Bool
+        var cpuPercent: Int
+        var ramPercent: Int
+        var memCompressed: Int?
+        var cpuTemp: Int?
+        var uptimeSecs: Int?
+        var gpu: GPUDetail?
+        var pools: [PoolDetail]
+        var mounts: [MountDetail]
+        var rxBytesPerSec: Int64
+        var txBytesPerSec: Int64
+        var dockerRunning: Int?
+        var jellyfinStreams: Int?
+        var minecraft: MinecraftDetail?
+    }
+
+    struct MinecraftDetail: Equatable {
+        var online: Bool
+        var players: Int
+        var maxPlayers: Int
+    }
+
+    struct GPUDetail: Equatable {
+        var name: String
+        var utilPercent: Int
+        var memUsedMB: Int
+        var memTotalMB: Int
+        var temp: Int
+        var powerWatts: Double
+    }
+
+    struct PoolDetail: Identifiable, Equatable {
+        var id: String { name }
+        var name: String
+        var usagePercent: Int
+        var totalBytes: Int64
+        var usedBytes: Int64
+        var health: String
+    }
+
+    struct MountDetail: Identifiable, Equatable {
+        var id: String { mountpoint }
+        var mountpoint: String
+        var usagePercent: Int
+        var totalBytes: Int64
+        var usedBytes: Int64
+    }
+
+    static func getServerDetail(name: String, url: String) async -> ServerDetail {
+        let task = Task.detached(priority: .utility) {
+            shell("foyer-api --host \(url) /api/health", timeout: 8)
+        }
+        guard let output = await task.value,
+              let data = output.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return ServerDetail(
+                name: name, ok: false,
+                cpuPercent: 0, ramPercent: 0,
+                pools: [], mounts: [],
+                rxBytesPerSec: 0, txBytesPerSec: 0
+            )
+        }
+
+        let cpu = (json["cpu"] as? [String: Any])?["usage_percent"] as? Double ?? 0
+        let memObj = json["memory"] as? [String: Any]
+        let mem = memObj?["usage_percent"] as? Double ?? 0
+        let cmpr = memObj?["compressed_percent"] as? Double ?? 0
+        let sys = json["system"] as? [String: Any]
+        let uptime = sys?["uptime_seconds"] as? Double ?? 0
+        let cpuTemp = (json["temperatures"] as? [String: Any])?["cpu"] as? Int ?? 0
+
+        var gpu: GPUDetail?
+        if let g = json["gpu"] as? [String: Any] {
+            gpu = GPUDetail(
+                name: g["name"] as? String ?? "GPU",
+                utilPercent: Int(g["utilization_percent"] as? Double ?? 0),
+                memUsedMB: Int(g["memory_used_mb"] as? UInt64 ?? 0),
+                memTotalMB: Int(g["memory_total_mb"] as? UInt64 ?? 0),
+                temp: g["temperature"] as? Int ?? 0,
+                powerWatts: g["power_watts"] as? Double ?? 0
+            )
+        }
+
+        let disk = json["disk"] as? [String: Any]
+        let pools: [PoolDetail] = ((disk?["pools"] as? [[String: Any]]) ?? []).compactMap { p in
+            guard let name = p["name"] as? String else { return nil }
+            return PoolDetail(
+                name: name,
+                usagePercent: Int(p["usage_percent"] as? Double ?? 0),
+                totalBytes: Int64(p["total_bytes"] as? UInt64 ?? 0),
+                usedBytes: Int64(p["used_bytes"] as? UInt64 ?? 0),
+                health: p["health"] as? String ?? "UNKNOWN"
+            )
+        }
+        let mounts: [MountDetail] = ((disk?["mounts"] as? [[String: Any]]) ?? []).compactMap { m in
+            guard let mp = m["mountpoint"] as? String else { return nil }
+            return MountDetail(
+                mountpoint: mp,
+                usagePercent: Int(m["usage_percent"] as? Double ?? 0),
+                totalBytes: Int64(m["total_bytes"] as? UInt64 ?? 0),
+                usedBytes: Int64(m["used_bytes"] as? UInt64 ?? 0)
+            )
+        }
+
+        // Pick the busiest non-loopback interface; aggregating across all
+        // interfaces double-counts on hosts with bridged networking.
+        let ifaces = ((json["network"] as? [String: Any])?["interfaces"] as? [[String: Any]]) ?? []
+        var bestRx: Int64 = 0, bestTx: Int64 = 0
+        for iface in ifaces {
+            let rx = Int64(iface["rx_bytes_per_sec"] as? UInt64 ?? 0)
+            let tx = Int64(iface["tx_bytes_per_sec"] as? UInt64 ?? 0)
+            if rx + tx > bestRx + bestTx { bestRx = rx; bestTx = tx }
+        }
+
+        let dockerCount = ((json["docker"] as? [String: Any])?["containers"] as? [[String: Any]])?
+            .filter { ($0["state"] as? String) == "running" }.count
+
+        var jellyfinStreams: Int?
+        var minecraft: MinecraftDetail?
+        if let svc = json["services"] as? [String: Any] {
+            if let j = svc["jellyfin"] as? [String: Any] {
+                jellyfinStreams = j["active_streams"] as? Int
+            }
+            if let m = svc["minecraft"] as? [String: Any] {
+                minecraft = MinecraftDetail(
+                    online: m["online"] as? Bool ?? false,
+                    players: m["players"] as? Int ?? 0,
+                    maxPlayers: m["max_players"] as? Int ?? 0
+                )
+            }
+        }
+
+        return ServerDetail(
+            name: name, ok: true,
+            cpuPercent: Int(cpu), ramPercent: Int(mem), memCompressed: Int(cmpr),
+            cpuTemp: cpuTemp, uptimeSecs: Int(uptime),
+            gpu: gpu, pools: pools, mounts: mounts,
+            rxBytesPerSec: bestRx, txBytesPerSec: bestTx,
+            dockerRunning: dockerCount,
+            jellyfinStreams: jellyfinStreams,
+            minecraft: minecraft
+        )
+    }
+
     // MARK: - Calendar (today's agenda via EventKit — handles recurring events)
 
     struct CalendarEvent: Identifiable {
