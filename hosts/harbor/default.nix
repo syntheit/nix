@@ -99,6 +99,10 @@
       url = "http://localhost:8096";
       apiKeyFile = config.sops.secrets.foyer_jellyfin_api_key.path;
     };
+    minecraft = {
+      enable = true;
+      address = "localhost:25565";
+    };
   };
 
   # Construct — Daniel's life-OS web app. Static SvelteKit build served by darkhttpd.

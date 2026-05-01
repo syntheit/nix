@@ -36,6 +36,10 @@ let
         url = cfg.jellyfin.url;
         api_key_file = cfg.jellyfin.apiKeyFile;
       } else null;
+    minecraft =
+      if cfg.minecraft.enable then {
+        address = cfg.minecraft.address;
+      } else null;
   };
 in
 {
@@ -125,6 +129,15 @@ in
         default = "";
       };
     };
+
+    minecraft = {
+      enable = lib.mkEnableOption "Minecraft Server List Ping probe";
+      address = lib.mkOption {
+        type = lib.types.str;
+        default = "localhost:25565";
+        description = "host:port of the Minecraft server to probe";
+      };
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -151,6 +164,7 @@ in
       wantedBy = [ "multi-user.target" ];
 
       path = lib.optional config.virtualisation.docker.enable config.virtualisation.docker.package
+        ++ lib.optional config.boot.zfs.enabled pkgs.zfs
         ++ lib.optionals (cfg.temperatureCommand != "") [ pkgs.bash pkgs.openssh pkgs.iproute2 pkgs.coreutils pkgs.gawk ];
 
       serviceConfig = {
