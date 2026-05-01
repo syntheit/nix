@@ -66,7 +66,6 @@
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdRcH2UWe31VdU62j3Ksbb6LDyS1APNW1BQMM8mvsej daniel@matv.io"
     ];
     services = {
-      "Nextcloud" = { url = "https://cloud.matv.io"; };
       "Jellyfin" = { url = "https://watch.matv.io"; };
       "Immich" = { url = "https://photos.matv.io"; };
       "Vaultwarden" = { url = "https://vault.matv.io"; };

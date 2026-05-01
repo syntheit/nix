@@ -15,10 +15,6 @@
           "harbor-ssh.matv.io" = "ssh://localhost:64829";
           "request.matv.io" = "http://localhost:5055";
           "links.matv.io" = "http://localhost:28793";
-          "cloud.matv.io" = {
-            service = "https://localhost:9787";
-            originRequest.noTLSVerify = true;
-          };
           "downloader.matv.io" = "http://localhost:9091";
           "prowlarr.matv.io" = "http://localhost:9696";
           "sonarr.matv.io" = "http://localhost:8989";

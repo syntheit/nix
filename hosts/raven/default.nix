@@ -163,13 +163,6 @@
 
     endpoints:
       # ===== HARBOR SERVICES =====
-      - name: Nextcloud
-        group: harbor
-        url: https://cloud.matv.io
-        interval: 2m
-        conditions:
-          - "[STATUS] < 500"
-
       - name: Jellyfin
         group: harbor
         url: https://watch.matv.io
