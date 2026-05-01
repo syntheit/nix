@@ -28,33 +28,32 @@ in
   };
 
   virtualisation.oci-containers.containers = {
-    nextcloud = {
-      image = "lscr.io/linuxserver/nextcloud:latest";
-      environment = linuxserverEnv;
-      ports = [ "127.0.0.1:9787:443" ];
-      volumes = [
-        "/arespool/appdata/nextcloud_config:/config"
-        "/arespool/nextcloud/data:/arespool/nextcloud/data"
-        "/iotapool:/iotapool"
-        "/lambdapool:/lambdapool"
-        "/deltapool:/deltapool"
-        "/thetapool:/thetapool"
-        "/epsilpool:/epsilpool"
-        "/rhopool:/rhopool"
-      ];
-      dependsOn = [ "nextcloud_db" ];
-      extraOptions = [ "--network=nextcloud_default" ];
-
-    };
-    nextcloud_db = {
-      image = "linuxserver/mariadb:latest";
-      environmentFiles = [ config.sops.templates."nextcloud-db.env".path ];
-      volumes = [
-        "/arespool/appdata/nextcloud-mariadb:/config"
-      ];
-      extraOptions = [ "--network=nextcloud_default" ];
-
-    };
+    # Nextcloud disabled — pending full removal (data/secrets/network kept for now)
+    # nextcloud = {
+    #   image = "lscr.io/linuxserver/nextcloud:latest";
+    #   environment = linuxserverEnv;
+    #   ports = [ "127.0.0.1:9787:443" ];
+    #   volumes = [
+    #     "/arespool/appdata/nextcloud_config:/config"
+    #     "/arespool/nextcloud/data:/arespool/nextcloud/data"
+    #     "/iotapool:/iotapool"
+    #     "/lambdapool:/lambdapool"
+    #     "/deltapool:/deltapool"
+    #     "/thetapool:/thetapool"
+    #     "/epsilpool:/epsilpool"
+    #     "/rhopool:/rhopool"
+    #   ];
+    #   dependsOn = [ "nextcloud_db" ];
+    #   extraOptions = [ "--network=nextcloud_default" ];
+    # };
+    # nextcloud_db = {
+    #   image = "linuxserver/mariadb:latest";
+    #   environmentFiles = [ config.sops.templates."nextcloud-db.env".path ];
+    #   volumes = [
+    #     "/arespool/appdata/nextcloud-mariadb:/config"
+    #   ];
+    #   extraOptions = [ "--network=nextcloud_default" ];
+    # };
     jellyfin = {
       image = "lscr.io/linuxserver/jellyfin:latest";
       environment = linuxserverEnv // {
@@ -207,8 +206,6 @@ in
   };
 
   # Network + NVIDIA dependencies
-  systemd.services.docker-nextcloud.after = [ "docker-networks.service" ];
-  systemd.services.docker-nextcloud_db.after = [ "docker-networks.service" ];
   systemd.services.docker-qbittorrent.after = [ "docker-networks.service" ];
   systemd.services.docker-sonarr.after = [ "docker-networks.service" ];
   systemd.services.docker-radarr.after = [ "docker-networks.service" ];

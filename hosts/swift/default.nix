@@ -43,7 +43,6 @@
       "lulu"
       "marta"
       "macwhisper"
-      "nextcloud"
       "notunes"
       "obsidian"
       "orbstack"
