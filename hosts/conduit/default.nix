@@ -324,13 +324,6 @@
 
     endpoints:
       # ===== HARBOR SERVICES (via Cloudflare Tunnel) =====
-      - name: Nextcloud
-        group: harbor
-        url: https://cloud.matv.io
-        interval: 2m
-        conditions:
-          - "[STATUS] < 500"
-
       - name: Vaultwarden
         group: harbor
         url: https://vault.matv.io
