@@ -131,6 +131,13 @@ in
         home.stateVersion = "23.11";
       };
 
+      # The granter shells out to `headscale nodes list -o json` for
+      # tailnet IP → node name resolution. Headscale's runtime dir is
+      # mode 0750 (NixOS default), so non-headscale users can't even
+      # traverse to the socket. Add deus to the headscale group rather
+      # than relax dir permissions.
+      users.users.deus.extraGroups = [ "headscale" ];
+
       # ── Deus fleet control plane ──────────────────────────
       services.deus.server = {
         enable = true;
