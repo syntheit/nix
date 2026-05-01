@@ -17,6 +17,7 @@
     ../../modules/argus.nix
     ../../modules/foyer.nix
     ../../modules/elliot.nix
+    ../../modules/construct.nix
   ];
 
   services.serverSafety = {
@@ -98,6 +99,14 @@
       url = "http://localhost:8096";
       apiKeyFile = config.sops.secrets.foyer_jellyfin_api_key.path;
     };
+  };
+
+  # Construct — Daniel's life-OS web app. Static SvelteKit build served by darkhttpd.
+  # Iteration loop: edit code → `construct-rebuild` → done.
+  services.construct = {
+    enable = true;
+    srcDir = "/home/matv/Projects/the_construct/construct-app";
+    port = 4321;
   };
 
   # Elliot — Telegram monitoring bot
