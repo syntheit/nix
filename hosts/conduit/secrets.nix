@@ -22,4 +22,24 @@
     format = "binary";
     mode = "0400";
   };
+
+  # ── Granter master credentials ───────────────────────────
+  # These let the deus-server inside the headscale container mint
+  # per-device Twilio subaccounts and Cloudflare tunnels. The keys
+  # never leave conduit; only the per-device derivatives are pushed
+  # back to malli-nix.
+  sops.secrets.twilio_master_account_sid.mode = "0444";
+  sops.secrets.twilio_master_auth_token.mode = "0444";
+  sops.secrets.cloudflare_api_token.mode = "0444";
+  # CF account + zone IDs aren't catastrophic to expose but the nix repo
+  # is public, so keep them encrypted at rest alongside the API token.
+  sops.secrets.cloudflare_account_id.mode = "0444";
+  sops.secrets.cloudflare_zone_id.mode = "0444";
+  # Separate binary-encoded SSH key — write-capable deploy key on the
+  # malli-nix repo so the granter can push committed SOPS files.
+  sops.secrets.deus_malli_nix_write_key = {
+    sopsFile = ../../secrets/conduit/deus_malli_nix_write_key;
+    format = "binary";
+    mode = "0400";
+  };
 }

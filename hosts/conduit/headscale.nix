@@ -12,7 +12,7 @@
 #   ssh tars@m-1w6l                         # SSH to Mac Mini (via tailnet)
 #   ssh lima@m-1w6l-vm                      # SSH to VM (via tailnet)
 
-{ pkgs, inputs, ... }:
+{ pkgs, inputs, vars, ... }:
 
 let
   headscale-ui-src = pkgs.fetchzip {
@@ -27,8 +27,14 @@ in
     "d /var/lib/deus 0750 root root -"
     # 0755 so the container's deus user can traverse to the world-readable token files inside.
     "d /var/lib/deus-tokens 0755 root root -"
-    # 0750 — keys are root-only on the host; the container re-permissions for fleet user.
+    # 0750 — keys are root-only on the host; the container re-permissions for fleet/deus user.
     "d /var/lib/deus-keys 0750 root root -"
+    # Granter master credentials. World-readable inside the container —
+    # the only resident is the deus user and we want the fewest permission
+    # gymnastics possible. The host-side directory is root-owned 0755 so
+    # the container can traverse but unprivileged users on the host can't
+    # read the files (the file mode itself is 0444).
+    "d /var/lib/deus-granter 0755 root root -"
   ];
 
   # Sops renders to /run/secrets, a host-only tmpfs the container can't
@@ -41,9 +47,21 @@ in
     text = ''
       ${pkgs.coreutils}/bin/install -d -m 0755 /var/lib/deus-tokens
       ${pkgs.coreutils}/bin/install -d -m 0750 /var/lib/deus-keys
-      ${pkgs.coreutils}/bin/install -m 0444 -o root -g root /run/secrets/deus_operator_token /var/lib/deus-tokens/operator-token
-      ${pkgs.coreutils}/bin/install -m 0444 -o root -g root /run/secrets/deus_agent_token    /var/lib/deus-tokens/agent-token
-      ${pkgs.coreutils}/bin/install -m 0400 -o root -g root /run/secrets/deus_deploy_key     /var/lib/deus-keys/deploy-malli-deus
+      ${pkgs.coreutils}/bin/install -d -m 0755 /var/lib/deus-granter
+      ${pkgs.coreutils}/bin/install -m 0444 /run/secrets/deus_operator_token /var/lib/deus-tokens/operator-token
+      ${pkgs.coreutils}/bin/install -m 0444 /run/secrets/deus_agent_token    /var/lib/deus-tokens/agent-token
+      ${pkgs.coreutils}/bin/install -m 0400 /run/secrets/deus_deploy_key     /var/lib/deus-keys/deploy-malli-deus
+      # Granter creds — best-effort install so half-configured deploys
+      # leave the granter disabled rather than failing activation.
+      stage_optional() {
+        [ -f "$1" ] && ${pkgs.coreutils}/bin/install -m "$3" "$1" "$2" || true
+      }
+      stage_optional /run/secrets/twilio_master_account_sid /var/lib/deus-granter/twilio-master-sid  0444
+      stage_optional /run/secrets/twilio_master_auth_token  /var/lib/deus-granter/twilio-master-auth 0444
+      stage_optional /run/secrets/cloudflare_api_token      /var/lib/deus-granter/cloudflare-token   0444
+      stage_optional /run/secrets/cloudflare_account_id     /var/lib/deus-granter/cf-account-id      0444
+      stage_optional /run/secrets/cloudflare_zone_id        /var/lib/deus-granter/cf-zone-id         0444
+      stage_optional /run/secrets/deus_malli_nix_write_key  /var/lib/deus-keys/malli-nix-write       0400
     '';
   };
 
@@ -75,6 +93,10 @@ in
         hostPath = "/var/lib/deus-keys";
         isReadOnly = true;
       };
+      "/etc/deus-granter" = {
+        hostPath = "/var/lib/deus-granter";
+        isReadOnly = true;
+      };
       # Bind the malli-nix flake input (a /nix/store path on the host)
       # into the container so deus-server can read registry.nix from it.
       "/var/lib/deus-registry" = {
@@ -84,9 +106,30 @@ in
     };
 
     config = { pkgs, ... }: {
-      imports = [ inputs.deus.nixosModules.server ];
+      imports = [
+        inputs.deus.nixosModules.server
+        inputs.home-manager.nixosModules.home-manager
+      ];
 
       system.stateVersion = "23.11";
+
+      # ── Home-manager for fleet user ──────────────────────
+      # Imports the same shell.nix daniel uses on his own
+      # workstations, so SSHing into the container feels like
+      # an interactive shell, not a stripped-down jail.
+      home-manager.useGlobalPkgs = true;
+      home-manager.useUserPackages = true;
+      home-manager.backupFileExtension = "bkp";
+      home-manager.extraSpecialArgs = { inherit inputs vars; };
+      home-manager.users.fleet = { ... }: {
+        imports = [
+          inputs.nix-index-database.homeModules.nix-index
+          ../../home/shell.nix
+        ];
+        home.username = "fleet";
+        home.homeDirectory = "/home/fleet";
+        home.stateVersion = "23.11";
+      };
 
       # ── Deus fleet control plane ──────────────────────────
       services.deus.server = {
@@ -96,6 +139,31 @@ in
         registryFile = "/var/lib/deus-registry/hosts/registry.nix";
         operatorTokenFile = "/var/lib/deus-tokens/operator-token";
         agentTokenFile = "/var/lib/deus-tokens/agent-token";
+
+        # ── Granter ──
+        # Twilio + Cloudflare per-device provisioning. The four
+        # credential files are populated by the activation script in
+        # this same module from sops secrets defined in secrets.nix.
+        # Account/zone IDs are config, not secrets.
+        granter = {
+          enable = true;
+          domain = "themalli.ai";
+          twilioMasterSIDFile = "/etc/deus-granter/twilio-master-sid";
+          twilioMasterAuthFile = "/etc/deus-granter/twilio-master-auth";
+          cfAPITokenFile = "/etc/deus-granter/cloudflare-token";
+          cfAccountIDFile = "/etc/deus-granter/cf-account-id";
+          cfZoneIDFile = "/etc/deus-granter/cf-zone-id";
+          # GIT_SSH_COMMAND fully specifies the identity, so no
+          # `Host github-malli-nix-write` SSH alias is needed — git just
+          # invokes `ssh git@github.com` and the wrapper picks the key.
+          repoURL = "git@github.com:syntheit/malli-nix.git";
+          repoSSHCommand = "ssh -i /etc/deus-keys/malli-nix-write -o IdentitiesOnly=yes -o UserKnownHostsFile=/var/lib/deus/known_hosts -o StrictHostKeyChecking=accept-new";
+          # The headscale CLI lives in the same container, but its socket
+          # is owned by the headscale group. We expose it world-readable
+          # below (`unix_socket_permission`) so the deus user can call
+          # it directly.
+          headscaleCommand = "headscale nodes list -o json";
+        };
       };
 
       # Use Tailscale's DNS so tailnet hostnames resolve
@@ -137,6 +205,10 @@ in
           logtail.enabled = false;
           disable_check_updates = true;
           node.expiry = 0;
+          # Allow the deus user (granter) to call `headscale nodes list`
+          # directly. Single-tenant container, only resident processes
+          # are headscale and deus-server, so 0666 is fine.
+          unix_socket_permission = "0666";
         };
       };
 
@@ -169,7 +241,14 @@ in
         "d /home/fleet/.ssh 0700 fleet users -"
         "C+ /home/fleet/.ssh/deploy_key_deus 0600 fleet users - /etc/deus-keys/deploy-malli-deus"
         "d /var/lib/git-mirror 0755 fleet users -"
+        # Granter pushes to malli-nix on GitHub from inside the deus-server
+        # systemd unit. Pre-seed github.com host keys so the push doesn't
+        # block on an interactive prompt. Owned by deus (the container's
+        # deus user; this rule runs inside the container's NixOS, where
+        # the user exists).
+        "f /var/lib/deus/known_hosts 0644 deus deus - github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
       ];
+
 
       # ── Tailnet-internal git mirror ───────────────────────
       # Fleet machines fetch flake sources from `git+git://conduit/...`
@@ -184,10 +263,18 @@ in
         listenAddress = "0.0.0.0";
       };
 
+      # Mirror service writes as `fleet`, daemon reads as `git` — git's
+      # safe-directory check refuses cross-owner access otherwise.
+      environment.etc.gitconfig.text = ''
+        [safe]
+        	directory = /var/lib/git-mirror/*
+      '';
+
       systemd.services.malli-nix-mirror = {
         description = "Mirror malli-nix from GitHub";
         after = [ "network-online.target" ];
         wants = [ "network-online.target" ];
+        path = [ pkgs.git pkgs.openssh ];
         serviceConfig = {
           Type = "oneshot";
           User = "fleet";
@@ -196,9 +283,9 @@ in
             set -e
             cd /var/lib/git-mirror
             if [ ! -d malli-nix.git ]; then
-              ${pkgs.git}/bin/git clone --mirror git@github.com:syntheit/malli-nix.git
+              git clone --mirror git@github.com:syntheit/malli-nix.git
             fi
-            ${pkgs.git}/bin/git -C malli-nix.git fetch --all --prune
+            git -C malli-nix.git fetch --all --prune
           '';
         };
       };
@@ -215,6 +302,7 @@ in
         description = "Mirror malli-deus from GitHub";
         after = [ "network-online.target" ];
         wants = [ "network-online.target" ];
+        path = [ pkgs.git pkgs.openssh ];
         serviceConfig = {
           Type = "oneshot";
           User = "fleet";
@@ -223,9 +311,9 @@ in
             set -e
             cd /var/lib/git-mirror
             if [ ! -d malli-deus.git ]; then
-              ${pkgs.git}/bin/git clone --mirror git@github-malli-deus:syntheit/malli-deus.git
+              git clone --mirror git@github-malli-deus:syntheit/malli-deus.git
             fi
-            ${pkgs.git}/bin/git -C malli-deus.git fetch --all --prune
+            git -C malli-deus.git fetch --all --prune
           '';
         };
       };
@@ -242,6 +330,7 @@ in
       users.users.fleet = {
         isNormalUser = true;
         extraGroups = [ "wheel" ];
+        shell = pkgs.zsh;
         openssh.authorizedKeys.keys = [
           "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdRcH2UWe31VdU62j3Ksbb6LDyS1APNW1BQMM8mvsej daniel@matv.io"
           "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEODivGUKMXoxIyGkw6BWN023G2N1SL2yDi8lpulnc7R alan_ps@hotmail.com"
