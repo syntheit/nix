@@ -53,13 +53,15 @@ struct SystemDetailView: View {
         }
         .padding(20)
         .frame(width: 520)
-        .background(.black)
-        .background(.ultraThickMaterial)
-        .environment(\.colorScheme, .dark)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 14).fill(.black)
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(.ultraThickMaterial)
+                    .environment(\.colorScheme, .dark)
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
+            }
         )
         .shadow(color: .black.opacity(0.5), radius: 24, y: 12)
     }
@@ -92,7 +94,7 @@ struct SystemDetailView: View {
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(Color.subtle)
             }
-            .padding(.leading, 50)
+            .padding(.leading, 94)
         }
     }
 
@@ -134,7 +136,7 @@ struct SystemDetailView: View {
             Text("net")
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 .foregroundStyle(Color.dimmed)
-                .frame(width: 56, alignment: .leading)
+                .frame(width: 84, alignment: .leading)
             Image(systemName: "arrow.down")
                 .font(.system(size: 9))
                 .foregroundStyle(Color.dimmed)
@@ -176,7 +178,7 @@ struct SystemDetailView: View {
             Text(label)
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 .foregroundStyle(Color.dimmed)
-                .frame(width: 56, alignment: .leading)
+                .frame(width: 84, alignment: .leading)
             Text(value)
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(Color.subtle)
@@ -195,7 +197,7 @@ struct SystemDetailView: View {
             Text(label)
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 .foregroundStyle(Color.dimmed)
-                .frame(width: 56, alignment: .leading)
+                .frame(width: 84, alignment: .leading)
             ProgressBar(value: value, overlay: overlay ?? 0, color: color)
                 .frame(height: 6)
             Text("\(value)%")
