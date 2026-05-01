@@ -164,7 +164,7 @@ in
           # `Host github-malli-nix-write` SSH alias is needed — git just
           # invokes `ssh git@github.com` and the wrapper picks the key.
           repoURL = "git@github.com:syntheit/malli-nix.git";
-          repoSSHCommand = "ssh -i /etc/deus-keys/malli-nix-write -o IdentitiesOnly=yes -o UserKnownHostsFile=/var/lib/deus/known_hosts -o StrictHostKeyChecking=accept-new";
+          repoSSHCommand = "ssh -i /var/lib/deus/malli-nix-write -o IdentitiesOnly=yes -o UserKnownHostsFile=/var/lib/deus/known_hosts -o StrictHostKeyChecking=accept-new";
           # The headscale CLI lives in the same container, but its socket
           # is owned by the headscale group. We expose it world-readable
           # below (`unix_socket_permission`) so the deus user can call
@@ -254,6 +254,11 @@ in
         # deus user; this rule runs inside the container's NixOS, where
         # the user exists).
         "f /var/lib/deus/known_hosts 0644 deus deus - github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+        # The granter's malli-nix write key lives at /etc/deus-keys
+        # (root-owned 0750 from the host bind mount) which the deus user
+        # can't traverse. Copy it into /var/lib/deus where deus owns the
+        # tree, with strict perms so SSH accepts it as an identity file.
+        "C+ /var/lib/deus/malli-nix-write 0600 deus deus - /etc/deus-keys/malli-nix-write"
       ];
 
 
