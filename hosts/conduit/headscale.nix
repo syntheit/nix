@@ -160,6 +160,10 @@ in
           cfAPITokenFile = "/etc/deus-granter/cloudflare-token";
           cfAccountIDFile = "/etc/deus-granter/cf-account-id";
           cfZoneIDFile = "/etc/deus-granter/cf-zone-id";
+          # The "Low Volume Mixed A2P Messaging Service" — campaign
+          # CXRRKNR, VERIFIED, attached to brand BN6c5abe... Same MS
+          # the existing janet/nre-dev/tarzwave numbers live in.
+          messagingServiceSID = "MGc04e7b1e0ddab2e3bee5ffc7bc101d2b";
           # GIT_SSH_COMMAND fully specifies the identity, so no
           # `Host github-malli-nix-write` SSH alias is needed — git just
           # invokes `ssh git@github.com` and the wrapper picks the key.
