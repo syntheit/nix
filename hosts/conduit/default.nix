@@ -147,6 +147,8 @@
     jq
     bat
     duf
+    sqlite   # operator-side queries against deus.db
+    python3  # ad-hoc scripting / parsing API responses
   ];
 
   # WireGuard tunnel to harbor
