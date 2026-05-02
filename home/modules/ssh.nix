@@ -63,6 +63,20 @@
         user = "matv";
         port = 64829;
       };
+      # Lab VMs on harbor — proxy through harbor since they're on virbr0 NAT
+      "turntable" = {
+        hostname = "192.168.122.50";
+        identityFile = "~/.ssh/mainkey";
+        user = "root";
+        proxyJump = "harbor";
+      };
+      # Direct connection — runs from harbor (which is on the same virbr0 network).
+      # From swift, use: ssh -J harbor user@192.168.122.200
+      "haiku" = {
+        hostname = "192.168.122.200";
+        identityFile = "~/.ssh/mainkey";
+        user = "user";
+      };
       "gandalf" = {
         hostname = "100.64.0.2";
         identityFile = "~/.ssh/conduit_key";
