@@ -44,6 +44,11 @@
   # Override deprecated option set by nixos-avf module
   services.resolved.settings.Resolve.DNSSEC = lib.mkForce "false";
 
+  # Pin dbus to classic implementation; nixpkgs flipped the default to dbus-broker,
+  # which is a critical-component swap that blocks live switches. Remove this once
+  # back home and able to physically reboot the phone if the VM doesn't recover.
+  services.dbus.implementation = "dbus";
+
   networking.hostName = "raven";
   system.stateVersion = "26.05";
 
