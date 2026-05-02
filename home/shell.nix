@@ -108,6 +108,18 @@
         "
       }
 
+      # r [name] — same thing for raven
+      r() {
+        local name="''${1:-1}"
+        mosh raven -- bash -c "
+          case $name in
+            nix) cd ~/nix ;;
+            *)   [ -d ~/Projects/$name ] && cd ~/Projects/$name ;;
+          esac
+          exec tmux new-session -A -s $name
+        "
+      }
+
       cheat() {
         cat <<'CHEAT'
   ── Remote Dev ──────────────────────────────────────
@@ -132,7 +144,7 @@
   Dev servers must bind to 0.0.0.0 (not 127.0.0.1)
 
   ── Raven Failover ──────────────────────────────────
-  mosh raven -- tmux new-session -A -s 1
+  r / r 2 / r work            raven tmux sessions (mosh)
   emergency-push              push all dirty repos
   emergency-push my-app       push one repo
 
