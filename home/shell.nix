@@ -108,10 +108,11 @@
         "
       }
 
-      # r [name] — same thing for raven
+      # r [name] — same thing for raven, but ssh instead of mosh.
+      # Cellular jitter + AVF tap make mosh predictions miss more than they help.
       r() {
         local name="''${1:-1}"
-        mosh raven -- bash -c "
+        ssh -t raven "
           case $name in
             nix) cd ~/nix ;;
             *)   [ -d ~/Projects/$name ] && cd ~/Projects/$name ;;
@@ -144,7 +145,7 @@
   Dev servers must bind to 0.0.0.0 (not 127.0.0.1)
 
   ── Raven Failover ──────────────────────────────────
-  r / r 2 / r work            raven tmux sessions (mosh)
+  r / r 2 / r work            raven tmux sessions (ssh)
   emergency-push              push all dirty repos
   emergency-push my-app       push one repo
 
