@@ -50,6 +50,7 @@
       allowedTCPPorts = [
         80    # Caddy ACME HTTP-01
         443   # Caddy HTTPS
+        2223  # Reverse SSH tunnel from harbor → Ben's turntable VM
         8443  # Wings WebSocket/API (via Caddy)
         64829 # SSH
         64830 # Rescue SSH
@@ -78,6 +79,9 @@
       KbdInteractiveAuthentication = false;
       PermitRootLogin = "no";
       PrintLastLog = false;
+      # Allow harbor's reverse tunnel to bind to 0.0.0.0 so external clients
+      # can hit conduit:2223 → harbor:turntable:22
+      GatewayPorts = "yes";  # Allow harbor's reverse tunnel to bind 0.0.0.0:2223
     };
   };
 

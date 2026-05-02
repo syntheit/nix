@@ -294,6 +294,9 @@
     };
   };
 
+  # Passwordless sudo for wheel (TEMPORARY — remove this line and rebuild to revert)
+  security.sudo.wheelNeedsPassword = false;
+
   # Cap journal size to prevent unbounded growth
   services.journald.extraConfig = ''
     SystemMaxUse=500M

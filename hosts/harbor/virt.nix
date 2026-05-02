@@ -61,6 +61,7 @@
     win-spice
     libguestfs
     dnsmasq                          # required by libvirt's default NAT network for DHCP/DNS
+    autossh                          # used by turntable-tunnel.service
   ];
 
   # libvirt-dbus — required by cockpit-machines (its manifest checks for
@@ -162,4 +163,97 @@
   # SPICE/VNC bind to 127.0.0.1 by default. Remote clients reach them via
   # SSH tunnel (qemu+ssh:// for virt-manager, "Use SSH tunnel" in aSPICE Pro).
   # AllowTcpForwarding=yes is already set in access.nix/default.nix.
+
+  # Turntable input isolation: block ALL traffic from turntable to harbor itself
+  # (any of harbor's local IPs — virbr0, tailscale0, eth0, etc.). The libvirt
+  # rules only filter forwarded traffic; this catches input-bound packets.
+  # Turntable uses 1.1.1.1 for DNS so doesn't need anything from harbor.
+  networking.nftables.tables.turntable-isolation = {
+    family = "inet";
+    content = ''
+      chain input {
+        type filter hook input priority filter - 5;
+        # Allow replies to outbound connections harbor initiated (e.g. our SSH).
+        iifname "virbr0" ip saddr 192.168.122.50 ct state established,related accept
+        # Drop any NEW traffic turntable tries to send to harbor itself.
+        iifname "virbr0" ip saddr 192.168.122.50 drop
+      }
+    '';
+  };
+
+  # Expose Win 11's RDP at harbor:3389 over Tailscale.
+  # The DNAT rules go in our own table; the accept rule has to be INJECTED
+  # into libvirt's guest_input chain (via a libvirt network hook) because
+  # libvirt's chain rejects new inbound connections to virbr0 and accept
+  # verdicts in other chains can't override that reject.
+  networking.nftables.tables.win11-rdp = {
+    family = "ip";
+    content = ''
+      chain prerouting {
+        type nat hook prerouting priority dstnat;
+        iifname "tailscale0" tcp dport 3389 dnat to 192.168.122.51:3389
+      }
+      chain postrouting {
+        type nat hook postrouting priority srcnat;
+        oifname "virbr0" ip daddr 192.168.122.51 tcp dport 3389 masquerade
+      }
+    '';
+  };
+
+  # Reverse SSH tunnel: maintain a persistent connection from harbor → conduit
+  # that exposes turntable's SSH (192.168.122.50:22) at conduit:2223.
+  # Ben SSHes to: ssh -p 2223 ben@<conduit-public-ip-or-hostname>
+  systemd.services.turntable-tunnel = {
+    description = "Reverse SSH tunnel: conduit:2223 → turntable:22 (for Ben)";
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      User = "matv";
+      Group = "users";
+      Environment = "AUTOSSH_GATETIME=0";
+      ExecStart = ''
+        ${pkgs.autossh}/bin/autossh -M 0 -N \
+          -o ServerAliveInterval=30 \
+          -o ServerAliveCountMax=3 \
+          -o ExitOnForwardFailure=yes \
+          -o StrictHostKeyChecking=accept-new \
+          -o UserKnownHostsFile=/home/matv/.ssh/known_hosts \
+          -o ControlMaster=no \
+          -o ControlPath=none \
+          -i /home/matv/.ssh/mainkey \
+          -p 64829 \
+          -R 0.0.0.0:2223:192.168.122.50:22 \
+          matv@192.3.203.146
+      '';
+      Restart = "always";
+      RestartSec = "10s";
+    };
+  };
+
+  # Libvirt network hook: applied on 'default' network start.
+  # 1. Allow inbound RDP (DNAT'd) to Win11.
+  # 2. Lock down turntable (192.168.122.50) so Ben can only reach the public
+  #    internet — not the home LAN, Tailscale peers, WireGuard peers, harbor's
+  #    services, or other VMs on the bridge. DNS to libvirt's gateway is allowed.
+  environment.etc."libvirt/hooks/network" = {
+    mode = "0755";
+    source = pkgs.writeShellScript "libvirt-network-hook" ''
+      #!/bin/sh
+      NETWORK="$1"
+      OPERATION="$2"
+      NFT="${pkgs.nftables}/bin/nft"
+
+      if [ "$NETWORK" = "default" ] && [ "$OPERATION" = "started" ]; then
+        # 1. Allow inbound RDP to Win11 (overrides libvirt's default reject).
+        $NFT 'insert rule ip libvirt_network guest_input oifname "virbr0" ip daddr 192.168.122.51 tcp dport 3389 accept' || true
+
+        # 2. Turntable isolation. Order matters: insert pushes to top, so we
+        # insert drop FIRST then the DNS exceptions on top of it.
+        $NFT 'insert rule ip libvirt_network guest_output ip saddr 192.168.122.50 ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 } drop' || true
+        $NFT 'insert rule ip libvirt_network guest_output ip saddr 192.168.122.50 ip daddr 192.168.122.1 udp dport 53 accept' || true
+        $NFT 'insert rule ip libvirt_network guest_output ip saddr 192.168.122.50 ip daddr 192.168.122.1 tcp dport 53 accept' || true
+      fi
+    '';
+  };
 }
