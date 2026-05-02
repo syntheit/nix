@@ -181,11 +181,15 @@
     Subsystem sftp /usr/libexec/sftp-server
   '';
 
-
   launchd.daemons.sshd-tailscale = {
     serviceConfig = {
       Label = "org.nixos.sshd-tailscale";
-      ProgramArguments = [ "/usr/sbin/sshd" "-D" "-f" "/etc/ssh/sshd_tailscale_config" ];
+      ProgramArguments = [
+        "/usr/sbin/sshd"
+        "-D"
+        "-f"
+        "/etc/ssh/sshd_tailscale_config"
+      ];
       RunAtLoad = true;
       KeepAlive = true;
     };
@@ -372,6 +376,23 @@
     launchctl bootstrap "gui/$GUI_UID" /Users/${vars.user.name}/Library/LaunchAgents/org.nixos.yabai.plist 2>/dev/null || true
 
     # ================================================================
+    # Re-enable daemons that were previously disabled but are required.
+    # launchctl's disable override persists across reboots even after the
+    # daemon is removed from the bootout loop below — so we explicitly
+    # enable them here to undo any historical disable.
+    #   - mediaremoted: routes media keys (F7/F8/F9) to Now Playing apps
+    #   - rapportd: provides com.apple.CompanionLink XPC, which mediaremoted
+    #     needs for event registration; without it mediaremoted's XPC server
+    #     enters a degraded state where every client gets Code=1 errors
+    # ================================================================
+    for daemon in com.apple.mediaremoted com.apple.rapportd; do
+      sudo launchctl enable system/"$daemon" 2>/dev/null || true
+      sudo launchctl bootstrap system "/System/Library/LaunchDaemons/$daemon.plist" 2>/dev/null || true
+    done
+    # Kickstart rcd to flush stale Code=1 connection state to mediaremoted
+    launchctl kickstart -k "gui/$GUI_UID/com.apple.rcd" 2>/dev/null || true
+
+    # ================================================================
     # SYSTEM DAEMONS TO DISABLE
     # ================================================================
     for daemon in \
@@ -405,7 +426,6 @@
       com.apple.SubmitDiagInfo \
       com.apple.osanalytics.osanalyticshelper \
       com.apple.rtcreportingd \
-      com.apple.rapportd \
       com.apple.netbiosd \
       com.apple.GameController.gamecontrollerd \
       com.apple.gamepolicyd \
@@ -499,7 +519,6 @@
       com.apple.duetexpertd \
       com.apple.proactived \
       com.apple.proactiveeventtrackerd \
-      com.apple.rapportd \
       com.apple.sharingd \
       com.apple.avconferenced \
       com.apple.CommCenter \
@@ -658,7 +677,6 @@
       RunAtLoad = true;
     };
   };
-
 
   fonts.packages = with pkgs; [
     nerd-fonts.jetbrains-mono
