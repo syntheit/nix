@@ -72,6 +72,7 @@
     ffmpeg
     findutils
     gawk
+    gh
     gnugrep
     gnused
     go
