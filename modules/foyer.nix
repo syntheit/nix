@@ -20,7 +20,6 @@ let
     api_key_files = cfg.apiKeyFiles;
     authorized_keys = cfg.authorizedKeys;
     allow_signups = cfg.allowSignups;
-    users = [ ]; # Users register via the web UI; first user is admin
     services = lib.mapAttrsToList (name: svc: {
       inherit name;
       url = svc.url;
