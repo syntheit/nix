@@ -70,6 +70,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    jelly-recs = {
+      url = "git+ssh://git@github.com/syntheit/jelly-recs.git";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     nixos-avf = {
       url = "github:nix-community/nixos-avf";
       inputs.nixpkgs.follows = "nixpkgs";

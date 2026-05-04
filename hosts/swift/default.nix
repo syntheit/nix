@@ -694,6 +694,7 @@
     sketchybar
     jq
     nixfmt
+    sqlite
   ];
 
   system.stateVersion = 5;

@@ -121,6 +121,16 @@ in
       description = "Additional read-only paths for the foyer service (e.g. SSH keys for temperature_command)";
     };
 
+    nvidiaPackage = lib.mkOption {
+      type = lib.types.nullOr lib.types.package;
+      default = null;
+      description = ''
+        Optional NVIDIA driver package (typically `config.hardware.nvidia.package.bin`).
+        When set, its bin/ is added to the foyer service path so `nvidia-smi`
+        is available for GPU stats.
+      '';
+    };
+
     jellyfin = {
       enable = lib.mkEnableOption "Jellyfin streams API";
       url = lib.mkOption {
@@ -162,8 +172,11 @@ in
       "d ${cfg.dataDir} 0750 foyer foyer -"
       "d ${cfg.dataDir}/files 0750 foyer foyer -"
     ] ++ lib.optionals vmControllerEnabled [
-      # Socket dir owned by foyer-vm:foyer; foyer can traverse and connect.
-      "d /run/foyer-vm 0750 foyer-vm foyer -"
+      # SGID (mode 2750) so the socket bound by foyer-vm-controller inherits
+      # group=foyer from this directory. Without SGID the socket would be
+      # group-owned by foyer-vm (the controller's primary group), and the
+      # foyer service (group=foyer) would be denied connect.
+      "d /run/foyer-vm 2750 foyer-vm foyer -"
     ];
 
     # Foyer DOES NOT get libvirt access — that's the whole point of the
@@ -190,18 +203,16 @@ in
     systemd.services.foyer = {
       description = "Foyer server dashboard";
       after = [ "network-online.target" ]
-        ++ lib.optional config.virtualisation.docker.enable "docker.service";
+        ++ lib.optional config.virtualisation.docker.enable "docker.service"
+        ++ lib.optional vmControllerEnabled "foyer-vm-controller.service";
       wants = [ "network-online.target" ];
       wantedBy = [ "multi-user.target" ];
+      requires = lib.optional vmControllerEnabled "foyer-vm-controller.service";
 
       path = lib.optional config.virtualisation.docker.enable config.virtualisation.docker.package
         ++ lib.optional config.boot.zfs.enabled pkgs.zfs
+        ++ lib.optional (cfg.nvidiaPackage != null) cfg.nvidiaPackage
         ++ lib.optionals (cfg.temperatureCommand != "") [ pkgs.bash pkgs.openssh pkgs.iproute2 pkgs.coreutils pkgs.gawk ];
-
-      # If the VM controller is active, foyer should wait for its socket
-      # before starting (so the first request doesn't error out).
-      after = lib.optional vmControllerEnabled "foyer-vm-controller.service";
-      requires = lib.optional vmControllerEnabled "foyer-vm-controller.service";
 
       serviceConfig = {
         Type = "simple";
@@ -215,10 +226,12 @@ in
         ProtectSystem = "strict";
         ProtectHome = if cfg.extraReadPaths != [ ] then "read-only" else true;
         ReadWritePaths = [ cfg.dataDir ]
-          ++ lib.optional config.virtualisation.docker.enable "/run/docker.sock";
-        # Foyer can read /run/foyer-vm to connect to the controller socket
-        # (no write needed; the controller owns the socket).
-        BindReadOnlyPaths = lib.optional vmControllerEnabled "/run/foyer-vm";
+          ++ lib.optional config.virtualisation.docker.enable "/run/docker.sock"
+          # Connect()ing to a Unix socket requires write access on the socket
+          # inode at the VFS layer. With ProtectSystem=strict, /run is read-only
+          # by default, so we have to whitelist /run/foyer-vm explicitly. Foyer
+          # never creates files here — only connects to the controller's socket.
+          ++ lib.optional vmControllerEnabled "/run/foyer-vm";
         PrivateTmp = true;
         ProtectClock = true;
         ProtectKernelTunables = true;

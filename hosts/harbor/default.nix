@@ -19,6 +19,7 @@
     ../../modules/foyer.nix
     ../../modules/elliot.nix
     ../../modules/construct.nix
+    ../../modules/jelly-recs.nix
   ];
 
   services.serverSafety = {
@@ -100,6 +101,8 @@
       enable = true;
       address = "localhost:25565";
     };
+    vmController.enable = true;
+    nvidiaPackage = config.hardware.nvidia.package.bin;
   };
 
   # Construct — Daniel's life-OS web app. Static SvelteKit build served by darkhttpd.
@@ -108,6 +111,17 @@
     enable = true;
     srcDir = "/home/matv/Projects/the_construct/construct-app";
     port = 4321;
+  };
+
+  # jelly-recs — Claude-powered recommendation rows for Jellyfin
+  services.jelly-recs = {
+    enable = true;
+    jellyfinURL = "http://127.0.0.1:8096";
+    jellyfinAPIKeyFile = config.sops.secrets.jelly_recs_jellyfin_api_key.path;
+    claudeOAuthTokenFile = config.sops.templates."jelly-recs-claude.env".path;
+    # Bind to all interfaces; wg0 is firewall-trusted, so conduit's Caddy
+    # reaches us via WireGuard while LAN/WAN stay closed.
+    listenAddr = "0.0.0.0:5300";
   };
 
   # Elliot — Telegram monitoring bot
@@ -250,6 +264,7 @@
     curl
     git
     speedtest-cli
+    sqlite
     lshw
     dmidecode
     pciutils

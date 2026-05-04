@@ -41,6 +41,7 @@
   sops.secrets.docmost_db_password = { };
   sops.secrets.elliot_telegram_token = { owner = "elliot"; };
   sops.secrets.elliot_claude_oauth_token = { owner = "elliot"; };
+  sops.secrets.jelly_recs_jellyfin_api_key = { owner = "jelly-recs"; };
   sops.secrets.grafana_secret_key = {
     owner = "grafana";
     group = "grafana";
@@ -186,6 +187,15 @@
   # Elliot Claude OAuth env file
   sops.templates."elliot-claude.env" = {
     owner = "elliot";
+    content = ''
+      CLAUDE_CODE_OAUTH_TOKEN=${config.sops.placeholder.elliot_claude_oauth_token}
+    '';
+  };
+
+  # jelly-recs Claude OAuth env file — same token, different owner so the
+  # service user can read it. The OAuth token works across services.
+  sops.templates."jelly-recs-claude.env" = {
+    owner = "jelly-recs";
     content = ''
       CLAUDE_CODE_OAUTH_TOKEN=${config.sops.placeholder.elliot_claude_oauth_token}
     '';

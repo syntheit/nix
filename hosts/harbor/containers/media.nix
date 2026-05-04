@@ -67,16 +67,26 @@ in
       ];
       volumes = [
         "/arespool/appdata/jellyfin_config:/config"
-        "/iotapool:/iotapool"
-        "/lambdapool:/lambdapool"
-        "/deltapool:/deltapool"
-        "/thetapool:/thetapool"
-        "/epsilpool:/epsilpool"
-        "/rhopool:/rhopool"
-        "/platapool:/platapool"
+        "/media:/media"
       ];
       extraOptions = [
         "--device=nvidia.com/gpu=all"
+        "-v" "${pkgs.writeShellScript "jelly-recs-inject" ''
+          #!/bin/bash
+          # Patches Jellyfin's index.html to load our recs.js + recs.css from
+          # /static/recs.{js,css} (proxied through Caddy to jelly-recs serve).
+          # Idempotent: safe to re-run on every container start.
+          INDEX="/usr/share/jellyfin/web/index.html"
+          [ -f "$INDEX" ] || { echo "[jelly-recs] $INDEX not found"; exit 0; }
+          if grep -q "static/recs.js" "$INDEX"; then
+            echo "[jelly-recs] index.html already patched"
+            exit 0
+          fi
+          [ ! -f "$INDEX.bak" ] && cp "$INDEX" "$INDEX.bak"
+          # Insert before </body>. Stylesheet first so first paint isn't unstyled.
+          sed -i 's|</body>|<link rel="stylesheet" href="/static/recs.css"><script src="/static/recs.js" defer></script></body>|' "$INDEX"
+          echo "[jelly-recs] index.html patched"
+        ''}:/custom-cont-init.d/jelly-recs-inject"
         "-v" "${pkgs.writeShellScript "abyss-spotlight" ''
           #!/bin/bash
           echo "[abyss] Installing Spotlight..."
@@ -111,14 +121,11 @@ in
       ports = [ "127.0.0.1:9091:8080" ];
       volumes = [
         "/arespool/appdata/qbittorrent:/config"
-        "/rhopool/Downloads:/downloads"
-        "/iotapool:/iotapool"
-        "/lambdapool:/lambdapool"
-        "/deltapool:/deltapool"
-        "/thetapool:/thetapool"
-        "/epsilpool:/epsilpool"
-        "/rhopool:/rhopool"
-        "/platapool:/platapool"
+        # Legacy save_path compatibility: existing torrents reference
+        # /downloads as their save path. Mapping that to the rhopool branch
+        # keeps every torrent's stored path resolvable on resume.
+        "/rhopool/media/downloads:/downloads"
+        "/media:/media"
       ];
       extraOptions = [
         "--network=downloader_media_network"
@@ -147,14 +154,11 @@ in
       ports = [ "127.0.0.1:8989:8989" ];
       volumes = [
         "/arespool/appdata/sonarr:/config"
-        "/rhopool/Downloads:/downloads"
-        "/iotapool:/iotapool"
-        "/lambdapool:/lambdapool"
-        "/deltapool:/deltapool"
-        "/thetapool:/thetapool"
-        "/epsilpool:/epsilpool"
-        "/rhopool:/rhopool"
-        "/platapool:/platapool"
+        # Same /downloads mapping as qbittorrent — *arr's import sees the
+        # exact path qbit reports, so atomic moves work without remote-path
+        # mappings.
+        "/rhopool/media/downloads:/downloads"
+        "/media:/media"
       ];
       extraOptions = [ "--network=downloader_media_network" ];
 
@@ -165,14 +169,8 @@ in
       ports = [ "127.0.0.1:7878:7878" ];
       volumes = [
         "/arespool/appdata/radarr:/config"
-        "/rhopool/Downloads:/downloads"
-        "/iotapool:/iotapool"
-        "/lambdapool:/lambdapool"
-        "/deltapool:/deltapool"
-        "/thetapool:/thetapool"
-        "/epsilpool:/epsilpool"
-        "/rhopool:/rhopool"
-        "/platapool:/platapool"
+        "/rhopool/media/downloads:/downloads"
+        "/media:/media"
       ];
       extraOptions = [ "--network=downloader_media_network" ];
 
@@ -183,16 +181,23 @@ in
       ports = [ "127.0.0.1:6767:6767" ];
       volumes = [
         "/arespool/appdata/bazarr:/config"
-        "/iotapool:/iotapool"
-        "/lambdapool:/lambdapool"
-        "/deltapool:/deltapool"
-        "/thetapool:/thetapool"
-        "/epsilpool:/epsilpool"
-        "/rhopool:/rhopool"
-        "/platapool:/platapool"
+        "/media:/media"
       ];
       extraOptions = [ "--network=downloader_media_network" ];
 
+    };
+
+    # FlareSolverr — proxy that solves Cloudflare challenges on behalf of
+    # Prowlarr. Required for TheRARBG, ilCorSaRoNeRo, Toloka, and any other
+    # indexer behind CF. Stateless; no volumes needed.
+    flaresolverr = {
+      image = "ghcr.io/flaresolverr/flaresolverr:latest";
+      environment = {
+        TZ = "America/New_York";
+        LOG_LEVEL = "info";
+      };
+      ports = [ "127.0.0.1:8191:8191" ];
+      extraOptions = [ "--network=downloader_media_network" ];
     };
     memos = {
       image = "neosmemo/memos:stable";
@@ -211,6 +216,16 @@ in
   systemd.services.docker-radarr.after = [ "docker-networks.service" ];
   systemd.services.docker-bazarr.after = [ "docker-networks.service" ];
   systemd.services.docker-prowlarr.after = [ "docker-networks.service" ];
+  systemd.services.docker-flaresolverr.after = [ "docker-networks.service" ];
   systemd.services.docker-jellyfin.after = [ "nvidia-container-toolkit-cdi-generator.service" ];
   systemd.services.docker-jellyfin.wants = [ "nvidia-container-toolkit-cdi-generator.service" ];
+
+  # Wait for the mergerfs union mount before starting any media-touching
+  # container. Without this, on boot the container can race the mount and
+  # bind-mount an empty /media; everything silently breaks until restart.
+  systemd.services.docker-jellyfin.unitConfig.RequiresMountsFor    = [ "/media" ];
+  systemd.services.docker-qbittorrent.unitConfig.RequiresMountsFor = [ "/media" "/rhopool/media/downloads" ];
+  systemd.services.docker-sonarr.unitConfig.RequiresMountsFor      = [ "/media" "/rhopool/media/downloads" ];
+  systemd.services.docker-radarr.unitConfig.RequiresMountsFor      = [ "/media" "/rhopool/media/downloads" ];
+  systemd.services.docker-bazarr.unitConfig.RequiresMountsFor      = [ "/media" ];
 }
