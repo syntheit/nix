@@ -154,21 +154,30 @@
     }];
   };
 
-  # NextDNS — ID loaded from sops secret at runtime
-  systemd.services.apply-nextdns = {
-    description = "Apply NextDNS config from sops secret";
-    after = [ "sops-nix.service" "systemd-resolved.service" ];
+  # NextDNS — ID loaded from sops secret at runtime, stamped into a resolved
+  # drop-in on every (re)start so config-only rebuilds can't leave resolved stale.
+  # If sops hasn't rendered the template (e.g. age key missing), fall back to
+  # Cloudflare DoT so the box still has working DNS instead of failing to start.
+  systemd.services.systemd-resolved = {
+    after = [ "sops-nix.service" ];
     wants = [ "sops-nix.service" ];
-    wantedBy = [ "multi-user.target" ];
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-      ExecStart = pkgs.writeShellScript "apply-nextdns" ''
+    serviceConfig.ExecStartPre = [
+      "+${pkgs.writeShellScript "apply-nextdns" ''
         mkdir -p /etc/systemd/resolved.conf.d
-        cp ${config.sops.templates."nextdns-resolved.conf".path} /etc/systemd/resolved.conf.d/10-nextdns.conf
-        systemctl restart systemd-resolved
-      '';
-    };
+        src=${config.sops.templates."nextdns-resolved.conf".path}
+        if [ -f "$src" ]; then
+          install -m 0644 "$src" /etc/systemd/resolved.conf.d/10-nextdns.conf
+        else
+          echo "apply-nextdns: sops template missing, using Cloudflare DoT fallback" >&2
+          install -m 0644 ${pkgs.writeText "resolved-fallback.conf" ''
+            [Resolve]
+            DNS=1.1.1.1#cloudflare-dns.com 1.0.0.1#cloudflare-dns.com 2606:4700:4700::1111#cloudflare-dns.com 2606:4700:4700::1001#cloudflare-dns.com
+            DNSOverTLS=yes
+          ''} /etc/systemd/resolved.conf.d/10-nextdns.conf
+        fi
+      ''}"
+    ];
+    restartTriggers = [ config.sops.templates."nextdns-resolved.conf".content ];
   };
 
   time.timeZone = "America/New_York";
