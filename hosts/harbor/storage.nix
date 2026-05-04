@@ -267,4 +267,59 @@
   # Give the post-backup integrity check enough time to download and verify
   # data over SFTP. The default TimeoutStopSec=90s kills it mid-check.
   systemd.services.restic-backups-offsite.serviceConfig.TimeoutStopSec = "30min";
+
+  # =====================================================
+  # MERGERFS — union mount across HDD pools at /media
+  # =====================================================
+  # Each HDD pool has /<pool>/media/{movies,shows,downloads}. mergerfs unions
+  # them so Sonarr/Radarr/Jellyfin/qbit see a single /media tree. Per-pool
+  # ZFS snapshots, scrubs, and SMART monitoring all keep working unchanged.
+  # Underlying pools remain accessible at /<pool> directly.
+  system.fsPackages = [ pkgs.mergerfs ];
+
+  fileSystems."/media" = {
+    device = builtins.concatStringsSep ":" [
+      "/deltapool/media"
+      "/epsilpool/media"
+      "/iotapool/media"
+      "/lambdapool/media"
+      "/platapool/media"
+      "/rhopool/media"
+      "/thetapool/media"
+    ];
+    fsType = "fuse.mergerfs";
+    options = [
+      "defaults"
+      "allow_other"
+      "cache.files=partial"
+      "dropcacheonclose=true"
+      "category.create=pfrd"      # 2.41 default — weighted random favoring emptier branches
+      "minfreespace=20G"           # don't write to nearly-full branches
+      "fsname=mergerfs"
+      "inodecalc=path-hash"        # stable inodes across remounts (NFS-friendly)
+    ];
+    depends = [
+      "/deltapool"
+      "/epsilpool"
+      "/iotapool"
+      "/lambdapool"
+      "/platapool"
+      "/rhopool"
+      "/thetapool"
+    ];
+    noCheck = true;
+  };
+
+  # Ensure each branch has the canonical media subtree. With every branch
+  # exposing /movies, /shows, /downloads, mergerfs's link/rename functions
+  # can always find a same-branch destination — keeping *arr's hardlink
+  # imports atomic instead of falling back to copy.
+  systemd.tmpfiles.rules =
+    let
+      pools = [ "delta" "epsil" "iota" "lambda" "plata" "rho" "theta" ];
+      cats  = [ "" "/movies" "/shows" "/downloads" ];
+    in
+      builtins.concatMap (p:
+        builtins.map (c: "d /${p}pool/media${c} 0775 matv users -") cats
+      ) pools;
 }

@@ -10,6 +10,8 @@
     ./registry.nix
     ./seafile.nix
     ./cwa.nix
+    ./recyclarr.nix
+    ./torrent-cleaner.nix
   ];
 
   # Docker (start at boot — this is a server)

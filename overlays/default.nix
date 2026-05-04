@@ -19,6 +19,7 @@ let
       // {
         foyer = inputs.foyer.packages.${final.stdenv.hostPlatform.system}.default;
         elliot = inputs.elliot.packages.${final.stdenv.hostPlatform.system}.default;
+        jelly-recs = inputs.jelly-recs.packages.${final.stdenv.hostPlatform.system}.default;
       };
   };
 in

@@ -150,6 +150,7 @@
     tmux
     jq
     bat
+    sqlite
     duf
     sqlite   # operator-side queries against deus.db
     python3  # ad-hoc scripting / parsing API responses
@@ -189,13 +190,23 @@
     virtualHosts."watch.matv.io" = {
       extraConfig = ''
         encode gzip zstd
-        reverse_proxy 10.100.0.2:8096 {
-          flush_interval -1
-          header_up X-Real-IP {remote_host}
-          header_up X-Forwarded-For {remote_host}
-          header_up X-Forwarded-Proto {scheme}
-          transport http {
-            read_buffer 16KiB
+
+        # jelly-recs — recommendation rows API + injected JS/CSS.
+        # Must come before the Jellyfin reverse_proxy so these paths win.
+        @recs path /api/recs/* /static/recs.css /static/recs.js
+        handle @recs {
+          reverse_proxy 10.100.0.2:5300
+        }
+
+        handle {
+          reverse_proxy 10.100.0.2:8096 {
+            flush_interval -1
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            transport http {
+              read_buffer 16KiB
+            }
           }
         }
       '';

@@ -177,6 +177,7 @@ in
     nfs-utils # NFS network shares
     hfsprogs # HFS+ support
     apfs-fuse # APFS support (read-only)
+    sqlite
     usbToggle
   ];
 

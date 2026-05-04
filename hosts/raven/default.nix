@@ -356,6 +356,7 @@
     htop
     mosh
     cloudflared
+    sqlite
   ];
 
   # Shell

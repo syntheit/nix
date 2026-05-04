@@ -157,7 +157,7 @@
     "colmena": {
       "inputs": {
         "flake-compat": "flake-compat_3",
-        "flake-utils": "flake-utils_3",
+        "flake-utils": "flake-utils_4",
         "nix-github-actions": "nix-github-actions",
         "nixpkgs": [
           "malli-nix",
@@ -218,11 +218,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1777672656,
-        "narHash": "sha256-yR8mP5u0+vOIEO0oNCoqc/3UC3niFMifTj6PS7DjDc8=",
+        "lastModified": 1777926205,
+        "narHash": "sha256-nIo3Z3KatL5JPiC98Tpi5xRSwT62zLUnqxI3aW/G45g=",
         "ref": "refs/heads/main",
-        "rev": "a1b34c78d1f35a81e864bba7f598ad33ec0e0f13",
-        "revCount": 16,
+        "rev": "96776daa151da4b8c1490f94d54fedfacbe0e621",
+        "revCount": 18,
         "type": "git",
         "url": "ssh://git@github.com/syntheit/malli-deus.git"
       },
@@ -470,6 +470,24 @@
       }
     },
     "flake-utils_3": {
+      "inputs": {
+        "systems": "systems_3"
+      },
+      "locked": {
+        "lastModified": 1731533236,
+        "narHash": "sha256-l0KFg5HjrsfsO/JpG+r7fRrqm12kzFHyUHqHCVpMMbI=",
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "rev": "11707dc2f618dd54ca8739b309ec4fc024de578b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "type": "github"
+      }
+    },
+    "flake-utils_4": {
       "locked": {
         "lastModified": 1659877975,
         "narHash": "sha256-zllb8aq3YO3h8B/U0/J1WBgAL8EX5yWf5pMj3G0NAmc=",
@@ -484,9 +502,9 @@
         "type": "github"
       }
     },
-    "flake-utils_4": {
+    "flake-utils_5": {
       "inputs": {
-        "systems": "systems_3"
+        "systems": "systems_4"
       },
       "locked": {
         "lastModified": 1731533236,
@@ -509,11 +527,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1777777997,
-        "narHash": "sha256-c9Ro/6wI5Lo8TScrxkFu/LOEVcS600xTQEPQc663C3A=",
+        "lastModified": 1777783461,
+        "narHash": "sha256-xfZEIWdywd1CUgznX4M+WpaYBtHwAlV323CO2iYeVv0=",
         "owner": "syntheit",
         "repo": "foyer",
-        "rev": "3e13d0d2f4d9e0d2d6ac454c22a1f49541944f7a",
+        "rev": "a8fe0e0c5b915c6f356eecd410d23d8e3a51392e",
         "type": "github"
       },
       "original": {
@@ -636,6 +654,27 @@
         "owner": "nix-community",
         "repo": "home-manager",
         "type": "github"
+      }
+    },
+    "jelly-recs": {
+      "inputs": {
+        "flake-utils": "flake-utils_3",
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1777867696,
+        "narHash": "sha256-PZvc2Q3/VqO9y8dMAAXDpngSYiyfIPbAhlgwmzjIzi4=",
+        "ref": "refs/heads/main",
+        "rev": "1fe2c3e340ac75328fbca1276c4541db1c81789f",
+        "revCount": 13,
+        "type": "git",
+        "url": "ssh://git@github.com/syntheit/jelly-recs.git"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://git@github.com/syntheit/jelly-recs.git"
       }
     },
     "malli-nix": {
@@ -865,7 +904,7 @@
     },
     "nixos-lima": {
       "inputs": {
-        "flake-utils": "flake-utils_4",
+        "flake-utils": "flake-utils_5",
         "nixos-generators": "nixos-generators",
         "nixpkgs": [
           "malli-nix",
@@ -1086,6 +1125,7 @@
         "elliot": "elliot",
         "foyer": "foyer",
         "home-manager": "home-manager",
+        "jelly-recs": "jelly-recs",
         "malli-nix": "malli-nix",
         "nix-darwin": "nix-darwin_2",
         "nix-homebrew": "nix-homebrew_2",
@@ -1187,7 +1227,7 @@
           "nixpkgs"
         ],
         "nur": "nur_2",
-        "systems": "systems_4",
+        "systems": "systems_5",
         "tinted-kitty": "tinted-kitty",
         "tinted-schemes": "tinted-schemes",
         "tinted-tmux": "tinted-tmux",
@@ -1253,6 +1293,21 @@
       }
     },
     "systems_4": {
+      "locked": {
+        "lastModified": 1681028828,
+        "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",
+        "owner": "nix-systems",
+        "repo": "default",
+        "rev": "da67096a3b9bf56a91d16901293e51ba5b49a27e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-systems",
+        "repo": "default",
+        "type": "github"
+      }
+    },
+    "systems_5": {
       "locked": {
         "lastModified": 1681028828,
         "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",
