@@ -16,9 +16,6 @@ class GestureMonitor {
     /// Called when fingers lift after a horizontal gesture was active
     var onThreeFingerHorizEnd: (() -> Void)?
 
-    /// Current horizontal velocity in normalized units/sec (read on end)
-    private(set) var currentVelocityX: CGFloat = 0
-
     private var handle: UnsafeMutableRawPointer?
     private var startY: Float = 0
     private var startX: Float = 0
@@ -27,10 +24,6 @@ class GestureMonitor {
     private var horizontalActive = false
     private var axisDecided = false
     private var isVertical = false
-
-    // Velocity tracking
-    private var lastDx: Float = 0
-    private var lastDxTime: Double = 0
 
     private let fullSwipe: Float = 0.22
 
@@ -66,7 +59,6 @@ class GestureMonitor {
                 DispatchQueue.main.async { [self] in onThreeFingerHorizEnd?() }
             }
             tracking = false; axisDecided = false
-            currentVelocityX = 0
             return
         }
 
@@ -90,14 +82,12 @@ class GestureMonitor {
                 DispatchQueue.main.async { [self] in onThreeFingerHorizEnd?() }
             }
             tracking = false; axisDecided = false
-            currentVelocityX = 0
             return
         }
         avgY /= Float(n); avgX /= Float(n)
 
         if !tracking {
             tracking = true; startY = avgY; startX = avgX; axisDecided = false
-            lastDx = 0; lastDxTime = 0; currentVelocityX = 0
             DispatchQueue.main.async { [self] in onPrepare?() }
             return
         }
@@ -120,16 +110,6 @@ class GestureMonitor {
             DispatchQueue.main.async { [self] in onThreeFingerVertical?(progress) }
         } else {
             horizontalActive = true
-
-            // Track velocity
-            let now = ProcessInfo.processInfo.systemUptime
-            if lastDxTime > 0 && now - lastDxTime > 0.001 {
-                let rawVel = CGFloat((dx - lastDx) / Float(now - lastDxTime) / fullSwipe)
-                // Smooth with previous to reduce noise
-                currentVelocityX = currentVelocityX * 0.3 + rawVel * 0.7
-            }
-            lastDx = dx; lastDxTime = now
-
             let progress = CGFloat(dx / fullSwipe)
             DispatchQueue.main.async { [self] in onThreeFingerHorizontal?(progress) }
         }
