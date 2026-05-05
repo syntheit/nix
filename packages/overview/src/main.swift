@@ -38,16 +38,6 @@ class OverviewState: ObservableObject {
     }
 }
 
-// MARK: - Active spaces helper (shared logic for overview + workspace switching)
-
-/// Compute sorted active space indices from a spaces snapshot: occupied + one extra empty at end.
-func activeSpaceIndices(from spaces: [SpaceInfo], currentIndex: Int) -> [Int] {
-    let lastOccupied = spaces.filter { !$0.windowIDs.isEmpty }.map(\.index).max() ?? 0
-    let cutoff = max(lastOccupied, currentIndex) + 1
-    return spaces.filter { !$0.windowIDs.isEmpty || $0.index <= cutoff }
-        .map(\.index).sorted()
-}
-
 // MARK: - App delegate
 
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -66,23 +56,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var latestGestureDelta: CGFloat = 0
     private var showFullWhenReady = false
 
-    private enum Phase { case hidden, preparing, visible, dismissing, switching, switchAnimating }
+    private enum Phase { case hidden, preparing, visible, dismissing }
     private var phase: Phase = .hidden
 
-    // MARK: - Workspace switch state
-
-    private var wsActiveSpaces: [Int] = []
-    private var wsFromSpace: Int = 0
-    private var wsTargetSpace: Int = 0
-    private var wsGestureProgress: CGFloat = 0
-    private var wsDirection: Int = 0           // -1 or 1, locked at gesture start
-    private var wsStartDelta: CGFloat = 0
-    private var wsIsEdge: Bool = false
-    private var wsAutoCompleting: Bool = false
-    private var wsCurrentLayer: CALayer?
-    private var wsTargetLayer: CALayer?
-    private var wsRootLayer: CALayer?
-    private var lastSketchybarUpdate: Double = 0
     private var lastOverviewHorizSwitch: Double = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -103,7 +79,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         overlayWindow = window
         hostingView = hosting
 
-        // Ensure the content view is layer-backed for CALayer workspace switching
         hosting.wantsLayer = true
 
         // Set up callbacks once
@@ -184,41 +159,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // MARK: Horizontal gesture — workspace switching
+        // MARK: Horizontal gesture
+        // Workspace switching is handled natively by macOS. We only react when
+        // the overview is open (debounced discrete highlight switching), and
+        // bail out of any in-flight overview prepare so we don't capture a
+        // composite that won't be shown.
 
         gm.onThreeFingerHorizontal = { [weak self] (delta: CGFloat) in
             guard let self else { return }
-            // When overview is visible, use debounced discrete switching
             if phase == .visible {
                 handleOverviewHorizontalSwipe(delta)
                 return
             }
-            // When hidden or preparing: start workspace switch immediately on first horizontal frame
-            if phase == .hidden || phase == .preparing {
-                if phase == .preparing {
-                    // Cancel the overview preparation — axis is horizontal, not vertical
-                    phase = .hidden
-                    cachedWindows = nil; cachedSpaces = nil
-                    showFullWhenReady = false
-                }
-                beginWorkspaceSwitch(initialDelta: delta)
-            } else if phase == .switching && !wsAutoCompleting {
-                updateWorkspaceSwitch(delta: delta)
+            if phase == .preparing {
+                phase = .hidden
+                cachedWindows = nil; cachedSpaces = nil
+                showFullWhenReady = false
             }
         }
 
         gm.onThreeFingerHorizEnd = { [weak self] in
             guard let self else { return }
-            if phase == .visible { return }
             if phase == .preparing {
-                // Gesture ended during prepare before axis was decided — clean up
                 phase = .hidden
                 cachedWindows = nil; cachedSpaces = nil
                 showFullWhenReady = false
-                return
-            }
-            if phase == .switching && !wsAutoCompleting {
-                endWorkspaceSwitch()
             }
         }
 
@@ -411,302 +376,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             state.windows[i].space = space
             state.windows[i].image = nil
         }
-    }
-
-    // MARK: - Workspace switching (1:1 gesture-driven)
-
-    private func beginWorkspaceSwitch(initialDelta: CGFloat) {
-        guard let screen = NSScreen.main else {
-            print("[overview] beginWorkspaceSwitch: no main screen")
-            return
-        }
-
-        // Single yabai query for spaces
-        let spaces = WindowManager.querySpaces()
-        guard let focused = spaces.first(where: { $0.hasFocus }) else {
-            print("[overview] beginWorkspaceSwitch: no focused space (yabai not responsive?)")
-            return
-        }
-        let focusedIdx = focused.index
-
-        let active = activeSpaceIndices(from: spaces, currentIndex: focusedIdx)
-        guard let curPos = active.firstIndex(of: focusedIdx) else {
-            print("[overview] beginWorkspaceSwitch: focused space \(focusedIdx) not in active set \(active)")
-            return
-        }
-
-        wsActiveSpaces = active
-        wsFromSpace = focusedIdx
-        wsStartDelta = 0  // direct mapping: delta IS the slide position (no offset)
-        wsAutoCompleting = false
-        wsGestureProgress = 0
-
-        // Direction: swipe right (delta > 0) = go to previous space (content slides right)
-        //            swipe left  (delta < 0) = go to next space     (content slides left)
-        let dir = initialDelta > 0 ? 1 : -1
-        wsDirection = dir
-
-        // Target = curPos - dir (swipe right -> previous in active list)
-        let targetPos = curPos - dir
-        if targetPos < 0 || targetPos >= active.count {
-            wsIsEdge = true
-            wsTargetSpace = focusedIdx
-        } else {
-            wsIsEdge = false
-            wsTargetSpace = active[targetPos]
-        }
-
-        print("[overview] switch begin: \(wsFromSpace) -> \(wsTargetSpace) (dir=\(dir), edge=\(wsIsEdge), active=\(active))")
-
-        // Set up CALayers
-        setupSwitchLayers(screen: screen)
-
-        // Wallpaper fallback for missing composites
-        let wallpaperCG = WindowManager.loadWallpaper()?
-            .cgImage(forProposedRect: nil, context: nil, hints: nil)
-
-        wsCurrentLayer?.contents = WindowManager.compositeCache[wsFromSpace] ?? wallpaperCG
-        if !wsIsEdge {
-            wsTargetLayer?.contents = WindowManager.compositeCache[wsTargetSpace] ?? wallpaperCG
-            wsTargetLayer?.isHidden = false
-        } else {
-            wsTargetLayer?.isHidden = true
-        }
-
-        // Position layers at the current finger position (no jump when overlay appears)
-        let W = screen.frame.width
-        var t = initialDelta * CGFloat(dir)
-        if wsIsEdge { t = t > 0 ? t * 0.3 : 0 }
-        wsGestureProgress = t
-        let signedOffset = t * CGFloat(dir)
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        wsCurrentLayer?.frame.origin.x = signedOffset * W
-        if !wsIsEdge {
-            wsTargetLayer?.frame.origin.x = CGFloat(-dir) * W + signedOffset * W
-        }
-        CATransaction.commit()
-
-        // Show overlay with CALayers, hide SwiftUI hosting view
-        overlayWindow.setFrame(screen.frame, display: false)
-        hostingView.isHidden = true
-        overlayWindow.alphaValue = 1
-        overlayWindow.makeKeyAndOrderFront(nil)
-
-        phase = .switching
-    }
-
-    private func setupSwitchLayers(screen: NSScreen) {
-        // Clean up any existing layers
-        wsRootLayer?.removeFromSuperlayer()
-
-        let W = screen.frame.width
-        let H = screen.frame.height
-        let scale = screen.backingScaleFactor
-
-        let root = CALayer()
-        root.frame = CGRect(x: 0, y: 0, width: W, height: H)
-        root.masksToBounds = true
-
-        let current = CALayer()
-        current.frame = CGRect(x: 0, y: 0, width: W, height: H)
-        current.contentsScale = scale
-        current.contentsGravity = .resizeAspectFill
-
-        let target = CALayer()
-        target.frame = CGRect(x: 0, y: 0, width: W, height: H)
-        target.contentsScale = scale
-        target.contentsGravity = .resizeAspectFill
-        target.isHidden = true
-
-        root.addSublayer(current)
-        root.addSublayer(target)
-
-        hostingView.layer?.addSublayer(root)
-
-        wsRootLayer = root
-        wsCurrentLayer = current
-        wsTargetLayer = target
-    }
-
-    private func updateWorkspaceSwitch(delta: CGFloat) {
-        guard phase == .switching, let screen = NSScreen.main else { return }
-        let W = screen.frame.width
-
-        let adjustedDelta = delta - wsStartDelta
-        var t = adjustedDelta * CGFloat(wsDirection)
-
-        // Rubber-band damping
-        if wsIsEdge {
-            t = t > 0 ? t * 0.3 : 0
-        } else if t > 1.0 {
-            t = 1.0 + (t - 1.0) * 0.3
-        } else if t < 0 {
-            t = t * 0.3
-        }
-
-        wsGestureProgress = t
-
-        // Update layer positions without implicit animation
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-
-        let signedOffset = t * CGFloat(wsDirection)
-        wsCurrentLayer?.frame.origin.x = signedOffset * W
-        if !wsIsEdge {
-            let targetBaseX: CGFloat = CGFloat(-wsDirection) * W
-            wsTargetLayer?.frame.origin.x = targetBaseX + signedOffset * W
-        }
-
-        CATransaction.commit()
-
-        // Update sketchybar indicator (throttled)
-        updateSketchybarProgress(t)
-
-        // Quick swipe detection
-        let velocity = abs(gestureMonitor?.currentVelocityX ?? 0)
-        if velocity > 5.0 && t > 0.05 && !wsIsEdge {
-            wsAutoCompleting = true
-            endWorkspaceSwitch()
-        }
-    }
-
-    private func endWorkspaceSwitch() {
-        guard phase == .switching, let screen = NSScreen.main else { return }
-        let W = screen.frame.width
-
-        let velocity = abs(gestureMonitor?.currentVelocityX ?? 0)
-        let velocityInDirection = (gestureMonitor?.currentVelocityX ?? 0) * CGFloat(wsDirection)
-
-        let shouldComplete: Bool
-        if wsIsEdge {
-            shouldComplete = false
-        } else {
-            shouldComplete = wsGestureProgress > 0.20 ||
-                (velocityInDirection > 1.5 && wsGestureProgress > 0.03)
-        }
-        print("[overview] switch end: progress=\(String(format: "%.2f", wsGestureProgress)) velocity=\(String(format: "%.2f", velocityInDirection)) complete=\(shouldComplete)")
-
-        phase = .switchAnimating
-
-        if shouldComplete {
-            // Animate to completion
-            let remaining = max(0.01, 1.0 - wsGestureProgress)
-            let velocityDuration = velocity > 0.1 ? remaining / velocity : 0.25
-            let duration = max(0.15, min(0.30, velocityDuration))
-
-            let targetCurrentX = CGFloat(wsDirection) * W
-            let targetTargetX: CGFloat = 0
-
-            CATransaction.begin()
-            CATransaction.setAnimationDuration(duration)
-            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
-            CATransaction.setCompletionBlock { [weak self] in
-                guard let self, self.phase == .switchAnimating else { return }
-                // Switch space via yabai
-                WindowManager.focusSpace(self.wsTargetSpace)
-                // Brief delay then dismiss overlay and cache new space
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-                    guard let self else { return }
-                    self.tearDownSwitch()
-                    Task { await WindowManager.cacheCurrentSpace() }
-                }
-            }
-
-            wsCurrentLayer?.frame.origin.x = targetCurrentX
-            wsTargetLayer?.frame.origin.x = targetTargetX
-
-            CATransaction.commit()
-
-            finalizeSketchybar(toSpace: wsTargetSpace)
-        } else {
-            // Bounce back
-            let progress = abs(wsGestureProgress)
-            let duration = max(0.15, min(0.30, Double(progress) * 0.5 + 0.1))
-
-            CATransaction.begin()
-            CATransaction.setAnimationDuration(duration)
-            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
-            CATransaction.setCompletionBlock { [weak self] in
-                guard let self, self.phase == .switchAnimating else { return }
-                self.tearDownSwitch()
-            }
-
-            wsCurrentLayer?.frame.origin.x = 0
-            if !wsIsEdge {
-                wsTargetLayer?.frame.origin.x = CGFloat(-wsDirection) * W
-            }
-
-            CATransaction.commit()
-
-            finalizeSketchybar(toSpace: wsFromSpace)
-        }
-    }
-
-    private func tearDownSwitch() {
-        phase = .hidden
-        wsRootLayer?.removeFromSuperlayer()
-        wsRootLayer = nil
-        wsCurrentLayer = nil
-        wsTargetLayer = nil
-        hostingView.isHidden = false
-        overlayWindow.alphaValue = 0
-        overlayWindow.orderOut(nil)
-        wsGestureProgress = 0
-        wsDirection = 0
-        wsAutoCompleting = false
-    }
-
-    // MARK: - Sketchybar indicator during workspace switch
-
-    private func updateSketchybarProgress(_ t: CGFloat) {
-        let now = ProcessInfo.processInfo.systemUptime
-        guard now - lastSketchybarUpdate > 0.033 else { return }  // ~30fps max
-        lastSketchybarUpdate = now
-
-        guard wsFromSpace != wsTargetSpace, !wsIsEdge else { return }
-
-        let clamped = max(0.0, min(1.0, t))
-        let fromAlpha = UInt32((1.0 - clamped) * 255)
-        let toAlpha = UInt32(clamped * 255)
-
-        let fromBg = String(format: "0x%02x7aa2f7", fromAlpha)
-        let toBg = String(format: "0x%02x7aa2f7", toAlpha)
-
-        // Interpolate icon colors: active = 0x1a1b26 (dark), inactive = 0xa9b1d6 (light)
-        let fromR = UInt32(Double(0x1a) + Double(0xa9 - 0x1a) * clamped)
-        let fromG = UInt32(Double(0x1b) + Double(0xb1 - 0x1b) * clamped)
-        let fromB = UInt32(Double(0x26) + Double(0xd6 - 0x26) * clamped)
-        let toR = UInt32(Double(0xa9) + Double(0x1a - 0xa9) * clamped)
-        let toG = UInt32(Double(0xb1) + Double(0x1b - 0xb1) * clamped)
-        let toB = UInt32(Double(0xd6) + Double(0x26 - 0xd6) * clamped)
-
-        let fromIcon = String(format: "0xff%02x%02x%02x", fromR, fromG, fromB)
-        let toIcon = String(format: "0xff%02x%02x%02x", toR, toG, toB)
-
-        WindowManager.runAsync([
-            "sketchybar",
-            "--animate", "linear", "2",
-            "--set", "space.\(wsFromSpace)",
-            "background.color=\(fromBg)", "icon.color=\(fromIcon)",
-            "--set", "space.\(wsTargetSpace)",
-            "background.color=\(toBg)", "icon.color=\(toIcon)"
-        ])
-    }
-
-    private func finalizeSketchybar(toSpace: Int) {
-        if toSpace == wsFromSpace && wsTargetSpace != wsFromSpace {
-            // Bounce back — restore source highlight, clear target
-            WindowManager.runAsync([
-                "sketchybar",
-                "--animate", "linear", "5",
-                "--set", "space.\(wsFromSpace)",
-                "background.color=0xff7aa2f7", "icon.color=0xff1a1b26",
-                "--set", "space.\(wsTargetSpace)",
-                "background.color=0x00000000", "icon.color=0xffa9b1d6"
-            ])
-        }
-        // For completion, yabai's space_change event + space.sh handles the final state
     }
 
     // MARK: - Keyboard

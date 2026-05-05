@@ -119,16 +119,13 @@
 
     # Privacy & telemetry defaults
     CustomUserPreferences = {
-      # Disable Mission Control three-finger swipe (overview app handles this gesture)
+      # Disable Mission Control vertical 3/4-finger swipe (overview app claims it).
+      # Horizontal swipes stay native for swipe-between-spaces.
       "com.apple.AppleMultitouchTrackpad" = {
         TrackpadThreeFingerVertSwipeGesture = 0;
-        TrackpadThreeFingerHorizSwipeGesture = 0;
-        TrackpadFourFingerHorizSwipeGesture = 0;
       };
       "com.apple.driver.AppleBluetoothMultitouch.trackpad" = {
         TrackpadThreeFingerVertSwipeGesture = 0;
-        TrackpadThreeFingerHorizSwipeGesture = 0;
-        TrackpadFourFingerHorizSwipeGesture = 0;
       };
       # Disable personalized ads
       "com.apple.AdLib" = {
