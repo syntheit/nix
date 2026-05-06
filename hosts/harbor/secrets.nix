@@ -192,15 +192,6 @@
     '';
   };
 
-  # jelly-recs Claude OAuth env file — same token, different owner so the
-  # service user can read it. The OAuth token works across services.
-  sops.templates."jelly-recs-claude.env" = {
-    owner = "jelly-recs";
-    content = ''
-      CLAUDE_CODE_OAUTH_TOKEN=${config.sops.placeholder.elliot_claude_oauth_token}
-    '';
-  };
-
   # Seafile env file
   sops.templates."seafile.env".content = ''
     SEAFILE_MYSQL_DB_PASSWORD=${config.sops.placeholder.seafile_mysql_db_pw}

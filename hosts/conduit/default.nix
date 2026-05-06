@@ -211,6 +211,57 @@
         }
       '';
     };
+
+    # harborfin — bespoke Jellyfin web client. Same backend as watch.matv.io,
+    # but the SPA shell comes from harbor:8097 (static-web-server) and the
+    # Jellyfin API + jelly-recs are reverse-proxied alongside on the same
+    # origin so cookies/tokens flow naturally.
+    virtualHosts."watch2.matv.io" = {
+      extraConfig = ''
+        encode gzip zstd
+
+        # 1. jelly-recs API — must come before JF so paths win.
+        #    /api/recs/{userId}  — per-user rec rows
+        #    /api/catalog        — slim catalog for the client-side search index
+        @recs path /api/recs/* /api/catalog
+        handle @recs {
+          reverse_proxy 10.100.0.2:5300
+        }
+
+        # 2. Jellyfin endpoints harborfin calls. Everything else falls through
+        #    to the default (harborfin static SPA), which is what makes deep
+        #    links like /home, /details/abc, /settings, etc. work.
+        @jellyfin path /Users/* /Items/* /Shows/* /Sessions/* /Persons/* /Genres/* /Audio/* /Videos/* /MediaSegments/* /UserViews/* /System/* /socket /web/*
+        handle @jellyfin {
+          reverse_proxy 10.100.0.2:8096 {
+            flush_interval -1
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            transport http {
+              read_buffer 16KiB
+            }
+          }
+        }
+
+        # 3a. harborfin static assets — pass through 1:1, no rewrite.
+        #     A missing hashed chunk MUST 404 cleanly so the browser can
+        #     fail loudly instead of silently importing index.html as JS
+        #     (which throws MIME-type errors and a blank page).
+        @hf_assets path /_app/* /favicon.ico /favicon.svg /robots.txt
+        handle @hf_assets {
+          reverse_proxy 10.100.0.2:8097
+        }
+
+        # 3b. SPA routes — rewrite to /index.html before proxying. Lets
+        #     deep-links (/home, /details/abc, /settings) resolve to the
+        #     SvelteKit shell, with the client-side router taking over.
+        handle {
+          rewrite * /index.html
+          reverse_proxy 10.100.0.2:8097
+        }
+      '';
+    };
     virtualHosts."status.matv.io" = {
       extraConfig = ''
         reverse_proxy localhost:3001
@@ -471,6 +522,13 @@
       - name: Jellyfin
         group: conduit
         url: https://watch.matv.io
+        interval: 2m
+        conditions:
+          - "[STATUS] < 500"
+
+      - name: harborfin
+        group: conduit
+        url: https://watch2.matv.io
         interval: 2m
         conditions:
           - "[STATUS] < 500"

@@ -291,8 +291,16 @@
     options = [
       "defaults"
       "allow_other"
-      "cache.files=partial"
+      # cache.files=auto-full lets the kernel page cache back mergerfs reads —
+      # huge win for Jellyfin scans/streams since `partial` round-trips every
+      # page through FUSE. dropcacheonclose=true keeps memory bounded by
+      # evicting page cache when files are closed (prevents double-caching
+      # against ZFS ARC).
+      "cache.files=auto-full"
       "dropcacheonclose=true"
+      # Concurrent readdir across branches — collapses 7-pool serial enumeration
+      # into parallel calls, drops library-scan wallclock dramatically.
+      "func.readdir=cor"
       "category.create=pfrd"      # 2.41 default — weighted random favoring emptier branches
       "minfreespace=20G"           # don't write to nearly-full branches
       "fsname=mergerfs"

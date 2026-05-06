@@ -1,4 +1,4 @@
-{ config, pkgs, ... }:
+{ config, lib, pkgs, ... }:
 
 let
   linuxserverEnv = {
@@ -225,6 +225,16 @@ in
   # bind-mount an empty /media; everything silently breaks until restart.
   systemd.services.docker-jellyfin.unitConfig.RequiresMountsFor    = [ "/media" ];
   systemd.services.docker-qbittorrent.unitConfig.RequiresMountsFor = [ "/media" "/rhopool/media/downloads" ];
+
+  # qbittorrentvpn's s6 supervisor exits with status 0 when its in-container
+  # VPN healthcheck fails (e.g. transient WG handshake delay at boot). The
+  # default Restart=on-failure does NOT retry clean exits, so a single hiccup
+  # took the whole download stack offline for 13h on 2026-05-04. Force always-
+  # restart with a 30s backoff so the *arr grab pipeline self-heals.
+  systemd.services.docker-qbittorrent.serviceConfig = {
+    Restart = lib.mkForce "always";
+    RestartSec = 30;
+  };
   systemd.services.docker-sonarr.unitConfig.RequiresMountsFor      = [ "/media" "/rhopool/media/downloads" ];
   systemd.services.docker-radarr.unitConfig.RequiresMountsFor      = [ "/media" "/rhopool/media/downloads" ];
   systemd.services.docker-bazarr.unitConfig.RequiresMountsFor      = [ "/media" ];
