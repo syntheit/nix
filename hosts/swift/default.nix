@@ -14,29 +14,18 @@
   nix.enable = false;
 
   # ── Private GitHub flake inputs ─────────────────────────────────
-  # Determinate's /etc/nix/nix.conf has `!include nix.custom.conf`
-  # before its own values, so settings here win. We point Nix at a
-  # netrc file holding a fine-grained read-only GitHub PAT.
+  # Determinate Nix's `/etc/nix/nix.conf` sets
+  # `netrc-file = /nix/var/determinate/netrc` after the include of
+  # nix.custom.conf, so it always wins. We just write the PAT into
+  # the file Determinate actually points at.
   #
-  # The netrc is set up ONCE per machine, OUTSIDE of nix:
+  # Set up ONCE per machine, OUTSIDE of nix:
   #
   #   echo 'machine github.com login oauth2 password ghp_xxx' \
-  #     | sudo tee /etc/nix/netrc > /dev/null
-  #   sudo chmod 600 /etc/nix/netrc
+  #     | sudo tee /nix/var/determinate/netrc > /dev/null
   #
   # PAT minted at github.com/settings/personal-access-tokens, scoped
   # read-only to syntheit/malli-deus + syntheit/malli-nix.
-  #
-  # We deliberately do NOT manage the PAT via sops — adding sops just
-  # for one credential on a personal laptop is more fragile than the
-  # one-time manual file it replaces.
-  system.activationScripts.preActivation.text = ''
-    install -d -m 0755 /etc/nix
-    cat > /etc/nix/nix.custom.conf <<'NIXCONF'
-    netrc-file = /etc/nix/netrc
-    NIXCONF
-    chmod 0644 /etc/nix/nix.custom.conf
-  '';
 
   nix-homebrew = {
     enable = true;
