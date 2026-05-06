@@ -224,11 +224,11 @@
         "rev": "96c2e6a4ed550add73d76456adffe7685d886ee1",
         "revCount": 29,
         "type": "git",
-        "url": "ssh://git@github.com/syntheit/malli-deus.git"
+        "url": "https://github.com/syntheit/malli-deus.git"
       },
       "original": {
         "type": "git",
-        "url": "ssh://git@github.com/syntheit/malli-deus.git"
+        "url": "https://github.com/syntheit/malli-deus.git"
       }
     },
     "deus_2": {
