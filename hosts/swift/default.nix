@@ -2,6 +2,7 @@
   pkgs,
   lib,
   vars,
+  config,
   ...
 }:
 
@@ -15,28 +16,38 @@
 
   # ── Nix custom settings (Determinate's nix.conf includes this) ───
   # Determinate's /etc/nix/nix.conf has `!include nix.custom.conf`
-  # before its own values, so any setting here wins. We use this to
-  # point Nix at an out-of-tree netrc holding the GitHub PAT used to
-  # fetch private flake inputs (malli-deus). The PAT itself lives at
-  # /etc/nix/netrc and is NOT in this repo — bootstrap it once with:
-  #
-  #   sudo install -m 0600 -o root /dev/stdin /etc/nix/netrc <<EOF
-  #   machine github.com login oauth2 password ghp_xxxxxxxxxxxxxxxxxxx
-  #   EOF
-  #
-  # The PAT should be fine-grained, read-only, scoped to
-  # syntheit/malli-deus + syntheit/malli-nix only.
+  # before its own values, so any setting here wins. Point Nix at the
+  # sops-rendered netrc for private flake fetches (malli-deus on
+  # GitHub). Sudo doesn't strip /etc paths so this works under
+  # `sudo darwin-rebuild`.
   system.activationScripts.preActivation.text = ''
     install -d -m 0755 /etc/nix
     cat > /etc/nix/nix.custom.conf <<'NIXCONF'
     netrc-file = /etc/nix/netrc
     NIXCONF
     chmod 0644 /etc/nix/nix.custom.conf
-    if [ ! -e /etc/nix/netrc ]; then
-      echo "WARN: /etc/nix/netrc missing — fetching private flake inputs (malli-deus) will fail"
-      echo "      Bootstrap it: see comment in hosts/swift/default.nix"
-    fi
   '';
+
+  # ── sops: GitHub PAT for private flake inputs ────────────────────
+  # The PAT is encrypted in secrets/swift.yaml under swift's host age
+  # key (derived from /etc/ssh/ssh_host_ed25519_key) plus daniel's age
+  # key. sops-nix renders it on activation as a netrc-format file at
+  # /etc/nix/netrc, which the nix.custom.conf above points at.
+  sops.defaultSopsFile = ../../secrets/swift.yaml;
+  sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
+  # secrets/swift.yaml has key `github_pat` containing just the PAT.
+  # The template wraps it in netrc syntax at render time so the secret
+  # file itself is the bare token (rotation = re-encrypt one line).
+  sops.secrets.github_pat = { };
+  sops.templates."netrc" = {
+    path = "/etc/nix/netrc";
+    mode = "0600";
+    content = ''
+      machine github.com
+        login oauth2
+        password ${config.sops.placeholder.github_pat}
+    '';
+  };
 
   nix-homebrew = {
     enable = true;
