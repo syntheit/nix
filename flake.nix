@@ -96,7 +96,12 @@
     };
 
     deus = {
-      url = "git+ssh://git@github.com/syntheit/malli-deus.git";
+      # HTTPS, not SSH. The Nix daemon under sudo can't reach the
+      # operator's SSH agent — git+ssh fetches fail under sudo
+      # darwin-rebuild. HTTPS authenticates via /etc/nix/netrc
+      # (configured in hosts/swift/default.nix) which sudo doesn't
+      # strip. Same trick works on any management-plane machine.
+      url = "github:syntheit/malli-deus";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
