@@ -96,7 +96,11 @@
     };
 
     deus = {
-      url = "git+ssh://git@github.com/syntheit/malli-deus.git";
+      # Fetched from conduit's git mirror over the tailnet — swift is
+      # on headscale and conduit's git-daemon doesn't need auth, so
+      # `sudo darwin-rebuild` works without SSH-key gymnastics. The
+      # mirror catches up to GitHub every 5 min.
+      url = "git+git://conduit/malli-deus.git";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
