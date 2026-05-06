@@ -14,18 +14,33 @@
   nix.enable = false;
 
   # ── Private GitHub flake inputs ─────────────────────────────────
-  # Determinate Nix's `/etc/nix/nix.conf` sets
-  # `netrc-file = /nix/var/determinate/netrc` after the include of
-  # nix.custom.conf, so it always wins. We just write the PAT into
-  # the file Determinate actually points at.
-  #
-  # Set up ONCE per machine, OUTSIDE of nix:
+  # nix's git+https fetcher invokes plain git, which reads ~/.netrc
+  # (NOT nix's netrc-file setting). Sudo runs as root so the relevant
+  # file is /var/root/.netrc. Set up once per machine, OUTSIDE nix:
   #
   #   echo 'machine github.com login oauth2 password ghp_xxx' \
-  #     | sudo tee /nix/var/determinate/netrc > /dev/null
+  #     | tee ~/.netrc | sudo tee /var/root/.netrc > /dev/null
+  #   chmod 600 ~/.netrc
+  #   sudo chmod 600 /var/root/.netrc
   #
-  # PAT minted at github.com/settings/personal-access-tokens, scoped
-  # read-only to syntheit/malli-deus + syntheit/malli-nix.
+  # PAT minted at github.com/settings/personal-access-tokens,
+  # fine-grained, read-only, scoped to syntheit/malli-deus and
+  # syntheit/malli-nix. Permissions: Contents = Read.
+
+  # ── Nix custom settings ─────────────────────────────────────────
+  # Determinate's /etc/nix/nix.conf has `!include nix.custom.conf`.
+  # We use this to fast-fail flaky downloads from Determinate's own
+  # cache (HTTP/2 framing errors) so nix falls through to
+  # cache.nixos.org instead of retrying for minutes.
+  system.activationScripts.preActivation.text = ''
+    install -d -m 0755 /etc/nix
+    cat > /etc/nix/nix.custom.conf <<'NIXCONF'
+    connect-timeout = 5
+    download-attempts = 2
+    narinfo-cache-negative-ttl = 3600
+    NIXCONF
+    chmod 0644 /etc/nix/nix.custom.conf
+  '';
 
   nix-homebrew = {
     enable = true;
