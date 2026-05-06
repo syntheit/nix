@@ -82,6 +82,11 @@
     foyer
     mosh
     spotify-player
+    # Operator CLI for the Malli fleet (`deus list`, `deus tui`,
+    # `deus bootstrap …`). Pinned via the deus flake input in
+    # ../../flake.nix so swift always tracks the same revision the
+    # fleet machines do.
+    inputs.deus.packages.${pkgs.stdenv.hostPlatform.system}.default
   ];
 
   programs.yazi = {
