@@ -14,7 +14,7 @@
     blacklistedKernelModules = [ "nouveau" ];
     kernelParams = [
       "i915.enable_guc=2"
-      "zfs.zfs_arc_max=8589934592" # 8GB — reduced from 16GB to leave headroom for containers
+      "zfs.zfs_arc_max=17179869184" # 16GB — 8GB cap caused arc_prune to peg a core under metadata pressure (8 pools + mergerfs scan); sys_free below still yields RAM to containers
       "zfs.zfs_arc_min=2147483648" # 2GB — metadata floor for 8 pools
       "zfs.zfs_arc_sys_free=4294967296" # 4GB — ARC shrinks when free RAM below this
     ];

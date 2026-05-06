@@ -97,12 +97,10 @@ in
         hostPath = "/var/lib/deus-granter";
         isReadOnly = true;
       };
-      # Bind the malli-nix flake input (a /nix/store path on the host)
-      # into the container so deus-server can read registry.nix from it.
-      "/var/lib/deus-registry" = {
-        hostPath = "${inputs.malli-nix}";
-        isReadOnly = true;
-      };
+      # registry.nix is no longer the inventory source — deus-server
+      # now reads from headscale (deus v0.12+). Roles live in
+      # /var/lib/deus/roles.json (small JSON, operator-edited),
+      # which is in the bind-mounted /var/lib/deus tree.
     };
 
     config = { pkgs, ... }: {
@@ -159,7 +157,8 @@ in
         enable = true;
         address = "0.0.0.0";
         port = 8086;
-        registryFile = "/var/lib/deus-registry/hosts/registry.nix";
+        # registryFile = null (default) — inventory comes from headscale.
+        # Roles live in /var/lib/deus/roles.json (operator-edited).
         operatorTokenFile = "/var/lib/deus-tokens/operator-token";
         agentTokenFile = "/var/lib/deus-tokens/agent-token";
 
@@ -185,12 +184,10 @@ in
           # invokes `ssh git@github.com` and the wrapper picks the key.
           repoURL = "git@github.com:syntheit/malli-nix.git";
           repoSSHCommand = "ssh -i /var/lib/deus/malli-nix-write -o IdentitiesOnly=yes -o UserKnownHostsFile=/var/lib/deus/known_hosts -o StrictHostKeyChecking=accept-new";
-          # The headscale CLI lives in the same container, but its socket
-          # is owned by the headscale group. We expose it world-readable
-          # below (`unix_socket_permission`) so the deus user can call
-          # it directly.
-          headscaleCommand = "headscale nodes list -o json";
         };
+        # headscaleCommand defaults to `headscale nodes list -o json`,
+        # which is exactly what we want; the unix socket is world-
+        # readable (see unix_socket_permission below) so no sudo wrapper.
       };
 
       # Use Tailscale's DNS so tailnet hostnames resolve
@@ -382,6 +379,7 @@ in
         bat
         tmux
         git
+        sqlite # poke deus.db directly when needed (cleanup, audits)
       ];
 
       programs.zsh.enable = true;
