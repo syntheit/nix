@@ -141,6 +141,14 @@ in
       # `nixos-rebuild --refresh` calls on fleet VMs see the new
       # commit. Without this, the granter has no way to ensure the
       # mirror is fresh before returning success to the agent.
+      #
+      # nixos-container builds a minimal closure — polkit is NOT pulled
+      # in by default and `security.polkit.extraConfig` is silently
+      # no-op'd if the daemon isn't running. Without enable=true, the
+      # rule loads onto disk but nothing enforces it, so the granter's
+      # `systemctl start malli-nix-mirror.service` returns "Access
+      # denied" and bootstrap stalls in the granter step.
+      security.polkit.enable = true;
       security.polkit.extraConfig = ''
         polkit.addRule(function(action, subject) {
           if (action.id == "org.freedesktop.systemd1.manage-units" &&
