@@ -53,6 +53,10 @@
 
     nix-homebrew = {
       url = "github:zhaofengli-wip/nix-homebrew";
+      # Override brew-src to brew master past PR #22166 (to_sym-for-nil
+      # crash on empty depends_on.macos in API casks). Drop once
+      # nix-homebrew picks up brew >= 5.1.8.
+      inputs.brew-src.url = "github:Homebrew/brew/3f0f2574bc0c89f75271cd7ee21695bfdade50f6";
     };
 
     windscribe = {
