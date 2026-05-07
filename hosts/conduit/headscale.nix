@@ -56,8 +56,6 @@ in
       stage_optional() {
         [ -f "$1" ] && ${pkgs.coreutils}/bin/install -m "$3" "$1" "$2" || true
       }
-      stage_optional /run/secrets/twilio_master_account_sid /var/lib/deus-granter/twilio-master-sid  0444
-      stage_optional /run/secrets/twilio_master_auth_token  /var/lib/deus-granter/twilio-master-auth 0444
       stage_optional /run/secrets/cloudflare_api_token      /var/lib/deus-granter/cloudflare-token   0444
       stage_optional /run/secrets/cloudflare_account_id     /var/lib/deus-granter/cf-account-id      0444
       stage_optional /run/secrets/cloudflare_zone_id        /var/lib/deus-granter/cf-zone-id         0444
@@ -171,22 +169,17 @@ in
         agentTokenFile = "/var/lib/deus-tokens/agent-token";
 
         # ── Granter ──
-        # Twilio + Cloudflare per-device provisioning. The four
-        # credential files are populated by the activation script in
-        # this same module from sops secrets defined in secrets.nix.
-        # Account/zone IDs are config, not secrets.
+        # Cloudflare per-device provisioning (Twilio was removed in
+        # deus 0.16.0). The credential files are populated by the
+        # activation script in this same module from sops secrets
+        # defined in secrets.nix. Account/zone IDs are config, not
+        # secrets.
         granter = {
           enable = true;
           domain = "themalli.ai";
-          twilioMasterSIDFile = "/etc/deus-granter/twilio-master-sid";
-          twilioMasterAuthFile = "/etc/deus-granter/twilio-master-auth";
           cfAPITokenFile = "/etc/deus-granter/cloudflare-token";
           cfAccountIDFile = "/etc/deus-granter/cf-account-id";
           cfZoneIDFile = "/etc/deus-granter/cf-zone-id";
-          # The "Low Volume Mixed A2P Messaging Service" — campaign
-          # CXRRKNR, VERIFIED, attached to brand BN6c5abe... Same MS
-          # the existing janet/nre-dev/tarzwave numbers live in.
-          messagingServiceSID = "MGc04e7b1e0ddab2e3bee5ffc7bc101d2b";
           # GIT_SSH_COMMAND fully specifies the identity, so no
           # `Host github-malli-nix-write` SSH alias is needed — git just
           # invokes `ssh git@github.com` and the wrapper picks the key.

@@ -25,11 +25,9 @@
 
   # ── Granter master credentials ───────────────────────────
   # These let the deus-server inside the headscale container mint
-  # per-device Twilio subaccounts and Cloudflare tunnels. The keys
-  # never leave conduit; only the per-device derivatives are pushed
-  # back to malli-nix.
-  sops.secrets.twilio_master_account_sid.mode = "0444";
-  sops.secrets.twilio_master_auth_token.mode = "0444";
+  # per-device Cloudflare tunnels. The keys never leave conduit; only
+  # the per-device derivatives are pushed back to malli-nix.
+  # (Twilio master creds removed in deus 0.16.0.)
   sops.secrets.cloudflare_api_token.mode = "0444";
   # CF account + zone IDs aren't catastrophic to expose but the nix repo
   # is public, so keep them encrypted at rest alongside the API token.
