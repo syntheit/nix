@@ -309,6 +309,15 @@ in
           Type = "oneshot";
           User = "fleet";
           Group = "users";
+          # Self-heal ownership: any time someone runs git ops in the
+          # mirror as root (sudo git fsck, debugging, etc.), git creates
+          # objects with root ownership, after which fleet-run fetches
+          # silently fail with "insufficient permission for adding an
+          # object." We hit this once and it stalled the fleet for hours
+          # because the failure mode is invisible until bootstrap
+          # Verify polls time out. ExecStartPre runs as root and
+          # restores consistent ownership before the fetch.
+          ExecStartPre = "+${pkgs.coreutils}/bin/chown -R fleet:users /var/lib/git-mirror/malli-nix.git";
           ExecStart = pkgs.writeShellScript "malli-nix-mirror" ''
             set -e
             cd /var/lib/git-mirror
@@ -352,6 +361,133 @@ in
         wantedBy = [ "timers.target" ];
         timerConfig = {
           OnBootSec = "45s";
+          OnUnitActiveSec = "5m";
+        };
+      };
+
+      # ── Auto-recovery for Macs in launchd EX_CONFIG penalty box ───
+      # macOS launchd flags the deus-agent daemon as "misbehaving" and
+      # parks it in `state = spawn scheduled, last exit code = 78:
+      # EX_CONFIG` after a few rapid bootout/bootstrap cycles — which
+      # is what darwin-rebuild does whenever the deus binary version
+      # bumps (because the launchd plist's runner script path changes).
+      # The only recovery is a manual `launchctl bootout + bootstrap`,
+      # which doesn't scale to 575 Macs. The watchdog daemon shipped
+      # with the agent itself (in 0.16.10) tries to self-heal but can
+      # itself hit the same trap if it spawns during a deploy storm.
+      #
+      # This timer polls every 5 min for "deus says offline + headscale
+      # says online" Macs, SSHes in as fleet→tars, and runs the
+      # bootout/bootstrap dance. fleet user already has SSH access to
+      # tars@<mac> (id_ed25519 in /home/fleet/.ssh/) from earlier work.
+      systemd.services.deus-fleet-recover = {
+        description = "Recover Macs in launchd EX_CONFIG penalty box";
+        after = [ "deus-server.service" "headscale.service" ];
+        path = with pkgs; [ jq curl openssh gawk coreutils ];
+        serviceConfig = {
+          Type = "oneshot";
+          User = "fleet";
+          Group = "users";
+          StandardOutput = "append:/var/log/deus-fleet-recover.log";
+          StandardError = "append:/var/log/deus-fleet-recover.log";
+          ExecStart = pkgs.writeShellScript "deus-fleet-recover" ''
+            set -uo pipefail
+
+            log() { echo "[$(date -u +%FT%TZ)] $*"; }
+
+            TOKEN_FILE=/var/lib/deus-tokens/operator-token
+            DEUS_URL=http://127.0.0.1:8086
+
+            if [ ! -r "$TOKEN_FILE" ]; then
+              log "operator token not readable; exiting"
+              exit 0
+            fi
+            TOKEN=$(cat "$TOKEN_FILE")
+
+            # Hosts that headscale considers online RIGHT NOW (so we
+            # don't waste a 5s SSH timeout on Macs that are physically
+            # off / asleep). We match Mac names only (m-XXXX, no -vm).
+            mapfile -t online_macs < <(
+              ${pkgs.headscale}/bin/headscale nodes list -o json 2>/dev/null \
+                | jq -r '.[] | select(.online == true) | select(.given_name | test("^m-[a-z0-9]+$")) | .given_name'
+            )
+
+            # Hosts deus considers offline darwin-side.
+            mapfile -t offline_macs < <(
+              curl -sf -m 10 -H "Authorization: Bearer $TOKEN" "$DEUS_URL/hosts" 2>/dev/null \
+                | jq -r '.[] | select(.kind == "darwin") | select(.health == "offline") | .name'
+            )
+
+            # Intersect: online in headscale AND offline in deus.
+            declare -a candidates=()
+            for h in "''${offline_macs[@]:-}"; do
+              for o in "''${online_macs[@]:-}"; do
+                if [ "$h" = "$o" ]; then
+                  candidates+=("$h")
+                  break
+                fi
+              done
+            done
+
+            if [ "''${#candidates[@]}" -eq 0 ]; then
+              # Quiet path: nothing to do. Log only so journalctl shows
+              # the timer is firing.
+              log "no candidates"
+              exit 0
+            fi
+
+            log "candidates (''${#candidates[@]}): ''${candidates[*]}"
+
+            # Per-host: only act if the agent is in EX_CONFIG. Don't
+            # blindly bootout/bootstrap a healthy agent — if deus's view
+            # is stale for some other reason (slow heartbeat, network
+            # blip), kicking the agent makes things worse. And we do
+            # the dance even on the watchdog because empirically it
+            # also gets boxed.
+            recover_one() {
+              local mac="$1"
+              local pre post
+              pre=$(ssh -o ConnectTimeout=5 -o BatchMode=yes \
+                    -o StrictHostKeyChecking=no \
+                    "tars@$mac" \
+                    'sudo /bin/launchctl print system/io.matv.deus-agent 2>/dev/null | awk -F"= *" "/state =/{print \$2; exit}"' \
+                    2>&1) || true
+              if [ "$pre" != "spawn scheduled" ]; then
+                echo "$mac: state=$pre — skip"
+                return
+              fi
+              ssh -o ConnectTimeout=5 -o BatchMode=yes \
+                  -o StrictHostKeyChecking=no \
+                  "tars@$mac" '
+                sudo /bin/launchctl bootout system/io.matv.deus-agent 2>/dev/null || true
+                sudo /bin/launchctl bootout system/io.matv.deus-agent-watchdog 2>/dev/null || true
+                sleep 1
+                sudo /bin/launchctl bootstrap system /Library/LaunchDaemons/io.matv.deus-agent.plist >/dev/null 2>&1 || true
+                sudo /bin/launchctl bootstrap system /Library/LaunchDaemons/io.matv.deus-agent-watchdog.plist >/dev/null 2>&1 || true
+              ' >/dev/null 2>&1 || true
+              sleep 2
+              post=$(ssh -o ConnectTimeout=5 -o BatchMode=yes \
+                     -o StrictHostKeyChecking=no \
+                     "tars@$mac" \
+                     'sudo /bin/launchctl print system/io.matv.deus-agent 2>/dev/null | awk -F"= *" "/state =/{print \$2; exit}"' \
+                     2>&1) || true
+              echo "$mac: pre=$pre → post=$post"
+            }
+
+            export -f recover_one
+            printf '%s\n' "''${candidates[@]}" \
+              | xargs -P 8 -I {} bash -c 'recover_one "$@"' _ {} \
+              | while IFS= read -r line; do log "$line"; done
+
+            log "done"
+          '';
+        };
+      };
+
+      systemd.timers.deus-fleet-recover = {
+        wantedBy = [ "timers.target" ];
+        timerConfig = {
+          OnBootSec = "2m";
           OnUnitActiveSec = "5m";
         };
       };
