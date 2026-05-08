@@ -444,14 +444,18 @@ in
             # blip), kicking the agent makes things worse. And we do
             # the dance even on the watchdog because empirically it
             # also gets boxed.
+            agent_state() {
+              ssh -o ConnectTimeout=5 -o BatchMode=yes \
+                  -o StrictHostKeyChecking=no \
+                  "tars@$1" \
+                  'sudo /bin/launchctl print system/io.matv.deus-agent 2>/dev/null | awk -F"= *" "/state =/{print \$2; exit}"' \
+                  2>&1 || true
+            }
+
             recover_one() {
               local mac="$1"
               local pre post
-              pre=$(ssh -o ConnectTimeout=5 -o BatchMode=yes \
-                    -o StrictHostKeyChecking=no \
-                    "tars@$mac" \
-                    'sudo /bin/launchctl print system/io.matv.deus-agent 2>/dev/null | awk -F"= *" "/state =/{print \$2; exit}"' \
-                    2>&1) || true
+              pre=$(agent_state "$mac")
               if [ "$pre" != "spawn scheduled" ]; then
                 echo "$mac: state=$pre — skip"
                 return
@@ -466,15 +470,11 @@ in
                 sudo /bin/launchctl bootstrap system /Library/LaunchDaemons/io.matv.deus-agent-watchdog.plist >/dev/null 2>&1 || true
               ' >/dev/null 2>&1 || true
               sleep 2
-              post=$(ssh -o ConnectTimeout=5 -o BatchMode=yes \
-                     -o StrictHostKeyChecking=no \
-                     "tars@$mac" \
-                     'sudo /bin/launchctl print system/io.matv.deus-agent 2>/dev/null | awk -F"= *" "/state =/{print \$2; exit}"' \
-                     2>&1) || true
+              post=$(agent_state "$mac")
               echo "$mac: pre=$pre → post=$post"
             }
 
-            export -f recover_one
+            export -f agent_state recover_one
             printf '%s\n' "''${candidates[@]}" \
               | xargs -P 8 -I {} bash -c 'recover_one "$@"' _ {} \
               | while IFS= read -r line; do log "$line"; done
