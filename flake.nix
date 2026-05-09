@@ -100,13 +100,12 @@
     };
 
     deus = {
-      # git+https (NOT `github:`). nix's `github:` URL uses GitHub's
-      # REST API which only honors `access-tokens` from nix.conf;
-      # `git+https://github.com/...` instead invokes plain git which
-      # honors /etc/nix/netrc — same file sops-nix renders for us.
-      # Sudo doesn't strip /etc paths, so this works under
-      # `sudo darwin-rebuild` without any SSH-agent gymnastics.
-      url = "git+https://github.com/syntheit/malli-deus.git";
+      # git+ssh via the github-malli-deus alias defined in
+      # home/modules/ssh.nix → github.com + ~/.ssh/mainkey, which has
+      # a deploy key on the malli-deus repo. SSH keys don't expire,
+      # unlike PATs — the previous git+https + /etc/nix/netrc path
+      # silently broke whenever the GitHub PAT rotated out.
+      url = "git+ssh://git@github-malli-deus/syntheit/malli-deus.git";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };

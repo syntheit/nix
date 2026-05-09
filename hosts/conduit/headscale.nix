@@ -493,7 +493,11 @@ in
       systemd.services.deus-fleet-recover = {
         description = "Recover Macs in launchd EX_CONFIG penalty box";
         after = [ "deus-server.service" "headscale.service" ];
-        path = with pkgs; [ jq curl openssh gawk coreutils ];
+        # bash is needed because the parallel-recover loop spawns a
+        # `xargs -I {} bash -c ...` subshell per host. Without bash on
+        # PATH, xargs fails with "bash: No such file or directory" and
+        # the recovery is silently a no-op even when candidates exist.
+        path = with pkgs; [ bash jq curl openssh gawk coreutils ];
         serviceConfig = {
           Type = "oneshot";
           User = "fleet";

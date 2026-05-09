@@ -20,6 +20,7 @@ let
   serverAddr = "10.99.0.1/24";
   listenPort = 51821;       # 51820 is taken by wg0 (harbor link)
   allowChain = "MALLI_USERVPN";
+  allowSet = "MALLI_USERVPN_ALLOW";
 in
 {
   imports = [ inputs.deus.nixosModules.uservpn-server ];
@@ -34,7 +35,7 @@ in
     enable = true;
     publicEndpoint = "conduit.matv.io:${toString listenPort}";
     wgInterface = iface;
-    iptablesChain = allowChain;
+    ipsetName = allowSet;
     # Reuse deus-server's operator token — same humans manage both
     # surfaces. The activation script in headscale.nix stages
     # /run/secrets/deus_operator_token into this file.
@@ -76,31 +77,41 @@ in
   # case, declaring here is redundant-but-explicit.)
   boot.kernel.sysctl."net.ipv4.ip_forward" = lib.mkDefault 1;
 
-  # ── iptables: per-peer chain + default-deny + NAT ─────────
-  # NixOS firewall is iptables-based on this host (don't switch to
-  # nftables — the existing wg0 setup uses iptables masquerade). We
-  # add our chain via the firewall's extraCommands, and the deus
-  # uservpn package adds individual peer rules at runtime.
+  environment.systemPackages = [ pkgs.ipset ];
+
+  # ── ipset + iptables: O(1) per-tuple ACL + NAT ────────────
+  # Per-peer ACL is a hash:ip,port,ip ipset of (src_ip, dst_port,
+  # dst_ip) triples. (ipset's only valid 3-tuple ip-port-ip type
+  # orders fields as ip,port,ip — not ip,ip,port.) Hashtable matches
+  # in O(1) regardless of member count, so the chain stays at two
+  # static rules even at fleet scale (planned: 600 users × ~3 dsts
+  # × ~3 ports = ~5400 tuples).
   #
   # Chain layout:
   #   FORWARD:
-  #     -s 10.99.0.0/24 -j MALLI_USERVPN     (jump to our chain)
-  #     -d 10.99.0.0/24 -j MALLI_USERVPN_RET (return-traffic chain — accept established)
+  #     -s 10.99.0.0/24 -j MALLI_USERVPN     (egress from WG peers)
+  #     -d 10.99.0.0/24 -j MALLI_USERVPN_RET (return traffic)
   #
   #   MALLI_USERVPN:
-  #     [runtime-managed per-peer ACCEPTs at top of chain]
-  #     -j DROP                              (default-deny tail)
+  #     -m set --match-set MALLI_USERVPN_ALLOW src,dst,dst -j ACCEPT
+  #     -j DROP                                   (default-deny)
   #
   #   MALLI_USERVPN_RET:
   #     -m state --state ESTABLISHED,RELATED -j ACCEPT
   #     -j DROP
   networking.firewall.extraCommands = lib.mkAfter ''
-    # Idempotent: -N creates if missing; -F flushes; we always set up
-    # the chains fresh at firewall (re)load. Runtime per-peer rules
-    # are re-added by the deus uservpn package's reconcile loop on
-    # startup, so flushing here is safe.
+    # ipset: declare once, runtime adds/removes happen via the deus
+    # uservpn package. -exist makes recreate idempotent across reloads.
+    ${pkgs.ipset}/bin/ipset create ${allowSet} hash:ip,port,ip \
+      family inet hashsize 1024 maxelem 65536 -exist
+
+    # Forward chain: idempotent recreate (-N if missing, -F flush).
+    # Runtime ACL state lives in the ipset, NOT the chain — the chain
+    # itself stays at two rules forever. Reload-safe: ipset survives
+    # firewall reload (we only flush iptables, not ipset).
     iptables -N ${allowChain} 2>/dev/null || true
     iptables -F ${allowChain}
+    iptables -A ${allowChain} -m set --match-set ${allowSet} src,dst,dst -j ACCEPT
     iptables -A ${allowChain} -j DROP
 
     iptables -N ${allowChain}_RET 2>/dev/null || true
@@ -108,8 +119,7 @@ in
     iptables -A ${allowChain}_RET -m state --state ESTABLISHED,RELATED -j ACCEPT
     iptables -A ${allowChain}_RET -j DROP
 
-    # Wire the chains into FORWARD. -C tests existence first so we
-    # don't append duplicates on reload.
+    # Wire chains into FORWARD. -C avoids duplicate appends on reload.
     iptables -C FORWARD -s ${subnet} -j ${allowChain} 2>/dev/null \
       || iptables -A FORWARD -s ${subnet} -j ${allowChain}
     iptables -C FORWARD -d ${subnet} -j ${allowChain}_RET 2>/dev/null \
@@ -128,6 +138,10 @@ in
     iptables -X ${allowChain}_RET 2>/dev/null || true
     iptables -F ${allowChain} 2>/dev/null || true
     iptables -X ${allowChain} 2>/dev/null || true
+    # NB: ipset is NOT destroyed on firewall stop — the daemon's
+    # PartOf=firewall.service triggers a Reconcile that re-adds tuples
+    # if the set goes missing, but keeping the set intact across
+    # firewall reloads avoids a window where active connections drop.
   '';
 
   # ── Runtime control surface ───────────────────────────────
