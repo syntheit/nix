@@ -140,16 +140,27 @@ in
       #
       # Adding a guest:
       #   1. Append a host-IP entry below + an `acls` rule for the new user
-      #   2. nixos-rebuild this conduit config (reloads the inner container)
-      #   3. `sudo headscale users create guest-<host>`
-      #   4. `sudo headscale preauthkeys create --user guest-<host>`
-      #   5. Send the user the preauth key + headscale.matv.io
+      #      (mind the `@` suffix on usernames — see syntax note below)
+      #   2. Validate before deploy:
+      #        sudo headscale policy check --file <(nix eval --raw \
+      #          '/home/matv/nix#nixosConfigurations.conduit.config.containers.headscale.config.services.headscale.settings.policy.path')
+      #   3. nixos-rebuild this conduit config (reloads the inner container)
+      #   4. `sudo headscale users create <name>`
+      #   5. `sudo headscale preauthkeys create --user <name>`
+      #   6. Send the user the preauth key + headscale.matv.io
       headscalePolicy = pkgs.writeText "headscale-policy.hujson" ''
         {
           // Host aliases — friendly names for tailnet IPs in the rules
           // below. Sequential allocation makes the IPs stable enough
           // that hardcoding is fine for now; revisit when the fleet
           // grows past a few guests.
+          //
+          // NOTE on syntax: headscale 0.26+ requires the `@` suffix on
+          // user references in src/dst (e.g. `malli@`). Bare strings
+          // are interpreted as host aliases and must be defined in
+          // this `hosts` block. Tags use the `tag:` prefix; groups use
+          // `group:`. Getting this wrong puts headscale in a crash
+          // loop.
           "hosts": {
             "m-pg4i": "100.64.0.30/32",
           },
@@ -161,17 +172,17 @@ in
             // to every other fleet machine.
             {
               "action": "accept",
-              "src":    ["malli"],
+              "src":    ["malli@"],
               "dst":    ["*:*"],
             },
 
-            // Guest assigned to m-pg4i — can reach only that host on the
-            // host-side socat forwards: 2222 (VM SSH) and 5900 (VM VNC).
-            // Cannot reach any other fleet node, conduit, or the host's
-            // own services on other ports.
+            // owen — the first guest, assigned to m-pg4i. Can reach only
+            // that host on the operator-forward ports (2222 VM SSH, 5900
+            // VM Screen Sharing). Cannot reach any other fleet node,
+            // conduit, or any service on m-pg4i other than those two.
             {
               "action": "accept",
-              "src":    ["guest-pg4i"],
+              "src":    ["owen@"],
               "dst":    ["m-pg4i:2222,5900"],
             },
           ],
@@ -667,6 +678,17 @@ in
   # ── Caddy reverse proxy (on host) ─────────────────────────
   # Proxies to headscale inside the container. Since the container
   # uses host networking, headscale is still at localhost:8085.
+  #
+  # Two vhosts share the same backend:
+  #   headscale.matv.io  — the original fleet-facing endpoint, also
+  #                        serves the headscale-ui at /web/.
+  #   mini.themalli.ai   — branded endpoint for end-user (Owner's Club)
+  #                        Tailscale clients. Same backend; we keep
+  #                        services.headscale.settings.server_url at
+  #                        the matv.io name so existing fleet nodes
+  #                        don't need to re-roll. End users connect via
+  #                        --login-server=https://mini.themalli.ai and
+  #                        headscale doesn't validate the host header.
   services.caddy.virtualHosts."headscale.matv.io" = {
     extraConfig = ''
       handle /web/* {
@@ -687,6 +709,11 @@ in
       handle {
         reverse_proxy localhost:8085
       }
+    '';
+  };
+  services.caddy.virtualHosts."mini.themalli.ai" = {
+    extraConfig = ''
+      reverse_proxy localhost:8085
     '';
   };
 
