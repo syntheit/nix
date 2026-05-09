@@ -9,6 +9,7 @@
     ./hardware.nix
     ./headscale.nix
     ./secrets.nix
+    ./user-vpn.nix
     ../../modules/server-safety.nix
     ../../modules/foyer.nix
   ];

@@ -227,7 +227,9 @@ in
       # so without group membership the call returns "permission
       # denied" silently and the recovery sweep finds zero candidates
       # regardless of how many penalty-boxed Macs exist.
-      users.users.fleet.extraGroups = [ "headscale" ];
+      # fleet user's extraGroups consolidated below at the main
+      # users.users.fleet block (was a duplicate definition that
+      # nix's module system rejected).
 
       # Allow deus user to start the malli-nix mirror oneshot service.
       # The granter triggers this after each git push so subsequent
@@ -598,7 +600,10 @@ in
       # ── Fleet user ────────────────────────────────────────
       users.users.fleet = {
         isNormalUser = true;
-        extraGroups = [ "wheel" ];
+        # `headscale` group lets fleet user read /var/run/headscale's
+        # 0750-perm dir for the recovery script's `headscale nodes
+        # list` shellouts (see deus-fleet-recover service above).
+        extraGroups = [ "wheel" "headscale" ];
         shell = pkgs.zsh;
         openssh.authorizedKeys.keys = [
           "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdRcH2UWe31VdU62j3Ksbb6LDyS1APNW1BQMM8mvsej daniel@matv.io"
@@ -722,6 +727,36 @@ in
   services.caddy.virtualHosts."mini.themalli.ai" = {
     extraConfig = ''
       reverse_proxy localhost:8085
+    '';
+  };
+
+  # ── User-VPN granter API + welcome page + Malli.dmg hosting ─
+  # Public surface for malli-uservpn-server. Three things live here:
+  #   /v1/user-vpn/redeem  — Malli.app POSTs here with the user's
+  #                          token and gets back a WG config payload.
+  #                          Operator routes (grant/revoke/list) are
+  #                          NOT exposed; operators hit the server
+  #                          on conduit's tailnet IP at :8087.
+  #   /connect/            — welcome HTML page. Reads `name` and
+  #                          `token` from URL params, shows two
+  #                          buttons (download + open).
+  #   /Malli.dmg           — signed/notarized Malli.app, drag-install.
+  #                          Daniel uploads via scp after each rebuild.
+  services.caddy.virtualHosts."api.themalli.ai" = {
+    extraConfig = ''
+      handle /v1/user-vpn/redeem {
+        reverse_proxy localhost:8087
+      }
+      handle /connect* {
+        reverse_proxy localhost:8087
+      }
+      handle /Malli.dmg {
+        root * /var/lib/malli-uservpn
+        file_server
+      }
+      handle {
+        respond "not found" 404
+      }
     '';
   };
 
