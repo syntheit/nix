@@ -24,7 +24,12 @@ let
 in
 {
   systemd.tmpfiles.rules = [
-    "d /var/lib/deus 0750 root root -"
+    # 0755 because the container's deus user (the only resident that
+    # writes here) needs to traverse + read its own state files —
+    # roles.json, deus.db, work tree. Previously 0750 root:root, which
+    # silently 500'd every TUI request with "permission denied: open
+    # /var/lib/deus/roles.json" the first time it was queried.
+    "d /var/lib/deus 0755 root root -"
     # 0755 so the container's deus user can traverse to the world-readable token files inside.
     "d /var/lib/deus-tokens 0755 root root -"
     # 0750 — keys are root-only on the host; the container re-permissions for fleet/deus user.
@@ -724,25 +729,21 @@ in
       }
     '';
   };
-  services.caddy.virtualHosts."mini.themalli.ai" = {
-    extraConfig = ''
-      reverse_proxy localhost:8085
-    '';
-  };
-
-  # ── User-VPN granter API + welcome page + Malli.dmg hosting ─
-  # Public surface for malli-uservpn-server. Three things live here:
-  #   /v1/user-vpn/redeem  — Malli.app POSTs here with the user's
-  #                          token and gets back a WG config payload.
+  # mini.themalli.ai serves both headscale (the catch-all) and the
+  # user-VPN granter (specific paths). Path-routed; no overlap because
+  # Tailscale's clients only ever hit /ts2021, /derp/, /machine/ etc.
+  # while the user-VPN paths are explicit.
+  #
+  #   /v1/user-vpn/redeem  — Malli.app POSTs token, gets WG config.
   #                          Operator routes (grant/revoke/list) are
   #                          NOT exposed; operators hit the server
   #                          on conduit's tailnet IP at :8087.
-  #   /connect/            — welcome HTML page. Reads `name` and
-  #                          `token` from URL params, shows two
-  #                          buttons (download + open).
+  #   /connect, /connect/  — welcome HTML page. Reads `name` + `token`
+  #                          from URL params, shows download + open buttons.
   #   /Malli.dmg           — signed/notarized Malli.app, drag-install.
   #                          Daniel uploads via scp after each rebuild.
-  services.caddy.virtualHosts."api.themalli.ai" = {
+  #   everything else      — headscale (default).
+  services.caddy.virtualHosts."mini.themalli.ai" = {
     extraConfig = ''
       handle /v1/user-vpn/redeem {
         reverse_proxy localhost:8087
@@ -755,7 +756,7 @@ in
         file_server
       }
       handle {
-        respond "not found" 404
+        reverse_proxy localhost:8085
       }
     '';
   };
