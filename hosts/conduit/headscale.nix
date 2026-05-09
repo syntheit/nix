@@ -12,7 +12,7 @@
 #   ssh tars@m-1w6l                         # SSH to Mac Mini (via tailnet)
 #   ssh lima@m-1w6l-vm                      # SSH to VM (via tailnet)
 
-{ pkgs, inputs, vars, ... }:
+{ pkgs, lib, config, inputs, vars, ... }:
 
 let
   headscale-ui-src = pkgs.fetchzip {
@@ -66,6 +66,34 @@ in
   # ── Headscale container ────────────────────────────────────
   containers.headscale = {
     autoStart = true;
+
+    # Don't bounce the container on every host nixos-rebuild. Without
+    # this, any change inside the container's system closure (a deus
+    # binary version bump, a new systemd unit, a sops template tweak)
+    # forces the host to do `systemctl stop && start
+    # container@headscale.service`. That stop→start has an unfixed
+    # upstream race (nixpkgs#80169) where the new nspawn instance
+    # spawns before the previous one's machined record / mounts are
+    # released — first deploy fails with exit code 4, second deploy
+    # succeeds because nothing changed and the unit came up via
+    # Restart=on-failure. Even when the bounce succeeds, deus-server
+    # dies mid-flight and 38+ agents have to reconnect, which spikes
+    # heartbeat-timeout cascades into the launchd EX_CONFIG penalty
+    # box on the Mac side.
+    #
+    # Inner changes still apply on every deploy via the activation
+    # script below: it compares the freshly-built closure path to
+    # what's currently running inside the container and, on mismatch,
+    # runs `systemctl reload container@headscale.service`. The unit's
+    # ExecReload does `nixos-container run -- switch-to-configuration
+    # test` inside the running container — restarts only inner
+    # services whose definitions changed, leaves the nspawn process
+    # untouched.
+    #
+    # Full bounces become operator-initiated (`sudo systemctl restart
+    # container@headscale`) for the rare cases where a kernel or
+    # nspawn-level setting actually changes.
+    restartIfChanged = false;
 
     # Use host networking so headscale binds to localhost:8085
     # (Caddy on the host proxies to it) and tailscale can reach
@@ -545,6 +573,28 @@ in
       nix.settings.experimental-features = [ "nix-command" "flakes" ];
     };
   };
+
+  # ── In-place reload for headscale container ─────────────────
+  # Companion to `containers.headscale.restartIfChanged = false`
+  # above. On every host activation, compare the freshly-built
+  # container closure to whatever the container is currently running;
+  # on mismatch, ask container@headscale.service to reload — which
+  # does `nixos-container run -- switch-to-configuration test` inside
+  # the container. New systemd units, new binary versions, sops
+  # template tweaks etc. apply via a per-unit restart only, no nspawn
+  # bounce. The `|| true` keeps activation green even on first ever
+  # boot when the container hasn't started yet (autoStart picks it
+  # up moments later).
+  system.activationScripts.reload-headscale-container = lib.stringAfter [ "etc" ] ''
+    if ${pkgs.systemd}/bin/systemctl is-active container@headscale.service >/dev/null 2>&1; then
+      desired=${config.containers.headscale.path}
+      current=$(${pkgs.coreutils}/bin/readlink -f /var/lib/nixos-containers/headscale/run/current-system 2>/dev/null || true)
+      if [ "$desired" != "$current" ]; then
+        echo "container@headscale: inner closure changed, reloading"
+        ${pkgs.systemd}/bin/systemctl reload container@headscale.service || true
+      fi
+    fi
+  '';
 
   # ── Tailscale (on host) ─────────────────────────────────────
   # Runs on the host so the tailscale0 interface is available for
