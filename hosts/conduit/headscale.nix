@@ -221,6 +221,14 @@ in
       # than relax dir permissions.
       users.users.deus.extraGroups = [ "headscale" ];
 
+      # The deus-fleet-recover.service runs as fleet and shells out to
+      # `headscale nodes list -o json` to find candidates. Headscale's
+      # /run dir is 0750 even though the socket file itself is 0666,
+      # so without group membership the call returns "permission
+      # denied" silently and the recovery sweep finds zero candidates
+      # regardless of how many penalty-boxed Macs exist.
+      users.users.fleet.extraGroups = [ "headscale" ];
+
       # Allow deus user to start the malli-nix mirror oneshot service.
       # The granter triggers this after each git push so subsequent
       # `nixos-rebuild --refresh` calls on fleet VMs see the new
