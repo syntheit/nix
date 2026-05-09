@@ -129,7 +129,55 @@ in
       # which is in the bind-mounted /var/lib/deus tree.
     };
 
-    config = { pkgs, ... }: {
+    config = { pkgs, ... }: let
+      # ── Headscale ACL policy ──────────────────────────────
+      # Default-allow becomes default-deny the moment any ACL is set,
+      # so the first rule below MUST preserve fleet behaviour: the
+      # `malli` user (which owns every fleet node) gets full mesh.
+      # Each subsequent rule is a per-guest carve-out: a separate user
+      # whose devices can reach exactly one host on exactly the ports
+      # we forward (operator SSH on 2222, Screen Sharing/VNC on 5900).
+      #
+      # Adding a guest:
+      #   1. Append a host-IP entry below + an `acls` rule for the new user
+      #   2. nixos-rebuild this conduit config (reloads the inner container)
+      #   3. `sudo headscale users create guest-<host>`
+      #   4. `sudo headscale preauthkeys create --user guest-<host>`
+      #   5. Send the user the preauth key + headscale.matv.io
+      headscalePolicy = pkgs.writeText "headscale-policy.hujson" ''
+        {
+          // Host aliases — friendly names for tailnet IPs in the rules
+          // below. Sequential allocation makes the IPs stable enough
+          // that hardcoding is fine for now; revisit when the fleet
+          // grows past a few guests.
+          "hosts": {
+            "m-pg4i": "100.64.0.30/32",
+          },
+
+          "acls": [
+            // Fleet user — every fleet node is registered under `malli`.
+            // Full mesh preserves the pre-policy behaviour. Without this
+            // rule, every fleet machine instantly loses tailnet access
+            // to every other fleet machine.
+            {
+              "action": "accept",
+              "src":    ["malli"],
+              "dst":    ["*:*"],
+            },
+
+            // Guest assigned to m-pg4i — can reach only that host on the
+            // host-side socat forwards: 2222 (VM SSH) and 5900 (VM VNC).
+            // Cannot reach any other fleet node, conduit, or the host's
+            // own services on other ports.
+            {
+              "action": "accept",
+              "src":    ["guest-pg4i"],
+              "dst":    ["m-pg4i:2222,5900"],
+            },
+          ],
+        }
+      '';
+    in {
       imports = [
         inputs.deus.nixosModules.server
         inputs.home-manager.nixosModules.home-manager
@@ -262,6 +310,14 @@ in
           # directly. Single-tenant container, only resident processes
           # are headscale and deus-server, so 0666 is fine.
           unix_socket_permission = "0666";
+          # ACL policy file. headscale watches this path and reloads on
+          # change; the in-place container reload activation script
+          # bounces the headscale unit when the path itself changes
+          # (every nix-store rebuild of the policy).
+          policy = {
+            mode = "file";
+            path = toString headscalePolicy;
+          };
         };
       };
 
