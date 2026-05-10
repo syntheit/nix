@@ -231,8 +231,19 @@
     };
   };
 
-  # Libvirt network hook: applied on 'default' network start.
-  # 1. Allow inbound RDP (DNAT'd) to Win11.
+  # Custom libvirt nftables rules. Wired up from two places because libvirt's
+  # `libvirt_network` table can be rebuilt without us noticing:
+  #   - The libvirt network hook fires on `default` network started
+  #     (e.g. `virsh net-destroy default && virsh net-start default`).
+  #   - The systemd service below fires on libvirtd start/restart (e.g. boot,
+  #     nixos-rebuild) — libvirtd rebuilds the table here WITHOUT firing the
+  #     per-network hook, which is how RDP silently broke after the last rebuild.
+  # The hook is idempotent (rules tagged with comments, skip if already present)
+  # so duplicate runs are safe and rules don't accumulate.
+  #
+  # 1. Allow inbound RDP (DNAT'd) to Win11. Has to be INJECTED into libvirt's
+  #    guest_input chain — libvirt's reject is in the same chain at the same
+  #    hook+priority, and reject is terminal in nftables.
   # 2. Lock down turntable (192.168.122.50) so Ben can only reach the public
   #    internet — not the home LAN, Tailscale peers, WireGuard peers, harbor's
   #    services, or other VMs on the bridge. DNS to libvirt's gateway is allowed.
@@ -244,16 +255,51 @@
       OPERATION="$2"
       NFT="${pkgs.nftables}/bin/nft"
 
-      if [ "$NETWORK" = "default" ] && [ "$OPERATION" = "started" ]; then
-        # 1. Allow inbound RDP to Win11 (overrides libvirt's default reject).
-        $NFT 'insert rule ip libvirt_network guest_input oifname "virbr0" ip daddr 192.168.122.51 tcp dport 3389 accept' || true
+      [ "$NETWORK" = "default" ] && [ "$OPERATION" = "started" ] || exit 0
 
-        # 2. Turntable isolation. Order matters: insert pushes to top, so we
-        # insert drop FIRST then the DNS exceptions on top of it.
-        $NFT 'insert rule ip libvirt_network guest_output ip saddr 192.168.122.50 ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 } drop' || true
-        $NFT 'insert rule ip libvirt_network guest_output ip saddr 192.168.122.50 ip daddr 192.168.122.1 udp dport 53 accept' || true
-        $NFT 'insert rule ip libvirt_network guest_output ip saddr 192.168.122.50 ip daddr 192.168.122.1 tcp dport 53 accept' || true
-      fi
+      # Wait up to 30s for libvirt's table to exist (it's created when the
+      # default network starts; libvirtd may briefly report active before then).
+      for _ in $(seq 1 30); do
+        $NFT list table ip libvirt_network >/dev/null 2>&1 && break
+        sleep 1
+      done
+
+      ensure() {
+        # $1=chain  $2=tag  $3=rule-body (comment is appended automatically)
+        $NFT list chain ip libvirt_network "$1" 2>/dev/null \
+          | grep -qF "comment \"$2\"" && return 0
+        $NFT "insert rule ip libvirt_network $1 $3 comment \"$2\"" || true
+      }
+
+      # 1. Allow inbound RDP to Win11 (overrides libvirt's default reject).
+      ensure guest_input win11-rdp \
+        'oifname "virbr0" ip daddr 192.168.122.51 tcp dport 3389 accept'
+
+      # 2. Turntable isolation. Order matters (insert pushes to top): drop
+      # goes in first, then the DNS exceptions land on top of it.
+      ensure guest_output turntable-block-private \
+        'ip saddr 192.168.122.50 ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 } drop'
+      ensure guest_output turntable-dns-udp \
+        'ip saddr 192.168.122.50 ip daddr 192.168.122.1 udp dport 53 accept'
+      ensure guest_output turntable-dns-tcp \
+        'ip saddr 192.168.122.50 ip daddr 192.168.122.1 tcp dport 53 accept'
     '';
+  };
+
+  # Re-fire the libvirt network hook whenever libvirtd starts/restarts. The
+  # hook itself only runs on per-network start, but libvirtd restarts rebuild
+  # the libvirt_network table from scratch — without this service the
+  # injected rules above silently disappear after every nixos-rebuild.
+  systemd.services.libvirt-custom-rules-replay = {
+    description = "Re-apply libvirt network hook (handles libvirtd start/restart)";
+    after = [ "libvirt-pools-init.service" ];
+    requires = [ "libvirtd.service" ];
+    partOf = [ "libvirtd.service" ];
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = "/etc/libvirt/hooks/network default started begin";
+    };
   };
 }
