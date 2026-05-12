@@ -218,11 +218,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1778620186,
-        "narHash": "sha256-ZMaBvgZ+xRPYTJTf+6dFf4yYAAzB4JzFnzDU/+KoVsI=",
+        "lastModified": 1778621055,
+        "narHash": "sha256-g20YJalb87KiYy8nCi+mnBNjEywEexsewu93bX68tc8=",
         "ref": "refs/heads/main",
-        "rev": "3af68dffb21a0450e915050e84cd7a973a440541",
-        "revCount": 112,
+        "rev": "63974d54fb8a270f6e1661ed83f145292a595ce6",
+        "revCount": 113,
         "type": "git",
         "url": "ssh://git@github-malli-deus/syntheit/malli-deus.git"
       },
