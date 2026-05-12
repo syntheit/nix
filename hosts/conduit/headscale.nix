@@ -542,77 +542,160 @@ in
             fi
             TOKEN=$(cat "$TOKEN_FILE")
 
-            # Hosts that headscale considers online RIGHT NOW (so we
-            # don't waste a 5s SSH timeout on Macs that are physically
-            # off / asleep). We match Mac names only (m-XXXX, no -vm).
+            # Headscale snapshot. We need both lists: the Mac names are
+            # candidate keys; the VM names tell us which "Tailscale
+            # daemon stuck" cases we can rescue via a ProxyJump through
+            # the Mac's Lima VM peer (192.168.5.2 is the Lima bridge).
+            hs_json=$(${pkgs.headscale}/bin/headscale nodes list -o json 2>/dev/null || echo '[]')
             mapfile -t online_macs < <(
-              ${pkgs.headscale}/bin/headscale nodes list -o json 2>/dev/null \
-                | jq -r '.[] | select(.online == true) | select(.given_name | test("^m-[a-z0-9]+$")) | .given_name'
+              echo "$hs_json" | jq -r '.[] | select(.online == true) | select(.given_name | test("^m-[a-z0-9]+$")) | .given_name'
+            )
+            mapfile -t online_vms < <(
+              echo "$hs_json" | jq -r '.[] | select(.online == true) | select(.given_name | test("^m-[a-z0-9]+-vm$")) | .given_name'
             )
 
             # Hosts deus considers offline darwin-side.
             mapfile -t offline_macs < <(
               curl -sf -m 10 -H "Authorization: Bearer $TOKEN" "$DEUS_URL/hosts" 2>/dev/null \
-                | jq -r '.[] | select(.kind == "darwin") | select(.health == "offline") | .name'
+                | jq -r '.[] | select(.kind == "darwin") | select(.health == "offline") | .name' \
+                | sort -u
             )
 
-            # Intersect: online in headscale AND offline in deus.
+            # Candidates: deus-offline Macs whose Mac OR -vm peer is
+            # headscale-online. The VM-online branch is what lets us
+            # reach Macs whose Tailscale daemon got stuck routing
+            # inbound — direct SSH times out, but the peer's Lima
+            # bridge gives us a back door.
+            declare -A in_macs in_vms
+            for o in "''${online_macs[@]:-}"; do in_macs[$o]=1; done
+            for v in "''${online_vms[@]:-}"; do in_vms[$v]=1; done
+
             declare -a candidates=()
             for h in "''${offline_macs[@]:-}"; do
-              for o in "''${online_macs[@]:-}"; do
-                if [ "$h" = "$o" ]; then
-                  candidates+=("$h")
-                  break
-                fi
-              done
+              if [ -n "''${in_macs[$h]:-}" ] || [ -n "''${in_vms[$h-vm]:-}" ]; then
+                candidates+=("$h")
+              fi
             done
 
             if [ "''${#candidates[@]}" -eq 0 ]; then
-              # Quiet path: nothing to do. Log only so journalctl shows
-              # the timer is firing.
               log "no candidates"
               exit 0
             fi
-
             log "candidates (''${#candidates[@]}): ''${candidates[*]}"
 
-            # Per-host: only act if the agent is in EX_CONFIG. Don't
-            # blindly bootout/bootstrap a healthy agent — if deus's view
-            # is stale for some other reason (slow heartbeat, network
-            # blip), kicking the agent makes things worse. And we do
-            # the dance even on the watchdog because empirically it
-            # also gets boxed.
-            agent_state() {
-              ssh -o ConnectTimeout=5 -o BatchMode=yes \
-                  -o StrictHostKeyChecking=no \
-                  "tars@$1" \
-                  'sudo /bin/launchctl print system/io.matv.deus-agent 2>/dev/null | awk -F"= *" "/state =/{print \$2; exit}"' \
-                  2>&1 || true
-            }
+            # Serialize the VM-online set for the recovery subshells —
+            # bash arrays don't survive `xargs -I {} bash -c`, but an
+            # exported space-separated string does.
+            export ONLINE_VMS_LIST="''${online_vms[*]:-}"
 
-            recover_one() {
-              local mac="$1"
-              local pre post
-              pre=$(agent_state "$mac")
-              if [ "$pre" != "spawn scheduled" ]; then
-                echo "$mac: state=$pre — skip"
+            # ssh_state returns the agent's launchd state string, OR
+            # "_SSH_FAIL_" if we couldn't connect at all. Empty
+            # (no "state =" line) means the agent isn't loaded —
+            # which is itself a recoverable condition (we just need to
+            # bootstrap fresh).
+            ssh_state() {
+              local out rc
+              out=$(ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no \
+                    "tars@$1" \
+                    'sudo /bin/launchctl print system/io.matv.deus-agent 2>/dev/null | awk -F"= *" "/state =/{print \$2; exit}"' \
+                    2>/dev/null)
+              rc=$?
+              if [ "$rc" -ne 0 ]; then
+                echo "_SSH_FAIL_"
                 return
               fi
-              ssh -o ConnectTimeout=5 -o BatchMode=yes \
-                  -o StrictHostKeyChecking=no \
-                  "tars@$mac" '
+              # Trim leading space awk leaves in.
+              echo "$out" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+            }
+
+            # direct_bootstrap runs the bootout/bootstrap dance over a
+            # plain SSH connection. Idempotent: bootout no-ops if the
+            # unit isn't loaded, bootstrap no-ops if it already is.
+            direct_bootstrap() {
+              ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no \
+                  "tars@$1" '
                 sudo /bin/launchctl bootout system/io.matv.deus-agent 2>/dev/null || true
                 sudo /bin/launchctl bootout system/io.matv.deus-agent-watchdog 2>/dev/null || true
                 sleep 1
-                sudo /bin/launchctl bootstrap system /Library/LaunchDaemons/io.matv.deus-agent.plist >/dev/null 2>&1 || true
-                sudo /bin/launchctl bootstrap system /Library/LaunchDaemons/io.matv.deus-agent-watchdog.plist >/dev/null 2>&1 || true
-              ' >/dev/null 2>&1 || true
-              sleep 2
-              post=$(agent_state "$mac")
-              echo "$mac: pre=$pre → post=$post"
+                sudo /bin/launchctl bootstrap system /Library/LaunchDaemons/io.matv.deus-agent.plist 2>/dev/null || true
+                sudo /bin/launchctl bootstrap system /Library/LaunchDaemons/io.matv.deus-agent-watchdog.plist 2>/dev/null || true
+              ' >/dev/null 2>&1
             }
 
-            export -f agent_state recover_one
+            # rescue_via_vm tunnels through the Mac's Lima VM peer using
+            # SSH ProxyJump, then bounces the Tailscale network
+            # extension (whose service name carries a version suffix)
+            # before reloading the deus-agent. Fixes the m-pc86 case:
+            # Mac kernel + sshd alive locally, but the Tailscale
+            # daemon's IPN extension stopped routing inbound — only a
+            # kickstart of that extension brings it back.
+            rescue_via_vm() {
+              ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no \
+                  -J "lima@$1-vm" tars@192.168.5.2 '
+                svc=$(sudo /bin/launchctl list 2>/dev/null | grep -F "NetworkExtension.io.tailscale" | awk "{print \$3}" | head -1)
+                if [ -n "$svc" ]; then
+                  sudo /bin/launchctl kickstart -k "system/$svc" 2>/dev/null || true
+                fi
+                sleep 3
+                sudo /bin/launchctl bootout system/io.matv.deus-agent 2>/dev/null || true
+                sudo /bin/launchctl bootout system/io.matv.deus-agent-watchdog 2>/dev/null || true
+                sleep 1
+                sudo /bin/launchctl bootstrap system /Library/LaunchDaemons/io.matv.deus-agent.plist 2>/dev/null || true
+                sudo /bin/launchctl bootstrap system /Library/LaunchDaemons/io.matv.deus-agent-watchdog.plist 2>/dev/null || true
+              ' >/dev/null 2>&1
+            }
+
+            # has_vm_peer: is this Mac's -vm peer online in headscale?
+            has_vm_peer() {
+              local target="$1-vm"
+              for v in $ONLINE_VMS_LIST; do
+                [ "$v" = "$target" ] && return 0
+              done
+              return 1
+            }
+
+            recover_one() {
+              local mac="$1" pre post
+              pre=$(ssh_state "$mac")
+
+              case "$pre" in
+                _SSH_FAIL_)
+                  # Direct SSH timed out. Only the VM-jumphost path
+                  # can rescue this Mac. If no VM peer, nothing to do.
+                  if has_vm_peer "$mac"; then
+                    if rescue_via_vm "$mac"; then
+                      echo "$mac: rescued via $mac-vm jumphost (tailscale + agent bounced)"
+                    else
+                      echo "$mac: jumphost rescue failed — skip"
+                    fi
+                  else
+                    echo "$mac: ssh timeout + no $mac-vm peer online — skip"
+                  fi
+                  ;;
+                "spawn scheduled"|"")
+                  # spawn scheduled = EX_CONFIG penalty box.
+                  # empty     = service not loaded at all (e.g. fresh
+                  #             reboot where launchd never registered
+                  #             the plist). Both fixed by the same
+                  #             bootout/bootstrap dance.
+                  if direct_bootstrap "$mac"; then
+                    sleep 2
+                    post=$(ssh_state "$mac")
+                    echo "$mac: direct pre=''${pre:-(missing)} → post=''${post:-(missing)}"
+                  else
+                    echo "$mac: direct_bootstrap ssh failed — skip"
+                  fi
+                  ;;
+                *)
+                  # running/waiting/etc — agent is fine, deus's view
+                  # is stale for another reason. Don't poke a healthy
+                  # process.
+                  echo "$mac: state=$pre — skip (agent appears healthy)"
+                  ;;
+              esac
+            }
+
+            export -f ssh_state direct_bootstrap rescue_via_vm has_vm_peer recover_one
             printf '%s\n' "''${candidates[@]}" \
               | xargs -P 8 -I {} bash -c 'recover_one "$@"' _ {} \
               | while IFS= read -r line; do log "$line"; done
