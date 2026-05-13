@@ -2,9 +2,26 @@
   pkgs,
   lib,
   vars,
+  config,
   ...
 }:
 
+let
+  tccGrants = import ./tcc-grants.nix { inherit pkgs; };
+  daemons = import ./disabled-daemons.nix;
+
+  # Generates a bash for-loop that bootouts + disables every listed launchd
+  # job. `scope` is the launchctl domain prefix (e.g. "system" for daemons,
+  # "gui/$GUI_UID" for user agents — note the embedded $-var is bash's, not
+  # Nix's). The whole target is wrapped in one bash word "${scope}/$entry"
+  # so shellcheck stays quiet about word-splitting on $GUI_UID.
+  mkDisableLoop = scope: items: ''
+    for entry in ${lib.concatStringsSep " " items}; do
+      launchctl bootout "${scope}/$entry" 2>/dev/null || true
+      launchctl disable "${scope}/$entry" 2>/dev/null || true
+    done
+  '';
+in
 {
   nixpkgs.config.allowUnfree = true;
 
@@ -14,92 +31,55 @@
   nix.enable = false;
 
   # ── Private GitHub flake inputs ─────────────────────────────────
-  # nix's git+https fetcher invokes plain git, which reads ~/.netrc
-  # (NOT nix's netrc-file setting). Sudo runs as root so the relevant
-  # file is /var/root/.netrc. Set up once per machine, OUTSIDE nix:
+  # The Determinate nix-daemon fetches git+ssh inputs as root, so it
+  # reads /var/root/.ssh/{config,known_hosts,mainkey} — not your user
+  # ~/.ssh. The activation script below writes config + known_hosts
+  # declaratively. The key itself must be symlinked once per machine
+  # (chicken-and-egg: needed for the first build that writes config):
   #
-  #   echo 'machine github.com login oauth2 password ghp_xxx' \
-  #     | tee ~/.netrc | sudo tee /var/root/.netrc > /dev/null
-  #   chmod 600 ~/.netrc
-  #   sudo chmod 600 /var/root/.netrc
+  #   sudo mkdir -p /var/root/.ssh
+  #   sudo ln -sf /Users/daniel/.ssh/mainkey /var/root/.ssh/mainkey
   #
-  # PAT minted at github.com/settings/personal-access-tokens,
-  # fine-grained, read-only, scoped to syntheit/malli-deus and
-  # syntheit/malli-nix. Permissions: Contents = Read.
+  # mainkey is a deploy key on syntheit/malli-deus and malli-nix.
+  # Switched away from PAT+netrc because PATs expire silently; SSH
+  # deploy keys don't. (See flake.nix:102-110 for the rationale.)
 
-  # ── Nix custom settings ─────────────────────────────────────────
   # Determinate's /etc/nix/nix.conf has `!include nix.custom.conf`.
   # We use this to fast-fail flaky downloads from Determinate's own
   # cache (HTTP/2 framing errors) so nix falls through to
   # cache.nixos.org instead of retrying for minutes.
-  system.activationScripts.preActivation.text = ''
-    install -d -m 0755 /etc/nix
-    cat > /etc/nix/nix.custom.conf <<'NIXCONF'
+  environment.etc."nix/nix.custom.conf".text = ''
     connect-timeout = 5
     download-attempts = 2
     narinfo-cache-negative-ttl = 3600
-    NIXCONF
-    chmod 0644 /etc/nix/nix.custom.conf
   '';
 
-  nix-homebrew = {
-    enable = true;
-    user = vars.user.name;
-    autoMigrate = true;
-  };
+  # Root SSH for daemon flake fetches. /var/root/.ssh isn't an /etc
+  # path so environment.etc doesn't apply — keep the activation
+  # script. mainkey itself must be symlinked once per machine:
+  #   sudo mkdir -p /var/root/.ssh
+  #   sudo ln -sf /Users/daniel/.ssh/mainkey /var/root/.ssh/mainkey
+  system.activationScripts.preActivation.text = ''
+    install -d -m 0700 /var/root/.ssh
+    cat > /var/root/.ssh/config <<'SSHCFG'
+    Host github-malli-deus
+      User git
+      HostName github.com
+      IdentityFile /var/root/.ssh/mainkey
+      IdentitiesOnly yes
+    SSHCFG
+    chmod 0600 /var/root/.ssh/config
 
-  homebrew = {
-    enable = true;
-    onActivation = {
-      autoUpdate = true;
-      cleanup = "zap";
-      upgrade = true;
-    };
-    casks = [
-      "affinity"
-      "antigravity"
-      "arc"
-      "claude"
+    # Pre-populate github.com host key so the daemon never blocks on
+    # an interactive "are you sure" prompt during a flake fetch.
+    if ! grep -q '^github.com ' /var/root/.ssh/known_hosts 2>/dev/null; then
+      ssh-keyscan -t ed25519,rsa github.com 2>/dev/null \
+        >> /var/root/.ssh/known_hosts || true
+      chmod 0644 /var/root/.ssh/known_hosts
+    fi
+  '';
 
-      "cursor"
-      "dbeaver-community"
-      "blackhole-2ch"
-      "font-jetbrains-mono-nerd-font"
-      "iina"
-      "karabiner-elements"
-      "kiro"
-      "ghostty"
-      "lulu"
-      "marta"
-      "macwhisper"
-      "notunes"
-      "obsidian"
-      "orbstack"
-      "raycast"
-      "royal-tsx"
-      "seafile-client"
-      "spotify"
-      "syncthing-app"
-      "tailscale-app"
-      "telegram"
-      "thunderbird"
-      "transmission"
-      "visual-studio-code"
-      "whatsapp"
-      "windows-app"
-      "windscribe"
-      "zen"
-      "zed"
-    ];
-    brews = [
-      "awscli-local"
-      "mas"
-      "ollama" # Kept in Homebrew for better macOS Metal/GPU integration
-      "switchaudio-osx"
-      "wifi-password"
-      "yt-dlp"
-    ];
-  };
+  imports = [ ./homebrew.nix ];
 
   system.defaults = {
     dock = {
@@ -149,12 +129,16 @@
     # Privacy & telemetry defaults
     CustomUserPreferences = {
       # Disable Mission Control vertical 3/4-finger swipe (overview app claims it).
-      # Horizontal swipes stay native for swipe-between-spaces.
+      # Re-enable native horizontal 3/4-finger swipe-between-spaces.
       "com.apple.AppleMultitouchTrackpad" = {
         TrackpadThreeFingerVertSwipeGesture = 0;
+        TrackpadThreeFingerHorizSwipeGesture = 2;
+        TrackpadFourFingerHorizSwipeGesture = 2;
       };
       "com.apple.driver.AppleBluetoothMultitouch.trackpad" = {
         TrackpadThreeFingerVertSwipeGesture = 0;
+        TrackpadThreeFingerHorizSwipeGesture = 2;
+        TrackpadFourFingerHorizSwipeGesture = 2;
       };
       # Disable personalized ads
       "com.apple.AdLib" = {
@@ -371,37 +355,78 @@
     # ================================================================
     # TCC permissions (requires SIP disabled)
     # ================================================================
-    YABAI_BIN=$(readlink -f ${pkgs.yabai}/bin/yabai)
-    SKHD_BIN=$(readlink -f ${pkgs.skhd}/bin/skhd)
-    OVERVIEW_BIN=$(readlink -f ${pkgs.overview}/bin/overview)
-    BT_PANEL_BIN=$(readlink -f ${pkgs.bluetooth-panel}/bin/bluetooth-panel)
-    WIFI_PANEL_BIN=$(readlink -f ${pkgs.wifi-panel}/bin/wifi-panel)
-    EQ_BIN=$(readlink -f ${pkgs.eq}/bin/eq)
-    MENUBAR_BLOCKER_BIN=$(readlink -f ${pkgs.menubar-blocker}/bin/menubar-blocker)
     TCC_DB="/Library/Application Support/com.apple.TCC/TCC.db"
-    for BIN in "$YABAI_BIN" "$SKHD_BIN" "$MENUBAR_BLOCKER_BIN"; do
-      sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) VALUES ('kTCCServiceAccessibility', '$BIN', 1, 2, 4, 1);"
-    done
-    # Screen capture permission for overview (window thumbnails via ScreenCaptureKit)
-    sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) VALUES ('kTCCServiceScreenCapture', '$OVERVIEW_BIN', 1, 2, 4, 1);"
-    # Bluetooth permission for bluetooth-panel (IOBluetooth device management)
-    sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) VALUES ('kTCCServiceBluetoothAlways', '$BT_PANEL_BIN', 1, 2, 4, 1);"
-    # Location permission for wifi-panel (CoreWLAN SSID access)
-    sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) VALUES ('kTCCServiceLocation', '$WIFI_PANEL_BIN', 1, 2, 4, 1);"
-    # Microphone permission for eq daemon (AVAudioEngine reads from BlackHole input)
-    sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) VALUES ('kTCCServiceMicrophone', '$EQ_BIN', 1, 2, 4, 1);"
+    ${lib.concatMapStringsSep "\n" (g: ''
+      # ${g.reason}
+      sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) VALUES ('${g.service}', '$(readlink -f ${g.package}/bin/${g.exec})', 1, 2, 4, 1);"
+    '') tccGrants}
 
     # Force tccd to reload from TCC.db — direct sqlite writes don't invalidate
     # its in-memory cache, so yabai/skhd would otherwise launch without
     # effective accessibility until tccd is restarted.
     killall tccd 2>/dev/null || true
 
-    # Restart nix-managed services after TCC grants
-    launchctl bootout "gui/$GUI_UID/org.nixos.skhd" 2>/dev/null || true
-    launchctl bootout "gui/$GUI_UID/org.nixos.yabai" 2>/dev/null || true
-    sleep 1
-    launchctl bootstrap "gui/$GUI_UID" /Users/${vars.user.name}/Library/LaunchAgents/org.nixos.skhd.plist 2>/dev/null || true
-    launchctl bootstrap "gui/$GUI_UID" /Users/${vars.user.name}/Library/LaunchAgents/org.nixos.yabai.plist 2>/dev/null || true
+    # Bounce yabai/skhd only when their launchd plist actually changed.
+    # Yabai keeps no on-disk bsp state, so each restart rebuilds the tree
+    # from macOS's AX window enumeration — which doesn't preserve prior
+    # geometry and reliably swaps two-window splits. Hashing the plist
+    # catches both nixpkgs binary-path bumps and yabai/skhd config edits;
+    # in the common no-op rebuild case, the running daemon is left alone.
+    mkdir -p /var/db/nix-darwin
+    RESTART_SVCS=()
+    for svc in yabai skhd; do
+      PLIST="/Users/${vars.user.name}/Library/LaunchAgents/org.nixos.$svc.plist"
+      HASH_FILE="/var/db/nix-darwin/$svc.plist.sha"
+      NEW_HASH=$(shasum "$PLIST" 2>/dev/null | awk '{print $1}')
+      OLD_HASH=$(cat "$HASH_FILE" 2>/dev/null || true)
+      if [ "$NEW_HASH" != "$OLD_HASH" ]; then
+        RESTART_SVCS+=("$svc")
+        echo "$NEW_HASH" > "$HASH_FILE"
+      fi
+    done
+
+    if [ ''${#RESTART_SVCS[@]} -gt 0 ]; then
+      for svc in "''${RESTART_SVCS[@]}"; do
+        launchctl bootout "gui/$GUI_UID/org.nixos.$svc" 2>/dev/null || true
+      done
+      sleep 1
+      for svc in "''${RESTART_SVCS[@]}"; do
+        launchctl bootstrap "gui/$GUI_UID" "/Users/${vars.user.name}/Library/LaunchAgents/org.nixos.$svc.plist" 2>/dev/null || true
+      done
+    fi
+
+    # Re-prime yabai without restarting it. The earlier Dock killall
+    # unloads the scripting addition, so window_shadow=off etc. stop
+    # applying; --load-sa re-injects it into the new Dock. rule --apply
+    # re-evaluates rules against existing windows so Spotify reattaches
+    # to its scratchpad without being relaunched.
+    #
+    # Two-step dance because:
+    # - launchctl asuser puts us in daniel's Aqua session bootstrap
+    #   (where Dock's mach port and /tmp/yabai_daniel.socket live), but
+    #   leaves the process as root.
+    # - sudo -u daniel drops to daniel's UID so the yabai socket is
+    #   reachable and the inner sudo matches daniel's NOPASSWD entry
+    #   from environment.etc."sudoers.d/yabai".
+    if pgrep -qx yabai; then
+      for _ in 1 2 3 4 5 6 7 8 9 10; do
+        pgrep -qx Dock && break
+        sleep 1
+      done
+      sleep 1
+      launchctl asuser "$GUI_UID" /usr/bin/sudo -u ${vars.user.name} /usr/bin/sudo -n /run/current-system/sw/bin/yabai --load-sa \
+        || echo "[activation] yabai --load-sa failed (exit $?)"
+      # Re-assert window_shadow. nix-darwin emits the config block BEFORE
+      # extraConfig, so at yabai startup `window_shadow <val>` runs while
+      # the SA isn't loaded yet and silently no-ops on existing windows.
+      # Setting it again after --load-sa forces yabai to sweep every
+      # managed window. Value is read from services.yabai.config so this
+      # stays in sync if you ever flip it.
+      launchctl asuser "$GUI_UID" /usr/bin/sudo -u ${vars.user.name} /run/current-system/sw/bin/yabai -m config window_shadow ${config.services.yabai.config.window_shadow} \
+        || echo "[activation] yabai window_shadow refresh failed (exit $?)"
+      launchctl asuser "$GUI_UID" /usr/bin/sudo -u ${vars.user.name} /run/current-system/sw/bin/yabai -m rule --apply \
+        || echo "[activation] yabai rule --apply failed (exit $?)"
+    fi
 
     # ================================================================
     # Re-enable daemons that were previously disabled but are required.
@@ -423,230 +448,12 @@
     # ================================================================
     # SYSTEM DAEMONS TO DISABLE
     # ================================================================
-    for daemon in \
-      com.apple.adid \
-      com.apple.AssetCache.builtin \
-      com.apple.AssetCacheLocatorService \
-      com.apple.AssetCacheTetheratorService \
-      com.apple.AssetCacheManagerService \
-      com.apple.AirPlayXPCHelper \
-      com.apple.analyticsd \
-      com.apple.assistantd \
-      com.apple.parsecd \
-      com.apple.tipsd \
-      com.apple.cloudd \
-      com.apple.icloud.findmydeviced \
-      com.apple.icloud.searchpartyd \
-      com.apple.findmymacd \
-      com.apple.findmymacmessenger \
-      com.apple.findmy.findmybeaconingd \
-      com.apple.modelcatalogd \
-      com.apple.modelmanagerd \
-      com.apple.triald.system \
-      com.apple.biomed \
-      com.apple.coreduetd \
-      com.apple.contextstored \
-      com.apple.wifianalyticsd \
-      com.apple.audioanalyticsd \
-      com.apple.audiomxd \
-      com.apple.ecosystemanalyticsd \
-      com.apple.ecosystemd \
-      com.apple.SubmitDiagInfo \
-      com.apple.osanalytics.osanalyticshelper \
-      com.apple.rtcreportingd \
-      com.apple.netbiosd \
-      com.apple.GameController.gamecontrollerd \
-      com.apple.gamepolicyd \
-      com.apple.backupd \
-      com.apple.backupd-helper \
-      com.apple.familycontrols \
-      com.apple.softwareupdated \
-      com.apple.mobile.softwareupdated \
-      com.apple.ReportCrash.Root \
-      com.apple.CrashReporterSupportHelper \
-      com.apple.spindump \
-      com.apple.tailspind \
-      com.apple.siri.acousticsignature \
-      com.apple.siri.morphunassetsupdaterd \
-      com.apple.corespeechd.system \
-      com.apple.ospredictiond \
-      com.apple.uarpassetmanagerd \
-      com.apple.bosreporter \
-      com.apple.boswatcher \
-      com.apple.betaenrollmentd \
-      com.apple.logd_reporter \
-      com.apple.signpost.signpost_reporter \
-      com.apple.csrutil.report \
-      com.apple.gkreport \
-      com.apple.nfcd \
-      com.apple.seld \
-      com.apple.remotemanagementd \
-      com.apple.screensharing; do
-      launchctl bootout system/"$daemon" 2>/dev/null || true
-      launchctl disable system/"$daemon" 2>/dev/null || true
-    done
+    ${mkDisableLoop "system" daemons.systemDaemons}
 
     # ================================================================
     # USER AGENTS TO DISABLE
     # ================================================================
-    for agent in \
-      com.apple.ReportCrash \
-      com.apple.assistantd \
-      com.apple.parsecd \
-      com.apple.tipsd \
-      com.apple.cloudd \
-      com.apple.cloudphotod \
-      com.apple.cloudphotosd \
-      com.apple.CloudSettingsSyncAgent \
-      com.apple.cloudsettingssyncagent \
-      com.apple.iCloudNotificationAgent \
-      com.apple.iCloudUserNotifications \
-      com.apple.icloudmailagent \
-      com.apple.itunescloudd \
-      com.apple.iCloudHelper \
-      com.apple.icloud.fmfd \
-      com.apple.icloud.searchpartyuseragent \
-      com.apple.findmy.findmylocateagent \
-      com.apple.findmymacmessenger \
-      com.apple.security.cloudkeychainproxy3 \
-      com.apple.protectedcloudstorage.protectedcloudkeysyncing \
-      com.apple.replicatord \
-      com.apple.bird \
-      com.apple.intelligenceplatformd \
-      com.apple.intelligencetasksd \
-      com.apple.intelligenceflowd \
-      com.apple.intelligencecontextd \
-      com.apple.generativeexperiencesd \
-      com.apple.knowledgeconstructiond \
-      com.apple.naturallanguaged \
-      com.apple.knowledge-agent \
-      com.apple.triald \
-      com.apple.privatecloudcomputed \
-      com.apple.ModelCatalogAgent \
-      com.apple.mlruntimed \
-      com.apple.mlhostd \
-      com.apple.ciphermld \
-      com.apple.translationd \
-      com.apple.photoanalysisd \
-      com.apple.mediaanalysisd \
-      com.apple.photolibraryd \
-      com.apple.mediastream.mstreamd \
-      com.apple.videosubscriptionsd \
-      com.apple.ap.adprivacyd \
-      com.apple.ap.promotedcontentd \
-      com.apple.geoanalyticsd \
-      com.apple.inputanalyticsd \
-      com.apple.analyticsagent \
-      com.apple.BiomeAgent \
-      com.apple.biomesyncd \
-      com.apple.UsageTrackingAgent \
-      com.apple.ScreenTimeAgent \
-      com.apple.contextstored \
-      com.apple.ContextStoreAgent \
-      com.apple.routined \
-      com.apple.duetexpertd \
-      com.apple.proactived \
-      com.apple.proactiveeventtrackerd \
-      com.apple.sharingd \
-      com.apple.avconferenced \
-      com.apple.CommCenter \
-      com.apple.imagent \
-      com.apple.imcore.imtransferagent \
-      com.apple.imautomatichistorydeletionagent \
-      com.apple.imdpersistence.IMDPersistenceAgent \
-      com.apple.telephonyutilities.callservicesd \
-      com.apple.callhistoryd \
-      com.apple.callintelligenced \
-      com.apple.screensharing.agent \
-      com.apple.screensharing.menuextra \
-      com.apple.sidecar-hid-relay \
-      com.apple.sidecar-relay \
-      com.apple.GameController.gamecontrolleragentd \
-      com.apple.GamePolicyAgent \
-      com.apple.gamed \
-      com.apple.gamesaved \
-      com.apple.homed \
-      com.apple.homeeventsd \
-      com.apple.homeenergyd \
-      com.apple.passd \
-      com.apple.familycircled \
-      com.apple.familycontrols.useragent \
-      com.apple.familynotificationd \
-      com.apple.financed \
-      com.apple.remindd \
-      com.apple.suggestd \
-      com.apple.watchlistd \
-      com.apple.weatherd \
-      com.apple.chronod \
-      com.apple.followupd \
-      com.apple.progressd \
-      com.apple.voicebankingd \
-      com.apple.newsd \
-      com.apple.helpd \
-      com.apple.Maps.pushdaemon \
-      com.apple.Maps.mapssyncd \
-      com.apple.Maps.mapspushd \
-      com.apple.maps.destinationd \
-      com.apple.navd \
-      com.apple.geod \
-      com.apple.geodMachServiceBridge \
-      com.apple.intelligentroutingd \
-      com.apple.SoftwareUpdateNotificationManager \
-      com.apple.softwareupdate_notify_agent \
-      com.apple.spindump_agent \
-      com.apple.diagnostics_agent \
-      com.apple.diagnosticextensionsd \
-      com.apple.betaenrollmentagent \
-      com.apple.appleseed.seedusaged \
-      com.apple.assistant_service \
-      com.apple.assistant_cdmd \
-      com.apple.Siri.agent \
-      com.apple.siriactionsd \
-      com.apple.siriinferenced \
-      com.apple.sirittsd \
-      com.apple.SiriTTSTrainingAgent \
-      com.apple.siriknowledged \
-      com.apple.corespeechd \
-      com.apple.siri.context.service \
-      com.apple.askpermissiond \
-      com.apple.studentd \
-      com.apple.shazamd \
-      com.apple.AMPDeviceDiscoveryAgent \
-      com.apple.amp.mediasharingd \
-      com.apple.mediacontinuityd \
-      com.apple.sociallayerd \
-      com.apple.email.maild \
-      com.apple.SafariBookmarksSyncAgent \
-      com.apple.SafariNotificationAgent \
-      com.apple.Safari.History \
-      com.apple.Safari.SafeBrowsing.Service \
-      com.apple.SafariLaunchAgent \
-      com.apple.Safari.PasswordBreachAgent \
-      com.apple.commerce \
-      com.apple.appstoreagent \
-      com.apple.amsondevicestoraged \
-      com.apple.amsengagementd \
-      com.apple.amsaccountsd \
-      com.apple.storekitagent \
-      com.apple.managedappdistributionagent \
-      com.apple.WorkflowKit.ShortcutsViewService \
-      com.apple.liveactivitiesd \
-      com.apple.LinkedNotesUIService \
-      com.apple.avatarsd \
-      com.apple.contacts.donation-agent \
-      com.apple.dprivacyd \
-      com.apple.feedbackd \
-      com.apple.lockdownmoded \
-      com.apple.businessservicesd \
-      com.apple.RemoteManagementAgent \
-      com.apple.backgroundassets.user \
-      com.apple.BTServer.cloudpairing \
-      com.apple.webprivacyd \
-      com.apple.powerchime \
-      com.apple.accessibility.heard; do
-      launchctl bootout "gui/$GUI_UID/$agent" 2>/dev/null || true
-      launchctl disable "gui/$GUI_UID/$agent" 2>/dev/null || true
-    done
+    ${mkDisableLoop "gui/$GUI_UID" daemons.userAgents}
 
     # ================================================================
     # Disable Adobe background services
@@ -668,25 +475,8 @@
     # Disable Spotlight indexing
     # ================================================================
     mdutil -a -i off 2>/dev/null || true
-    for daemon in \
-      com.apple.metadata.mds \
-      com.apple.metadata.mds.index \
-      com.apple.metadata.mds.scan \
-      com.apple.metadata.mds.spindump; do
-      launchctl bootout system/"$daemon" 2>/dev/null || true
-      launchctl disable system/"$daemon" 2>/dev/null || true
-    done
-    for agent in \
-      com.apple.Spotlight \
-      com.apple.corespotlightd \
-      com.apple.corespotlightservice \
-      com.apple.spotlightknowledged \
-      com.apple.spotlightknowledged.importer \
-      com.apple.spotlightknowledged.updater \
-      com.apple.managedcorespotlightd; do
-      launchctl bootout "gui/$GUI_UID/$agent" 2>/dev/null || true
-      launchctl disable "gui/$GUI_UID/$agent" 2>/dev/null || true
-    done
+    ${mkDisableLoop "system" daemons.spotlightDaemons}
+    ${mkDisableLoop "gui/$GUI_UID" daemons.spotlightAgents}
 
     # Lock Siri vocabulary folder
     rm -rf /Users/${vars.user.name}/Library/Assistant/SiriVocabulary 2>/dev/null || true
