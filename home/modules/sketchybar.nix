@@ -126,9 +126,14 @@ with open('$DB', 'w') as f: json.dump(data, f)
             background.corner_radius=5 \
             background.height=24 \
             background.drawing=on \
+            script="$CONFIG_DIR/plugins/space_select.sh" \
             click_script="yabai -m space --focus $i"
       done
 
+      # Visibility-only observer. The highlight color is driven instantly
+      # by space_select.sh via the per-space $SELECTED edge; this observer
+      # only handles drawing=on/off for empty non-current spaces, where a
+      # ~100ms delay isn't perceptible.
       sketchybar --add item space_observer left \
         --set space_observer \
           drawing=off \
@@ -236,25 +241,43 @@ with open('$DB', 'w') as f: json.dump(data, f)
   };
 
   # Plugin scripts
+
+  # Per-space script. sketchybar fires this only on $SELECTED edge for
+  # this item, i.e. exactly twice per space switch (leaving + entering),
+  # driven by native NSWorkspaceActiveSpaceDidChange — no yabai roundtrip.
+  xdg.configFile."sketchybar/plugins/space_select.sh" = {
+    executable = true;
+    text = ''
+      #!/bin/bash
+      if [ "$SELECTED" = "true" ]; then
+        sketchybar --set $NAME background.color=0xff7aa2f7 icon.color=0xff1a1b26 drawing=on
+      else
+        sketchybar --set $NAME background.color=0x00000000 icon.color=0xffa9b1d6
+      fi
+    '';
+  };
+
+  # Visibility observer. Hides empty, non-current spaces. Subscribed to
+  # space_change so a vacated empty space disappears, and to
+  # space_windows_change so newly-empty spaces hide without a switch.
   xdg.configFile."sketchybar/plugins/space.sh" = {
     executable = true;
     text = ''
       #!/bin/bash
-
-      # Single observer updates all space items atomically
       CURRENT_SPACE=$(yabai -m query --spaces --space 2>/dev/null | jq -r '.index')
       WINDOWS=$(yabai -m query --windows 2>/dev/null)
 
       ARGS=()
       for i in {1..10}; do
-        WINDOW_COUNT=$(echo "$WINDOWS" | jq "[.[] | select(.space == $i)] | length")
-
         if [ "$i" = "$CURRENT_SPACE" ]; then
-          ARGS+=(--set space.$i background.color=0xff7aa2f7 icon.color=0xff1a1b26 drawing=on)
-        elif [ "$WINDOW_COUNT" -gt 0 ]; then
-          ARGS+=(--set space.$i background.color=0x00000000 icon.color=0xffa9b1d6 drawing=on)
+          ARGS+=(--set space.$i drawing=on)
         else
-          ARGS+=(--set space.$i drawing=off)
+          WINDOW_COUNT=$(echo "$WINDOWS" | jq "[.[] | select(.space == $i)] | length")
+          if [ "$WINDOW_COUNT" -gt 0 ]; then
+            ARGS+=(--set space.$i drawing=on)
+          else
+            ARGS+=(--set space.$i drawing=off)
+          fi
         fi
       done
 

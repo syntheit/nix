@@ -16,7 +16,6 @@
   bluetooth-panel = pkgs.callPackage ./bluetooth-panel { };
   wifi-panel = pkgs.callPackage ./wifi-panel { };
   brightness-panel = pkgs.callPackage ./brightness-panel { };
-  search-panel = pkgs.callPackage ./search-panel { };
   wallpaper-cycle = pkgs.callPackage ./wallpaper-cycle { };
   menubar-blocker = pkgs.callPackage ./menubar-blocker { };
   square-corners = pkgs.callPackage ./square-corners { };
