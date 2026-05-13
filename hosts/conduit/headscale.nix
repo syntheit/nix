@@ -588,6 +588,20 @@ in
             # exported space-separated string does.
             export ONLINE_VMS_LIST="''${online_vms[*]:-}"
 
+            # SSH_OPTS: shared option set for every recovery SSH call.
+            # UserKnownHostsFile=/dev/null is critical for the
+            # ProxyJump path — Lima's bridge IP is 192.168.5.2 on
+            # EVERY Mac, so caching that key per-Mac means recovery
+            # only works for whichever Mac was visited first; every
+            # other Mac then trips host-key-changed and the recover
+            # silently fails. The tailnet is the trust boundary, so
+            # not caching keys is acceptable. Same applies to the
+            # direct path: a wipe-and-rebootstrap of a Mac generates
+            # a new host key and we'd otherwise need manual cleanup.
+            SSH_OPTS=(-o ConnectTimeout=5 -o BatchMode=yes
+              -o StrictHostKeyChecking=no
+              -o UserKnownHostsFile=/dev/null)
+
             # ssh_state returns the agent's launchd state string, OR
             # "_SSH_FAIL_" if we couldn't connect at all. Empty
             # (no "state =" line) means the agent isn't loaded —
@@ -595,7 +609,7 @@ in
             # bootstrap fresh).
             ssh_state() {
               local out rc
-              out=$(ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no \
+              out=$(ssh "''${SSH_OPTS[@]}" \
                     "tars@$1" \
                     'sudo /bin/launchctl print system/io.matv.deus-agent 2>/dev/null | awk -F"= *" "/state =/{print \$2; exit}"' \
                     2>/dev/null)
@@ -612,7 +626,7 @@ in
             # plain SSH connection. Idempotent: bootout no-ops if the
             # unit isn't loaded, bootstrap no-ops if it already is.
             direct_bootstrap() {
-              ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no \
+              ssh "''${SSH_OPTS[@]}" \
                   "tars@$1" '
                 sudo /bin/launchctl bootout system/io.matv.deus-agent 2>/dev/null || true
                 sudo /bin/launchctl bootout system/io.matv.deus-agent-watchdog 2>/dev/null || true
@@ -630,7 +644,7 @@ in
             # daemon's IPN extension stopped routing inbound — only a
             # kickstart of that extension brings it back.
             rescue_via_vm() {
-              ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no \
+              ssh "''${SSH_OPTS[@]}" \
                   -J "lima@$1-vm" tars@192.168.5.2 '
                 svc=$(sudo /bin/launchctl list 2>/dev/null | grep -F "NetworkExtension.io.tailscale" | awk "{print \$3}" | head -1)
                 if [ -n "$svc" ]; then
