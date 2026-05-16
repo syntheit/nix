@@ -10,6 +10,7 @@ lib.mkIf pkgs.stdenv.isDarwin {
     pkgs.sketchybar
     pkgs.blueutil
     pkgs.systemstats
+    pkgs.spotify-watcher
   ];
 
   home.file.".local/bin/toggle-dnd" = {
@@ -140,12 +141,15 @@ with open('$DB', 'w') as f: json.dump(data, f)
           script="$CONFIG_DIR/plugins/space.sh" \
         --subscribe space_observer space_change space_windows_change
 
+      sketchybar --add event spotify_change
+
       sketchybar --add item spotify left \
         --set spotify \
-          update_freq=5 \
+          update_freq=60 \
           icon.drawing=off \
           script="$CONFIG_DIR/plugins/spotify.sh" \
-          click_script="open -a Spotify"
+          click_script="open -a Spotify" \
+        --subscribe spotify spotify_change
       sketchybar --add item battery right \
         --set battery \
           update_freq=120 \
@@ -174,7 +178,6 @@ with open('$DB', 'w') as f: json.dump(data, f)
           update_freq=0 \
           icon="" \
           script="$CONFIG_DIR/plugins/volume.sh" \
-          click_script="volume-panel show" \
         --subscribe volume volume_change
 
       sketchybar --add item bluetooth right \
@@ -357,13 +360,27 @@ with open('$DB', 'w') as f: json.dump(data, f)
     executable = true;
     text = ''
       #!/bin/bash
-      if pgrep -x "Spotify" > /dev/null; then
-        INFO=$(osascript -e 'tell application "Spotify" to (name of current track) & " - " & (artist of current track)' 2>/dev/null)
-        if [ -n "$INFO" ]; then
-          sketchybar --set $NAME label="$INFO"
-        else
+
+      apply() {
+        local state="$1" title="$2" artist="$3" label
+        if [ -z "$title" ] || [ "$state" = "stopped" ]; then
           sketchybar --set $NAME label=""
+          return
         fi
+        label="$title - $artist"
+        if [ "$state" = "playing" ]; then
+          sketchybar --set $NAME label="$label" label.color=0xffa9b1d6
+        else
+          sketchybar --set $NAME label="$label" label.color=0x99a9b1d6
+        fi
+      }
+
+      if [ "$SENDER" = "spotify_change" ]; then
+        apply "$STATE" "$TITLE" "$ARTIST"
+      elif pgrep -x "Spotify" > /dev/null; then
+        RESULT=$(osascript -e 'tell application "Spotify" to (player state as string) & "|" & (name of current track) & "|" & (artist of current track)' 2>/dev/null)
+        IFS='|' read -r STATE TITLE ARTIST <<< "$RESULT"
+        apply "$STATE" "$TITLE" "$ARTIST"
       else
         sketchybar --set $NAME label=""
       fi
@@ -456,6 +473,18 @@ with open('$DB', 'w') as f: json.dump(data, f)
       EnvironmentVariables = {
         PATH = "${pkgs.sketchybar}/bin:${pkgs.yabai}/bin:${pkgs.jq}/bin:${pkgs.systemstats}/bin:${pkgs.volume-panel}/bin:${pkgs.bluetooth-panel}/bin:${pkgs.wifi-panel}/bin:/usr/bin:/bin:/usr/sbin:/sbin";
         CONFIG_DIR = "${config.home.homeDirectory}/.config/sketchybar";
+      };
+    };
+  };
+
+  launchd.agents.spotify-watcher = {
+    enable = true;
+    config = {
+      ProgramArguments = [ "${pkgs.spotify-watcher}/bin/spotify-watcher" ];
+      KeepAlive = true;
+      RunAtLoad = true;
+      EnvironmentVariables = {
+        SKETCHYBAR_BIN = "${pkgs.sketchybar}/bin/sketchybar";
       };
     };
   };

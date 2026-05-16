@@ -15,6 +15,7 @@
       RunAtLoad = true;
       EnvironmentVariables = {
         HOME = "${config.home.homeDirectory}";
+        VOLUME_PANEL_NO_HUD = "1";
       };
     };
   };
