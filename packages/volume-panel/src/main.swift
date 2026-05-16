@@ -71,6 +71,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func showHUD() {
+        if ProcessInfo.processInfo.environment["VOLUME_PANEL_NO_HUD"] == "1" { return }
         if !panel.isVisible {
             // Reset to compact size
             panel.updateSize(NSSize(width: 340, height: 96), animate: false)
