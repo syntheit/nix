@@ -46,6 +46,11 @@
         identityFile = "~/.ssh/mainkey";
         user = "daniel";
       };
+      "mantle" = {
+        hostname = "100.75.104.50";
+        identityFile = "~/.ssh/mainkey";
+        user = "daniel";
+      };
       "raven" = {
         hostname = "100.98.64.97";
         identityFile = "~/.ssh/mainkey";
