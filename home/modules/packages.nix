@@ -21,6 +21,7 @@
     pipes
     tmux
     toilet
+    mosh
     lazygit
     yazi
     tldr
