@@ -142,6 +142,8 @@ with open('$DB', 'w') as f: json.dump(data, f)
         --subscribe space_observer space_change space_windows_change
 
       sketchybar --add event spotify_change
+      sketchybar --add event brightness_change
+      sketchybar --add event brightness_hide
 
       sketchybar --add item spotify left \
         --set spotify \
@@ -150,6 +152,22 @@ with open('$DB', 'w') as f: json.dump(data, f)
           script="$CONFIG_DIR/plugins/spotify.sh" \
           click_script="open -a Spotify" \
         --subscribe spotify spotify_change
+
+      sketchybar --add slider brightness_overlay left 160 \
+        --set brightness_overlay \
+          drawing=off \
+          icon="󰖨" \
+          icon.padding_left=8 \
+          icon.padding_right=10 \
+          icon.color=0xffa9b1d6 \
+          label.drawing=off \
+          slider.highlight_color=0xff7aa2f7 \
+          slider.background.color=0xff414868 \
+          slider.background.height=4 \
+          slider.background.corner_radius=2 \
+          slider.knob.drawing=off \
+          script="$CONFIG_DIR/plugins/brightness.sh" \
+        --subscribe brightness_overlay brightness_change brightness_hide
       sketchybar --add item battery right \
         --set battery \
           update_freq=120 \
@@ -356,6 +374,27 @@ with open('$DB', 'w') as f: json.dump(data, f)
     '';
   };
 
+  xdg.configFile."sketchybar/plugins/brightness.sh" = {
+    executable = true;
+    text = ''
+      #!/bin/bash
+      if [ "$SENDER" = "brightness_change" ]; then
+        if [ "$KIND" = "keyboard" ]; then
+          ICON="󰥻"
+        else
+          ICON="󰖨"
+        fi
+        sketchybar \
+          --set spotify drawing=off \
+          --set brightness_overlay drawing=on icon="$ICON" slider.percentage="$LEVEL"
+      elif [ "$SENDER" = "brightness_hide" ]; then
+        sketchybar \
+          --set brightness_overlay drawing=off \
+          --set spotify drawing=on
+      fi
+    '';
+  };
+
   xdg.configFile."sketchybar/plugins/spotify.sh" = {
     executable = true;
     text = ''
@@ -392,11 +431,19 @@ with open('$DB', 'w') as f: json.dump(data, f)
     executable = true;
     text = ''
       #!/bin/bash
-      SETTINGS=$(osascript -e 'get volume settings')
-      VOLUME=$(echo "$SETTINGS" | grep -o 'output volume:[0-9]*' | cut -d: -f2)
-      MUTED=$(echo "$SETTINGS" | grep -o 'output muted:[a-z]*' | cut -d: -f2)
+      if [ -n "$LEVEL" ]; then
+        # Fast path: wrapper-triggered with env vars
+        VOLUME="$LEVEL"
+        IS_MUTED="$MUTED"
+      else
+        # Fallback: system volume_change (e.g. external slider) — resync state file
+        SETTINGS=$(osascript -e 'get volume settings')
+        VOLUME=$(echo "$SETTINGS" | grep -o 'output volume:[0-9]*' | cut -d: -f2)
+        IS_MUTED=$(echo "$SETTINGS" | grep -o 'output muted:[a-z]*' | cut -d: -f2)
+        printf 'LEVEL=%d\nMUTED=%s\n' "$VOLUME" "$IS_MUTED" > /tmp/volume-state
+      fi
 
-      if [ "$MUTED" != "false" ]; then
+      if [ "$IS_MUTED" = "true" ]; then
         ICON="󰝟"
       else
         case ''${VOLUME} in
@@ -462,6 +509,12 @@ with open('$DB', 'w') as f: json.dump(data, f)
 
   home.activation.reloadSketchybar = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     run ${pkgs.sketchybar}/bin/sketchybar --reload 2>/dev/null || true
+    # Reset overlay state — --reload doesn't clear drawing=on/off on existing items
+    run ${pkgs.sketchybar}/bin/sketchybar --set brightness_overlay drawing=off --set spotify drawing=on 2>/dev/null || true
+  '';
+
+  home.activation.reloadSkhd = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    run /usr/bin/killall -USR1 skhd 2>/dev/null || true
   '';
 
   launchd.agents.sketchybar = {

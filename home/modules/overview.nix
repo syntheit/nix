@@ -20,10 +20,12 @@
     cp -R "$SRC" "$APP"
     chmod -R u+w "$APP"
     /usr/bin/codesign --force --sign "$IDENTITY" \
+      --keychain "$HOME/Library/Keychains/login.keychain-db" \
       --identifier com.nix.overview \
       --options runtime \
       "$APP/Contents/MacOS/overview" 2>/dev/null && \
     /usr/bin/codesign --force --sign "$IDENTITY" \
+      --keychain "$HOME/Library/Keychains/login.keychain-db" \
       --identifier com.nix.overview \
       "$APP" 2>/dev/null && \
     echo "Overview.app signed with Developer ID" || \

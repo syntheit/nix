@@ -20,5 +20,6 @@
   menubar-blocker = pkgs.callPackage ./menubar-blocker { };
   square-corners = pkgs.callPackage ./square-corners { };
   spotify-watcher = pkgs.callPackage ./spotify-watcher { };
+  caps-led-off = pkgs.callPackage ./caps-led-off { };
 }
 

@@ -15,6 +15,7 @@ stdenv.mkDerivation {
       -sdk $SDKROOT \
       -framework AppKit \
       -framework SwiftUI \
+      -framework IOKit \
       -o brightness-panel \
       ${../shared}/*.swift $src/*.swift
   '';
