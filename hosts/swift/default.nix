@@ -79,7 +79,10 @@ in
     fi
   '';
 
-  imports = [ ./homebrew.nix ];
+  imports = [
+    ./homebrew.nix
+    # ./sharp-corners.nix  # temporarily disabled — breaks hardened apps (Ghostty)
+  ];
 
   system.defaults = {
     dock = {

@@ -5,13 +5,13 @@ f5 : $HOME/.local/bin/toggle-privacy
 f6 : $HOME/.local/bin/toggle-dnd
 
 # Volume control (intercepts media keys, suppresses macOS HUD)
-sound_up : volume-panel up
-sound_down : volume-panel down
-mute : volume-panel mute
+sound_up : $HOME/.local/bin/volume-key up
+sound_down : $HOME/.local/bin/volume-key down
+mute : $HOME/.local/bin/volume-key mute
 
 # Brightness control (intercepts media keys, suppresses macOS HUD)
-brightness_up : brightness-panel up
-brightness_down : brightness-panel down
+brightness_up : $HOME/.local/bin/brightness-key up display
+brightness_down : $HOME/.local/bin/brightness-key down display
 
 # Application launchers
 fn - return : open -na Ghostty

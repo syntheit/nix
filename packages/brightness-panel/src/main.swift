@@ -3,6 +3,7 @@ import SwiftUI
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     let display = BrightnessManager()
+    let keyboard = KeyboardBacklightManager()
     var panel: SystemPanel!
     var dismissTimer: Timer?
     var ipcServer: IPCServer!
@@ -36,6 +37,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case "down":
             display.adjustBrightness(by: -1.0 / 16.0)
             showHUD()
+        case "kbup":
+            keyboard.adjust(by: 1.0 / 16.0)
+        case "kbdown":
+            keyboard.adjust(by: -1.0 / 16.0)
         default:
             break
         }
@@ -45,6 +50,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func showHUD() {
+        if ProcessInfo.processInfo.environment["BRIGHTNESS_PANEL_NO_HUD"] == "1" { return }
         if !panel.isVisible {
             panel.setContent(BrightnessView(display: display))
             panel.showAt(position: .topRight, passive: true)
@@ -76,7 +82,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 let args = Array(CommandLine.arguments.dropFirst())
 
 if args.isEmpty {
-    fputs("usage: brightness-panel daemon|up|down\n", stderr)
+    fputs("usage: brightness-panel daemon|up|down|kbup|kbdown\n", stderr)
     exit(1)
 }
 

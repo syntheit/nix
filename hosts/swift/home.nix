@@ -32,6 +32,7 @@
     ../../home/modules/wallpaper-darwin.nix
     ../../home/modules/menubar-blocker.nix
     ../../home/modules/square-corners.nix
+    ../../home/modules/caps-led-off.nix
   ];
 
   home.username = vars.user.name;
@@ -156,17 +157,46 @@
           { from.key_code = "f11"; to = [{ consumer_key_code = "volume_decrement"; }]; }
           { from.key_code = "f12"; to = [{ consumer_key_code = "volume_increment"; }]; }
         ];
-        complex_modifications.rules = [{
-          description = "Change caps_lock to fn";
-          manipulators = [{
-            type = "basic";
-            from = {
-              key_code = "caps_lock";
-              modifiers.optional = [ "any" ];
-            };
-            to = [{ key_code = "fn"; }];
-          }];
-        }];
+        complex_modifications.rules = [
+          {
+            description = "Change caps_lock to fn";
+            manipulators = [{
+              type = "basic";
+              from = {
+                key_code = "caps_lock";
+                modifiers.optional = [ "any" ];
+              };
+              to = [{ key_code = "fn"; }];
+            }];
+          }
+          {
+            description = "Shift + brightness keys → keyboard backlight";
+            manipulators = [
+              {
+                type = "basic";
+                from = {
+                  key_code = "f1";
+                  modifiers = {
+                    mandatory = [ "shift" ];
+                    optional = [ "any" ];
+                  };
+                };
+                to = [{ shell_command = "${config.home.homeDirectory}/.local/bin/brightness-key down keyboard"; }];
+              }
+              {
+                type = "basic";
+                from = {
+                  key_code = "f2";
+                  modifiers = {
+                    mandatory = [ "shift" ];
+                    optional = [ "any" ];
+                  };
+                };
+                to = [{ shell_command = "${config.home.homeDirectory}/.local/bin/brightness-key up keyboard"; }];
+              }
+            ];
+          }
+        ];
       }];
     };
 }
