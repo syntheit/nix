@@ -1,7 +1,7 @@
 { pkgs, inputs, ... }:
 
 let
-  vestal = inputs.vestal.packages.${pkgs.system}.default;
+  vestal = inputs.vestal.packages.${pkgs.stdenv.hostPlatform.system}.default;
 in
 {
   home.packages = [ vestal ];
