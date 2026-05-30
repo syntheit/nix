@@ -1,5 +1,5 @@
 # Function row overrides (F3/F4 converted to standard keycodes via Karabiner fn_function_keys)
-f3 : $HOME/.local/bin/toggle-dashboard
+f3 : $HOME/.local/bin/toggle-vestal
 f4 : yabai -m window --toggle spotify
 f5 : $HOME/.local/bin/toggle-privacy
 f6 : $HOME/.local/bin/toggle-dnd
