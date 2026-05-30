@@ -261,7 +261,7 @@ in
       yabai -m rule --add app="^Raycast$" manage=off
       yabai -m rule --add app="^Archive Utility$" manage=off
       yabai -m rule --add app="^Finder$" title="(Copy|Move|Delete|Connect)" manage=off
-      yabai -m rule --add title="^dashboard$" manage=off
+      yabai -m rule --add title="^vestal$" manage=off
 
       # Spotify → scratchpad (floating overlay, toggled with F4)
       yabai -m rule --add app="^Spotify$" scratchpad=spotify

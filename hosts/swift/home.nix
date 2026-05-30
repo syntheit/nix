@@ -21,7 +21,7 @@
     # macOS-specific modules
     ../../home/modules/sketchybar.nix
     ../../home/modules/app-tweaks.nix
-    ../../home/modules/dashboard-darwin.nix
+    ../../home/modules/vestal-darwin.nix
     ../../home/modules/tmux.nix
     ../../home/modules/eq.nix
     ../../home/modules/overview.nix

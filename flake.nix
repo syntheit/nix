@@ -70,12 +70,12 @@
     };
 
     elliot = {
-      url = "git+ssh://git@github.com/syntheit/elliot.git";
+      url = "github:syntheit/elliot";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
     jelly-recs = {
-      url = "git+ssh://git@github.com/syntheit/jelly-recs.git";
+      url = "github:syntheit/jelly-recs";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -107,6 +107,11 @@
       # silently broke whenever the GitHub PAT rotated out.
       url = "git+ssh://git@github-malli-deus/syntheit/malli-deus.git";
       inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    vestal = {
+      url = "github:syntheit/vestal";
+      inputs.nixpkgs.follows = "nixpkgs-darwin";
     };
   };
 
