@@ -19,6 +19,7 @@
     ../../modules/foyer.nix
     ../../modules/elliot.nix
     ../../modules/construct.nix
+    ../../modules/construct-kv.nix
     ../../modules/jelly-recs.nix
     ../../modules/harborfin.nix
   ];
@@ -106,12 +107,22 @@
     nvidiaPackage = config.hardware.nvidia.package.bin;
   };
 
-  # Construct — Daniel's life-OS web app. Static SvelteKit build served by darkhttpd.
+  # Construct — Daniel's life-OS web app. Static SvelteKit build served by static-web-server.
+  # Cross-device state goes through construct-kv (below); `construct-rebuild` chains both.
   # Iteration loop: edit code → `construct-rebuild` → done.
   services.construct = {
     enable = true;
     srcDir = "/home/matv/Projects/the_construct/construct-app";
     port = 4321;
+    kvUrl = "http://harbor:4322";          # baked into the static build
+    kvRebuildCommand = "construct-kv-rebuild";  # chain into construct-rebuild
+  };
+
+  # construct-kv — SQLite KV API the construct-app calls for cross-device state.
+  services.construct-kv = {
+    enable = true;
+    srcDir = "/home/matv/Projects/the_construct/tools/construct-kv";
+    port = 4322;
   };
 
   # jelly-recs — content + collaborative recommendation rows for Jellyfin

@@ -12,6 +12,14 @@ let
   rebuildScript = pkgs.writeShellScriptBin "construct-rebuild" ''
     set -euo pipefail
 
+    # If a sibling service (e.g. construct-kv) needs to be rebuilt first,
+    # the host wires its rebuild command here. Single user-facing command.
+    ${lib.optionalString (cfg.kvRebuildCommand != null) ''
+      echo "→ ${cfg.kvRebuildCommand}"
+      ${cfg.kvRebuildCommand}
+      echo
+    ''}
+
     if [ ! -d "${cfg.srcDir}" ]; then
       echo "construct-rebuild: source dir ${cfg.srcDir} does not exist" >&2
       exit 1
@@ -26,15 +34,16 @@ let
     echo "→ pnpm install"
     pnpm install --prefer-frozen-lockfile
 
-    echo "→ pnpm build"
+    echo "→ pnpm build${lib.optionalString (cfg.kvUrl != null) " (PUBLIC_CONSTRUCT_KV_URL=${cfg.kvUrl})"}"
+    ${lib.optionalString (cfg.kvUrl != null) ''export PUBLIC_CONSTRUCT_KV_URL="${cfg.kvUrl}"''}
     pnpm build
 
-    # darkhttpd reads files per request — no restart needed.
-    # If the service hadn't started yet (first build), kick it.
-    if ! systemctl is-active --quiet construct-app; then
-      echo "→ first build: starting construct-app"
-      sudo systemctl start construct-app
-    fi
+    # static-web-server reads file contents per request, BUT --page-fallback is
+    # cached in memory at startup. SPA routes (anything not statically rendered)
+    # serve the cached fallback HTML — which references bundle hashes from the
+    # previous build. Restart to reload it.
+    echo "→ restart construct-app"
+    sudo systemctl restart construct-app
 
     echo "✓ build/ updated. http://$(${pkgs.hostname}/bin/hostname):${toString cfg.port}/"
   '';
@@ -74,6 +83,27 @@ in
       type = lib.types.bool;
       default = false;
       description = "Open the port to the public internet. Default: false (Tailscale/wg only).";
+    };
+
+    kvUrl = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = ''
+        URL of the construct-kv service for cross-device state. When set, baked into
+        the static build as PUBLIC_CONSTRUCT_KV_URL. Leave null for local-only state.
+      '';
+      example = "http://harbor:4322";
+    };
+
+    kvRebuildCommand = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = ''
+        Optional command run before the app build. Lets the host chain a sibling
+        service's rebuild (e.g. construct-kv-rebuild) into the single `construct-rebuild`
+        flow without coupling this module to that one.
+      '';
+      example = "construct-kv-rebuild";
     };
   };
 
