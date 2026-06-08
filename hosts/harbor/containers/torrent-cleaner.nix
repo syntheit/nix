@@ -38,10 +38,14 @@ in
           exit 1
         fi
 
+        # qBit 4.x sets `SID=...`; qBit 5.x switched to `QBT_SID_<port>=...`.
+        # Capture name=value so we can pass it to Cookie: as-is rather than
+        # hard-coding the old `SID` name (which silently broke the cleaner
+        # after the 5.2 upgrade).
         COOKIE=$(${pkgs.curl}/bin/curl -s -i -X POST 'http://127.0.0.1:9091/api/v2/auth/login' \
           --data-urlencode "username=admin" --data-urlencode "password=$QBIT_PW" \
           -H 'Referer: http://127.0.0.1:9091' \
-          | ${pkgs.gnugrep}/bin/grep -oP '(?<=SID=)[^;]+' | head -1)
+          | ${pkgs.gnugrep}/bin/grep -oiP '(?<=^set-cookie: )(QBT_SID_[0-9]+|SID)=[^;]+' | head -1)
         if [ -z "$COOKIE" ]; then
           echo "ERROR: qBittorrent auth failed" >&2
           exit 1
@@ -50,12 +54,12 @@ in
         ${pkgs.python3}/bin/python3 - "$COOKIE" "$SONARR_API" "$RADARR_API" <<'PY'
 import json, sys, urllib.request, urllib.parse, time, collections
 
-SID, SONARR_KEY, RADARR_KEY = sys.argv[1], sys.argv[2], sys.argv[3]
+COOKIE, SONARR_KEY, RADARR_KEY = sys.argv[1], sys.argv[2], sys.argv[3]
 STALE_HOURS = ${toString staleHours}
 NOW = time.time()
 
 def qbit(path, method='GET', data=None):
-    headers = {'Cookie': f'SID={SID}'}
+    headers = {'Cookie': COOKIE}
     if data is not None:
         headers['Content-Type'] = 'application/x-www-form-urlencoded'
         data = urllib.parse.urlencode(data).encode()
