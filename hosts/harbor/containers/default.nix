@@ -8,6 +8,7 @@
     ./utilities.nix
     ./gaming.nix
     ./registry.nix
+    ./zot.nix
     ./seafile.nix
     ./cwa.nix
     ./recyclarr.nix
@@ -90,8 +91,15 @@
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
+      # Bound the wait so a failed ollama (e.g. nvidia CDI hiccup) can't deadlock
+      # multi-user.target and hang every nixos-rebuild. partOf=docker-ollama
+      # re-fires this unit when ollama recovers.
+      TimeoutStartSec = 30;
       ExecStart = pkgs.writeShellScript "connect-ollama-karakeep" ''
-        until ${pkgs.docker}/bin/docker inspect ollama >/dev/null 2>&1; do sleep 1; done
+        for _ in $(seq 1 25); do
+          ${pkgs.docker}/bin/docker inspect ollama >/dev/null 2>&1 && break
+          sleep 1
+        done
         ${pkgs.docker}/bin/docker network connect --alias ollama karakeep_default ollama 2>/dev/null || true
       '';
     };
