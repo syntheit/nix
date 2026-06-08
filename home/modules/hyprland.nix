@@ -535,9 +535,9 @@ in
       bindl = [
         ", code:198, togglespecialworkspace, spotify" # MX Vertical top button (F20 via logid, evdev 190 + 8 = xkb 198)
         ", XF86AudioMute, exec, wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
-        ", XF86AudioPlay, exec, playerctl play-pause"
-        ", XF86AudioNext, exec, playerctl next"
-        ", XF86AudioPrev, exec, playerctl previous"
+        ", XF86AudioPlay, exec, playerctl --player=playerctld play-pause"
+        ", XF86AudioNext, exec, playerctl --player=playerctld next"
+        ", XF86AudioPrev, exec, playerctl --player=playerctld previous"
       ]
       ++ lib.optionals (hostName == "ledger") [
         ", switch:off:Lid Switch, exec, ${pkgs.hyprlock}/bin/hyprlock"
@@ -552,6 +552,8 @@ in
         "${pkgs.hyprpolkitagent}/libexec/hyprpolkitagent"
         # Start dashboard in background
         "${pkgs.ghostty}/bin/ghostty --class=dashboard -e ${dashboardScript}"
+        # Track most-recently-active MPRIS player so media keys follow it
+        "${pkgs.playerctl}/bin/playerctld daemon"
         # hyprsunset is managed by systemd (see below)
       ];
       binds = {
