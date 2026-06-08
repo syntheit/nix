@@ -42,6 +42,8 @@
     python3
     claude-code
     restic
+    awscli2
+    yazi
   ];
 
   programs.starship.settings.directory = {
