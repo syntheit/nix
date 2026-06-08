@@ -291,6 +291,32 @@
             }
           ];
         };
+
+        mini = inputs.nix-darwin.lib.darwinSystem {
+          system = "aarch64-darwin";
+          specialArgs = specialArgs // {
+            hostName = "mini";
+          };
+          modules = [
+            ./hosts/mini
+            inputs.sops-nix.darwinModules.sops
+            inputs.nix-homebrew.darwinModules.nix-homebrew
+            inputs.home-manager.darwinModules.home-manager
+            {
+              nixpkgs.overlays = [
+                (import ./overlays { inherit inputs lib; }).modifications
+                (import ./overlays { inherit inputs lib; }).additions
+              ];
+              home-manager.useGlobalPkgs = true;
+              home-manager.useUserPackages = true;
+              home-manager.backupFileExtension = "bkp";
+              home-manager.extraSpecialArgs = specialArgs // {
+                hostName = "mini";
+              };
+              home-manager.users."${vars.user.name}" = import ./hosts/mini/home.nix;
+            }
+          ];
+        };
       };
     };
 }
