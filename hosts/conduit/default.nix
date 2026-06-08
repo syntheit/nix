@@ -134,6 +134,10 @@
     "net.ipv4.tcp_wmem" = "4096 1048576 16777216";
     # Enable TCP fast open
     "net.ipv4.tcp_fastopen" = 3;
+    # Memory-constrained VPS: prefer keeping pages in RAM over
+    # swapping. Default 60 is aggressive; 10 only swaps under real
+    # pressure. Keeps deus-server's working set hot.
+    "vm.swappiness" = 10;
   };
 
   programs.mosh.enable = true;

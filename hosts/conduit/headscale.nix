@@ -281,6 +281,14 @@ in
         # sshKnownHostsFile, sshFlakeURL, sshLogDir, sshMaxConcurrent
         # use module defaults.
 
+        # ── User-VPN integration ──
+        # Lets deus-server mint/revoke VPN tunnels through
+        # malli-uservpn-server and run a boot-time sync of existing
+        # tokens into the users table. Both services already share
+        # the same operator token (see operatorTokenFile above + the
+        # comment in ../user-vpn.nix), so we just point at it again.
+        uservpnTokenFile = "/var/lib/deus-tokens/operator-token";
+
         # ── Granter ──
         # Cloudflare per-device provisioning (Twilio was removed in
         # deus 0.16.0). The credential files are populated by the
@@ -910,8 +918,27 @@ in
     };
   };
 
-  # Only open port 5000 on the Tailscale interface — blocked from the internet
-  networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 5000 8086 9418 ];
+  # ── Zot (Tart image cache) proxy ───────────────────────────
+  # Same pattern as registry-proxy, for harbor's Zot on :5001. Fleet Macs
+  # `tart pull --insecure 100.64.0.1:5001/...` lands here and is forwarded
+  # over WireGuard to harbor. Only Headscale fleet machines can reach it.
+  systemd.services.zot-proxy = {
+    description = "Proxy Zot OCI registry to harbor over WireGuard";
+    after = [
+      "network-online.target"
+      "tailscaled.service"
+    ];
+    wants = [ "network-online.target" ];
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      ExecStart = "${pkgs.socat}/bin/socat TCP-LISTEN:5001,fork,reuseaddr TCP:10.100.0.2:5001";
+      Restart = "always";
+      RestartSec = "5s";
+    };
+  };
+
+  # Only open ports 5000 / 5001 on the Tailscale interface — blocked from the internet
+  networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 5000 5001 8086 9418 ];
 
   # Open the container's SSH port to the internet
   networking.firewall.allowedTCPPorts = [ 2222 ];
