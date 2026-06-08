@@ -355,11 +355,16 @@ require("lazy").setup({
   -- ---------------------------------------------------------------------------
 
   -- Syntax highlighting + text objects via Treesitter
+  -- Pinned to master: upstream's "main" branch is the v1.0 rewrite that removed
+  -- nvim-treesitter.configs and ensure_installed (different setup model).
   {
     "nvim-treesitter/nvim-treesitter",
+    branch = "master",
     build = ":TSUpdate",
     event = { "BufReadPost", "BufNewFile" },
-    dependencies = { "nvim-treesitter/nvim-treesitter-textobjects" },
+    dependencies = {
+      { "nvim-treesitter/nvim-treesitter-textobjects", branch = "master" },
+    },
     config = function()
       require("nvim-treesitter.configs").setup({
         ensure_installed = {
@@ -442,8 +447,11 @@ require("lazy").setup({
     event = { "BufReadPre", "BufNewFile" },
     dependencies = { "hrsh7th/cmp-nvim-lsp" },
     config = function()
-      local lspconfig = require("lspconfig")
+      -- nvim 0.11+ API: nvim-lspconfig ships default server definitions under
+      -- lsp/<name>.lua that are auto-discovered. We use vim.lsp.config to merge
+      -- our overrides, then vim.lsp.enable to start servers on matching files.
       local capabilities = require("cmp_nvim_lsp").default_capabilities()
+      vim.lsp.config("*", { capabilities = capabilities })
 
       -- Keymaps activate only when an LSP server attaches to a buffer
       vim.api.nvim_create_autocmd("LspAttach", {
@@ -486,10 +494,9 @@ require("lazy").setup({
         end,
       })
 
-      -- Server configs (all binaries installed via Nix, available on PATH)
+      -- Per-server overrides (all binaries installed via Nix, available on PATH)
 
-      lspconfig.nil_ls.setup({
-        capabilities = capabilities,
+      vim.lsp.config("nil_ls", {
         settings = {
           ["nil"] = {
             formatting = { command = { "nixfmt" } },
@@ -498,8 +505,7 @@ require("lazy").setup({
         },
       })
 
-      lspconfig.gopls.setup({
-        capabilities = capabilities,
+      vim.lsp.config("gopls", {
         settings = {
           gopls = {
             analyses = { unusedparams = true, shadow = true },
@@ -509,14 +515,7 @@ require("lazy").setup({
         },
       })
 
-      lspconfig.pyright.setup({ capabilities = capabilities })
-
-      lspconfig.ts_ls.setup({ capabilities = capabilities })
-
-      lspconfig.svelte.setup({ capabilities = capabilities })
-
-      lspconfig.lua_ls.setup({
-        capabilities = capabilities,
+      vim.lsp.config("lua_ls", {
         settings = {
           Lua = {
             runtime = { version = "LuaJIT" },
@@ -527,8 +526,7 @@ require("lazy").setup({
         },
       })
 
-      lspconfig.yamlls.setup({
-        capabilities = capabilities,
+      vim.lsp.config("yamlls", {
         settings = {
           yaml = {
             schemas = {
@@ -539,20 +537,29 @@ require("lazy").setup({
         },
       })
 
-      lspconfig.jsonls.setup({
-        capabilities = capabilities,
+      vim.lsp.config("jsonls", {
         settings = { json = { validate = { enable = true } } },
       })
 
-      lspconfig.html.setup({ capabilities = capabilities })
-      lspconfig.cssls.setup({ capabilities = capabilities })
-      lspconfig.eslint.setup({ capabilities = capabilities })
-      lspconfig.tailwindcss.setup({ capabilities = capabilities })
-      lspconfig.bashls.setup({ capabilities = capabilities })
-      lspconfig.dockerls.setup({ capabilities = capabilities })
-      lspconfig.helm_ls.setup({ capabilities = capabilities })
-      lspconfig.marksman.setup({ capabilities = capabilities })
-      lspconfig.taplo.setup({ capabilities = capabilities })
+      vim.lsp.enable({
+        "nil_ls",
+        "gopls",
+        "pyright",
+        "ts_ls",
+        "svelte",
+        "lua_ls",
+        "yamlls",
+        "jsonls",
+        "html",
+        "cssls",
+        "eslint",
+        "tailwindcss",
+        "bashls",
+        "dockerls",
+        "helm_ls",
+        "marksman",
+        "taplo",
+      })
     end,
   },
 
