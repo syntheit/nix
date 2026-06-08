@@ -16,6 +16,7 @@
     SRC="${pkgs.overview}/Applications/Overview.app"
     IDENTITY="Developer ID Application: Daniel Miller (6NHZWHQX37)"
 
+    mkdir -p "$(dirname "$APP")"
     rm -rf "$APP"
     cp -R "$SRC" "$APP"
     chmod -R u+w "$APP"
