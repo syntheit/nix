@@ -1,137 +1,16 @@
 {
-  lib,
   pkgs,
-  inputs,
-  vars,
   config,
   ...
 }:
 {
   imports = [
-    # Cross-platform modules (work on both Linux and Darwin)
-    inputs.nix-index-database.homeModules.nix-index
-    inputs.stylix.homeModules.stylix
-    ../../home/modules/stylix.nix
-    ../../home/modules/ghostty.nix
-    ../../home/modules/git.nix
-    ../../home/modules/neovim.nix
-    ../../home/modules/ssh.nix
-    ../../home/shell.nix
-
-    # macOS-specific modules
-    ../../home/modules/sketchybar.nix
-    ../../home/modules/app-tweaks.nix
-    ../../home/modules/vestal-darwin.nix
-    ../../home/modules/tmux.nix
-    ../../home/modules/eq.nix
-    ../../home/modules/overview.nix
-    ../../home/modules/volume-panel.nix
-    ../../home/modules/bluetooth-panel.nix
-    ../../home/modules/wifi-panel.nix
+    ../../home/darwin.nix
+    # MacBook-only: brightness-panel drives the internal display via pmset; the
+    # mini's external monitors don't expose software brightness through that
+    # path, so it stays out of hosts/mini/home.nix.
     ../../home/modules/brightness-panel.nix
-    ../../home/modules/wallpaper-darwin.nix
-    ../../home/modules/menubar-blocker.nix
-    ../../home/modules/square-corners.nix
-    ../../home/modules/caps-led-off.nix
   ];
-
-  home.username = vars.user.name;
-  home.homeDirectory = "/Users/${vars.user.name}";
-
-  home.stateVersion = "24.11";
-
-  home.shellAliases = {
-    btw = "${pkgs.fastfetch}/bin/fastfetch";
-    igrep = "grep -i";
-    k = "kubectl";
-    highlight = "grep --color=always -e \"^\"";
-  };
-
-  home.sessionPath = [
-    # GNU coreutils unprefixed (override BSD tools with GNU versions)
-    "${pkgs.coreutils}/libexec/gnubin"
-    "${pkgs.findutils}/libexec/gnubin"
-    "${pkgs.gnugrep}/libexec/gnubin"
-    "${pkgs.gnused}/libexec/gnubin"
-    "${pkgs.gawk}/libexec/gnubin"
-    "/opt/homebrew/bin"
-    "/opt/homebrew/sbin"
-    "/run/current-system/sw/bin"
-  ];
-
-  home.packages = with pkgs; [
-    awscli2
-    aws-sam-cli
-    btop
-    claude-code
-    coreutils
-    sops
-    ssh-to-age
-    fastfetch
-    fd
-    ffmpeg
-    findutils
-    gawk
-    gh
-    gnugrep
-    gnused
-    go
-    mas
-    nodejs
-    pnpm
-    ripgrep
-    foyer
-    mosh
-    spotify-player
-    switchaudio-osx
-    yt-dlp
-    # Operator CLI for the Malli fleet (`deus list`, `deus tui`,
-    # `deus bootstrap …`). Pinned via the deus flake input in
-    # ../../flake.nix so swift always tracks the same revision the
-    # fleet machines do.
-    inputs.deus.packages.${pkgs.stdenv.hostPlatform.system}.default
-  ];
-
-  programs.yazi = {
-    enable = true;
-    shellWrapperName = "y";
-    settings.mgr = {
-      sort_by = "mtime";
-      sort_reverse = true;
-      sort_dir_first = false;
-    };
-  };
-
-  # Screenshot to harbor — Shift+Cmd+X triggers interactive selection,
-  # uploads to ~/screenshots/swift/ on harbor for Claude Code to read
-  home.file.".local/bin/screenshot-to-harbor" = {
-    executable = true;
-    text = ''
-      #!/bin/bash
-      FILE="$(date +%Y%m%d-%H%M%S).png"
-      LOCAL="/tmp/$FILE"
-      REMOTE="screenshots/swift"
-
-      # Interactive selection screenshot
-      screencapture -i "$LOCAL" 2>/dev/null
-
-      # User cancelled the selection
-      [ ! -f "$LOCAL" ] && exit 0
-
-      # Ensure remote dir exists and upload
-      ssh harbor "mkdir -p ~/$REMOTE"
-      scp -q "$LOCAL" "harbor:~/$REMOTE/$FILE"
-      rm "$LOCAL"
-
-      # Notification
-      osascript -e "display notification \"$FILE uploaded to harbor\" with title \"Screenshot\""
-    '';
-  };
-
-  # Suppress "Last login: ..." message in new terminal windows
-  home.file.".hushlogin".text = "";
-
-  programs.home-manager.enable = true;
 
   # Karabiner config managed declaratively. GUI edits in Karabiner-Elements
   # will fail to write (symlink → /nix/store, read-only) — change here

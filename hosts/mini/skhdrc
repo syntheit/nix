@@ -1,0 +1,123 @@
+# Keychron Q1 Pro — F-keys come through as raw F1-F12 because the mini sets
+# NSGlobalDomain.com.apple.keyboard.fnState = true (see ./default.nix).
+# Volume/media events on F10-F12 still fire when pressed via fn+F10..F12, and
+# skhd catches them via the literal `sound_up`/`mute`/etc. modifiers.
+
+# ── Workspace switching (F1-F6 → spaces 1-6) ────────────────────────
+f1 : yabai -m space --focus 1
+f2 : yabai -m space --focus 2
+f3 : yabai -m space --focus 3
+f4 : yabai -m space --focus 4
+f5 : yabai -m space --focus 5
+f6 : yabai -m space --focus 6
+
+shift - f1 : yabai -m window --space 1
+shift - f2 : yabai -m window --space 2
+shift - f3 : yabai -m window --space 3
+shift - f4 : yabai -m window --space 4
+shift - f5 : yabai -m window --space 5
+shift - f6 : yabai -m window --space 6
+
+# ── Same workspace bindings via fn-modifier (parity with swift muscle memory)
+fn - 1 : yabai -m space --focus 1
+fn - 2 : yabai -m space --focus 2
+fn - 3 : yabai -m space --focus 3
+fn - 4 : yabai -m space --focus 4
+fn - 5 : yabai -m space --focus 5
+fn - 6 : yabai -m space --focus 6
+fn - 7 : yabai -m space --focus 7
+fn - 8 : yabai -m space --focus 8
+fn - 9 : yabai -m space --focus 9
+fn - 0 : yabai -m space --focus 10
+
+shift + fn - 1 : yabai -m window --space 1
+shift + fn - 2 : yabai -m window --space 2
+shift + fn - 3 : yabai -m window --space 3
+shift + fn - 4 : yabai -m window --space 4
+shift + fn - 5 : yabai -m window --space 5
+shift + fn - 6 : yabai -m window --space 6
+shift + fn - 7 : yabai -m window --space 7
+shift + fn - 8 : yabai -m window --space 8
+shift + fn - 9 : yabai -m window --space 9
+shift + fn - 0 : yabai -m window --space 10
+
+# Relative workspace movement
+fn - 0x2F : yabai -m space --focus next  # fn + .
+fn - 0x2B : yabai -m space --focus prev  # fn + ,
+shift + fn - 0x2F : yabai -m window --space next
+shift + fn - 0x2B : yabai -m window --space prev
+
+# ── System surfaces ──────────────────────────────────────────────────
+# Dashboard on Home key (was F3 on swift)
+home : $HOME/.local/bin/toggle-dashboard
+
+# Privacy/DND moved off F5/F6 since those are workspaces now.
+# TODO: Logitech MX Vertical top button → yabai -m window --toggle spotify
+# (mirrors mantle's `code:198 → togglespecialworkspace spotify`). Requires
+# a HID input listener on macOS; deferred.
+fn - p : $HOME/.local/bin/toggle-privacy
+fn - d : $HOME/.local/bin/toggle-dnd
+
+# ── Volume / media (intercepts macOS HUD; suppresses Apple overlay) ──
+sound_up : volume-panel up
+sound_down : volume-panel down
+mute : volume-panel mute
+
+# ── Application launchers ────────────────────────────────────────────
+fn - return : open -na Ghostty
+fn - t : open -na Ghostty
+fn - r : open -a Raycast
+fn - c : open -g "raycast://extensions/raycast/clipboard-history/clipboard-history"
+# Cmd+Space deliberately NOT bound here. Set Raycast's own hotkey to Cmd+Space
+# in Settings → General → Hotkey — Raycast natively toggles when its hotkey
+# fires (open if hidden, hide if frontmost). An skhd `open -a Raycast` binding
+# only opens, never closes, so it'd fight Raycast's own toggle.
+fn - w : open -a "Zen Browser"
+fn - e : open -na Ghostty --args -e yazi
+
+# ── System panels ────────────────────────────────────────────────────
+fn - b : bluetooth-panel toggle
+fn - n : wifi-panel toggle
+
+# ── Window management ───────────────────────────────────────────────
+fn - q : yabai -m window --close
+fn - f : yabai -m window --toggle zoom-fullscreen
+fn - space : yabai -m window --toggle float
+
+# Focus window (vim-style navigation)
+fn - h : yabai -m window --focus west
+fn - j : yabai -m window --focus south
+fn - k : yabai -m window --focus north
+fn - l : yabai -m window --focus east
+
+# Move window (with shift)
+shift + fn - h : yabai -m window --swap west
+shift + fn - j : yabai -m window --swap south
+shift + fn - k : yabai -m window --swap north
+shift + fn - l : yabai -m window --swap east
+
+# Resize window
+fn + alt - h : yabai -m window --resize left:-50:0
+fn + alt - j : yabai -m window --resize bottom:0:50
+fn + alt - k : yabai -m window --resize top:0:-50
+fn + alt - l : yabai -m window --resize right:50:0
+
+# ── Screenshots (screencapture -i freezes screen during selection) ──
+shift + cmd - s : screencapture -ic                                                                                      # Area → clipboard
+shift + cmd - d : mkdir -p ~/Pictures/Screenshots && screencapture -i ~/Pictures/Screenshots/screenshot-$(date +%Y%m%d-%H%M%S).png  # Area → file
+shift + cmd - a : screencapture -c                                                                                       # Full screen → clipboard
+shift + cmd - w : screencapture -wc                                                                                      # Window → clipboard
+
+# Screenshot to harbor — interactive selection, uploads to ~/screenshots/mini/ on harbor
+shift + cmd - x : $HOME/.local/bin/screenshot-to-harbor
+
+# ── Lock screen ──────────────────────────────────────────────────────
+shift + fn - escape : pmset displaysleepnow
+
+# ── Layout toggles ───────────────────────────────────────────────────
+fn + alt - space : yabai -m space --layout $(yabai -m query --spaces --space | jq -r 'if .type == "bsp" then "float" else "bsp" end')
+fn + alt - b : yabai -m space --balance
+
+# ── Wallpaper cycling ────────────────────────────────────────────────
+fn + alt - 0x2F : wallpaper-cycle next   # fn + alt + .
+fn + alt - 0x2B : wallpaper-cycle prev   # fn + alt + ,
