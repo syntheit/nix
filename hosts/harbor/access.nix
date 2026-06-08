@@ -33,6 +33,8 @@
           "docs.matv.io" = "http://localhost:3040";
           "map.matv.io" = "http://localhost:8100";
           "files.matv.io" = "http://localhost:4717";
+          "malli-dev.sudoman.net" = "http://localhost:8787";
+          "pro-malli-dev.sudoman.net" = "http://localhost:3000";
         };
         default = "http_status:404";
         credentialsFile = "/etc/cloudflared/credentials.json";
