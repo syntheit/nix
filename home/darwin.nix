@@ -38,6 +38,8 @@
   home.username = vars.user.name;
   home.homeDirectory = "/Users/${vars.user.name}";
 
+  programs.vestal.enable = true;
+
   home.stateVersion = "24.11";
 
   home.shellAliases = {

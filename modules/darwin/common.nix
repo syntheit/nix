@@ -97,6 +97,12 @@ in
           >> /var/root/.ssh/known_hosts || true
         chmod 0644 /var/root/.ssh/known_hosts
       fi
+
+      # Raise per-process file descriptor limit. macOS defaults to 256
+      # which Nix evaluation blows through instantly. 65536 matches
+      # typical Linux server defaults. Both soft + hard set so children
+      # (including sudo'd darwin-rebuild) inherit the new limit.
+      launchctl limit maxfiles 65536 65536 2>/dev/null || true
     '';
 
     system.defaults = {
