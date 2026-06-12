@@ -63,8 +63,6 @@ lib.mkMerge [
     stylix.targets.qt.platform = "qtct";
     stylix.targets.dunst.enable = true;
 
-    gtk.gtk4.theme = null;
-
     gtk.iconTheme = {
       name = "Papirus";
       package = pkgs.papirus-icon-theme;
