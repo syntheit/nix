@@ -1,56 +1,63 @@
-# Construct — Daniel's life-OS web companion app.
-# Static SvelteKit build served by darkhttpd. No docker, no node runtime.
+# Construct — Daniel's life-OS web app.
+# Next.js (standalone) backed by SQLite. Auth via Better Auth.
 # Iteration loop: edit → `construct-rebuild` → done.
 { config, lib, pkgs, ... }:
 
 let
   cfg = config.services.construct;
 
-  # Build toolchain — pinned via nixpkgs so it tracks the rest of the system.
-  buildPath = lib.makeBinPath [ pkgs.nodejs_22 pkgs.pnpm ];
+  buildPath = lib.makeBinPath [
+    pkgs.nodejs_22
+    pkgs.pnpm
+    pkgs.openssl
+    pkgs.pkg-config
+    pkgs.prisma-engines
+  ];
+
+  # Prisma needs explicit engine paths on NixOS (no precompiled NixOS binaries
+  # upstream). Same set the dev flake uses.
+  prismaEnv = ''
+    export PRISMA_QUERY_ENGINE_LIBRARY="${pkgs.prisma-engines}/lib/libquery_engine.node"
+    export PRISMA_QUERY_ENGINE_BINARY="${pkgs.prisma-engines}/bin/query-engine"
+    export PRISMA_SCHEMA_ENGINE_BINARY="${pkgs.prisma-engines}/bin/schema-engine"
+    export PRISMA_SKIP_POSTINSTALL_GENERATE="1"
+  '';
 
   rebuildScript = pkgs.writeShellScriptBin "construct-rebuild" ''
     set -euo pipefail
-
-    # If a sibling service (e.g. construct-kv) needs to be rebuilt first,
-    # the host wires its rebuild command here. Single user-facing command.
-    ${lib.optionalString (cfg.kvRebuildCommand != null) ''
-      echo "→ ${cfg.kvRebuildCommand}"
-      ${cfg.kvRebuildCommand}
-      echo
-    ''}
 
     if [ ! -d "${cfg.srcDir}" ]; then
       echo "construct-rebuild: source dir ${cfg.srcDir} does not exist" >&2
       exit 1
     fi
 
-    # Pnpm-invoked binaries (svelte-kit, vite) shell out to `node`, so node
-    # must be on PATH in addition to pnpm itself.
     export PATH="${buildPath}:$PATH"
+    ${prismaEnv}
 
     cd "${cfg.srcDir}"
 
     echo "→ pnpm install"
     pnpm install --prefer-frozen-lockfile
 
-    echo "→ pnpm build${lib.optionalString (cfg.kvUrl != null) " (PUBLIC_CONSTRUCT_KV_URL=${cfg.kvUrl})"}"
-    ${lib.optionalString (cfg.kvUrl != null) ''export PUBLIC_CONSTRUCT_KV_URL="${cfg.kvUrl}"''}
+    echo "→ prisma migrate deploy"
+    mkdir -p "${cfg.srcDir}/data"
+    DATABASE_URL="${cfg.databaseUrl}" pnpm exec prisma generate
+    DATABASE_URL="${cfg.databaseUrl}" pnpm exec prisma migrate deploy
+
+    echo "→ next build"
     pnpm build
 
-    # static-web-server reads file contents per request, BUT --page-fallback is
-    # cached in memory at startup. SPA routes (anything not statically rendered)
-    # serve the cached fallback HTML — which references bundle hashes from the
-    # previous build. Restart to reload it.
+    # adapter-static is gone — Next.js standalone emits its own server.
+    # Restart picks up the new bundle + any schema migrations.
     echo "→ restart construct-app"
     sudo systemctl restart construct-app
 
-    echo "✓ build/ updated. http://$(${pkgs.hostname}/bin/hostname):${toString cfg.port}/"
+    echo "✓ build complete. http://$(${pkgs.hostname}/bin/hostname):${toString cfg.port}/"
   '';
 in
 {
   options.services.construct = {
-    enable = lib.mkEnableOption "Construct life-OS web app (static, served by darkhttpd)";
+    enable = lib.mkEnableOption "Construct life-OS web app";
 
     srcDir = lib.mkOption {
       type = lib.types.path;
@@ -69,14 +76,14 @@ in
       default = "0.0.0.0";
       description = ''
         Bind address. With harbor's firewall (Tailscale/wg only on trusted interfaces),
-        0.0.0.0 means "reachable from any device on Tailscale, blocked from the public internet".
+        0.0.0.0 means reachable from any device on Tailscale, blocked from the public internet.
       '';
     };
 
     user = lib.mkOption {
       type = lib.types.str;
       default = "matv";
-      description = "User the service runs as. Needs read access to ${toString cfg.srcDir}/build.";
+      description = "User the service runs as.";
     };
 
     openFirewall = lib.mkOption {
@@ -85,50 +92,74 @@ in
       description = "Open the port to the public internet. Default: false (Tailscale/wg only).";
     };
 
-    kvUrl = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
-      description = ''
-        URL of the construct-kv service for cross-device state. When set, baked into
-        the static build as PUBLIC_CONSTRUCT_KV_URL. Leave null for local-only state.
-      '';
-      example = "http://harbor:4322";
+    databaseUrl = lib.mkOption {
+      type = lib.types.str;
+      default = "file:${cfg.srcDir}/data/app.db";
+      description = "Prisma DATABASE_URL. Defaults to SQLite under srcDir/data/.";
     };
 
-    kvRebuildCommand = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
+    publicUrl = lib.mkOption {
+      type = lib.types.str;
+      default = "http://harbor:${toString cfg.port}";
       description = ''
-        Optional command run before the app build. Lets the host chain a sibling
-        service's rebuild (e.g. construct-kv-rebuild) into the single `construct-rebuild`
-        flow without coupling this module to that one.
+        Public URL the app considers itself reachable at. Used by Better Auth
+        for trustedOrigins / baseURL and for OpenGraph metadata.
       '';
-      example = "construct-kv-rebuild";
+    };
+
+    authSecretFile = lib.mkOption {
+      type = lib.types.path;
+      default = "/var/lib/construct-app/secret.env";
+      description = ''
+        Path to an env-format file containing AUTH_SECRET=... (and optionally
+        TRUSTED_ORIGINS=...). The file is loaded via systemd EnvironmentFile,
+        not built into the Nix store. Generate the secret with:
+          sudo mkdir -p /var/lib/construct-app
+          sudo bash -c 'echo "AUTH_SECRET=\"$(openssl rand -base64 32)\"" > /var/lib/construct-app/secret.env'
+          sudo chmod 400 /var/lib/construct-app/secret.env
+          sudo chown ${cfg.user} /var/lib/construct-app/secret.env
+      '';
     };
   };
 
   config = lib.mkIf cfg.enable {
     systemd.services.construct-app = {
-      description = "Construct life-OS web app (static-web-server → ${toString cfg.srcDir}/build)";
+      description = "Construct life-OS web app (Next.js standalone)";
       after = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
 
-      # Don't try to start if there's no build yet. First `construct-rebuild` will start it.
-      unitConfig.ConditionPathExists = "${cfg.srcDir}/build/index.html";
+      # Don't start until first build has produced the standalone server.
+      unitConfig.ConditionPathExists = "${cfg.srcDir}/.next/standalone/server.js";
+
+      environment = {
+        NODE_ENV = "production";
+        HOSTNAME = cfg.address;
+        PORT = toString cfg.port;
+        DATABASE_URL = cfg.databaseUrl;
+        PUBLIC_URL = cfg.publicUrl;
+        PRISMA_QUERY_ENGINE_LIBRARY = "${pkgs.prisma-engines}/lib/libquery_engine.node";
+        PRISMA_QUERY_ENGINE_BINARY = "${pkgs.prisma-engines}/bin/query-engine";
+        PRISMA_SCHEMA_ENGINE_BINARY = "${pkgs.prisma-engines}/bin/schema-engine";
+      };
 
       serviceConfig = {
-        # static-web-server with --page-fallback gives SPA-style routing:
-        # any path that isn't a real file falls through to index.html (200 OK),
-        # and SvelteKit's client-side router takes over.
-        ExecStart = "${pkgs.static-web-server}/bin/static-web-server --root ${cfg.srcDir}/build --host ${cfg.address} --port ${toString cfg.port} --page-fallback ${cfg.srcDir}/build/index.html --compression-static true";
+        # Next.js standalone bundles its own server entrypoint. Run it under
+        # the same node that built it.
+        ExecStart = "${pkgs.nodejs_22}/bin/node ${cfg.srcDir}/.next/standalone/server.js";
+
+        # AUTH_SECRET (+ optionally TRUSTED_ORIGINS) loaded from disk, not from
+        # the Nix store. systemd EnvironmentFile is the cleanest way.
+        EnvironmentFile = cfg.authSecretFile;
+
+        WorkingDirectory = cfg.srcDir;
         Restart = "on-failure";
         RestartSec = "5s";
-
         User = cfg.user;
 
-        # Hardening — read-only access to home is enough; static-web-server only reads files.
+        # Hardening — service writes only to its data dir (SQLite + WAL).
         ProtectSystem = "strict";
         ProtectHome = "read-only";
+        ReadWritePaths = [ "${cfg.srcDir}/data" ];
         PrivateTmp = true;
         NoNewPrivileges = true;
         ProtectKernelTunables = true;
@@ -137,14 +168,11 @@ in
         RestrictAddressFamilies = [ "AF_INET" "AF_INET6" ];
         RestrictNamespaces = true;
         LockPersonality = true;
-        MemoryDenyWriteExecute = true;
       };
     };
 
-    # `construct-rebuild` available in PATH for matv (and root).
     environment.systemPackages = [ rebuildScript ];
 
-    # Optional: open the port to the public internet. Default Tailscale-only.
     networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [ cfg.port ];
   };
 }
