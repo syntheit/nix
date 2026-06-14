@@ -575,6 +575,13 @@ in
         "3, up, special"
         "4, horizontal, workspace"
       ];
+      # vista (HTPC): the lid stays shut, so force the internal panel off and
+      # light up whatever shows up on the USB-C→HDMI output (its name may be
+      # DP-* or HDMI-* depending on the dongle) at its preferred mode.
+      monitor = lib.optionals (hostName == "vista") [
+        "eDP-1, disable"
+        ", preferred, auto, 1"
+      ];
       # Use nwg-displays to configure monitor settings
       # Will automatically reload from this file
       source = "~/.config/hypr/monitors.conf";

@@ -51,6 +51,9 @@
       # Jellyfin watches media libraries via inotify; default 524288 isn't enough during image generation
       "fs.inotify.max_user_watches" = 2097152;
     };
+
+    # qemu-user binfmt for aarch64 — lets harbor build Mobile NixOS images for fajita.
+    binfmt.emulatedSystems = [ "aarch64-linux" ];
   };
 
   # GPU drivers — headless server, no X11 needed

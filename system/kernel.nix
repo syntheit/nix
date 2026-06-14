@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, lib, ... }:
 {
   # Bootloader.
   boot.loader.systemd-boot.enable = true;
@@ -6,7 +6,10 @@
   boot.loader.efi.canTouchEfiVariables = true;
 
   # Use latest kernel.
-  boot.kernelPackages = pkgs.linuxPackages_latest;
+  # mkDefault so hosts that need a specific kernel can override without a
+  # conflict — e.g. vista (Apple T2) whose nixos-hardware apple-t2 module
+  # pins its own T2-patched kernel for the apple-bce driver.
+  boot.kernelPackages = lib.mkDefault pkgs.linuxPackages_latest;
 
   # Enable systemd in initrd for a better LUKS decryption prompt
   # Previously, the initrd used the legacy/simple init system which provides
