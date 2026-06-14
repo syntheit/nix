@@ -1,5 +1,7 @@
-{ pkgs, ... }:
-{
+{ pkgs, lib, hostName, ... }:
+# Not on vista — it has no MX Vertical, and logid's udev "restart on any
+# Logitech device" rule just adds noise around the HTPC's USB mouse.
+lib.mkIf (hostName != "vista") {
   # Logitech HID++ device configuration (logid)
   # Remaps the MX Vertical top button to F20 (toggle Spotify workspace via Hyprland)
   environment.systemPackages = [ pkgs.logiops ];
