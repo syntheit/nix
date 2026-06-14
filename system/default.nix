@@ -4,6 +4,7 @@
   vars,
   extraLibs,
   inputs,
+  hostName,
   ...
 }:
 let
@@ -169,8 +170,6 @@ in
     ffmpegthumbnailer # Video thumbnail generation
     poppler-utils # PDF thumbnail generation
     android-tools
-    # Affinity Suite
-    inputs.affinity-nix.packages.${pkgs.stdenv.hostPlatform.system}.v3
     gpartedWayland # GParted with Wayland DISPLAY fix (replaces xhost + gparted)
     ntfs3g # NTFS read/write support and utilities
     cifs-utils # Samba/Windows network shares
@@ -179,6 +178,11 @@ in
     apfs-fuse # APFS support (read-only)
     sqlite
     usbToggle
+  ]
+  # Affinity Suite — heavy creative app, workstation-only. Skipped on the lean
+  # HTPC (vista).
+  ++ lib.optionals (hostName != "vista") [
+    inputs.affinity-nix.packages.${pkgs.stdenv.hostPlatform.system}.v3
   ];
 
   # Link thumbnailer files so file managers can find them

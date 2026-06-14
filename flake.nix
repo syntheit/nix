@@ -94,6 +94,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    nixos-hardware = {
+      url = "github:NixOS/nixos-hardware";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     malli-nix = {
       url = "git+ssh://git@github.com/syntheit/malli-nix.git";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -260,6 +265,36 @@
                 hostName = "raven";
               };
               home-manager.users."droid" = import ./hosts/raven/home.nix;
+            }
+          ];
+        };
+
+        # vista — 2019 16" MacBook Pro (MacBookPro16,1, Apple T2) repurposed as
+        # an always-on Hyprland HTPC/media box (lid shut, HDMI to TV, ethernet).
+        vista = nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          specialArgs = specialArgs // {
+            hostName = "vista";
+          };
+          modules = [
+            ./hosts/vista
+            inputs.nixos-hardware.nixosModules.apple-t2
+            inputs.disko.nixosModules.disko
+            inputs.home-manager.nixosModules.home-manager
+            {
+              nixpkgs.overlays = [
+                inputs.nur.overlays.default
+                (import ./overlays { inherit inputs lib; }).modifications
+                (import ./overlays { inherit inputs lib; }).additions
+              ];
+              home-manager.useGlobalPkgs = true;
+              home-manager.useUserPackages = true;
+              home-manager.backupFileExtension = "bkp";
+              home-manager.extraSpecialArgs = specialArgs // {
+                hostName = "vista";
+              };
+              # Slim HTPC home profile — NOT the full ./home kitchen sink.
+              home-manager.users."${vars.user.name}" = import ./hosts/vista/home.nix;
             }
           ];
         };

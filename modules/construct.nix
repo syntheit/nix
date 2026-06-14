@@ -47,6 +47,17 @@ let
     echo "→ next build"
     pnpm build
 
+    # Next standalone output ships only the server bundle — .next/static and
+    # public/ are NOT copied in. Without them the server runs but every
+    # CSS/JS/image 404s. Sync them in.
+    echo "→ copy static + public into standalone"
+    rm -rf "${cfg.srcDir}/.next/standalone/.next/static"
+    cp -r "${cfg.srcDir}/.next/static" "${cfg.srcDir}/.next/standalone/.next/static"
+    if [ -d "${cfg.srcDir}/public" ]; then
+      rm -rf "${cfg.srcDir}/.next/standalone/public"
+      cp -r "${cfg.srcDir}/public" "${cfg.srcDir}/.next/standalone/public"
+    fi
+
     # adapter-static is gone — Next.js standalone emits its own server.
     # Restart picks up the new bundle + any schema migrations.
     echo "→ restart construct-app"
