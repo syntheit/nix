@@ -19,7 +19,6 @@
     ../../modules/foyer.nix
     ../../modules/elliot.nix
     ../../modules/construct.nix
-    ../../modules/construct-kv.nix
     ../../modules/jelly-recs.nix
     ../../modules/harborfin.nix
     ../../modules/asado-list.nix
@@ -116,14 +115,6 @@
     srcDir = "/home/matv/Projects/the_construct/construct-app";
     port = 4321;
     publicUrl = "http://harbor:4321";
-  };
-
-  # construct-kv — legacy KV API. Replaced by KvState in the construct-app SQLite.
-  # Kept enabled briefly during cutover; flip enable = false once nothing references it.
-  services.construct-kv = {
-    enable = false;
-    srcDir = "/home/matv/Projects/the_construct/tools/construct-kv";
-    port = 4322;
   };
 
   # asado-list — static viewer for the asado & tech waitlist triage.

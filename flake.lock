@@ -725,6 +725,23 @@
         "url": "ssh://git@github.com/syntheit/malli-nix.git"
       }
     },
+    "mobile-nixos": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1771796702,
+        "narHash": "sha256-PR0nXZ9kOYA+puqC8owO2ozTjNBDshqZmqbFtOe6jCg=",
+        "owner": "mwlaboratories",
+        "repo": "mobile-nixos",
+        "rev": "65b914fe1e3d59d83ef1933396e20465a12393a3",
+        "type": "github"
+      },
+      "original": {
+        "owner": "mwlaboratories",
+        "ref": "sdm845-bleeding-edge",
+        "repo": "mobile-nixos",
+        "type": "github"
+      }
+    },
     "nix-darwin": {
       "inputs": {
         "nixpkgs": [
@@ -1168,6 +1185,7 @@
         "home-manager": "home-manager",
         "jelly-recs": "jelly-recs",
         "malli-nix": "malli-nix",
+        "mobile-nixos": "mobile-nixos",
         "nix-darwin": "nix-darwin_2",
         "nix-homebrew": "nix-homebrew_2",
         "nix-index-database": "nix-index-database_2",

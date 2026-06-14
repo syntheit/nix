@@ -99,6 +99,14 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # Mobile NixOS — fajita (OnePlus 6T). mwlaboratories fork carries the SDM845
+    # kernel 6.19 bump + depmod cross-compile fix; upstream is pinned to 6.4 and
+    # stale. Imported as plain source (not a flake).
+    mobile-nixos = {
+      url = "github:mwlaboratories/mobile-nixos/sdm845-bleeding-edge";
+      flake = false;
+    };
+
     malli-nix = {
       url = "git+ssh://git@github.com/syntheit/malli-nix.git";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -265,6 +273,29 @@
                 hostName = "raven";
               };
               home-manager.users."droid" = import ./hosts/raven/home.nix;
+            }
+          ];
+        };
+
+        # fajita — OnePlus 6T running Mobile NixOS + Phosh. Built on harbor via
+        # aarch64-linux binfmt emulation; flashed to phone over fastboot.
+        fajita = nixpkgs.lib.nixosSystem {
+          system = "aarch64-linux";
+          specialArgs = specialArgs // {
+            hostName = "fajita";
+          };
+          modules = [
+            (import "${inputs.mobile-nixos}/lib/configuration.nix" { device = "oneplus-fajita"; })
+            ./hosts/fajita
+            inputs.home-manager.nixosModules.home-manager
+            {
+              home-manager.useGlobalPkgs = true;
+              home-manager.useUserPackages = true;
+              home-manager.backupFileExtension = "bkp";
+              home-manager.extraSpecialArgs = specialArgs // {
+                hostName = "fajita";
+              };
+              home-manager.users."daniel" = import ./hosts/fajita/home.nix;
             }
           ];
         };
