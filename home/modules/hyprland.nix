@@ -7,6 +7,21 @@
   ...
 }:
 let
+  # vista (HTPC) lid-aware display control: disable the internal panel only when
+  # the lid is shut AND an external display (the TV) is connected; otherwise keep
+  # it on. Reads actual lid + monitor state, so the same script is correct for
+  # boot, lid-open, and lid-close. Referenced from monitor/bindl/exec-once below.
+  vistaLidMonitor = pkgs.writeShellScript "vista-lid-monitor" ''
+    hyprctl=${config.wayland.windowManager.hyprland.package}/bin/hyprctl
+    jq=${pkgs.jq}/bin/jq
+    lid=$(cat /proc/acpi/button/lid/*/state 2>/dev/null)
+    externals=$("$hyprctl" monitors all -j | "$jq" '[.[] | select(.name != "eDP-1")] | length')
+    if echo "$lid" | grep -q closed && [ "''${externals:-0}" -ge 1 ]; then
+      "$hyprctl" keyword monitor "eDP-1, disable"
+    else
+      "$hyprctl" keyword monitor "eDP-1, preferred, auto, 1.6"
+    fi
+  '';
   # Script to handle Escape key behavior
   # 1. If Rofi is running, kill it (handles layer surface case)
   # 2. If active window is a TUI app/CopyQ, kill it
@@ -607,6 +622,12 @@ in
       ]
       ++ lib.optionals (hostName == "ledger") [
         ", switch:off:Lid Switch, exec, ${pkgs.hyprlock}/bin/hyprlock"
+      ]
+      ++ lib.optionals (hostName == "vista") [
+        # Any lid event re-runs the lid-aware script (it reads real lid +
+        # external-display state, so one script handles both open and close).
+        ", switch:on:Lid Switch, exec, ${vistaLidMonitor}"
+        ", switch:off:Lid Switch, exec, ${vistaLidMonitor}"
       ];
       bindm = [
         "$mod, mouse:272, movewindow"
@@ -623,6 +644,11 @@ in
         # Track most-recently-active MPRIS player so media keys follow it
         "${pkgs.playerctl}/bin/playerctld daemon"
         # hyprsunset is managed by systemd (see below)
+      ]
+      ++ lib.optionals (hostName == "vista") [
+        # Apply lid-aware monitor setup at startup (handles booting with the lid
+        # already shut on the TV, where no lid-switch event fires).
+        "${pkgs.bash}/bin/bash -c 'sleep 2; ${vistaLidMonitor}'"
       ];
       binds = {
         movefocus_cycles_fullscreen = true;
@@ -633,26 +659,43 @@ in
       input = {
         touchpad = {
           natural_scroll = true;
+        }
+        # vista: Apple Force Touch trackpad — tap-to-click, 2-finger tap =
+        # right-click (clickfinger, macOS-style), and tap-and-drag.
+        // lib.optionalAttrs (hostName == "vista") {
+          "tap-to-click" = true;
+          clickfinger_behavior = true;
+          "tap-and-drag" = true;
         };
         # Enable compose key on right Alt for typing accents
         kb_options = "compose:ralt";
       };
       # Trackpad gestures
+      # vista: ONLY 3-finger left/right to switch workspaces (no special-swipe,
+      # no 4-finger) — per request. Other hosts keep the fuller gesture set.
       gesture = [
         "3, horizontal, workspace"
+      ]
+      ++ lib.optionals (hostName != "vista") [
         "3, up, special"
         "4, horizontal, workspace"
       ];
-      # vista (HTPC): the lid stays shut, so force the internal panel off and
-      # light up whatever shows up on the USB-C→HDMI output (its name may be
-      # DP-* or HDMI-* depending on the dongle) at its preferred mode.
+      # vista (HTPC + occasional laptop): enable every connected output at its
+      # preferred mode — the internal panel (eDP-1) when used open as a laptop,
+      # and/or the TV over USB-C→HDMI (name may be DP-* or HDMI-*). The internal
+      # panel is turned off ONLY when the lid is shut AND a TV is connected,
+      # handled by vistaLidMonitor (lid-switch bindl + startup exec-once).
       monitor = lib.optionals (hostName == "vista") [
-        "eDP-1, disable"
-        ", preferred, auto, 1"
+        # Internal retina panel at a clean 1.6x (3072x1920 → 1920x1200 effective).
+        "eDP-1, preferred, auto, 1.6"
+        # Any external output (the TV) at its native mode, auto scale.
+        ", preferred, auto, auto"
       ];
       # Use nwg-displays to configure monitor settings
-      # Will automatically reload from this file
-      source = "~/.config/hypr/monitors.conf";
+      # Will automatically reload from this file. Skipped on vista, which has no
+      # nwg-displays-generated monitors.conf (it uses the declarative monitor
+      # rules above) — sourcing a missing file is a Hyprland config error.
+      source = lib.optional (hostName != "vista") "~/.config/hypr/monitors.conf";
       windowrule = [
         "float 1, match:class ^(Rofi)$"
 
@@ -725,7 +768,8 @@ in
         "NVD_BACKEND,direct"
       ];
       cursor = {
-        no_hardware_cursors = hostName == "mantle";
+        # vista: amdgpu hardware cursor renders invisible — use software cursor.
+        no_hardware_cursors = hostName == "mantle" || hostName == "vista";
         warp_on_change_workspace = false;
         no_warps = true;
       };

@@ -10,9 +10,14 @@
   # T2-patched kernel, loads apple-bce (keyboard/trackpad/audio bridge) in
   # initrd, and sets the required kernel params (pcie_ports=compat,
   # intel_iommu=on, iommu=pt).
+    # NOTE (trackpad): the internal trackpad needs the newer linux-t2 patches
+    # (6.18+ branch) to bind its multitouch HID interface correctly — on 6.12 it
+    # comes up as a relative mouse with no working click. But this nixos-hardware
+    # module only offers kernelChannel "stable" (linux_6_12) or "latest"
+    # (linux_6_19), and 6.19 was removed from our nixpkgs (EOL), so the bump
+    # can't build. Revisit when the module exposes a 6.18-based t2 kernel (then
+    # this becomes a one-line flip). Until then: USB mouse for laptop use.
   hardware.apple-t2 = {
-    # "stable" T2 kernel — more reliable than chasing mainline-latest for the
-    # out-of-tree apple-bce module.
     kernelChannel = "stable";
 
     # External display + HDMI run off the AMD dGPU on this model, so leave the
@@ -27,6 +32,14 @@
     # set ever proves flaky.
     firmware.enable = true;
     firmware.version = "sonoma";
+  };
+
+  # t2linux binary cache — serves prebuilt linux-t2 kernels (and the apple-bce
+  # closure) so kernel bumps download instead of compiling from source. Uses
+  # extra-* so cache.nixos.org is kept, not replaced.
+  nix.settings = {
+    extra-substituters = [ "https://cache.soopy.moe" ];
+    extra-trusted-public-keys = [ "cache.soopy.moe-1:0RZVsQeR+GOh0VQI9rvnHz55nVXkFardDqfm4+afjPo=" ];
   };
 
   # ── GPU: AMD Radeon Pro 5500M (drives the HDMI/TV output) ─────────────────
