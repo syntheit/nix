@@ -22,6 +22,7 @@
     ../../modules/construct-kv.nix
     ../../modules/jelly-recs.nix
     ../../modules/harborfin.nix
+    ../../modules/asado-list.nix
   ];
 
   services.serverSafety = {
@@ -107,22 +108,31 @@
     nvidiaPackage = config.hardware.nvidia.package.bin;
   };
 
-  # Construct — Daniel's life-OS web app. Static SvelteKit build served by static-web-server.
-  # Cross-device state goes through construct-kv (below); `construct-rebuild` chains both.
+  # Construct — Daniel's life-OS web app. Next.js standalone backed by SQLite.
+  # Cross-device state is in the app's own SQLite now (KvState table).
   # Iteration loop: edit code → `construct-rebuild` → done.
   services.construct = {
     enable = true;
     srcDir = "/home/matv/Projects/the_construct/construct-app";
     port = 4321;
-    kvUrl = "http://harbor:4322";          # baked into the static build
-    kvRebuildCommand = "construct-kv-rebuild";  # chain into construct-rebuild
+    publicUrl = "http://harbor:4321";
   };
 
-  # construct-kv — SQLite KV API the construct-app calls for cross-device state.
+  # construct-kv — legacy KV API. Replaced by KvState in the construct-app SQLite.
+  # Kept enabled briefly during cutover; flip enable = false once nothing references it.
   services.construct-kv = {
-    enable = true;
+    enable = false;
     srcDir = "/home/matv/Projects/the_construct/tools/construct-kv";
     port = 4322;
+  };
+
+  # asado-list — static viewer for the asado & tech waitlist triage.
+  # Public hostname via cloudflared (asado-list.matv.io) is gated by a
+  # Cloudflare Access policy configured in the CF dashboard, NOT here.
+  services.asado-list = {
+    enable = true;
+    srcDir = "/home/matv/Projects/asado-list/static";
+    port = 4730;
   };
 
   # jelly-recs — content + collaborative recommendation rows for Jellyfin
