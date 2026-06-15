@@ -649,6 +649,15 @@ in
         # Apply lid-aware monitor setup at startup (handles booting with the lid
         # already shut on the TV, where no lid-switch event fires).
         "${pkgs.bash}/bin/bash -c 'sleep 2; ${vistaLidMonitor}'"
+        # NOTE: kdeconnectd is NOT started here — it runs as a home-manager
+        # systemd user service (see hosts/vista/home.nix) pinned to
+        # QT_QPA_PLATFORM=wayland so its remote-input backend uses the
+        # RemoteDesktop portal instead of XTest. Starting it bare here gave it
+        # DISPLAY=:0 + the xcb Qt platform, which broke remote input.
+        #
+        # RemoteDesktop portal backend (hypr-kdeconnect-fix) so KDE Connect's
+        # remote input (phone as mouse/keyboard) has something to inject through.
+        "hypr-kdeconnect-portal"
       ];
       binds = {
         movefocus_cycles_fullscreen = true;

@@ -55,6 +55,14 @@
   # — a later customization step once the desktop is dialed in.
   programs.kdeconnect.enable = true;
 
+  # Remote input (phone as touchpad/keyboard) needs a RemoteDesktop portal
+  # backend, which xdph lacks. Route RemoteDesktop to the hypr-kdeconnect bridge.
+  # The bridge package itself is installed in daniel's home profile (see
+  # ./home.nix) — that's the dir the NixOS xdg-desktop-portal frontend actually
+  # scans (NIX_XDG_DESKTOP_PORTAL_DIR points at the user profile, not the system
+  # one) — and its daemon is started from the Hyprland session (see hyprland.nix).
+  xdg.portal.config.common."org.freedesktop.impl.portal.RemoteDesktop" = "hypr-kdeconnect";
+
   # ── Boot straight to the TV ───────────────────────────────────────────────
   # The shared desktop module sets greetd's default_session (tuigreet). Add an
   # initial_session so the box autologins into Hyprland unattended at boot; if

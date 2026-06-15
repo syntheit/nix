@@ -4,6 +4,13 @@
   vars,
   ...
 }:
+let
+  # KDE Connect remote-input bridge (RemoteDesktop portal backend). Installed
+  # here in the home profile so its .portal lands in the dir the xdg-desktop-
+  # portal frontend scans (NIX_XDG_DESKTOP_PORTAL_DIR = the user profile). The
+  # daemon is started from the Hyprland session; routing is in ./default.nix.
+  hyprKdeconnectFix = pkgs.callPackage ./pkgs/hypr-kdeconnect-fix.nix { };
+in
 {
   # Lean HTPC home profile. Deliberately does NOT import ../../home (the full
   # workstation profile with its ~140-package kitchen sink). It reuses the same
@@ -99,7 +106,34 @@
 
     # ── Bluetooth pairing (for casting to a BT speaker) ──
     bluetuith
+
+    # ── KDE Connect remote-input bridge (RemoteDesktop portal backend) ──
+    hyprKdeconnectFix
   ];
+
+  # Run kdeconnectd as a Wayland Qt app. KDE Connect's mousepad plugin picks its
+  # remote-input backend purely from Qt's platformName: "wayland" → the
+  # RemoteDesktop-portal path (which hypr-kdeconnect-fix implements), "xcb" →
+  # XTest (injects into XWayland, useless on Hyprland). Launched bare with
+  # DISPLAY=:0 and no QT_QPA_PLATFORM, Qt loads xcb → remote input silently dies.
+  # Force wayland + drop DISPLAY so the portal path is taken. Uses the wrapped
+  # store binary so the qtwayland QPA plugin is on the path.
+  systemd.user.services.kdeconnectd = {
+    Unit = {
+      Description = "KDE Connect daemon (forced Wayland Qt platform for remote input)";
+      After = [ "graphical-session.target" ];
+      PartOf = [ "graphical-session.target" ];
+    };
+    Install.WantedBy = [ "graphical-session.target" ];
+    Service = {
+      Type = "simple";
+      ExecStart = "${pkgs.kdePackages.kdeconnect-kde}/bin/kdeconnectd --replace";
+      Restart = "on-failure";
+      RestartSec = 2;
+      Environment = [ "QT_QPA_PLATFORM=wayland" ];
+      UnsetEnvironment = [ "DISPLAY" ];
+    };
+  };
 
   programs.home-manager.enable = true;
 }
