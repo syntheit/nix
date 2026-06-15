@@ -30,5 +30,8 @@
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdRcH2UWe31VdU62j3Ksbb6LDyS1APNW1BQMM8mvsej daniel@matv.io"
   ];
 
+  # Passwordless sudo for wheel
+  security.sudo.wheelNeedsPassword = false;
+
   system.stateVersion = "25.05";
 }

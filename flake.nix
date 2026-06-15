@@ -159,6 +159,7 @@
               nixpkgs.overlays = [
                 inputs.nur.overlays.default
                 inputs.windscribe.overlays.default
+                inputs.affinity-nix.overlays.default
                 (import ./overlays { inherit inputs lib; }).modifications
                 (import ./overlays { inherit inputs lib; }).additions
               ];
@@ -187,6 +188,7 @@
               nixpkgs.overlays = [
                 inputs.nur.overlays.default
                 inputs.windscribe.overlays.default
+                inputs.affinity-nix.overlays.default
                 (import ./overlays { inherit inputs lib; }).modifications
                 (import ./overlays { inherit inputs lib; }).additions
               ];
