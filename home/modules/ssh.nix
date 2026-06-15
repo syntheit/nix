@@ -11,95 +11,96 @@
   programs.ssh = {
     enable = true;
     enableDefaultConfig = false;
-    matchBlocks = {
+    # The freeform `settings` API uses upstream OpenSSH directive names
+    # (HostName, IdentityFile, User, Port, ...) directly. Attribute names are
+    # interpreted as `Host` patterns unless prefixed with `Host `/`Match `.
+    settings = {
       "*" = {
-        identityFile = "~/.ssh/mainkey";
-        extraOptions = {
-          # Reuse connections — eliminates handshake on subsequent sessions
-          ControlMaster = "auto";
-          ControlPath = "~/.ssh/sockets/%r@%h-%p";
-          ControlPersist = "10m";
-          # Don't wait for TCP ACK to send data
-          TCPKeepAlive = "yes";
-          # Detect dead connections faster
-          ServerAliveInterval = "15";
-          ServerAliveCountMax = "3";
-          # Disable compression on fast links (adds latency)
-          Compression = "no";
-        };
+        IdentityFile = "~/.ssh/mainkey";
+        # Reuse connections — eliminates handshake on subsequent sessions
+        ControlMaster = "auto";
+        ControlPath = "~/.ssh/sockets/%r@%h-%p";
+        ControlPersist = "10m";
+        # Don't wait for TCP ACK to send data
+        TCPKeepAlive = "yes";
+        # Detect dead connections faster
+        ServerAliveInterval = 15;
+        ServerAliveCountMax = 3;
+        # Disable compression on fast links (adds latency)
+        Compression = "no";
       };
       "harbor" = {
-        hostname = "100.109.63.87";
-        identityFile = "~/.ssh/mainkey";
-        user = "matv";
-        port = 64829;
+        HostName = "100.109.63.87";
+        IdentityFile = "~/.ssh/mainkey";
+        User = "matv";
+        Port = 64829;
       };
       "harbor.tunnel" = {
-        hostname = "harbor-ssh.matv.io";
-        identityFile = "~/.ssh/mainkey";
-        user = "matv";
-        port = 64829;
-        proxyCommand = "${pkgs.cloudflared}/bin/cloudflared access ssh --hostname %h";
+        HostName = "harbor-ssh.matv.io";
+        IdentityFile = "~/.ssh/mainkey";
+        User = "matv";
+        Port = 64829;
+        ProxyCommand = "${pkgs.cloudflared}/bin/cloudflared access ssh --hostname %h";
       };
       "swift" = {
-        hostname = "100.78.114.100";
-        identityFile = "~/.ssh/mainkey";
-        user = "daniel";
+        HostName = "100.78.114.100";
+        IdentityFile = "~/.ssh/mainkey";
+        User = "daniel";
       };
       "mantle" = {
-        hostname = "100.75.104.50";
-        identityFile = "~/.ssh/mainkey";
-        user = "daniel";
+        HostName = "100.75.104.50";
+        IdentityFile = "~/.ssh/mainkey";
+        User = "daniel";
       };
       "raven" = {
-        hostname = "100.98.64.97";
-        identityFile = "~/.ssh/mainkey";
-        user = "droid";
+        HostName = "100.98.64.97";
+        IdentityFile = "~/.ssh/mainkey";
+        User = "droid";
       };
       "raven.tunnel" = {
-        hostname = "raven-ssh.matv.io";
-        identityFile = "~/.ssh/mainkey";
-        user = "droid";
-        proxyCommand = "${pkgs.cloudflared}/bin/cloudflared access ssh --hostname %h";
+        HostName = "raven-ssh.matv.io";
+        IdentityFile = "~/.ssh/mainkey";
+        User = "droid";
+        ProxyCommand = "${pkgs.cloudflared}/bin/cloudflared access ssh --hostname %h";
       };
       "conduit" = {
-        hostname = "192.3.203.146";
-        identityFile = "~/.ssh/mainkey";
-        user = "matv";
-        port = 64829;
+        HostName = "192.3.203.146";
+        IdentityFile = "~/.ssh/mainkey";
+        User = "matv";
+        Port = 64829;
       };
       # Lab VMs on harbor — proxy through harbor since they're on virbr0 NAT
       "turntable" = {
-        hostname = "192.168.122.50";
-        identityFile = "~/.ssh/mainkey";
-        user = "root";
-        proxyJump = "harbor";
+        HostName = "192.168.122.50";
+        IdentityFile = "~/.ssh/mainkey";
+        User = "root";
+        ProxyJump = "harbor";
       };
       # Direct connection — runs from harbor (which is on the same virbr0 network).
       # From swift, use: ssh -J harbor user@192.168.122.200
       "haiku" = {
-        hostname = "192.168.122.200";
-        identityFile = "~/.ssh/mainkey";
-        user = "user";
+        HostName = "192.168.122.200";
+        IdentityFile = "~/.ssh/mainkey";
+        User = "user";
       };
       "gandalf" = {
-        hostname = "100.64.0.2";
-        identityFile = "~/.ssh/conduit_key";
-        identitiesOnly = true;
-        user = "tars";
+        HostName = "100.64.0.2";
+        IdentityFile = "~/.ssh/conduit_key";
+        IdentitiesOnly = true;
+        User = "tars";
       };
       "github.com" = {
-        hostname = "github.com";
-        user = "git";
-        identityFile = "~/.ssh/mainkey";
+        HostName = "github.com";
+        User = "git";
+        IdentityFile = "~/.ssh/mainkey";
       };
       # Alias matching the deploy-key-pinned alias used inside the
       # headscale container. Points at the same github.com host with
       # daniel's mainkey so flake updates work from harbor too.
       "github-malli-deus" = {
-        hostname = "github.com";
-        user = "git";
-        identityFile = "~/.ssh/mainkey";
+        HostName = "github.com";
+        User = "git";
+        IdentityFile = "~/.ssh/mainkey";
       };
     };
   };

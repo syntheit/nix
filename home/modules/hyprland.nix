@@ -307,13 +307,75 @@ let
     exec $T -L $S attach -t $S
   '';
 
+  # Freeze/thaw the dashboard's worker processes so it costs nothing (a true 0%)
+  # while it is hidden on its special workspace. We use the cgroup-v2 freezer
+  # rather than SIGSTOP: tmux places each pane in its own `tmux-spawn-*.scope`
+  # and reclaims the pty foreground group when a pane process stops, so SIGSTOP'd
+  # workers that read the terminal (the info loop, pipes.sh) get re-stopped by
+  # SIGTTIN on resume. The cgroup freezer is transparent to tmux — no job-control
+  # signals — and only touches the pane scopes, leaving ghostty (a separate
+  # scope) responsive so the compositor never sees a hung client.
+  mkDashFreezer = name: val: pkgs.writeShellScript name ''
+    panes=$(${pkgs.tmux}/bin/tmux -L dashboard list-panes -a -F '#{pane_pid}' 2>/dev/null) || exit 0
+    [ -z "$panes" ] && exit 0
+    collect() {
+      local p
+      for p in "$@"; do
+        printf '%s\n' "$p"
+        collect $(${pkgs.procps}/bin/pgrep -P "$p" 2>/dev/null)
+      done
+    }
+    for p in $(collect $panes); do
+      # /proc/<pid>/cgroup is a single `0::<path>` line on cgroup-v2.
+      # Group the redirect so a process that exited mid-walk is silently skipped.
+      { read -r line < /proc/"$p"/cgroup; } 2>/dev/null || continue
+      f="/sys/fs/cgroup''${line#0::}/cgroup.freeze"
+      [ -w "$f" ] && echo ${val} > "$f"
+    done
+  '';
+  dashboardFreeze = mkDashFreezer "dashboard-freeze" "1";
+  dashboardThaw = mkDashFreezer "dashboard-thaw" "0";
+
+  # Listens on Hyprland's event socket and freezes the dashboard whenever it
+  # stops being the visible special workspace, thawing it when shown again.
+  # Reacting to `activespecial` events (and reconciling actual state via hyprctl)
+  # covers every path that hides/shows it: Home, in-dashboard Escape, and the
+  # spotify special-workspace button.
+  dashboardWatcher = pkgs.writeShellScript "dashboard-watcher" ''
+    hyprctl=${config.wayland.windowManager.hyprland.package}/bin/hyprctl
+    jq=${pkgs.jq}/bin/jq
+    sock="''${XDG_RUNTIME_DIR}/hypr/''${HYPRLAND_INSTANCE_SIGNATURE}/.socket2.sock"
+
+    reconcile() {
+      if $hyprctl monitors -j \
+        | $jq -e '.[] | select(.specialWorkspace.name == "special:dashboard")' >/dev/null 2>&1; then
+        ${dashboardThaw}
+      else
+        ${dashboardFreeze}
+      fi
+    }
+
+    # Wait for the event socket to appear after login.
+    for _ in $(seq 1 120); do [ -S "$sock" ] && break; sleep 0.5; done
+
+    # Startup settle: the dashboard launches hidden, so freeze it once its panes
+    # exist (freeze is a no-op until then). Idempotent retry wins the launch race.
+    for _ in $(seq 1 20); do reconcile; sleep 1; done &
+
+    ${pkgs.socat}/bin/socat -u UNIX-CONNECT:"$sock" - | while IFS= read -r line; do
+      case "$line" in
+        activespecial*) reconcile ;;
+      esac
+    done
+  '';
+
   toggleDashboard = pkgs.writeShellScript "toggle-dashboard" ''
     hyprctl=${config.wayland.windowManager.hyprland.package}/bin/hyprctl
     jq=${pkgs.jq}/bin/jq
 
     # Relaunch if dashboard window was closed
-    if ! $hyprctl clients -j | $jq -e '.[] | select(.class == "dashboard")' > /dev/null 2>&1; then
-      ${pkgs.ghostty}/bin/ghostty --class=dashboard -e ${dashboardScript} &
+    if ! $hyprctl clients -j | $jq -e '.[] | select(.class == "com.matv.dashboard")' > /dev/null 2>&1; then
+      ${pkgs.ghostty}/bin/ghostty --class=com.matv.dashboard -e ${dashboardScript} &
     fi
 
     $hyprctl dispatch togglespecialworkspace dashboard
@@ -334,7 +396,7 @@ let
       class=$(echo "$active_window" | $jq -r ".class")
       
       # Check if it matches our TUI list (case-insensitive)
-      if echo "$class" | grep -qEi "^(tui-network|tui-bluetooth|tui-speedtest|tui-btop|com.github.hluk.copyq)$"; then
+      if echo "$class" | grep -qEi "^(com\.matv\.network|com\.matv\.bluetooth|com\.matv\.speedtest|com\.matv\.btop|com.github.hluk.copyq)$"; then
         $hyprctl dispatch killactive
       fi
     fi
@@ -418,6 +480,10 @@ in
 
   wayland.windowManager.hyprland = {
     enable = true;
+    # Keep the legacy hyprlang serialization for `settings` (the new default
+    # is "lua" for stateVersion >= 26.05). Pin it explicitly to silence the
+    # deprecation warning and preserve current behavior.
+    configType = "hyprlang";
     xwayland.enable = true;
     # Enable systemd integration to ensure graphical-session.target is reached
     # This is required for Waybar and wallpaper services to start correctly.
@@ -459,8 +525,8 @@ in
         "$mod, R, exec, rofi -show drun"
         "CTRL $mod, Space, togglefloating"
         "$mod, T, exec, ghostty"
-        "$mod, B, exec, ghostty --class=tui-bluetooth confirm-close-surface=false -e bluetuith"
-        "$mod, N, exec, ghostty --class=tui-network confirm-close-surface=false -e nmtui"
+        "$mod, B, exec, ghostty --class=com.matv.bluetooth --confirm-close-surface=false -e bluetuith"
+        "$mod, N, exec, ghostty --class=com.matv.network --confirm-close-surface=false -e nmtui"
         "$mod, E, exec, nautilus"
         "$mod, C, exec, ${pkgs.copyq}/bin/copyq toggle"
         "$mod SHIFT, L, exec, ${pkgs.hyprlock}/bin/hyprlock"
@@ -550,8 +616,10 @@ in
         "${pkgs.copyq}/bin/copyq --start-server"
         "${pkgs.bash}/bin/bash -c 'sleep 1 && ${pkgs.copyq}/bin/copyq loadTheme ~/.config/copyq/themes/tokyodark.ini && ${pkgs.copyq}/bin/copyq hide'"
         "${pkgs.hyprpolkitagent}/libexec/hyprpolkitagent"
-        # Start dashboard in background
-        "${pkgs.ghostty}/bin/ghostty --class=dashboard -e ${dashboardScript}"
+        # Start dashboard in background (hidden), then watch for show/hide to
+        # freeze its workers while off-screen so it idles at ~0% in the background.
+        "${pkgs.ghostty}/bin/ghostty --class=com.matv.dashboard -e ${dashboardScript}"
+        "${dashboardWatcher}"
         # Track most-recently-active MPRIS player so media keys follow it
         "${pkgs.playerctl}/bin/playerctld daemon"
         # hyprsunset is managed by systemd (see below)
@@ -607,28 +675,28 @@ in
         "dim_around 1, match:initial_class ^(org.pulseaudio.pavucontrol)$"
 
         # Network Manager TUI
-        "float 1, match:initial_class ^(tui-network)$"
-        "center 1, match:initial_class ^(tui-network)$"
-        "size 600 900, match:initial_class ^(tui-network)$"
-        "dim_around 1, match:initial_class ^(tui-network)$"
+        "float 1, match:initial_class ^(com\.matv\.network)$"
+        "center 1, match:initial_class ^(com\.matv\.network)$"
+        "size 600 900, match:initial_class ^(com\.matv\.network)$"
+        "dim_around 1, match:initial_class ^(com\.matv\.network)$"
 
         # Bluetooth TUI
-        "float 1, match:initial_class ^(tui-bluetooth)$"
-        "center 1, match:initial_class ^(tui-bluetooth)$"
-        "size 1104 580, match:initial_class ^(tui-bluetooth)$"
-        "dim_around 1, match:initial_class ^(tui-bluetooth)$"
+        "float 1, match:initial_class ^(com\.matv\.bluetooth)$"
+        "center 1, match:initial_class ^(com\.matv\.bluetooth)$"
+        "size 1104 580, match:initial_class ^(com\.matv\.bluetooth)$"
+        "dim_around 1, match:initial_class ^(com\.matv\.bluetooth)$"
 
         # Speedtest TUI
-        "float 1, match:initial_class ^(tui-speedtest)$"
-        "center 1, match:initial_class ^(tui-speedtest)$"
-        "size 800 400, match:initial_class ^(tui-speedtest)$"
-        "dim_around 1, match:initial_class ^(tui-speedtest)$"
+        "float 1, match:initial_class ^(com\.matv\.speedtest)$"
+        "center 1, match:initial_class ^(com\.matv\.speedtest)$"
+        "size 800 400, match:initial_class ^(com\.matv\.speedtest)$"
+        "dim_around 1, match:initial_class ^(com\.matv\.speedtest)$"
 
         # Btop TUI
-        "float 1, match:initial_class ^(tui-btop)$"
-        "center 1, match:initial_class ^(tui-btop)$"
-        "size 1200 800, match:initial_class ^(tui-btop)$"
-        "dim_around 1, match:initial_class ^(tui-btop)$"
+        "float 1, match:initial_class ^(com\.matv\.btop)$"
+        "center 1, match:initial_class ^(com\.matv\.btop)$"
+        "size 1200 800, match:initial_class ^(com\.matv\.btop)$"
+        "dim_around 1, match:initial_class ^(com\.matv\.btop)$"
 
         # Windscribe VPN
         "float 1, match:class ^(Windscribe)$"
@@ -641,7 +709,7 @@ in
         "workspace special:spotify silent, match:title ^Spotify.*Zen$"
 
         # Dashboard → hidden special workspace (toggled with Super+Home)
-        "workspace special:dashboard silent, match:initial_class ^(dashboard)$"
+        "workspace special:dashboard silent, match:initial_class ^(com\.matv\.dashboard)$"
       ];
       env = [
         "XDG_SESSION_TYPE,wayland"

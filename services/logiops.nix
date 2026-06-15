@@ -4,10 +4,16 @@
   # Remaps the MX Vertical top button to F20 (toggle Spotify workspace via Hyprland)
   environment.systemPackages = [ pkgs.logiops ];
 
-  # Restart logid when a Logitech HID device appears (logid starts before the
-  # mouse is ready and gives up after 5 tries without exiting)
+  # Restart logid when the MX Vertical appears (logid starts before the mouse is
+  # ready and gives up after 5 tries without exiting). The mouse connects over
+  # Bluetooth, so we must match both transports:
+  #   - USB / receiver: a parent USB device carries ATTRS{idVendor}=="046d".
+  #   - Bluetooth: a virtual `uhid` device with no USB parent (so no idVendor).
+  #     Its HID parent is named BUS:VID:PID — bus 0005 = Bluetooth, 046D = Logitech.
+  # --no-block keeps udev from synchronously waiting on (and killing) systemctl.
   services.udev.extraRules = ''
-    ACTION=="add|bind", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", RUN+="${pkgs.systemd}/bin/systemctl restart logid.service"
+    ACTION=="add|bind", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", RUN+="${pkgs.systemd}/bin/systemctl --no-block restart logid.service"
+    ACTION=="add|bind", SUBSYSTEM=="hidraw", KERNELS=="0005:046D:*", RUN+="${pkgs.systemd}/bin/systemctl --no-block restart logid.service"
   '';
 
   environment.etc."logid.cfg".text = ''

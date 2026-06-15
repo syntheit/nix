@@ -182,7 +182,7 @@ in
   # Affinity Suite — heavy creative app, workstation-only. Skipped on the lean
   # HTPC (vista).
   ++ lib.optionals (hostName != "vista") [
-    inputs.affinity-nix.packages.${pkgs.stdenv.hostPlatform.system}.v3
+    affinity-v3
   ];
 
   # Link thumbnailer files so file managers can find them
