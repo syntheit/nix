@@ -20,5 +20,8 @@
   square-corners = pkgs.callPackage ./square-corners { };
   spotify-watcher = pkgs.callPackage ./spotify-watcher { };
   caps-led-off = pkgs.callPackage ./caps-led-off { };
+  q6voiced = pkgs.callPackage ./q6voiced { };
+  hexagonrpc = pkgs.callPackage ./hexagonrpc { };
+  alsa-ucm-fajita = pkgs.callPackage ./alsa-ucm-fajita { };
 }
 

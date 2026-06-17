@@ -1,5 +1,10 @@
-{ pkgs, ... }:
+{ pkgs, inputs, ... }:
 {
+  imports = [
+    inputs.nix-index-database.homeModules.nix-index
+    ../../home/shell.nix
+  ];
+
   home.username = "daniel";
   home.homeDirectory = "/home/daniel";
   home.stateVersion = "26.05";
