@@ -802,6 +802,7 @@
 
   environment.systemPackages = with pkgs; [
     # ─── Browsers ────────────────────────────────────────────────────────────
+    ptyxis                                # libadwaita terminal (GNOME Console's GTK4 successor, adaptive)
     epiphany                              # Phosh-native, adaptive — best mobile browser
     brave                                 # Chromium-based, has aarch64 builds
     chromium                              # for sites that explicitly require Chrome (e.g. Preply Classroom)

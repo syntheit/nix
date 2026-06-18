@@ -3,6 +3,9 @@
   imports = [
     inputs.nix-index-database.homeModules.nix-index
     ../../home/shell.nix
+    ../../home/modules/git.nix
+    ../../home/modules/ssh.nix
+    ../../home/modules/tmux.nix
   ];
 
   home.username = "daniel";
@@ -36,6 +39,7 @@
     fastfetch
     fd
     jq
+    mosh
     ripgrep
     tree
   ];
