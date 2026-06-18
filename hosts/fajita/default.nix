@@ -19,6 +19,17 @@
     })
   ];
 
+  # Phosh dies on every `nixos-rebuild switch`. Root cause: NixOS's activation
+  # script does `stop → start` on units whose dependencies changed, even if the
+  # unit itself didn't change. With `restartIfChanged=false` alone it still does
+  # the stop because `stopIfChanged` defaults to true. Need BOTH false to keep
+  # the running phosh session alive across rebuilds — new config's phosh takes
+  # over on next reboot.
+  systemd.services.phosh = {
+    restartIfChanged = false;
+    stopIfChanged = false;
+  };
+
   # Phosh shell — upstream NixOS module; mobile-nixos's example imports this verbatim.
   # phocConfig.outputs sets per-output scale and modeline in /etc/phosh/phoc.ini.
   # scale 2.5 (vs default 2.0) is load-bearing: Phosh's top bar is hardcoded 32
@@ -125,27 +136,6 @@
   # Networking — NetworkManager (iwd backend was getting confused; just use wpa_supplicant default)
   networking.networkmanager.enable = true;
   networking.networkmanager.ensureProfiles.profiles = {
-    home-wifi = {
-      connection = {
-        id = "home-wifi";
-        type = "wifi";
-        interface-name = "wlan0";
-        autoconnect = true;
-        autoconnect-priority = 100;
-      };
-      wifi = {
-        ssid = "TP-Link_C94C_5G";
-        mode = "infrastructure";
-      };
-      wifi-security = {
-        auth-alg = "open";
-        key-mgmt = "wpa-psk";
-        psk = "01585520";
-      };
-      ipv4.method = "auto";
-      ipv6.method = "auto";
-    };
-
     # Claro Argentina cellular data. Modern APN is `igprs.claro.com.ar` with
     # empty user/pass — the older `internet.ctimovil.com.ar` with `clarogprs`
     # credentials is legacy and doesn't authenticate on newer SIMs. ModemManager
