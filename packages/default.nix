@@ -23,5 +23,6 @@
   q6voiced = pkgs.callPackage ./q6voiced { };
   hexagonrpc = pkgs.callPackage ./hexagonrpc { };
   alsa-ucm-fajita = pkgs.callPackage ./alsa-ucm-fajita { };
+  mobile-config-firefox = pkgs.callPackage ./mobile-config-firefox { };
 }
 

@@ -291,6 +291,8 @@
             ./hosts/fajita
             inputs.home-manager.nixosModules.home-manager
             {
+              # Windscribe doesn't ship aarch64 builds — skip on fajita; on the
+              # phone use NetworkManager VPN profiles directly if needed.
               nixpkgs.overlays = [
                 (import ./overlays { inherit inputs lib; }).modifications
                 (import ./overlays { inherit inputs lib; }).additions
