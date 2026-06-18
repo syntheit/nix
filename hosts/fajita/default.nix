@@ -199,6 +199,101 @@
     };
   };
 
+  # WCN3990 ships a placeholder BD address in firmware → kernel sets
+  # HCI_QUIRK_INVALID_BDADDR → BlueZ refuses to bring hci0 up (EOPNOTSUPP on
+  # `hciconfig up`). Same problem pmOS solves with `bootmac`. We derive a
+  # stable BT MAC from wlan0's MAC (flip the locally-administered bit, bump
+  # last byte) and set it via `btmgmt --index 0 public-addr` before
+  # bluetooth.service tries to register the controller.
+  systemd.services.bluetooth-mac-fajita = {
+    description = "Set BT public address (WCN3990 ships placeholder BDADDR)";
+    wantedBy = [ "bluetooth.service" ];
+    before = [ "bluetooth.service" ];
+    after = [ "sys-subsystem-bluetooth-devices-hci0.device" ];
+    bindsTo = [ "sys-subsystem-bluetooth-devices-hci0.device" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = pkgs.writeShellScript "set-bt-mac" ''
+        set -eu
+        for i in $(seq 1 20); do
+          ${pkgs.bluez}/bin/btmgmt extinfo 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q 'hci0' && break
+          ${pkgs.coreutils}/bin/sleep 0.5
+        done
+        WLAN=$(${pkgs.iproute2}/bin/ip link show wlan0 \
+                | ${pkgs.gawk}/bin/awk '/link\/ether/ {print $2}')
+        if [ -z "$WLAN" ]; then
+          echo "no wlan0 MAC yet, skipping" >&2
+          exit 0
+        fi
+        BT=$(${pkgs.gawk}/bin/awk -v m="$WLAN" 'BEGIN {
+          n=split(m,b,":"); for (i=1;i<=n;i++) b[i]=strtonum("0x" b[i]);
+          b[1] = or(b[1], 2);
+          b[6] = and(b[6]+1, 0xff);
+          printf "%02X:%02X:%02X:%02X:%02X:%02X", b[1],b[2],b[3],b[4],b[5],b[6];
+        }')
+        echo "Setting hci0 public address to $BT (derived from wlan0 $WLAN)"
+        ${pkgs.bluez}/bin/btmgmt --index 0 public-addr "$BT"
+      '';
+    };
+  };
+
+  # Alert slider (3-state side switch) → feedbackd Profile.
+  # Mainline kernel exposes /dev/input/event1 ("Alert slider") emitting
+  # EV_ABS / ABS_SND_PROFILE (code 0x22) with values:
+  #   0 = silent (top)
+  #   1 = vibrate (middle)
+  #   2 = ring (bottom)
+  # We read the event stream and set org.sigxcpu.Feedback.Profile via gdbus
+  # on the session bus. User-scoped because feedbackd is session-scoped.
+  systemd.user.services.alert-slider-handler = {
+    description = "OnePlus 6T alert slider → feedbackd profile";
+    wantedBy = [ "graphical-session.target" ];
+    partOf = [ "graphical-session.target" ];
+    after = [ "phosh.service" ];
+    serviceConfig = {
+      Restart = "always";
+      RestartSec = 2;
+      ExecStart = pkgs.writeShellScript "alert-slider-handler" ''
+        set -eu
+        DEV=/dev/input/event1
+        # input_event on aarch64: 16-byte timeval + u16 type + u16 code + s32 value = 24 bytes.
+        # od -tu2 -w24 prints one event per line; we want EV_ABS (type=3) + ABS_SND_PROFILE (code=34).
+        exec ${pkgs.coreutils}/bin/stdbuf -oL \
+          ${pkgs.coreutils}/bin/od -An -tu2 -w24 -v "$DEV" | \
+        while read -r _ _ _ _ _ _ _ _ type code vlo vhi _; do
+          [ "$type" = 3 ] && [ "$code" = 34 ] || continue
+          val=$(( (vhi << 16) | vlo ))
+          case "$val" in
+            0) prof=silent ;;
+            1) prof=quiet  ;;
+            2) prof=full   ;;
+            *) continue ;;
+          esac
+          ${pkgs.glib}/bin/gdbus call --session \
+            --dest org.sigxcpu.Feedback \
+            --object-path /org/sigxcpu/Feedback \
+            --method org.freedesktop.DBus.Properties.Set \
+            org.sigxcpu.Feedback Profile "<'$prof'>" >/dev/null || true
+        done
+      '';
+    };
+  };
+
+  # Sensors phase 1: mount the persist partition so hexagonrpcd-sdsp can serve
+  # the SLPI sensor registry to the DSP. Without this mount, SLPI starts but
+  # never publishes QMI SNS_CLIENT_SVC → no IIO devices appear → iio-sensor-proxy
+  # gives up → no auto-rotation, no proximity-off-during-call.
+  # /dev/disk/by-partlabel/persist (= /dev/sda2) is ext4 and holds the factory
+  # sensor calibration: BMI160 accel/gyro, AK0991x mag, APDS9251 ALS/prox.
+  # Phase 2 (packaging libssc + patched iio-sensor-proxy to consume QMI) is
+  # tracked separately — this mount is the prerequisite.
+  fileSystems."/mnt/vendor/persist" = {
+    device = "/dev/disk/by-partlabel/persist";
+    fsType = "ext4";
+    options = [ "ro" "nosuid" "nodev" "noexec" "nofail" ];
+  };
+
   # SDM845 mainline has a broken s2idle path — the phone goes to sleep fine
   # but never wakes from it. Disable all sleep/suspend until that's fixed.
   # Effects: no auto-suspend, ignore lid/power-key suspend, ignore idle action.
@@ -413,7 +508,12 @@
     pkgs.hexagonrpc
     pkgs.stevia
   ];
-  systemd.services.hexagonrpcd-sdsp.wantedBy = [ "multi-user.target" ];
+  systemd.services.hexagonrpcd-sdsp = {
+    wantedBy = [ "multi-user.target" ];
+    # Persist mount provides the SLPI sensor registry the daemon serves.
+    after = [ "mnt-vendor-persist.mount" ];
+    requires = [ "mnt-vendor-persist.mount" ];
+  };
   systemd.user.services."mobi.phosh.Stevia".wantedBy = [ "graphical-session.target" ];
 
   # pmOS-defaults bundle. These are the "just works on pmOS" pieces — udev
@@ -691,7 +791,7 @@
     # on aarch64 Firefox/Chromium — Premium-only effectively.
 
     # ─── Camera ──────────────────────────────────────────────────────────────
-    megapixels                            # raw V4L2 camera, fajita-tuned (UCM-style)
+    # megapixels dropped — using snapshot (libcamera/pipewire-camera, libadwaita)
 
     # ─── Office ──────────────────────────────────────────────────────────────
     # libreoffice dropped — multi-hour aarch64 build, ~1 GB install, rarely
