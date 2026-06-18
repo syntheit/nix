@@ -736,6 +736,7 @@
 
     # ─── Utilities ───────────────────────────────────────────────────────────
     mobile-broadband-provider-info        # APN auto-detection in Phosh Settings → Cellular
+    callaudiod                            # routes call audio between earpiece / speaker / BT; DBus-activated by gnome-calls
     brightnessctl                         # CLI backlight control
     vim
     htop
