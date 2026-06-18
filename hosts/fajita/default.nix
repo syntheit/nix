@@ -2,6 +2,7 @@
   config,
   lib,
   pkgs,
+  inputs,
   ...
 }:
 {
@@ -18,11 +19,20 @@
     })
   ];
 
-  # Phosh shell — upstream NixOS module; mobile-nixos's example imports this verbatim
+  # Phosh shell — upstream NixOS module; mobile-nixos's example imports this verbatim.
+  # phocConfig.outputs sets per-output scale and modeline in /etc/phosh/phoc.ini.
+  # scale 2.5 (vs default 2.0) is load-bearing: Phosh's top bar is hardcoded 32
+  # *logical* pixels in src/top-panel.h. At scale 2 that's 64 physical = shorter
+  # than the OnePlus 6T notch (~80 physical), so notch pokes through. At 2.5 the
+  # bar is 80 physical — fully covers the cutout. Bonus: quick-settings buttons +
+  # general UI become correctly sized for the screen, matching pmOS's default.
   services.xserver.desktopManager.phosh = {
     enable = true;
     user = "daniel";
     group = "users";
+    phocConfig.outputs.DSI-1 = {
+      scale = 2.5;
+    };
   };
   programs.calls.enable = true;
   hardware.sensor.iio.enable = true;
@@ -174,6 +184,31 @@
     };
   };
 
+  # Bluetooth: QCA WCN3990 (UART-attached). Phosh Settings → Bluetooth panel
+  # handles pairing UI. PipeWire is enabled upstream by the phosh module; we
+  # just need bluez + wireplumber's bluez monitor wired up so headsets show as
+  # PipeWire sinks/sources.
+  hardware.bluetooth = {
+    enable = true;
+    powerOnBoot = true;
+    settings.General = {
+      Experimental = true;     # battery reporting, LE audio
+      FastConnectable = true;
+    };
+  };
+  services.pipewire.wireplumber.extraConfig.bluez = {
+    "monitor.bluez.properties" = {
+      "bluez5.enable-sbc-xq" = true;        # higher-bitrate SBC variant
+      "bluez5.enable-msbc" = true;          # wideband speech for HFP calls
+      "bluez5.enable-hw-volume" = true;     # let the headset handle volume
+      "bluez5.roles" = [
+        "hsp_hs" "hsp_ag"
+        "hfp_hf" "hfp_ag"
+        "a2dp_sink" "a2dp_source"
+      ];
+    };
+  };
+
   # SDM845 mainline has a broken s2idle path — the phone goes to sleep fine
   # but never wakes from it. Disable all sleep/suspend until that's fixed.
   # Effects: no auto-suspend, ignore lid/power-key suspend, ignore idle action.
@@ -189,6 +224,46 @@
   systemd.targets.suspend.enable = false;
   systemd.targets.hibernate.enable = false;
   systemd.targets.hybrid-sleep.enable = false;
+
+  # SDM845 mainline display-wake-from-DPMS-off bug workaround.
+  # Symptom: power button puts display to sleep via Phosh's screen-saver. KEY_POWER
+  # event then doesn't reach phoc to undo DPMS. Phone is stuck on with no display.
+  # Until task #15 lands a proper fix (likely kernel-side), this service watches
+  # /dev/input/event0 (pm8941_pwrkey) and, on each KEY_POWER press while DPMS=Off,
+  # asks phoc to re-enable the output via the wlr-output-power-manager-v1 protocol.
+  #
+  # We avoid `chvt` here — switching VTs makes systemd's TTYVHangup=yes on
+  # phosh.service send SIGHUP to the wayland session, killing Phosh. wlr-randr
+  # talks directly to phoc as a wayland client; no VT churn, no session kill.
+  systemd.services.pwrkey-wake-watcher = {
+    description = "Force display wake on power button press (SDM845 DPMS-off bug workaround)";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "systemd-udev-settle.service" "phosh.service" ];
+    serviceConfig = {
+      Type = "simple";
+      Restart = "always";
+      RestartSec = 2;
+      ExecStart = pkgs.writeShellScript "pwrkey-wake-watcher" ''
+        set -eu
+        DPMS_FILE=$(${pkgs.coreutils}/bin/ls /sys/class/drm/card*-DSI-1/dpms 2>/dev/null | head -1)
+        [ -n "$DPMS_FILE" ] || { echo "no DSI-1 found, exiting"; exit 0; }
+        # libinput debug-events opens but doesn't grab — phoc still sees events.
+        ${pkgs.libinput}/bin/libinput debug-events --device /dev/input/event0 2>/dev/null | \
+          while read -r line; do
+            case "$line" in
+              *KEY_POWER*pressed*)
+                if [ "$(${pkgs.coreutils}/bin/cat "$DPMS_FILE")" = "Off" ]; then
+                  echo "DPMS off detected after KEY_POWER — asking phoc to re-enable DSI-1"
+                  ${pkgs.sudo}/bin/sudo -u daniel \
+                    XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 \
+                    ${pkgs.wlr-randr}/bin/wlr-randr --output DSI-1 --on || true
+                fi
+              ;;
+            esac
+          done
+      '';
+    };
+  };
 
   # Tailscale — off-WiFi SSH access. After first boot:
   #   sudo tailscale up --login-server=https://headscale.matv.io --accept-routes
@@ -408,6 +483,7 @@
     QT_WAYLAND_DISABLE_WINDOWDECORATION = "1";
     QT_QPA_PLATFORM = "wayland";
     MOZ_ENABLE_WAYLAND = "1";
+    MOZ_GTK_TITLEBAR_DECORATION = "client"; # Phosh swipe-from-top works on CSD
     SDL_VIDEODRIVER = "wayland";
   };
   # CRITICAL OSK auto-show fix: force GTK to use the wayland input-method
@@ -504,14 +580,13 @@
         idle-dim = false;
         power-button-action = "nothing";
       };
-      # Lock screen: power button → Phosh's animated lock screen. After our
-      # OSK fix lands the lock screen is usable (you can swipe up and type
-      # PIN via stevia). Without lock-enabled there's no animation and the
-      # power button just toggles raw DPMS.
+      # Lock screen behavior + lock screen wallpaper.
       "org/gnome/desktop/screensaver" = {
         lock-enabled = true;
         idle-activation-enabled = false; # idle-delay=0 makes this moot, but explicit
         lock-delay = mkUint32 0;         # lock immediately on screen-off
+        picture-uri = "file:///etc/wallpapers/fajita.jpg";
+        picture-options = "zoom";
       };
       # UX defaults — dark mode + accent color.
       "org/gnome/desktop/interface" = {
@@ -520,8 +595,20 @@
         gtk-theme = "Adwaita-dark";
         accent-color = "blue";    # Phosh 0.50+ honors GNOME accent
       };
+      # Homescreen wallpaper. Image lives at hosts/fajita/wallpaper.jpg in
+      # this repo, installed to /etc/wallpapers/ via environment.etc below.
+      "org/gnome/desktop/background" = {
+        picture-uri = "file:///etc/wallpapers/fajita.jpg";
+        picture-uri-dark = "file:///etc/wallpapers/fajita.jpg";
+        picture-options = "zoom";
+      };
     };
   }];
+
+  # Install the wallpaper at /etc/wallpapers/fajita.jpg so dconf URIs above
+  # resolve at boot. The file is checked into the nix repo at
+  # hosts/fajita/wallpaper.jpg.
+  environment.etc."wallpapers/fajita.jpg".source = ./wallpaper.jpg;
 
   # ALSA UCM overlay for the fajita audio routing — without this, modem dials
   # but voice calls have no audio. Files land at /etc/alsa/ucm2/OnePlus/fajita/
@@ -535,28 +622,135 @@
   # libcmatrix (chatty's Matrix backend) pulls olm — flagged insecure for
   # CVE-2024-45191/2/3. Allowlist explicitly; the upstream replacement is
   # vodozemac, but chatty hasn't switched yet.
-  nixpkgs.config.permittedInsecurePackages = [ "olm-3.2.16" ];
+  nixpkgs.config.permittedInsecurePackages = [
+    "olm-3.2.16" # chatty's libcmatrix
+  ];
+
+  # Firefox via the NixOS module (proper integration: schemas, gtk, etc.).
+  # Fractional-scale fix: at Phosh's scale=2.5 Firefox would snap to nearest
+  # integer scale and render chrome at wrong dev-px → URL bar + menus get
+  # squeezed off the right edge. The wayland fractional-scale pref makes FF
+  # honour the real scale (FF 114+, still behind the pref).
+  # See: Mozilla bug 1614167, 1672591, 1881086.
+  programs.firefox = {
+    enable = true;
+    preferences = {
+      "widget.wayland.fractional-scale.enabled" = true;
+      # Required for userChrome.css to take effect on the mobile chrome tweaks
+      # we'd ship via home-manager.
+      "toolkit.legacyUserProfileCustomizations.stylesheets" = true;
+      # Mobile-friendly defaults (subset of pmOS's mobile-config-firefox prefs)
+      "browser.toolbars.bookmarks.visibility" = "never";
+      "browser.uidensity" = 2;            # touch density (pmOS value)
+      "dom.w3c.touch_events.enabled" = 1; # let pages know about touch
+      "apz.allow_zooming" = true;         # pinch-zoom
+    };
+    preferencesStatus = "default"; # let user override per-session
+  };
 
   environment.systemPackages = with pkgs; [
-    # Phosh-ecosystem apps
-    epiphany # web browser
-    gnome-console # terminal
-    loupe # image viewer (referenced by mimeapps; missing means tap-to-open silently fails)
-    megapixels # camera
-    chatty # SMS + Matrix
-    mobile-broadband-provider-info # APN auto-detection in Phosh Settings → Cellular
-    # Utilities
-    brightnessctl # CLI backlight control (Phosh slider already works via gsd-power)
+    # ─── Browsers ────────────────────────────────────────────────────────────
+    epiphany                              # Phosh-native, adaptive — best mobile browser
+    brave                                 # Chromium-based, has aarch64 builds
+    chromium                              # for sites that explicitly require Chrome (e.g. Preply Classroom)
+    # zen-browser dropped — no touchscreen support
+    # firefox: enabled separately via programs.firefox; squeeze/cutoff to be
+    # fixed by vendoring pmOS's mobile-config-firefox userChrome + prefs.
+
+    # ─── Communication (mobile-adaptive picks) ───────────────────────────────
+    chatty                                # SMS + Matrix; lightweight, Phosh-native
+    fractal                               # Matrix; GTK4/libadwaita, designed mobile-first
+    signal-desktop                        # link to the Pixel as primary
+    vesktop                               # Discord with proper wayland + screen-share
+    # telegram-desktop dropped — desktop-only, painful on touch. Use the PWA at
+    # https://web.telegram.org via Epiphany ("Install Site as Web Application"
+    # in the Phosh menu) until paper-plane is revived upstream.
+    thunderbird                           # Email; not adaptive but the option you use elsewhere
+
+    # ─── Phone-to-desktop integration ────────────────────────────────────────
+    valent                                # KDE Connect protocol, GTK4/libadwaita (better mobile UX than kdeconnect-kde)
+
+    # ─── Mobile-friendly GNOME core (libadwaita, adaptive) ───────────────────
+    nautilus                              # Files
+    loupe                                 # Image viewer
+    papers                                # PDF reader (replaces evince; libadwaita)
+    snapshot                              # GNOME Camera (libadwaita, GTK4)
+    gnome-text-editor                     # libadwaita text editor
+    gnome-calculator
+    gnome-calendar
+    gnome-contacts
+    gnome-maps                            # libadwaita, online (GMaps tiles)
+    organicmaps                           # offline OSM nav — AllTrails / hiking replacement
+    # gnome-disk-utility dropped — GTK3, no GTK4/libadwaita port upstream.
+    # Nautilus handles mount/unmount of external media; for anything heavier
+    # ssh in and use parted/fdisk/wipefs.
+    gnome-weather
+    gnome-clocks
+    resources                             # System monitor, GNOME Circle, libadwaita
+    mission-center                        # alt system monitor, also libadwaita
+
+    # ─── Media ───────────────────────────────────────────────────────────────
+    clapper                               # libadwaita video player; works as a youtube client too
+    totem                                 # GNOME Videos; libadwaita
+    vlc                                   # fallback for anything clapper/totem can't handle
+    delfin                                # Jellyfin client, GTK4/libadwaita
+    mousai                                # song recognition (Shazam-style)
+    riff                                  # Spotify Premium client, libadwaita (succeeds `spot`)
+    # spotify proper is x86_64-only (proprietary); riff via librespot is the
+    # native answer on aarch64. Free tier needs Widevine which doesn't exist
+    # on aarch64 Firefox/Chromium — Premium-only effectively.
+
+    # ─── Camera ──────────────────────────────────────────────────────────────
+    megapixels                            # raw V4L2 camera, fajita-tuned (UCM-style)
+
+    # ─── Office ──────────────────────────────────────────────────────────────
+    # libreoffice dropped — multi-hour aarch64 build, ~1 GB install, rarely
+    # used on phone. Re-add if you actually need offline document editing.
+
+    # ─── Auth / 2FA ──────────────────────────────────────────────────────────
+    authenticator                         # GNOME Circle, libadwaita TOTP
+    # bitwarden-desktop dropped — building electron 39 under qemu-aarch64
+    # took forever and there's no aarch64 substitute. Use vault.bitwarden.com
+    # as a PWA via Epiphany ("Install Site as Web Application"); identical UX,
+    # zero build cost. Switch back to the desktop client once Bitwarden ships
+    # aarch64 binaries.
+
+    # ─── GNOME Circle — small libadwaita apps ────────────────────────────────
+    amberol                               # minimalist music player
+    blanket                               # ambient sounds
+    chess-clock                           # chess timer (gnome-chess-clock alias missing)
+    clairvoyant                           # 8-ball
+    decoder                               # QR scanner
+    curtail                               # image compressor
+    dialect                               # translator
+    exercise-timer                        # tabata / interval timer
+    fragments                             # BitTorrent client (libadwaita; transmission_4-gtk is GTK3)
+    gradia                                # gradient / screenshot beautifier
+    impression                            # USB image writer (will work once OTG is fixed)
+    newsflash                             # RSS reader
+    share-preview                         # social card preview
+    solanum                               # pomodoro
+    gnome-sudoku                          # sudoku
+    gnome-2048                            # 2048
+    valuta                                # currency converter
+
+    # ─── Utilities ───────────────────────────────────────────────────────────
+    mobile-broadband-provider-info        # APN auto-detection in Phosh Settings → Cellular
+    brightnessctl                         # CLI backlight control
     vim
     htop
     git
     curl
-    # Diagnostic tools — for figuring out why something on this kernel/phosh
-    # combo is misbehaving (input events, wayland protocols, drm power state).
-    evtest
-    wlr-randr
-    wayland-utils
-    libinput
+    bat
+    ripgrep
+    fd
+    jq
+
+    # ─── Diagnostic tools (for SDM845 / Phosh debug) ─────────────────────────
+    evtest                                # input event tracing
+    wlr-randr                             # wayland display control
+    wayland-utils                         # wayland-info etc.
+    libinput                              # libinput debug-events
   ];
 
   programs.zsh.enable = true;
