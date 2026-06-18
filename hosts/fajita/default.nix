@@ -305,6 +305,65 @@
     HandleHibernateKey = "ignore";
     HandleLidSwitch = "ignore";
   };
+  # swclock-offset: stash the wall clock at shutdown, restore it at boot before
+  # NTP catches up. Without this, the phone's first-boot clock reads 1970
+  # (the SDM845 RTC drifts hard between power cycles) — every cert validation,
+  # GPG check, and journal timestamp until NTP syncs reads as 56 years ago.
+  # Port of pmOS's swclock-offset; tiny shell scripts wrapped in two units.
+  systemd.services.swclock-offset-restore = {
+    description = "Restore wall clock from last saved timestamp";
+    wantedBy = [ "time-sync.target" ];
+    before = [ "time-sync.target" ];
+    after = [ "local-fs.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = pkgs.writeShellScript "swclock-restore" ''
+        f=/var/lib/swclock-offset/last
+        [ -r "$f" ] || exit 0
+        saved=$(${pkgs.coreutils}/bin/cat "$f")
+        now=$(${pkgs.coreutils}/bin/date +%s)
+        if [ "$saved" -gt "$now" ]; then
+          echo "swclock-offset: restoring time $saved (was $now)"
+          ${pkgs.coreutils}/bin/date -s "@$saved" >/dev/null
+        fi
+      '';
+    };
+  };
+  systemd.services.swclock-offset-save = {
+    description = "Save wall clock so the next boot has a sane time";
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = "${pkgs.coreutils}/bin/true"; # save happens at stop
+      ExecStop = pkgs.writeShellScript "swclock-save" ''
+        ${pkgs.coreutils}/bin/mkdir -p /var/lib/swclock-offset
+        ${pkgs.coreutils}/bin/date +%s > /var/lib/swclock-offset/last
+      '';
+    };
+  };
+
+  # Avahi/mDNS — discover .local hosts (harbor.local, mantle.local, printers,
+  # Chromecasts, etc.) from the phone and let the phone be discoverable too.
+  services.avahi = {
+    enable = true;
+    nssmdns4 = true;
+    openFirewall = true;
+    publish = {
+      enable = true;
+      addresses = true;
+      workstation = true;
+    };
+  };
+
+  # CUPS — print from the phone. mDNS-discovered network printers show up in
+  # Phosh Settings → Printers automatically (avahi above).
+  services.printing = {
+    enable = true;
+    drivers = with pkgs; [ gutenprint hplip ];
+  };
+
   systemd.targets.sleep.enable = false;
   systemd.targets.suspend.enable = false;
   systemd.targets.hibernate.enable = false;
@@ -683,7 +742,10 @@
         gtk-im-module = "";       # see GTK_IM_MODULE env var note above
         color-scheme = "prefer-dark";
         gtk-theme = "Adwaita-dark";
-        accent-color = "blue";    # Phosh 0.50+ honors GNOME accent
+        accent-color = "blue";          # Phosh 0.50+ honors GNOME accent
+        show-battery-percentage = true; # numeric % next to the battery icon
+        clock-format = "12h";           # 12-hour clock; flip to "24h" if preferred
+        clock-show-weekday = true;      # weekday in the top bar
       };
       # Homescreen wallpaper. Image lives at hosts/fajita/wallpaper.jpg in
       # this repo, installed to /etc/wallpapers/ via environment.etc below.
