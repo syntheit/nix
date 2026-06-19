@@ -1016,6 +1016,22 @@
         "type": "github"
       }
     },
+    "nixpkgs-gnome49": {
+      "locked": {
+        "lastModified": 1778025453,
+        "narHash": "sha256-RONDBFnxpEQ7Ied0oLs2oR6xiU5RxvkV2tn1s2b3dQw=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "bb39d8133e1b525230b72ec50862b193882cc910",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "bb39d8133e1b525230b72ec50862b193882cc910",
+        "type": "github"
+      }
+    },
     "nixpkgs-lib": {
       "locked": {
         "lastModified": 1777168982,
@@ -1193,6 +1209,7 @@
         "nixos-hardware": "nixos-hardware",
         "nixpkgs": "nixpkgs_3",
         "nixpkgs-darwin": "nixpkgs-darwin",
+        "nixpkgs-gnome49": "nixpkgs-gnome49",
         "nur": "nur",
         "sops-nix": "sops-nix_2",
         "stylix": "stylix",
