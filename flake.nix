@@ -5,6 +5,15 @@
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     nixpkgs-darwin.url = "github:nixos/nixpkgs/nixpkgs-unstable";
 
+    # GNOME 49 pin for fajita's GNOME Shell Mobile session. verdre's
+    # gnome-shell-mobile / mutter-mobile top out at the GNOME 49
+    # (mobile-shell-devel-49) branch, so the mobile overlay
+    # (packages/gnome-mobile) must be applied on a GNOME-49 base. This is
+    # nixos-unstable @ 2026-05-05 — the last channel commit before GNOME 50
+    # landed (gnome-shell 49.4). Bump in lockstep with the overlay's pins when
+    # verdre moves to GNOME 50.
+    nixpkgs-gnome49.url = "github:nixos/nixpkgs/bb39d8133e1b525230b72ec50862b193882cc910";
+
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -279,9 +288,11 @@
           ];
         };
 
-        # fajita — OnePlus 6T running Mobile NixOS + Phosh. Built on harbor via
-        # aarch64-linux binfmt emulation; flashed to phone over fastboot.
-        fajita = nixpkgs.lib.nixosSystem {
+        # fajita — OnePlus 6T running Mobile NixOS + GNOME Shell Mobile. Built on
+        # harbor via aarch64-linux binfmt emulation; flashed to phone over
+        # fastboot. Pinned to nixpkgs-gnome49 (GNOME 49.4) to match verdre's
+        # mobile-shell-devel-49 overlay (packages/gnome-mobile).
+        fajita = inputs.nixpkgs-gnome49.lib.nixosSystem {
           system = "aarch64-linux";
           specialArgs = specialArgs // {
             hostName = "fajita";
