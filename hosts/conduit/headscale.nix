@@ -65,6 +65,10 @@ in
       stage_optional /run/secrets/cloudflare_account_id     /var/lib/deus-granter/cf-account-id      0444
       stage_optional /run/secrets/cloudflare_zone_id        /var/lib/deus-granter/cf-zone-id         0444
       stage_optional /run/secrets/deus_malli_nix_write_key  /var/lib/deus-keys/malli-nix-write       0400
+      # nanomdm API key (ADE enqueue auth + webhook ?token= secret).
+      # Best-effort: until it's added to secrets/conduit.yaml the file is
+      # absent and deus-server leaves the ADE orchestrator disabled.
+      stage_optional /run/secrets/nanomdm_api               /var/lib/deus-tokens/nanomdm-api         0444
     '';
   };
 
@@ -306,6 +310,23 @@ in
           # invokes `ssh git@github.com` and the wrapper picks the key.
           repoURL = "git@github.com:syntheit/malli-nix.git";
           repoSSHCommand = "ssh -i /var/lib/deus/malli-nix-write -o IdentitiesOnly=yes -o UserKnownHostsFile=/var/lib/deus/known_hosts -o StrictHostKeyChecking=accept-new";
+        };
+
+        # ── ADE / zero-touch orchestrator ──
+        # Drives Apple Automated Device Enrollment through the self-hosted
+        # nanomdm on harbor, reached over the harbor↔conduit WireGuard link
+        # (nanomdm binds 0.0.0.0:9990 there; wg0 is firewall-trusted). The
+        # nanomdm API key doubles as the webhook ?token= secret, so the one
+        # staged file feeds both flags. nanomdm POSTs every check-in/ack
+        # back to this server at http://10.100.0.1:8086/ade/webhook (which
+        # deus-server already serves on 0.0.0.0:8086 over wg). The
+        # nanomdm-api secret is staged from sops by the deus-stage
+        # activation script above; it must be added to secrets/conduit.yaml
+        # (it currently lives only in secrets/harbor.yaml).
+        ade = {
+          nanomdmURL = "http://10.100.0.2:9990";
+          apiKeyFile = "/var/lib/deus-tokens/nanomdm-api";
+          webhookSecretFile = "/var/lib/deus-tokens/nanomdm-api";
         };
         # headscaleCommand defaults to `headscale nodes list -o json`,
         # which is exactly what we want; the unix socket is world-
