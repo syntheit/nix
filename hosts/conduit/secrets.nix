@@ -40,4 +40,13 @@
     format = "binary";
     mode = "0400";
   };
+
+  # ── ADE orchestrator: nanomdm API key ────────────────────
+  # deus-server's ADE orchestrator uses this both as the nanomdm enqueue
+  # Basic-auth password and as the webhook ?token= secret it verifies.
+  # It currently lives only in secrets/harbor.yaml (used by nanomdm on
+  # harbor); the SAME value must be added to secrets/conduit.yaml so both
+  # ends share it. Until then sops validation fails the conduit build and
+  # the deus-stage script leaves the staged file absent (ADE stays off).
+  sops.secrets.nanomdm_api.mode = "0444";
 }
