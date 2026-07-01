@@ -1,4 +1,4 @@
-{ ... }:
+{ lib, ... }:
 
 {
   sops.defaultSopsFile = ../../secrets/conduit.yaml;
@@ -49,4 +49,16 @@
   # ends share it. Until then sops validation fails the conduit build and
   # the deus-stage script leaves the staged file absent (ADE stays off).
   sops.secrets.nanomdm_api.mode = "0444";
+
+  # ── ADE bootstrap-creds vend: fleet age key ──────────────
+  # The fleet sops age PRIVATE key deus-server vends to a bootstrapping
+  # Mac (so its first darwin-rebuild can decrypt fleet secrets). Binary-
+  # encoded in its own file to dodge YAML escaping. Gated with mkIf on
+  # the encrypted file existing so sops validation doesn't fail the build
+  # before Daniel adds it — see the gating note in headscale.nix.
+  sops.secrets.deus_fleet_age_key = lib.mkIf (builtins.pathExists ../../secrets/conduit/deus_fleet_age_key) {
+    sopsFile = ../../secrets/conduit/deus_fleet_age_key;
+    format = "binary";
+    mode = "0444";
+  };
 }

@@ -21,6 +21,34 @@ let
     stripRoot = false;
   };
   headscale-ui = headscale-ui-src;
+
+  # ── ADE bootstrap-creds vend + trust-profile push (gated) ──────────
+  # Both artifacts are operator-provisioned one-time secrets/files that
+  # aren't in the repo yet, so every dependent bit is gated on their
+  # presence. This keeps `nixos-rebuild build .#conduit` green and — more
+  # importantly — keeps deus-server from crash-looping on a missing file
+  # (it os.Exit(1)s if -ade-age-key-file / -ade-trust-profile-file point
+  # at a nonexistent path). Drop the files in and the wiring activates.
+  #
+  #   secrets/conduit/deus_fleet_age_key
+  #     The fleet sops age PRIVATE key (age13gxgn… pub) vended to a
+  #     bootstrapping Mac so its first darwin-rebuild can decrypt fleet
+  #     secrets. Create (from the malli-nix repo root, which holds the
+  #     key) with:
+  #       sops --encrypt --input-type binary --output-type binary \
+  #         /path/to/fleet-age-key.txt \
+  #         > ~/nix/secrets/conduit/deus_fleet_age_key
+  #     (.sops.yaml already routes secrets/conduit/* to conduit+daniel.)
+  #
+  #   hosts/conduit/malli-installer-trust.mobileconfig
+  #     The com.apple.security.pkcs1 profile emitted by
+  #       nix run '.#gen-installer-identity' -- ./out   (in malli-nix)
+  #     alongside installer.p12 (used to sign the pkg). Commit the
+  #     .mobileconfig here; keep installer.p12 out of the repo.
+  fleetAgeKeyEnc   = ../../secrets/conduit/deus_fleet_age_key;
+  haveFleetAgeKey  = builtins.pathExists fleetAgeKeyEnc;
+  trustProfile     = ./malli-installer-trust.mobileconfig;
+  haveTrustProfile = builtins.pathExists trustProfile;
 in
 {
   systemd.tmpfiles.rules = [
@@ -40,6 +68,10 @@ in
     # the container can traverse but unprivileged users on the host can't
     # read the files (the file mode itself is 0444).
     "d /var/lib/deus-granter 0755 root root -"
+    # Hosting dir for the signed ADE bootstrap pkg, served publicly by
+    # Caddy at bootstrap.matv.io/pkg/* (see the vhost below). Daniel scp's
+    # the nix-built + signed pkg here.
+    "d /var/lib/malli-bootstrap 0755 root root -"
   ];
 
   # Sops renders to /run/secrets, a host-only tmpfs the container can't
@@ -69,6 +101,17 @@ in
       # Best-effort: until it's added to secrets/conduit.yaml the file is
       # absent and deus-server leaves the ADE orchestrator disabled.
       stage_optional /run/secrets/nanomdm_api               /var/lib/deus-tokens/nanomdm-api         0444
+      # ADE bootstrap-creds vend: the fleet sops age key deus-server
+      # hands a bootstrapping Mac. Best-effort — absent until the sops
+      # secret is added (see the gating note at the top of this file).
+      ${lib.optionalString haveFleetAgeKey ''
+        stage_optional /run/secrets/deus_fleet_age_key      /var/lib/deus-tokens/fleet-age-key       0444
+      ''}
+      # Installer-trust profile pushed via MDM before the bootstrap pkg.
+      # Not a secret (public cert) — copied straight from the repo.
+      ${lib.optionalString haveTrustProfile ''
+        ${pkgs.coreutils}/bin/install -m 0444 ${trustProfile} /var/lib/deus-tokens/installer-trust.mobileconfig
+      ''}
     '';
   };
 
@@ -327,6 +370,42 @@ in
           nanomdmURL = "http://10.100.0.2:9990";
           apiKeyFile = "/var/lib/deus-tokens/nanomdm-api";
           webhookSecretFile = "/var/lib/deus-tokens/nanomdm-api";
+
+          # Managed admin the AccountConfiguration step creates on each
+          # Mac. "tars" (== vars.user.name) so auto-login-as-tars works,
+          # SecureToken escrows to tars, and the nix-darwin fleet config
+          # (which manages user tars) aligns. Confirmed decision.
+          adminUsername = "tars";
+
+          # ── Bootstrap-creds vend (POST /ade/bootstrap-creds) ────────
+          # Fleet nodes register under the headscale `malli` user (see
+          # the ACL policy above: src ["malli@"] is the full-mesh rule).
+          # The deus user can run `headscale` directly here — the unix
+          # socket is 0666 and deus is in the headscale group.
+          headscaleUser = "malli";
+          headscaleCommand = "headscale";
+          loginServer = "https://headscale.matv.io";
+          malliNixURL = "git://conduit/malli-nix.git";
+          # Age key gated on the sops secret being present (see top of
+          # file). Empty until then → vend stays disabled, no crash.
+          ageKeyFile = lib.optionalString haveFleetAgeKey "/var/lib/deus-tokens/fleet-age-key";
+
+          # ── Post-account-creation push ──────────────────────────────
+          # Trust profile first (so the Mac trusts our self-signed pkg
+          # signer), then the bootstrap pkg. Gated on the committed
+          # .mobileconfig; empty until then → profile step skipped.
+          trustProfileFile = lib.optionalString haveTrustProfile "/var/lib/deus-tokens/installer-trust.mobileconfig";
+
+          # Bootstrap pkg (InstallEnterpriseApplication). Fill in once the
+          # signed pkg is built + uploaded to bootstrap.matv.io/pkg/ (see
+          # the Caddy vhost below). All three are required together:
+          #   nix build '.#bootstrap-ade-pkg'   # in malli-nix (unsigned)
+          #   nix run '.#sign-bootstrap-pkg' -- installer.p12 result signed.pkg
+          #   scp signed.pkg matv@conduit:/var/lib/malli-bootstrap/malli-ade-bootstrap-0.1.0.pkg
+          #   md5sum signed.pkg ; stat -c%s signed.pkg
+          pkgURL = "https://bootstrap.matv.io/pkg/malli-ade-bootstrap-0.1.0.pkg";
+          pkgMD5 = "906da31b2009c140a94b638a443fd597";
+          pkgMD5Size = 3348763;
         };
         # headscaleCommand defaults to `headscale nodes list -o json`,
         # which is exactly what we want; the unix socket is world-
@@ -917,6 +996,40 @@ in
       }
       handle {
         reverse_proxy localhost:8085
+      }
+    '';
+  };
+
+  # ── ADE bootstrap ingress (public) ─────────────────────────
+  # A freshly-ADE-enrolled Mac is NOT on the tailnet yet during first
+  # boot, so it must reach deus-server over the public internet. Caddy
+  # auto-TLS fronts bootstrap.matv.io and exposes ONLY the two device-
+  # facing deus paths (serial-gated + one-shot ADE state) plus the signed
+  # bootstrap pkg — everything else 404s, so the operator/agent API stays
+  # off the internet. deus-server runs in the headscale nspawn with host
+  # networking, so it's reachable at 127.0.0.1:8086 on the host.
+  #
+  # Requires DNS: bootstrap.matv.io A → conduit's public IP (192.3.203.146)
+  # so Caddy's ACME HTTP-01 (ports 80/443, already open) can issue a cert.
+  services.caddy.virtualHosts."bootstrap.matv.io" = {
+    extraConfig = ''
+      handle /ade/bootstrap-creds {
+        reverse_proxy 127.0.0.1:8086
+      }
+      handle /healthz {
+        reverse_proxy 127.0.0.1:8086
+      }
+      # Signed bootstrap .pkg delivered via MDM InstallEnterpriseApplication.
+      # Daniel scp's the nix-built + signed pkg into /var/lib/malli-bootstrap.
+      # handle_path (not handle) strips the /pkg prefix so
+      # /pkg/foo.pkg serves /var/lib/malli-bootstrap/foo.pkg (the flat
+      # layout the tmpfiles rule + scp target assume).
+      handle_path /pkg/* {
+        root * /var/lib/malli-bootstrap
+        file_server
+      }
+      handle {
+        respond "not found" 404
       }
     '';
   };
