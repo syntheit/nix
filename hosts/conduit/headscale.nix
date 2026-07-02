@@ -376,6 +376,10 @@ in
           # SecureToken escrows to tars, and the nix-darwin fleet config
           # (which manages user tars) aligns. Confirmed decision.
           adminUsername = "tars";
+          # Known fleet-wide admin password (Daniel's call) — every ADE-
+          # provisioned Mac gets tars with this password instead of a
+          # per-device random one.
+          adminPassword = "tech123";
 
           # ── Bootstrap-creds vend (POST /ade/bootstrap-creds) ────────
           # Fleet nodes register under the headscale `malli` user (see
@@ -406,8 +410,8 @@ in
           pkgURL = "https://bootstrap.matv.io/pkg/malli-ade-bootstrap-0.1.0.pkg";
           # Payload-free pkg (postinstall fetches the payload tarball from
           # /pkg/malli-bootstrap-payload.tar.gz). Re-hash on every rebuild.
-          pkgMD5 = "a0ce010c45f2d3fb42e52e19b8d4a585";
-          pkgMD5Size = 12075;
+          pkgMD5 = "2a629900bc8b3385ed6290e639f589c7";
+          pkgMD5Size = 12078;
         };
         # headscaleCommand defaults to `headscale nodes list -o json`,
         # which is exactly what we want; the unix socket is world-
