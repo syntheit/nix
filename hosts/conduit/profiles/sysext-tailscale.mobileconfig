@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>AllowUserOverrides</key>
+			<false/>
+			<key>AllowedSystemExtensions</key>
+			<dict>
+				<key>W5364U7YZB</key>
+				<array>
+					<string>io.tailscale.ipn.macsys.network-extension</string>
+				</array>
+			</dict>
+			<key>PayloadDisplayName</key>
+			<string>com.apple.system-extension-policy</string>
+			<key>PayloadEnabled</key>
+			<true/>
+			<key>PayloadIdentifier</key>
+			<string>io.matv.fleet.sysext-tailscale.com.apple.system-extension-policy.0</string>
+			<key>PayloadType</key>
+			<string>com.apple.system-extension-policy</string>
+			<key>PayloadUUID</key>
+			<string>D695208C-BBA3-0A61-CDE7-4BDCDFCAC523</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+		</dict>
+	</array>
+	<key>PayloadDescription</key>
+	<string>Pre-approves the Tailscale network system extension.</string>
+	<key>PayloadDisplayName</key>
+	<string>Malli — Tailscale system extension</string>
+	<key>PayloadIdentifier</key>
+	<string>io.matv.fleet.sysext-tailscale</string>
+	<key>PayloadOrganization</key>
+	<string>matv</string>
+	<key>PayloadRemovalDisallowed</key>
+	<false/>
+	<key>PayloadScope</key>
+	<string>System</string>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>4A2AF98B-5E81-8A7C-33DE-8797B92D900D</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+</dict>
+</plist>

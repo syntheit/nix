@@ -49,6 +49,11 @@ let
   haveFleetAgeKey  = builtins.pathExists fleetAgeKeyEnc;
   trustProfile     = ./malli-installer-trust.mobileconfig;
   haveTrustProfile = builtins.pathExists trustProfile;
+  # Fleet config profiles (fda/PPPC, gatekeeper, restrictions, …) built
+  # from malli-nix/profiles and copied here; pushed via MDM after the trust
+  # profile so a Mac has Full Disk Access etc. before Phase B runs.
+  configProfiles   = ./profiles;
+  haveProfiles     = builtins.pathExists configProfiles;
 in
 {
   systemd.tmpfiles.rules = [
@@ -111,6 +116,11 @@ in
       # Not a secret (public cert) — copied straight from the repo.
       ${lib.optionalString haveTrustProfile ''
         ${pkgs.coreutils}/bin/install -m 0444 ${trustProfile} /var/lib/deus-tokens/installer-trust.mobileconfig
+      ''}
+      # Fleet config profiles pushed after the trust profile (FDA etc.).
+      ${lib.optionalString haveProfiles ''
+        ${pkgs.coreutils}/bin/install -d -m 0755 /var/lib/deus-tokens/profiles
+        ${pkgs.coreutils}/bin/install -m 0444 ${configProfiles}/*.mobileconfig /var/lib/deus-tokens/profiles/
       ''}
     '';
   };
@@ -399,6 +409,9 @@ in
           # signer), then the bootstrap pkg. Gated on the committed
           # .mobileconfig; empty until then → profile step skipped.
           trustProfileFile = lib.optionalString haveTrustProfile "/var/lib/deus-tokens/installer-trust.mobileconfig";
+          # The 6 fleet config profiles (fda grants Full Disk Access — the
+          # SIP-on replacement for the old TCC.db hack).
+          profilesDir = lib.optionalString haveProfiles "/var/lib/deus-tokens/profiles";
 
           # Bootstrap pkg (InstallEnterpriseApplication). Fill in once the
           # signed pkg is built + uploaded to bootstrap.matv.io/pkg/ (see

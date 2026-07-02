@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>PayloadDisplayName</key>
+			<string>com.apple.SetupAssistant.managed</string>
+			<key>PayloadEnabled</key>
+			<true/>
+			<key>PayloadIdentifier</key>
+			<string>io.matv.fleet.setup-assistant.com.apple.SetupAssistant.managed.0</string>
+			<key>PayloadType</key>
+			<string>com.apple.SetupAssistant.managed</string>
+			<key>PayloadUUID</key>
+			<string>9746883F-DE34-F2A3-1CB8-5D11AD8842FC</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>SkipSetupItems</key>
+			<array>
+				<string>Accessibility</string>
+				<string>Appearance</string>
+				<string>AppleID</string>
+				<string>Biometric</string>
+				<string>Diagnostics</string>
+				<string>FileVault</string>
+				<string>iCloudDiagnostics</string>
+				<string>iCloudStorage</string>
+				<string>Intelligence</string>
+				<string>Location</string>
+				<string>Payment</string>
+				<string>Privacy</string>
+				<string>ScreenTime</string>
+				<string>Siri</string>
+				<string>TermsOfAddress</string>
+				<string>TOS</string>
+				<string>UnlockWithWatch</string>
+				<string>Welcome</string>
+			</array>
+		</dict>
+	</array>
+	<key>PayloadDescription</key>
+	<string>Skips Setup Assistant panes on ADE-enrolled Macs.</string>
+	<key>PayloadDisplayName</key>
+	<string>Malli — Setup Assistant skip</string>
+	<key>PayloadIdentifier</key>
+	<string>io.matv.fleet.setup-assistant</string>
+	<key>PayloadOrganization</key>
+	<string>matv</string>
+	<key>PayloadRemovalDisallowed</key>
+	<false/>
+	<key>PayloadScope</key>
+	<string>System</string>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>F023D71F-2FE8-33A3-929D-3AEC5393EE0E</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+</dict>
+</plist>
