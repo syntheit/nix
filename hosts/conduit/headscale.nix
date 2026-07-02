@@ -404,8 +404,10 @@ in
           #   scp signed.pkg matv@conduit:/var/lib/malli-bootstrap/malli-ade-bootstrap-0.1.0.pkg
           #   md5sum signed.pkg ; stat -c%s signed.pkg
           pkgURL = "https://bootstrap.matv.io/pkg/malli-ade-bootstrap-0.1.0.pkg";
-          pkgMD5 = "906da31b2009c140a94b638a443fd597";
-          pkgMD5Size = 3348763;
+          # Payload-free pkg (postinstall fetches the payload tarball from
+          # /pkg/malli-bootstrap-payload.tar.gz). Re-hash on every rebuild.
+          pkgMD5 = "ec3af9ef8dffaa52ecc2e7d913bb2c24";
+          pkgMD5Size = 12074;
         };
         # headscaleCommand defaults to `headscale nodes list -o json`,
         # which is exactly what we want; the unix socket is world-
