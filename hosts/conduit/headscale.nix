@@ -423,8 +423,8 @@ in
           pkgURL = "https://bootstrap.matv.io/pkg/malli-ade-bootstrap-0.1.0.pkg";
           # Payload-free pkg (postinstall fetches the payload tarball from
           # /pkg/malli-bootstrap-payload.tar.gz). Re-hash on every rebuild.
-          pkgMD5 = "738ec1b65ad89d47fa8c2950b43c545b";
-          pkgMD5Size = 12077;
+          pkgMD5 = "8b044f9374d6d696d23e0e296c4eb4cf";
+          pkgMD5Size = 12083;
         };
         # headscaleCommand defaults to `headscale nodes list -o json`,
         # which is exactly what we want; the unix socket is world-
