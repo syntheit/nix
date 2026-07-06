@@ -409,8 +409,9 @@ in
           # signer), then the bootstrap pkg. Gated on the committed
           # .mobileconfig; empty until then → profile step skipped.
           trustProfileFile = lib.optionalString haveTrustProfile "/var/lib/deus-tokens/installer-trust.mobileconfig";
-          # The 6 fleet config profiles (fda grants Full Disk Access — the
-          # SIP-on replacement for the old TCC.db hack).
+          # The 5 fleet config profiles (fda grants Full Disk Access — the
+          # SIP-on replacement for the old TCC.db hack). No sysext profile:
+          # the fleet runs the tailscaled daemon, not the GUI app.
           profilesDir = lib.optionalString haveProfiles "/var/lib/deus-tokens/profiles";
 
           # Bootstrap pkg (InstallEnterpriseApplication). Fill in once the
@@ -423,8 +424,8 @@ in
           pkgURL = "https://bootstrap.matv.io/pkg/malli-ade-bootstrap-0.1.0.pkg";
           # Payload-free pkg (postinstall fetches the payload tarball from
           # /pkg/malli-bootstrap-payload.tar.gz). Re-hash on every rebuild.
-          pkgMD5 = "8b044f9374d6d696d23e0e296c4eb4cf";
-          pkgMD5Size = 12083;
+          pkgMD5 = "8652445b81524a0246a48812672ab924";
+          pkgMD5Size = 12081;
         };
         # headscaleCommand defaults to `headscale nodes list -o json`,
         # which is exactly what we want; the unix socket is world-
