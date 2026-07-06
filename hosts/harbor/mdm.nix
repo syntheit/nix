@@ -128,6 +128,19 @@ let
             <integer>2048</integer>
             <key>URL</key>
             <string>https://scep.matv.io/scep</string>
+            <!-- Non-empty Subject is REQUIRED: an empty-subject device cert
+                 makes determinate-nixd panic enumerating the System keychain
+                 (SecCertificate subject_summary = NULL), breaking /nix mounts.
+                 %SerialNumber% is substituted on-device at CSR time. -->
+            <key>Subject</key>
+            <array>
+              <array>
+                <array>
+                  <string>CN</string>
+                  <string>%SerialNumber%</string>
+                </array>
+              </array>
+            </array>
           </dict>
           <key>PayloadIdentifier</key>
           <string>io.matv.fleet.enroll.scep</string>
