@@ -166,12 +166,22 @@
     address = [ "10.100.0.1/24" ];
     listenPort = 51820;
     privateKeyFile = "/etc/wireguard/private.key"; # Manually placed for now, sops later
-    peers = [{
-      # harbor
-      publicKey = "PlMrfs2tSsfOhztKCCf4e9ozb5ZsnDdUq5Zi/gZqOWw=";
-      allowedIPs = [ "10.100.0.2/32" ];
-      # No endpoint — harbor connects to us
-    }];
+    peers = [
+      {
+        # harbor
+        publicKey = "PlMrfs2tSsfOhztKCCf4e9ozb5ZsnDdUq5Zi/gZqOWw=";
+        allowedIPs = [ "10.100.0.2/32" ];
+        # No endpoint — harbor connects to us
+      }
+      {
+        # mantle — MDM-stack standby (nanomdm/scep/enroll bind 10.100.0.3).
+        # deus-server's nanomdmURL flips to 10.100.0.3:9990 at cutover; the
+        # nanomdm webhook posts back here to 10.100.0.1:8086.
+        publicKey = "pwk8vx3pcwP2TGKsIFG+afvhD0LMxOkqj9AgLXkCDi4=";
+        allowedIPs = [ "10.100.0.3/32" ];
+        # No endpoint — mantle connects to us
+      }
+    ];
   };
 
   # NAT port forwarding — game traffic through WireGuard to harbor

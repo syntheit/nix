@@ -1,8 +1,10 @@
-{ vars, ... }:
+{ config, vars, ... }:
 {
   imports = [
     ./hardware-configuration.nix
     ./hardware.nix
+    ./secrets.nix
+    ./mdm.nix
     ../../system
     ../../services
     ../../desktop
@@ -11,7 +13,23 @@
   networking.hostName = "mantle";
 
   services.tailscale.enable = true;
-  networking.firewall.trustedInterfaces = [ "tailscale0" ];
+  # wg0 = the point-to-point link to conduit for the MDM stack (mirrors
+  # harbor). conduit's deus-server reaches nanomdm at 10.100.0.3:9990 and
+  # nanomdm's webhook posts back to conduit at 10.100.0.1:8086 — all over wg,
+  # so trust the interface.
+  networking.firewall.trustedInterfaces = [ "tailscale0" "wg0" ];
+
+  # WireGuard tunnel to conduit (VPS gateway) — MDM data plane.
+  networking.wg-quick.interfaces.wg0 = {
+    address = [ "10.100.0.3/24" ];
+    privateKeyFile = config.sops.secrets.mantle_wg_private_key.path;
+    peers = [{
+      publicKey = "bhXOmLJsZDR0ZeF/Wnzt116Jw0tHzbfhoe2kG2+ZDAw=";
+      endpoint = "192.3.203.146:51820";
+      allowedIPs = [ "10.100.0.1/32" ];
+      persistentKeepalive = 25;
+    }];
+  };
 
   # SSH — Tailscale-only, key-only. trustedInterfaces above lets Tailscale
   # traffic bypass the firewall; openFirewall=false keeps port 22 closed
