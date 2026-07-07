@@ -153,6 +153,7 @@
           };
           modules = [
             ./hosts/mantle
+            inputs.sops-nix.nixosModules.sops
             inputs.home-manager.nixosModules.home-manager
             inputs.windscribe.nixosModules.default
             {
