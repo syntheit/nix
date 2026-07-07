@@ -62,6 +62,32 @@ get_retention() {
   jq_config '.retention'
 }
 
+get_groups() {
+  jq_config '.groups | keys[]'
+}
+
+get_group_members() {
+  jq_config ".groups[\"$1\"].members[]"
+}
+
+get_group_policy() {
+  jq_config ".groups[\"$1\"].policy"
+}
+
+# Echo the group name a container belongs to, or return 1 if it's ungrouped.
+find_container_group() {
+  local container="$1" g m
+  while IFS= read -r g; do
+    while IFS= read -r m; do
+      if [ "$m" = "$container" ]; then
+        echo "$g"
+        return 0
+      fi
+    done < <(get_group_members "$g")
+  done < <(get_groups)
+  return 1
+}
+
 # --- State helpers ---
 
 get_state() {
@@ -275,26 +301,152 @@ _do_update() {
   return 0
 }
 
+# Update a group of version-coupled containers atomically:
+# tag rollback images → stop all (reverse order) → start all (listed order,
+# systemd After= handles deps) → wait → update state.
+_do_group_update() {
+  local group="$1"
+  local -a members=()
+  mapfile -t members < <(get_group_members "$group")
+
+  if [ ${#members[@]} -eq 0 ]; then
+    log_error "Group '$group' has no members"
+    return 1
+  fi
+
+  local name
+
+  # Tag current images for rollback (one per member)
+  for name in "${members[@]}"; do
+    local current_id=""
+    if docker inspect "$name" > /dev/null 2>&1; then
+      current_id=$(docker inspect "$name" --format='{{.Image}}' 2>/dev/null || true)
+    fi
+    if [ -n "$current_id" ]; then
+      if ! docker tag "$current_id" "argus/rollback/${name}:latest" 2>/dev/null; then
+        log "Warning: failed to create rollback tag for $name"
+      fi
+    fi
+  done
+
+  # Stop all members in reverse order so dependents go down first
+  log "Stopping group '$group' (reverse order)..."
+  local i
+  for (( i = ${#members[@]} - 1; i >= 0; i-- )); do
+    name="${members[$i]}"
+    log "Stopping $name..."
+    systemctl stop "docker-${name}.service" 2>/dev/null \
+      || log "Warning: failed to stop $name (may already be down)"
+  done
+
+  # Start all members in listed order; systemd After= enforces dependency order
+  log "Starting group '$group'..."
+  for name in "${members[@]}"; do
+    log "Starting $name..."
+    if ! systemctl start "docker-${name}.service" 2>/dev/null; then
+      log_error "Failed to start $name"
+      return 1
+    fi
+  done
+
+  # Wait for every member to reach active state
+  for name in "${members[@]}"; do
+    local _j
+    for _j in $(seq 1 30); do
+      if systemctl is-active --quiet "docker-${name}.service" 2>/dev/null; then
+        break
+      fi
+      sleep 2
+    done
+    if ! systemctl is-active --quiet "docker-${name}.service" 2>/dev/null; then
+      log_error "Container $name failed to start after group update"
+      return 1
+    fi
+  done
+
+  # Update state for all members
+  local now
+  now=$(date -Is)
+  for name in "${members[@]}"; do
+    local image new_id current_digest
+    image=$(get_image "$name")
+    new_id=$(docker image inspect "$image" --format='{{.Id}}' 2>/dev/null || true)
+    current_digest=$(state_field "$name" "current_digest")
+    set_state "$name" \
+      --arg cd "$new_id" \
+      --arg pd "$current_digest" \
+      --arg lu "$now" \
+      '. + {current_digest: $cd, previous_digest: $pd, update_available: false, last_updated: $lu}'
+    log "Updated $name successfully"
+  done
+
+  log "Group '$group' update complete"
+  return 0
+}
+
 _update_containers() {
   local target="${1:-}"
-  local containers_to_update=()
+  local containers_to_update=()    # every container that will get a new image
+  local -a group_units=()          # group names to update atomically
+  local -a individual_units=()     # non-grouped containers to update one-by-one
 
   if [ -n "$target" ]; then
-    # Verify container exists in config
-    if [ "$(jq_config ".containers[\"$target\"] // empty")" = "" ]; then
-      die "Container '$target' is not managed by argus"
+    # Single target: resolve group vs container
+    if [ "$(jq_config ".groups[\"$target\"] // empty")" != "" ]; then
+      group_units=("$target")
+      mapfile -t containers_to_update < <(get_group_members "$target")
+    elif [ "$(jq_config ".containers[\"$target\"] // empty")" != "" ]; then
+      # Refuse single update of a grouped container — would break version coupling
+      local grp
+      if grp=$(find_container_group "$target"); then
+        die "Container '$target' belongs to group '$grp' — use 'argus update $grp' to update the group together"
+      fi
+      individual_units=("$target")
+      containers_to_update=("$target")
+    else
+      die "Container or group '$target' is not managed by argus"
     fi
-    containers_to_update=("$target")
   else
-    # All auto containers with available updates
+    # Auto run: collect auto groups + non-grouped auto containers with updates
+    # Mark ALL group members (any policy) so manual-group containers are never
+    # individually updated by the auto timer — only via explicit `argus update <group>`.
+    local -A grouped_members=()
+
+    local g
+    while IFS= read -r g; do
+      local -a gmembers
+      mapfile -t gmembers < <(get_group_members "$g")
+      local m
+      for m in "${gmembers[@]}"; do
+        grouped_members[$m]=1
+      done
+      local gpolicy
+      gpolicy=$(get_group_policy "$g")
+      [ "$gpolicy" = "auto" ] || continue
+      local any_update=false
+      for m in "${gmembers[@]}"; do
+        local ua
+        ua=$(get_state "$m" | jq -r '.update_available // false')
+        [ "$ua" = "true" ] && any_update=true
+      done
+      if [ "$any_update" = true ]; then
+        group_units+=("$g")
+        containers_to_update+=("${gmembers[@]}")
+      fi
+    done < <(get_groups)
+
+    # Non-grouped auto containers
     mapfile -t all_containers < <(get_containers)
     local name
     for name in "${all_containers[@]}"; do
+      [ "${grouped_members[$name]:-}" = "1" ] && continue
       local policy
       policy=$(get_policy "$name")
-      local update_available
-      update_available=$(get_state "$name" | jq -r '.update_available // false')
-      if [ "$policy" = "auto" ] && [ "$update_available" = "true" ]; then
+      [ "$policy" = "auto" ] || continue
+      local ua
+      ua=$(get_state "$name" | jq -r '.update_available // false')
+      if [ "$ua" = "true" ]; then
+        individual_units+=("$name")
         containers_to_update+=("$name")
       fi
     done
@@ -307,17 +459,14 @@ _update_containers() {
 
   log "Updating ${#containers_to_update[@]} container(s): ${containers_to_update[*]}"
 
-  # Collect unique backups needed
+  # Collect unique backups across all containers being updated (deduped)
   declare -A needed_backups
   local name
   for name in "${containers_to_update[@]}"; do
-    mapfile -t container_backups < <(get_container_backups "$name")
     local backup
-    for backup in "${container_backups[@]}"; do
-      if [ -n "$backup" ]; then
-        needed_backups[$backup]=1
-      fi
-    done
+    while IFS= read -r backup; do
+      [ -n "$backup" ] && needed_backups[$backup]=1
+    done < <(get_container_backups "$name")
   done
 
   # Run backups
@@ -329,25 +478,51 @@ _update_containers() {
     fi
   done
 
-  # Update containers
   local updated=0 failed=0
-  for name in "${containers_to_update[@]}"; do
-    # Check if any required backup failed
+
+  # Update groups atomically (stop all → start all)
+  for g in "${group_units[@]}"; do
+    local -a gmembers
+    mapfile -t gmembers < <(get_group_members "$g")
+    # If any member's required backup failed, skip the whole group
+    local skip_group=false
+    for name in "${gmembers[@]}"; do
+      local backup
+      while IFS= read -r backup; do
+        if [ -n "$backup" ] && [ "${backup_failed[$backup]:-}" = "1" ]; then
+          log_error "Skipping group '$g': required backup '$backup' failed"
+          skip_group=true
+          break
+        fi
+      done < <(get_container_backups "$name")
+      [ "$skip_group" = true ] && break
+    done
+    if [ "$skip_group" = true ]; then
+      failed=$((failed + ${#gmembers[@]}))
+      continue
+    fi
+    if _do_group_update "$g"; then
+      updated=$((updated + ${#gmembers[@]}))
+    else
+      failed=$((failed + ${#gmembers[@]}))
+    fi
+  done
+
+  # Update individuals (rolling restart)
+  for name in "${individual_units[@]}"; do
     local skip=false
-    mapfile -t container_backups < <(get_container_backups "$name")
     local backup
-    for backup in "${container_backups[@]}"; do
+    while IFS= read -r backup; do
       if [ -n "$backup" ] && [ "${backup_failed[$backup]:-}" = "1" ]; then
         log_error "Skipping $name: required backup '$backup' failed"
         skip=true
         break
       fi
-    done
+    done < <(get_container_backups "$name")
     if [ "$skip" = true ]; then
       failed=$((failed + 1))
       continue
     fi
-
     if _do_update "$name"; then
       updated=$((updated + 1))
     else
@@ -412,6 +587,21 @@ cmd_status() {
     printf "  %-28s %-10s %-8s %-20s %s\n" "$name" "$status" "$policy" "$last_updated" "$update_info"
   done
 
+  # Groups summary
+  local group_count
+  group_count=$(get_groups 2>/dev/null | wc -l)
+  if [ "$group_count" -gt 0 ]; then
+    printf "\n  Groups:\n"
+    local g
+    while IFS= read -r g; do
+      local -a gmembers
+      mapfile -t gmembers < <(get_group_members "$g")
+      local gpolicy
+      gpolicy=$(get_group_policy "$g")
+      printf "  %-28s %-8s %s\n" "$g" "$gpolicy" "${gmembers[*]}"
+    done < <(get_groups)
+  fi
+
   # Backup summary
   local backup_count
   backup_count=$(find "$BACKUP_DIR" -name "*.sql" -type f 2>/dev/null | wc -l)
@@ -428,31 +618,69 @@ cmd_update() {
 
   local target="${1:-}"
 
-  # If updating a specific container, pull its image first
   if [ -n "$target" ]; then
-    local image
-    image=$(get_image "$target")
-    if [ -z "$image" ] || [ "$image" = "null" ]; then
-      die "Container '$target' is not managed by argus"
+    if [ "$(jq_config ".groups[\"$target\"] // empty")" != "" ]; then
+      # Group target: pull all member images, flag any that are newer
+      local -a members
+      mapfile -t members < <(get_group_members "$target")
+      local any_newer=false m
+      for m in "${members[@]}"; do
+        local image
+        image=$(get_image "$m")
+        if [ -z "$image" ] || [ "$image" = "null" ]; then
+          die "Group '$target' member '$m' has no image configured"
+        fi
+        log "Pulling $image..."
+        if ! docker pull "$image" > /dev/null 2>&1; then
+          die "Failed to pull $image"
+        fi
+        local pulled_id running_id=""
+        pulled_id=$(docker image inspect "$image" --format='{{.Id}}' 2>/dev/null || true)
+        if docker inspect "$m" > /dev/null 2>&1; then
+          running_id=$(docker inspect "$m" --format='{{.Image}}' 2>/dev/null || true)
+        fi
+        if [ -n "$running_id" ] && [ "$pulled_id" != "$running_id" ]; then
+          any_newer=true
+          set_state "$m" \
+            --arg ad "$pulled_id" \
+            '. + {update_available: true, available_digest: $ad}'
+        fi
+      done
+      if [ "$any_newer" = false ]; then
+        log "Group '$target' is already up to date"
+        return 0
+      fi
+    elif [ "$(jq_config ".containers[\"$target\"] // empty")" != "" ]; then
+      # Single container — refuse if it belongs to a group
+      local grp
+      if grp=$(find_container_group "$target"); then
+        die "Container '$target' belongs to group '$grp' — use 'argus update $grp' to update the group together"
+      fi
+      local image
+      image=$(get_image "$target")
+      if [ -z "$image" ] || [ "$image" = "null" ]; then
+        die "Container '$target' is not managed by argus"
+      fi
+      log "Pulling $image..."
+      if ! docker pull "$image" > /dev/null 2>&1; then
+        die "Failed to pull $image"
+      fi
+      local pulled_id running_id
+      pulled_id=$(docker image inspect "$image" --format='{{.Id}}' 2>/dev/null || true)
+      running_id=""
+      if docker inspect "$target" > /dev/null 2>&1; then
+        running_id=$(docker inspect "$target" --format='{{.Image}}' 2>/dev/null || true)
+      fi
+      if [ "$pulled_id" = "$running_id" ]; then
+        log "$target is already up to date"
+        return 0
+      fi
+      set_state "$target" \
+        --arg ad "$pulled_id" \
+        '. + {update_available: true, available_digest: $ad}'
+    else
+      die "Container or group '$target' is not managed by argus"
     fi
-    log "Pulling $image..."
-    if ! docker pull "$image" > /dev/null 2>&1; then
-      die "Failed to pull $image"
-    fi
-    # Check if actually newer
-    local pulled_id running_id
-    pulled_id=$(docker image inspect "$image" --format='{{.Id}}' 2>/dev/null || true)
-    running_id=""
-    if docker inspect "$target" > /dev/null 2>&1; then
-      running_id=$(docker inspect "$target" --format='{{.Image}}' 2>/dev/null || true)
-    fi
-    if [ "$pulled_id" = "$running_id" ]; then
-      log "$target is already up to date"
-      return 0
-    fi
-    set_state "$target" \
-      --arg ad "$pulled_id" \
-      '. + {update_available: true, available_digest: $ad}'
   fi
 
   _update_containers "$target"
@@ -467,11 +695,94 @@ cmd_auto() {
 }
 
 cmd_rollback() {
-  local name="${1:?Usage: argus rollback <container>}"
+  local name="${1:?Usage: argus rollback <container or group>}"
   acquire_lock
 
+  # Group rollback: stop all members, retag rollback images, start all together
+  if [ "$(jq_config ".groups[\"$name\"] // empty")" != "" ]; then
+    local -a members
+    mapfile -t members < <(get_group_members "$name")
+
+    # Verify every member has a rollback image and save pre-rollback digests
+    declare -A pre_digests=()
+    local m
+    for m in "${members[@]}"; do
+      if ! docker image inspect "argus/rollback/${m}:latest" > /dev/null 2>&1; then
+        die "No rollback image available for group member '$m' (rollback tag not found locally)"
+      fi
+      pre_digests[$m]=$(state_field "$m" "current_digest")
+    done
+
+    # Stop all members (reverse order)
+    log "Rolling back group '$name'..."
+    local i
+    for (( i = ${#members[@]} - 1; i >= 0; i-- )); do
+      m="${members[$i]}"
+      log "Stopping $m..."
+      systemctl stop "docker-${m}.service" 2>/dev/null \
+        || log "Warning: failed to stop $m"
+    done
+
+    # Retag rollback images
+    for m in "${members[@]}"; do
+      local image
+      image=$(get_image "$m")
+      docker tag "argus/rollback/${m}:latest" "$image"
+    done
+
+    # Start all members (listed order; systemd After= handles deps)
+    for m in "${members[@]}"; do
+      log "Starting $m..."
+      if ! systemctl start "docker-${m}.service" 2>/dev/null; then
+        log_error "Failed to start $m after rollback"
+        return 1
+      fi
+    done
+
+    # Wait for all members
+    for m in "${members[@]}"; do
+      local _i
+      for _i in $(seq 1 30); do
+        if systemctl is-active --quiet "docker-${m}.service" 2>/dev/null; then
+          break
+        fi
+        sleep 2
+      done
+      if ! systemctl is-active --quiet "docker-${m}.service" 2>/dev/null; then
+        die "Group member $m failed to start after rollback"
+      fi
+    done
+
+    # Update state for all members
+    local now
+    now=$(date -Is)
+    for m in "${members[@]}"; do
+      local previous_digest
+      previous_digest=$(state_field "$m" "previous_digest")
+      set_state "$m" \
+        --arg cd "$previous_digest" \
+        --arg pd "${pre_digests[$m]}" \
+        --arg lu "$now" \
+        '. + {current_digest: $cd, previous_digest: $pd, update_available: false, last_updated: $lu}'
+    done
+
+    log "Rolled back group '$name' successfully"
+
+    if [ -d "$BACKUP_DIR" ] && [ "$(find "$BACKUP_DIR" -name '*.sql' -type f 2>/dev/null | head -1)" ]; then
+      echo "Database backups available in $BACKUP_DIR" >&2
+    fi
+    return 0
+  fi
+
+  # Single container rollback
   if [ "$(jq_config ".containers[\"$name\"] // empty")" = "" ]; then
-    die "Container '$name' is not managed by argus"
+    die "Container or group '$name' is not managed by argus"
+  fi
+
+  # Refuse single rollback of a grouped container (would desync versions)
+  local grp
+  if grp=$(find_container_group "$name"); then
+    die "Container '$name' belongs to group '$grp' — use 'argus rollback $grp' to roll back the group together"
   fi
 
   local image
@@ -533,11 +844,17 @@ print_usage() {
 Argus — container update manager
 
 Usage:
-  argus status                Show status of all managed containers
+  argus status                Show status of all managed containers and groups
   argus check                 Pull images and check for available updates
-  argus update [container]    Update a specific container, or all auto containers
-  argus rollback <container>  Rollback a container to its previous image
+  argus update [target]       Update a group, container, or all auto containers
+  argus rollback <target>     Rollback a group or container to its previous image
   argus logs [...]            Show argus log entries (args passed to journalctl)
+
+Targets:
+  - A group name (e.g. "immich") updates all members together atomically.
+  - A container name updates that single container (grouped containers must
+    be updated via their group to keep versions in sync).
+  - No target updates all auto-policy containers/groups that have updates.
 
 EOF
 }

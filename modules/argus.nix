@@ -49,6 +49,20 @@ let
     };
   };
 
+  groupSubmodule = lib.types.submodule {
+    options = {
+      members = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        description = "Container names in this group. Updated together atomically: stop all, pull, start all in dependency order.";
+      };
+      policy = lib.mkOption {
+        type = lib.types.enum [ "auto" "manual" ];
+        default = "auto";
+        description = "auto = group updated by timer when any member has an update available; manual = update only via `argus update <group>`";
+      };
+    };
+  };
+
   # Build the full container config: explicit entries + defaults for unlisted ones
   managedContainerNames = lib.filter
     (name: ! builtins.elem name cfg.exclude)
@@ -75,6 +89,9 @@ let
       inherit (b) type container database user;
     }) cfg.backups;
     retention = cfg.retention;
+    groups = lib.mapAttrs (_: g: {
+      inherit (g) members policy;
+    }) cfg.groups;
   };
 in
 {
@@ -103,6 +120,18 @@ in
       type = lib.types.attrsOf containerSubmodule;
       default = { };
       description = "Per-container update configuration. Unlisted containers default to auto with no backups.";
+    };
+
+    groups = lib.mkOption {
+      type = lib.types.attrsOf groupSubmodule;
+      default = { };
+      description = ''
+        Container groups that must be updated together (e.g. version-coupled
+        stacks like immich where server and machine-learning must stay on the
+        same version). Members are stopped as a group, images pulled, then
+        started together so systemd's After= directives handle dependency
+        ordering. A container may only belong to one group.
+      '';
     };
 
     backups = lib.mkOption {
@@ -147,7 +176,27 @@ in
           assertion = cfg.backups.${name}.type != "postgres" || (cfg.backups.${name}.database != "" && cfg.backups.${name}.user != "");
           message = "Argus: postgres backup '${name}' must specify both 'database' and 'user'";
         })
-        (builtins.attrNames cfg.backups));
+        (builtins.attrNames cfg.backups))
+      ++
+      # Every group member must be a managed (non-excluded) container
+      (lib.concatMap
+        (groupName:
+          map
+            (member: {
+              assertion = builtins.elem member managedContainerNames;
+              message = "Argus: group '${groupName}' references container '${member}' which is not managed (it may be excluded or undefined)";
+            })
+            cfg.groups.${groupName}.members)
+        (builtins.attrNames cfg.groups))
+      ++
+      # A container may only belong to one group
+      (let
+        allMembers = lib.concatMap (g: g.members) (builtins.attrValues cfg.groups);
+      in
+        lib.optional (builtins.length (lib.unique allMembers) != builtins.length allMembers) {
+          assertion = false;
+          message = "Argus: a container can only belong to one group (duplicate member detected across groups)";
+        });
 
     # Generated config file
     environment.etc."argus/config.json".text = configJson;
