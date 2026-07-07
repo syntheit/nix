@@ -213,6 +213,7 @@ in
     ../../home/modules/ssh.nix
     ../../home/modules/neovim.nix
     ../../home/modules/tmux.nix
+    ../../home/modules/opencode.nix
   ];
 
   home.username = "droid";
@@ -223,6 +224,7 @@ in
     btw = "${pkgs.fastfetch}/bin/fastfetch";
     igrep = "grep -i";
     android = "ssh -p 8022 -i ~/.ssh/mainkey $(ip route | awk '/default/ {print $3}')";
+    deploy-conduit = "nixos-rebuild switch --flake ~/nix#conduit --target-host conduit --sudo";
   };
 
   home.packages = with pkgs; [

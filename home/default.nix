@@ -16,6 +16,7 @@
     ./modules/git.nix
     ./modules/neovim.nix
     ./modules/packages.nix
+    ./modules/opencode.nix
     ./modules/hyprland.nix
     ./modules/rofi.nix
     ./modules/ghostty.nix
