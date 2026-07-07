@@ -3,6 +3,7 @@ keys:
   - &raven age1yhx9yq5xqhs4n7jnejq2mu5nmn40ts6pwjrm60tdumm3w002kanq3vrfxs
   - &conduit age1h3unge4klw9ufp7c3c5msmtk7qaxnxd3zqt38v5y47vmcx7hse0q67rerx
   - &swift age1fkczzufr4n996fl7708ekpffqher5nwl6lwkjgpj7p3uzv084c2s4qyvy4
+  - &mantle age1fx9mhsusvxzzm2ns8fltj7c9cl89g4c97z7hmxm82qfq78sukdlqvlf5kg
   - &daniel age179l0hwpm4h40raspjng5hscgfnl4ycng8sragp9kfsyu8ej849mqn4797w
 
 creation_rules:
@@ -30,4 +31,20 @@ creation_rules:
     key_groups:
       - age:
           - *swift
+          - *daniel
+  - path_regex: secrets/mantle\.yaml$
+    key_groups:
+      - age:
+          - *mantle
+          - *daniel
+  # Shared user secrets (e.g. openrouter_key for opencode) — readable on every
+  # host that runs opencode. Add new hosts' keys here + run `sops updatekeys`.
+  - path_regex: secrets/shared\.yaml$
+    key_groups:
+      - age:
+          - *harbor
+          - *raven
+          - *conduit
+          - *swift
+          - *mantle
           - *daniel
