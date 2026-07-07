@@ -34,6 +34,7 @@ in
     ../../home/modules/wallpaper.nix
     ../../home/modules/spotify.nix
     ../../home/shell.nix
+    ../../home/modules/opencode.nix
   ];
 
   home.username = "${vars.user.name}";

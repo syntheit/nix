@@ -20,6 +20,13 @@
   sops.secrets.retrospend_auth_secret = { };
   sops.secrets.retrospend_worker_api_key = { };
   sops.secrets.retrospend_openrouter_api_key = { };
+
+  # opencode / OpenRouter — read at runtime by opencode via
+  # {file:/run/secrets/openrouter_key} (see home/modules/opencode.nix)
+  sops.secrets.openrouter_key = {
+    owner = "matv";
+    mode = "0400";
+  };
   sops.secrets.retrospend_smtp_user = { };
   sops.secrets.retrospend_smtp_password = { };
   sops.secrets.immich_db_password = { };
