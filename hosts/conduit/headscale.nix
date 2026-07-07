@@ -377,7 +377,7 @@ in
         # activation script above; it must be added to secrets/conduit.yaml
         # (it currently lives only in secrets/harbor.yaml).
         ade = {
-          nanomdmURL = "http://10.100.0.2:9990";
+          nanomdmURL = "http://10.100.0.3:9990"; # mantle (was harbor 10.100.0.2)
           apiKeyFile = "/var/lib/deus-tokens/nanomdm-api";
           webhookSecretFile = "/var/lib/deus-tokens/nanomdm-api";
 
