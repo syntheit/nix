@@ -67,7 +67,6 @@
     antigravity
     dbeaver-bin
     vscode
-    opencode
     awscli2
     zip
     aws-sam-cli
