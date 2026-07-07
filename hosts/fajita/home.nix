@@ -6,6 +6,7 @@
     ../../home/modules/git.nix
     ../../home/modules/ssh.nix
     ../../home/modules/tmux.nix
+    ../../home/modules/opencode.nix
   ];
 
   home.username = "daniel";

@@ -12,6 +12,7 @@
     ./storage.nix
     ./containers
     ./access.nix
+    ./mdm.nix
     ./monitoring.nix
     ./virt.nix
     ../../modules/server-safety.nix
@@ -49,6 +50,11 @@
       pelican_db = { backups = [ "pelican" ]; };
       seafile = { backups = [ "seafile" ]; };
       seafile_db = { backups = [ "seafile" ]; };
+    };
+
+    # Version-coupled stacks that must update together (stop all → pull → start all).
+    groups = {
+      immich.members = [ "immich_server" "immich_machine_learning" ];
     };
 
     backups = {

@@ -11,6 +11,7 @@
     ../../home/modules/ssh.nix
     ../../home/modules/neovim.nix
     ../../home/modules/tmux.nix
+    ../../home/modules/opencode.nix
   ];
 
   home.username = "matv";
