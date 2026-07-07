@@ -1054,6 +1054,24 @@ in
     '';
   };
 
+  # ── MDM standby front-door (harbor→mantle cutover) ─────────────────
+  # When harbor's MDM stack moves to mantle, repoint mdm/enroll/scep.matv.io
+  # DNS off harbor's cloudflared tunnel to conduit (A → 192.3.203.146, like
+  # bootstrap.matv.io), and Caddy fronts mantle's containers over WireGuard
+  # (10.100.0.3). Until that DNS change these get no cert (ACME needs the
+  # hostname pointing here) and receive no traffic — harmless. At cutover:
+  # (1) change DNS, (2) flip nanomdmURL 10.100.0.2→10.100.0.3 + deploy-conduit,
+  # (3) stop harbor's 4 MDM containers. See malli-deus/plans/RESUME.md.
+  services.caddy.virtualHosts."mdm.matv.io".extraConfig = ''
+    reverse_proxy 10.100.0.3:9990
+  '';
+  services.caddy.virtualHosts."scep.matv.io".extraConfig = ''
+    reverse_proxy 10.100.0.3:8081
+  '';
+  services.caddy.virtualHosts."enroll.matv.io".extraConfig = ''
+    reverse_proxy 10.100.0.3:9991
+  '';
+
   # ── Docker Registry proxy (on host) ────────────────────────
   # Forwards port 5000 from Tailscale interface to harbor's registry
   # over WireGuard. Only Headscale fleet machines can reach it.
