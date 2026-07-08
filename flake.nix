@@ -306,7 +306,7 @@
         };
 
         # vista — 2019 16" MacBook Pro (MacBookPro16,1, Apple T2) repurposed as
-        # an always-on Hyprland HTPC/media box (lid shut, HDMI to TV, ethernet).
+        # an always-on headless server (lid shut, no GUI, ethernet, SSH-managed).
         vista = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
           specialArgs = specialArgs // {
@@ -329,7 +329,7 @@
               home-manager.extraSpecialArgs = specialArgs // {
                 hostName = "vista";
               };
-              # Slim HTPC home profile — NOT the full ./home kitchen sink.
+              # Slim headless-server home profile — NOT the full ./home kitchen sink.
               home-manager.users."${vars.user.name}" = import ./hosts/vista/home.nix;
             }
           ];
