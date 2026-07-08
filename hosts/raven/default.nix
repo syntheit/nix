@@ -121,6 +121,12 @@
     MaxRetentionSec=1month
   '';
 
+  # /boot is a tiny 249M EFI partition (fixed by the nixos-avf VM image), and
+  # each generation's kernel + initrd is ~86M. The avf module leaves
+  # configurationLimit unset (= keep every generation forever), which fills
+  # /boot after a couple of kernel bumps. Cap retention so systemd-boot prunes.
+  boot.loader.systemd-boot.configurationLimit = 2;
+
   # Network tunables — BBR congestion control + larger buffers for tunnel traffic
   boot.kernel.sysctl = {
     "net.ipv4.tcp_congestion_control" = "bbr";
