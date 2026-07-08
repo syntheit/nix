@@ -52,6 +52,11 @@
         IdentityFile = "~/.ssh/mainkey";
         User = "daniel";
       };
+      "vista" = {
+        HostName = "100.96.21.56";
+        IdentityFile = "~/.ssh/mainkey";
+        User = "daniel";
+      };
       "raven" = {
         HostName = "100.98.64.97";
         IdentityFile = "~/.ssh/mainkey";

@@ -3,8 +3,51 @@
   config,
   vars,
   lib,
+  hostName ? "unknown",
   ...
 }:
+let
+  # Remote-dev session commands: one letter per host. Each opens/attaches a
+  # tmux session on that host (default session "1"; an arg naming a dir under
+  # ~/Projects auto-cds there; "nix" -> ~/nix).
+  sessionHosts = {
+    h = "harbor";
+    m = "mantle";
+    r = "raven";
+    v = "vista";
+  };
+
+  # swift roams (cafe wifi) -> mosh; the LAN machines talk over plain ssh.
+  # harbor is remote for everyone, so it is always mosh.
+  transportFor = target: if hostName == "swift" || target == "harbor" then "mosh" else "ssh";
+
+  mkSessionFn =
+    letter: target:
+    let
+      launch = if transportFor target == "mosh" then "mosh ${target} -- bash -c" else "ssh -t ${target}";
+    in
+    ''
+      ${letter}() {
+        local name="''${1:-1}"
+        ${launch} "
+          case $name in
+            nix) cd ~/nix ;;
+            *)   [ -d ~/Projects/$name ] && cd ~/Projects/$name ;;
+          esac
+          exec tmux new-session -A -s $name
+        "
+      }
+    '';
+
+  # a command for every host except the one we are sitting on
+  otherHosts = lib.filterAttrs (_letter: target: target != hostName) sessionHosts;
+  sessionFns = lib.concatStringsSep "\n" (lib.mapAttrsToList mkSessionFn otherHosts);
+  sessionCheat = lib.concatStringsSep "\n" (
+    lib.mapAttrsToList (
+      letter: target: "  ${letter} / ${letter} work        ${target} session (${transportFor target})"
+    ) otherHosts
+  );
+in
 {
   programs.zsh = {
     enable = true;
@@ -92,40 +135,18 @@
       zle -N sudo-command-line
       bindkey '\e\e' sudo-command-line
 
-      # --- Remote dev shortcuts ---
-      # h [name] — mosh into harbor, attach to tmux session (default: "1")
-      # If name matches a dir in ~/Projects, auto-cd to it
-      # h website → session "website" in ~/Projects/website
-      # h 2       → session "2" in home dir
-      h() {
-        local name="''${1:-1}"
-        mosh harbor -- bash -c "
-          case $name in
-            nix) cd ~/nix ;;
-            *)   [ -d ~/Projects/$name ] && cd ~/Projects/$name ;;
-          esac
-          exec tmux new-session -A -s $name
-        "
-      }
-
-      # r [name] — same thing for raven, but ssh instead of mosh.
-      # Cellular jitter + AVF tap make mosh predictions miss more than they help.
-      r() {
-        local name="''${1:-1}"
-        ssh -t raven "
-          case $name in
-            nix) cd ~/nix ;;
-            *)   [ -d ~/Projects/$name ] && cd ~/Projects/$name ;;
-          esac
-          exec tmux new-session -A -s $name
-        "
-      }
+      # --- Remote dev shortcuts (generated per-host from sessionHosts) ---
+      # <letter> [name] — open/attach tmux session <name> on that host.
+      #   default session "1"; name = dir under ~/Projects auto-cds; "nix" -> ~/nix
+      # Transport per host: swift uses mosh (it roams); LAN machines use ssh;
+      # harbor is always mosh. No command is defined for the host you're on.
+      ${sessionFns}
 
       cheat() {
         cat <<'CHEAT'
-  ── Remote Dev ──────────────────────────────────────
-  h                 harbor tmux session "1"
-  h 2 / h work      separate named sessions
+  ── Remote Dev (from ${hostName}) ───────────────────
+${sessionCheat}
+  <letter> [name]   default session "1"; name = dir in ~/Projects (auto-cd)
   Shift+Cmd+X       screenshot → harbor:~/screenshots/swift/
 
   ── Tmux (no prefix needed) ─────────────────────────
@@ -144,8 +165,7 @@
   http://harbor:PORT    any port, auto-exposed via Tailscale
   Dev servers must bind to 0.0.0.0 (not 127.0.0.1)
 
-  ── Raven Failover ──────────────────────────────────
-  r / r 2 / r work            raven tmux sessions (ssh)
+  ── Emergency ───────────────────────────────────────
   emergency-push              push all dirty repos
   emergency-push my-app       push one repo
 
