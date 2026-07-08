@@ -5,12 +5,16 @@
   ...
 }:
 {
+  # Headless server: deliberately does NOT import ../../desktop (Hyprland,
+  # greetd, Steam, the full font set). vista runs console-only and is managed
+  # over SSH/Tailscale. Its slim package set lives in ./home.nix (it does NOT
+  # import the full ./home kitchen sink either), and affinity is gated off in
+  # system/default.nix.
   imports = [
     ./hardware.nix
     ./disko.nix
     ../../system
     ../../services
-    ../../desktop
   ];
 
   networking.hostName = "vista";
@@ -18,11 +22,6 @@
 
   # Passwordless sudo for the wheel user — matches mantle/harbor/conduit/fajita.
   security.sudo.wheelNeedsPassword = false;
-
-  # Lean HTPC: drop Steam (enabled by the shared desktop module). vista's slim
-  # package set lives in ./home.nix (it does NOT import the full ./home kitchen
-  # sink), and affinity is gated off in system/default.nix.
-  programs.steam.enable = lib.mkForce false;
 
   # ── Network / remote access ───────────────────────────────────────────────
   services.tailscale.enable = true;
@@ -94,32 +93,8 @@
   #    to opportunistic ON THIS HOST ONLY: resolved still encrypts to NextDNS,
   #    but no longer requires a valid certificate, so a 1970 clock (or a blocked
   #    :853) transparently falls back instead of nuking resolution. Acceptable
-  #    on a stationary home-LAN HTPC; every other host keeps strict DoT.
+  #    on a stationary home-LAN server; every other host keeps strict DoT.
   services.resolved.settings.Resolve.DNSOverTLS = lib.mkForce "opportunistic";
-
-  # ── Phone control (KDE Connect) ───────────────────────────────────────────
-  # Media control / clipboard / notifications / file transfer work out of the
-  # box; opens the required 1714-1764 TCP+UDP range. NOTE: using the phone as a
-  # remote *mouse/keyboard* under Hyprland additionally needs hypr-kdeconnect-fix
-  # — a later customization step once the desktop is dialed in.
-  programs.kdeconnect.enable = true;
-
-  # Remote input (phone as touchpad/keyboard) needs a RemoteDesktop portal
-  # backend, which xdph lacks. Route RemoteDesktop to the hypr-kdeconnect bridge.
-  # The bridge package itself is installed in daniel's home profile (see
-  # ./home.nix) — that's the dir the NixOS xdg-desktop-portal frontend actually
-  # scans (NIX_XDG_DESKTOP_PORTAL_DIR points at the user profile, not the system
-  # one) — and its daemon is started from the Hyprland session (see hyprland.nix).
-  xdg.portal.config.common."org.freedesktop.impl.portal.RemoteDesktop" = "hypr-kdeconnect";
-
-  # ── Boot straight to the TV ───────────────────────────────────────────────
-  # The shared desktop module sets greetd's default_session (tuigreet). Add an
-  # initial_session so the box autologins into Hyprland unattended at boot; if
-  # the session ever exits it falls back to the tuigreet greeter.
-  services.greetd.settings.initial_session = {
-    command = "Hyprland";
-    user = vars.user.name;
-  };
 
   system.stateVersion = "25.05";
 }

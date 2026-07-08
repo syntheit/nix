@@ -179,8 +179,8 @@ in
     sqlite
     usbToggle
   ]
-  # Affinity Suite — heavy creative app, workstation-only. Skipped on the lean
-  # HTPC (vista).
+  # Affinity Suite — heavy creative app, workstation-only. Skipped on the
+  # headless server (vista).
   ++ lib.optionals (hostName != "vista") [
     affinity-v3
   ];

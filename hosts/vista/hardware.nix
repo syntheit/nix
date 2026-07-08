@@ -24,14 +24,15 @@
     # iGPU-force off and use amdgpu (see graphics block below).
     enableIGPU = false;
 
-    # Pull in the Broadcom WiFi + Bluetooth firmware (this also provides the
-    # BCM4364 Bluetooth .hcd that the Asahi extractor can't generate).
-    # "sonoma" is the newest set the module ships and is forward-compatible with
-    # this machine. The exact firmware captured from this Mac's own macOS is
-    # archived at harbor:/home/matv/vista-firmware as a fallback if the generic
-    # set ever proves flaky.
-    firmware.enable = true;
-    firmware.version = "sonoma";
+    # Broadcom WiFi/BT firmware extractor: OFF. It builds via an in-guest QEMU
+    # VM that kernel-panics deterministically on this host (post the 2026-07
+    # nixpkgs bump), and its only job is WiFi + Bluetooth — both moot now that
+    # vista is a headless, ethernet-only server with Bluetooth disabled. Generic
+    # redistributable firmware still loads (hardware.enableRedistributableFirmware
+    # below). If WiFi is ever needed again, the real firmware captured from this
+    # Mac's macOS is archived at harbor:/home/matv/vista-firmware — wire it in via
+    # hardware.firmware rather than re-enabling the broken extractor.
+    firmware.enable = false;
   };
 
   # t2linux binary cache — serves prebuilt linux-t2 kernels (and the apple-bce
@@ -42,13 +43,39 @@
     extra-trusted-public-keys = [ "cache.soopy.moe-1:0RZVsQeR+GOh0VQI9rvnHz55nVXkFardDqfm4+afjPo=" ];
   };
 
-  # ── GPU: AMD Radeon Pro 5500M (drives the HDMI/TV output) ─────────────────
-  hardware.graphics = {
-    enable = true;
-    enable32Bit = true; # Steam / 32-bit games
-  };
-  # Early KMS so the HDMI console comes up at boot.
+  # ── GPU: AMD Radeon Pro 5500M ─────────────────────────────────────────────
+  hardware.graphics.enable = true;
+  # Early KMS so amdgpu is up from boot.
   boot.initrd.kernelModules = [ "amdgpu" ];
+
+  # ── Internal panel: OFF, permanently ──────────────────────────────────────
+  # Headless server, lid shut → the built-in Retina panel must never light
+  # (burn-in / image-persistence risk, esp. the OLED Touch Bar). Two layers:
+  #
+  # 1) Disable the eDP connector at the DRM level. `video=eDP-1:d` tells amdgpu
+  #    to bring the internal panel up disabled, so no compositor or console
+  #    framebuffer can ever scan out to it. (External HDMI/DP connectors are
+  #    untouched — plug a monitor in for recovery if ever needed.)
+  boot.kernelParams = [ "video=eDP-1:d" ];
+
+  # 2) Belt-and-suspenders: force both backlights (main gmux panel + the OLED
+  #    Touch Bar) to zero at boot, in case the PWM rail stays powered even with
+  #    the connector disabled. Writes defensively — the sysfs nodes may not
+  #    exist once the panel is off, so failures are ignored.
+  systemd.services.backlight-off = {
+    description = "Force internal panel + Touch Bar backlight off (headless)";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "systemd-backlight@backlight:gmux_backlight.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = pkgs.writeShellScript "backlight-off" ''
+        for bl in gmux_backlight appletb_backlight; do
+          echo 0 > "/sys/class/backlight/$bl/brightness" 2>/dev/null || true
+        done
+      '';
+    };
+  };
 
   # ── Disk / boot plumbing (disko provides the filesystems) ─────────────────
   boot.initrd.availableKernelModules = [
@@ -65,9 +92,9 @@
   hardware.enableRedistributableFirmware = true;
   hardware.cpu.intel.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
 
-  # ── Headless-by-the-TV behaviour ──────────────────────────────────────────
+  # ── Headless server behaviour ─────────────────────────────────────────────
   # Lid stays shut permanently; never suspend on lid close (or at all — this is
-  # a server/media box that must stay reachable).
+  # an always-on server that must stay reachable).
   # mkForce overrides services/default.nix, which defaults lid actions to
   # "suspend" (correct for the portable laptops, wrong for an always-on HTPC).
   services.logind.settings.Login = {
@@ -81,15 +108,9 @@
   # when idle and still ramps for transcoding/playback.
   powerManagement.cpuFreqGovernor = "schedutil";
 
-  # Bluetooth (for casting to a BT speaker later).
-  hardware.bluetooth = {
-    enable = true;
-    powerOnBoot = true;
-    settings.General = {
-      MultiProfile = "multiple";
-      Experimental = true;
-    };
-  };
+  # Bluetooth off — its only purpose here was casting to a BT speaker under the
+  # old HTPC role, which is gone. Headless server has no use for it.
+  hardware.bluetooth.enable = false;
 
   # ── Memory / storage hygiene (mirrors mantle) ─────────────────────────────
   zramSwap = {
