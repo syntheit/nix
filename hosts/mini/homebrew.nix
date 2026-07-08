@@ -17,7 +17,9 @@
     enable = true;
     onActivation = {
       autoUpdate = true;
-      cleanup = "zap";
+      # "zap" would also delete app data on cleanup; a cask rename or brew
+      # migration once turned that into a full data wipe (2026-07-02, swift).
+      cleanup = "uninstall";
       upgrade = true;
     };
     casks = [

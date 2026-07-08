@@ -456,10 +456,18 @@ in
       #   - rapportd: provides com.apple.CompanionLink XPC, which mediaremoted
       #     needs for event registration; without it mediaremoted's XPC server
       #     enters a degraded state where every client gets Code=1 errors
+      #   - softwareupdated / mobile.softwareupdated: backs the Software Update
+      #     settings pane. Without it, "Check Now" hangs and the extension
+      #     process crashes ("failed to check with helper application").
       # ================================================================
-      for daemon in com.apple.mediaremoted com.apple.rapportd; do
+      for daemon in com.apple.mediaremoted com.apple.rapportd com.apple.softwareupdated com.apple.mobile.softwareupdated; do
         sudo launchctl enable system/"$daemon" 2>/dev/null || true
         sudo launchctl bootstrap system "/System/Library/LaunchDaemons/$daemon.plist" 2>/dev/null || true
+      done
+      # User agents paired with softwareupdated — surface update prompts/badges.
+      for agent in com.apple.SoftwareUpdateNotificationManager com.apple.softwareupdate_notify_agent; do
+        launchctl enable "gui/$GUI_UID/$agent" 2>/dev/null || true
+        launchctl bootstrap "gui/$GUI_UID" "/System/Library/LaunchAgents/$agent.plist" 2>/dev/null || true
       done
       # Kickstart rcd to flush stale Code=1 connection state to mediaremoted
       launchctl kickstart -k "gui/$GUI_UID/com.apple.rcd" 2>/dev/null || true

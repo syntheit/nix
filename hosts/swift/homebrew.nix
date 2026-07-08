@@ -16,7 +16,9 @@
     enable = true;
     onActivation = {
       autoUpdate = true;
-      cleanup = "zap";
+      # "zap" would also delete app data on cleanup; a cask rename or brew
+      # migration once turned that into a full data wipe (2026-07-02).
+      cleanup = "uninstall";
       upgrade = true;
     };
     casks = [
@@ -49,7 +51,6 @@
       "transmission"
       "visual-studio-code"
       "vnc-viewer"
-      "whatsapp"
       "windows-app"
       "windscribe"
       "zen"
