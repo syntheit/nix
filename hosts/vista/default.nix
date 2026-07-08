@@ -16,6 +16,9 @@
   networking.hostName = "vista";
   networking.useDHCP = lib.mkDefault true;
 
+  # Passwordless sudo for the wheel user — matches mantle/harbor/conduit/fajita.
+  security.sudo.wheelNeedsPassword = false;
+
   # Lean HTPC: drop Steam (enabled by the shared desktop module). vista's slim
   # package set lives in ./home.nix (it does NOT import the full ./home kitchen
   # sink), and affinity is gated off in system/default.nix.
