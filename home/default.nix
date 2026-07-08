@@ -13,6 +13,7 @@
     inputs.stylix.homeModules.stylix  # Load Stylix library
     ./modules/stylix.nix              # Load Stylix configuration
     ./modules/ssh.nix
+    ./modules/tmux.nix
     ./modules/git.nix
     ./modules/neovim.nix
     ./modules/packages.nix
