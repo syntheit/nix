@@ -2,6 +2,7 @@
   pkgs,
   lib,
   config,
+  hostName ? "unknown",
   ...
 }:
 
@@ -57,11 +58,24 @@
         IdentityFile = "~/.ssh/mainkey";
         User = "daniel";
       };
+      # On mantle (always home), reach raven's VM over the LAN by hopping
+      # through the phone's own sshd — deterministic, ~3ms, no Tailscale
+      # double-NAT hole-punch to go stale. Everyone else uses Tailscale.
       "raven" = {
-        HostName = "100.98.64.97";
         IdentityFile = "~/.ssh/mainkey";
         User = "droid";
-      };
+      }
+      // (
+        if hostName == "mantle" then
+          {
+            HostName = "10.232.129.3";
+            ProxyJump = "raven-phone";
+          }
+        else
+          {
+            HostName = "100.98.64.97";
+          }
+      );
       "raven.tunnel" = {
         HostName = "raven-ssh.matv.io";
         IdentityFile = "~/.ssh/mainkey";
@@ -105,6 +119,15 @@
       "github-malli-deus" = {
         HostName = "github.com";
         User = "git";
+        IdentityFile = "~/.ssh/mainkey";
+      };
+    }
+    # jump host for raven's LAN path — only defined on mantle
+    // lib.optionalAttrs (hostName == "mantle") {
+      "raven-phone" = {
+        HostName = "192.168.1.197";
+        Port = 8022;
+        User = "droid";
         IdentityFile = "~/.ssh/mainkey";
       };
     };
