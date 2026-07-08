@@ -21,6 +21,7 @@ in
     inputs.stylix.homeModules.stylix
     ../../home/modules/stylix.nix
     ../../home/modules/ssh.nix
+    ../../home/modules/tmux.nix
     ../../home/modules/git.nix
     ../../home/modules/neovim.nix
     ../../home/modules/hyprland.nix
