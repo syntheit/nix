@@ -42,6 +42,15 @@ in
   home.homeDirectory = "/home/${vars.user.name}";
   home.stateVersion = "24.11";
 
+  # Prompt path color = orange — vista's host tint. It's the one saturated hue
+  # not used anywhere else in the prompt (blue=home boxes, cyan=raven,
+  # yellow=conduit, salmon=harbor, purple stays git-branch-only).
+  programs.starship.settings.directory = {
+    style = "#FF8700";
+    repo_root_style = "bold #FF8700";
+    before_repo_root_style = "dimmed #FF8700";
+  };
+
   home.shellAliases = {
     btw = "${pkgs.fastfetch}/bin/fastfetch";
     igrep = "grep -i";
