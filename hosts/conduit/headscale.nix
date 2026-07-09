@@ -265,7 +265,7 @@ in
       home-manager.useGlobalPkgs = true;
       home-manager.useUserPackages = true;
       home-manager.backupFileExtension = "bkp";
-      home-manager.extraSpecialArgs = { inherit inputs vars; };
+      home-manager.extraSpecialArgs = { inherit inputs vars; hostName = "headscale"; };
       home-manager.users.fleet = { ... }: {
         imports = [
           inputs.nix-index-database.homeModules.nix-index
@@ -868,6 +868,7 @@ in
           "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEODivGUKMXoxIyGkw6BWN023G2N1SL2yDi8lpulnc7R alan_ps@hotmail.com"
           "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDTZdD7pKHnM5C/9WLs5SJbOSdW8Ee2H4GMi6rXcxM3FPXz5Md47zeBAsoQulFFGWDe5VaIueyt7ILXoSqMonz1kNDBjeGY0DCpVozd9iobzLRaoet3fKlvxvr35h/Z99YgltEWR/N/Dir7+4Mk2Tl80RWTx0RA6s3IHUsstCFWAxh175Maydspmaq0l1gsqvWEB1MZwGMUuZjGI53WKaQBRgHGMqBSoSANWpPrAdTYemkvf53RJiNuHHhZ5t5M73oCHvLviJ48FIWpOaKBp2l+b1R6fB6MBmCMoVUxgQYUZTyOyS81+wVKqjYWY19jfDRLH972cA679pm9y/+xnoNaAmdQ77qppbr+pEFxQmNQrNCggdpAyZKGl2Kfsp0guqWnG7sm7AjKMV2AF8hMSAp8vh9CGjEA4pu1vpHlZVOXRTAeT6pavmfbPDnBgOulALkRWydWGwMJkyoMnSyYo0Z+PxzgtHTlfeCYE19pOnnKqyIlUHpVP9M4kN1EluZT51c="
           "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGUH4FlVZkcKIanaFPMcb8vNy/FIGE8lGsGTA9dZSzIz matt@newreacheducation.com"
+          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGQ7/MMGxnY12UaAKtn5wVbBtbyPaqY+DAMbNfYkjqRD calebd@newreach.com"
         ];
       };
 
@@ -883,6 +884,10 @@ in
         tmux
         git
         sqlite # poke deus.db directly when needed (cleanup, audits)
+        # deus CLI/TUI — operators run `deus` here to watch the fleet and
+        # the provisioning dashboard (press P). Same package the server
+        # module pulls in, so it's already in the container closure.
+        inputs.deus.packages.${pkgs.system}.default
       ];
 
       programs.zsh.enable = true;
