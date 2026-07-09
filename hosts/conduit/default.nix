@@ -10,6 +10,7 @@
     ./headscale.nix
     ./secrets.nix
     ./user-vpn.nix
+    ./flake-cache.nix
     ../../modules/server-safety.nix
     ../../modules/foyer.nix
   ];
