@@ -13,6 +13,8 @@
   imports = [
     ./hardware.nix
     ./disko.nix
+    ./secrets.nix
+    ./tubearchivist.nix
     ../../system
     ../../services
   ];

@@ -316,6 +316,7 @@
             ./hosts/vista
             inputs.nixos-hardware.nixosModules.apple-t2
             inputs.disko.nixosModules.disko
+            inputs.sops-nix.nixosModules.sops
             inputs.home-manager.nixosModules.home-manager
             {
               nixpkgs.overlays = [
