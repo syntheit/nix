@@ -597,31 +597,31 @@
   security.sudo.wheelNeedsPassword = false;
 
   # GNOME / GNOME Shell Mobile dconf defaults.
-  # - idle-delay=0 + sleep-inactive-*=nothing → never auto-blank the display.
-  #   Kept conservative until the SDM845 mainline display-wake path is confirmed
-  #   working under Mutter; we don't want to blank a screen we might not wake.
+  # Display-wake from DPMS-off is confirmed working under Mutter on SDM845, so
+  # auto-dim + screen-off are enabled. Suspend stays disabled (broken s2idle) —
+  # we only blank the display, never suspend the system.
   programs.dconf.enable = true;
   programs.dconf.profiles.user.databases = [{
     settings = with lib.gvariant; {
       "org/gnome/desktop/session" = {
-        idle-delay = mkUint32 0;
+        idle-delay = mkUint32 120;   # blank the display after 2 min idle
       };
       # Force GNOME Shell's built-in OSK on (touch device, no physical keyboard).
       "org/gnome/desktop/a11y/applications" = {
         screen-keyboard-enabled = true;
       };
-      # gsd-power: never act on idle, never dim, never act on power button —
-      # suspend is disabled on SDM845 (broken s2idle) and we never auto-blank.
+      # gsd-power: dim before blanking, but NEVER suspend (broken s2idle on
+      # SDM845). Power button isn't wired to an action — input wakes the display.
       "org/gnome/settings-daemon/plugins/power" = {
         sleep-inactive-battery-type = "nothing";
         sleep-inactive-ac-type = "nothing";
-        idle-dim = false;
+        idle-dim = true;
         power-button-action = "nothing";
       };
       # Lock screen behavior + lock screen wallpaper.
       "org/gnome/desktop/screensaver" = {
         lock-enabled = true;
-        idle-activation-enabled = false; # idle-delay=0 makes this moot, but explicit
+        idle-activation-enabled = true;  # lock when the display blanks on idle
         lock-delay = mkUint32 0;         # lock immediately on screen-off
         picture-uri = "file:///etc/wallpapers/fajita.jpg";
         picture-options = "zoom";
