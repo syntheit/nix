@@ -14,7 +14,7 @@
     ./hardware.nix
     ./disko.nix
     ./secrets.nix
-    ./tubearchivist.nix
+    ./invidious.nix
     ../../system
     ../../services
   ];
