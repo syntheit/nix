@@ -850,12 +850,15 @@
     totem                                 # GNOME Videos; libadwaita
     vlc                                   # fallback for anything clapper/totem can't handle
     delfin                                # Jellyfin client, GTK4/libadwaita
-    pipeline                              # YouTube/PeerTube — mobile-first (Tubefeeder successor, Librem 5 lineage)
+    # YouTube → self-hosted Invidious as a PWA (see pwas.nix). Dropped `pipeline`
+    # because it speaks Piped, not Invidious. Clapper below still handles
+    # paste-a-link one-off playback.
     mousai                                # song recognition (Shazam-style)
-    riff                                  # Spotify Premium client, libadwaita (succeeds `spot`)
-    # spotify proper is x86_64-only (proprietary); riff via librespot is the
-    # native answer on aarch64. Free tier needs Widevine which doesn't exist
-    # on aarch64 Firefox/Chromium — Premium-only effectively.
+    spot                                  # Spotify client for GNOME (librespot-based)
+    # spotify proper is x86_64-only (proprietary) and the web player needs
+    # Widevine (absent on aarch64), so a PWA can't play — spot via librespot is
+    # the native answer. Premium required. NOTE: was `riff`, but pkgs.riff is
+    # actually riff.sh (a dependency-resolver CLI), not a music player. Fixed.
 
     # ─── Camera ──────────────────────────────────────────────────────────────
     # megapixels dropped — using snapshot (libcamera/pipewire-camera, libadwaita)
