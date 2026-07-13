@@ -6,6 +6,8 @@
   ...
 }:
 {
+  imports = [ ./pwas.nix ];
+
   networking.hostName = "fajita";
 
   # Upstream libinput 1.31.3 gates lua-plugin support on luaSupport (defaults
@@ -839,6 +841,7 @@
     # ssh in and use parted/fdisk/wipefs.
     gnome-weather
     gnome-clocks
+    gnome-sound-recorder                  # Voice Notes — simple libadwaita recorder (World/vocalis)
     resources                             # System monitor, GNOME Circle, libadwaita
     mission-center                        # alt system monitor, also libadwaita
 
@@ -847,6 +850,7 @@
     totem                                 # GNOME Videos; libadwaita
     vlc                                   # fallback for anything clapper/totem can't handle
     delfin                                # Jellyfin client, GTK4/libadwaita
+    pipeline                              # YouTube/PeerTube — mobile-first (Tubefeeder successor, Librem 5 lineage)
     mousai                                # song recognition (Shazam-style)
     riff                                  # Spotify Premium client, libadwaita (succeeds `spot`)
     # spotify proper is x86_64-only (proprietary); riff via librespot is the
