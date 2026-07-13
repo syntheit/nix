@@ -62,6 +62,10 @@
     # ── Headless media/utility CLI ──
     yt-dlp
     ffmpeg-full
+
+    # ── Secrets tooling — edit sops secrets from vista itself ──
+    sops
+    ssh-to-age
   ];
 
   programs.home-manager.enable = true;

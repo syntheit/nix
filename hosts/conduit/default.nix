@@ -182,6 +182,13 @@
         allowedIPs = [ "10.100.0.3/32" ];
         # No endpoint — mantle connects to us
       }
+      {
+        # vista — TubeArchivist host (residential IP). Reverse-proxied at
+        # yt.matv.io. Dials in to us; no endpoint on our side.
+        publicKey = "7lIFsbvZcjr0n7QZD0LeJt4cWQ679W6AOG9xcNIhFno=";
+        allowedIPs = [ "10.100.0.4/32" ];
+        # No endpoint — vista connects to us
+      }
     ];
   };
 
@@ -309,6 +316,25 @@
           # X-Forwarded-Host is present; otherwise it builds Kobo download
           # URLs with `:8083` appended. Caddy 2.6+ sets this automatically,
           # but be explicit so a future Caddy quirk can't reintroduce the bug.
+          header_up X-Forwarded-Host {host}
+          transport http {
+            read_buffer 16KiB
+          }
+        }
+      '';
+    };
+    # yt.matv.io — TubeArchivist on vista (residential IP). Same streaming
+    # pattern as watch/photos: Caddy terminates TLS, reverse-proxies over
+    # WireGuard to vista:8000. Caddy preserves the Host header (yt.matv.io),
+    # which TubeArchivist's TA_HOST allow-list expects.
+    virtualHosts."yt.matv.io" = {
+      extraConfig = ''
+        encode gzip zstd
+        reverse_proxy 10.100.0.4:8055 {
+          flush_interval -1
+          header_up X-Real-IP {remote_host}
+          header_up X-Forwarded-For {remote_host}
+          header_up X-Forwarded-Proto {scheme}
           header_up X-Forwarded-Host {host}
           transport http {
             read_buffer 16KiB
