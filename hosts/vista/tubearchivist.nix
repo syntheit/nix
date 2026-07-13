@@ -131,9 +131,9 @@ in
         "HOST_GID" = "1000";
         "TZ" = "America/New_York";
         # Allowed hosts + CSRF origins. Public origin is https (conduit's Caddy
-        # terminates TLS); the wg + tailscale IPs allow direct access on :8000.
+        # terminates TLS); the wg + tailscale IPs allow direct access on :8055.
         # A wrong/missing value here surfaces as HTTP 400 Bad Request.
-        "TA_HOST" = "https://yt.matv.io http://10.100.0.4:8055 http://100.96.21.56:8055";
+        "TA_HOST" = "https://yt.matv.io http://vista:8055 http://100.96.21.56:8055 http://10.100.0.4:8055";
       };
       environmentFiles = [ config.sops.templates."tubearchivist.env".path ]; # TA_USERNAME/PASSWORD + ELASTIC_PASSWORD
       dependsOn = [
