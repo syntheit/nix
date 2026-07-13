@@ -1,0 +1,13 @@
+diff --git a/js/ui/appMenu.js b/js/ui/appMenu.js
+index 279e170b1..2faf1ab6e 100644
+--- a/js/ui/appMenu.js
++++ b/js/ui/appMenu.js
+@@ -150,7 +150,7 @@ export class AppMenu extends PopupMenu.PopupMenu {
+             global.settings.is_writable('favorite-apps') &&
+             this._parentalControlsManager.shouldShowApp(appInfo);
+ 
+-        this._toggleFavoriteItem.visible = false//canFavorite;
++        this._toggleFavoriteItem.visible = canFavorite;
+ 
+         if (!canFavorite)
+             return;
