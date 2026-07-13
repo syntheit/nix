@@ -70,6 +70,30 @@
     };
   };
 
+  # Boot to the lock screen. Autologin (needed for a reliable boot on this
+  # device) would otherwise open straight to an unlocked desktop. Lock the
+  # session as soon as the shell is up; unlocking with the user password also
+  # unlocks the login keyring, so there's no separate keyring prompt.
+  systemd.user.services.gnome-mobile-lock-on-start = {
+    description = "Lock the GNOME session on login (boot to the lock screen)";
+    wantedBy = [ "graphical-session.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = pkgs.writeShellScript "gnome-mobile-lock-on-start" ''
+        # Wait for gnome-shell's ScreenSaver interface to appear, then lock.
+        for i in $(${pkgs.coreutils}/bin/seq 1 30); do
+          if ${pkgs.glib}/bin/gdbus call --session \
+              --dest org.gnome.ScreenSaver \
+              --object-path /org/gnome/ScreenSaver \
+              --method org.gnome.ScreenSaver.SetActive true >/dev/null 2>&1; then
+            exit 0
+          fi
+          ${pkgs.coreutils}/bin/sleep 1
+        done
+      '';
+    };
+  };
+
   # GNOME drives IBus directly over its D-Bus API; these envvars must NOT be set
   # or the on-screen keyboard won't pop up. This is the exact inverse of Phosh,
   # which needed GTK_IM_MODULE=wayland — do not reintroduce that here.
