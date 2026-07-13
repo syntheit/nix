@@ -644,6 +644,12 @@ cmd_update() {
           set_state "$m" \
             --arg ad "$pulled_id" \
             '. + {update_available: true, available_digest: $ad}'
+        elif [ -n "$running_id" ]; then
+          # Member already on the pulled image — reconcile any stale
+          # update_available flag left by an out-of-band restart.
+          set_state "$m" \
+            --arg cd "$running_id" \
+            '. + {current_digest: $cd, update_available: false, available_digest: null}'
         fi
       done
       if [ "$any_newer" = false ]; then
@@ -672,6 +678,13 @@ cmd_update() {
         running_id=$(docker inspect "$target" --format='{{.Image}}' 2>/dev/null || true)
       fi
       if [ "$pulled_id" = "$running_id" ]; then
+        # Running image already matches the pulled image. If state still thinks
+        # an update is pending (e.g. the container was restarted out-of-band by
+        # a nixos-rebuild that picked up the new image), reconcile it so status
+        # stops reporting a phantom "update available" forever.
+        set_state "$target" \
+          --arg cd "$running_id" \
+          '. + {current_digest: $cd, update_available: false, available_digest: null}'
         log "$target is already up to date"
         return 0
       fi

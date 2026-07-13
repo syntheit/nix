@@ -96,18 +96,48 @@ in
             exit 0
           fi
           mkdir -p "$WEBDIR/ui"
-          curl -sL "https://raw.githubusercontent.com/AumGupta/abyss-jellyfin/main/scripts/spotlight/spotlight.html" -o "$WEBDIR/ui/spotlight.html"
-          curl -sL "https://raw.githubusercontent.com/AumGupta/abyss-jellyfin/main/scripts/spotlight/spotlight.css" -o "$WEBDIR/ui/spotlight.css"
+
+          # Download to a temp file and only install if it looks valid. GitHub
+          # rate-limits raw.githubusercontent.com (HTTP 429); curl -sL happily
+          # writes that error page to disk, which previously corrupted the
+          # home-page chunk into a 199-byte "429: Too Many Requests" blob and
+          # broke Jellyfin's UI on every restart. --fail makes curl exit non-zero
+          # on 4xx/5xx so we never overwrite good files with an error body.
+          fetch() {
+            # fetch <url> <dest> [min_bytes]
+            local url="$1" dest="$2" min="''${3:-1}" tmp
+            tmp="$(mktemp)"
+            if curl -sfL "$url" -o "$tmp" && [ "$(wc -c < "$tmp")" -ge "$min" ]; then
+              # mktemp creates mode 0600; Jellyfin serves these as the 'abc'
+              # user (PUID 1000) and would 500 on an unreadable file. Force
+              # world-readable before publishing into the web root.
+              chmod 644 "$tmp"
+              mv "$tmp" "$dest"
+              return 0
+            fi
+            echo "[abyss] fetch failed (or too small), keeping existing: $url"
+            rm -f "$tmp"
+            return 1
+          }
+
+          fetch "https://raw.githubusercontent.com/AumGupta/abyss-jellyfin/main/scripts/spotlight/spotlight.html" "$WEBDIR/ui/spotlight.html" || true
+          fetch "https://raw.githubusercontent.com/AumGupta/abyss-jellyfin/main/scripts/spotlight/spotlight.css" "$WEBDIR/ui/spotlight.css" || true
+
           CHUNK=$(find "$WEBDIR" -name "home-html.*.chunk.js" ! -name "*.bak" | head -1)
           if [ -n "$CHUNK" ]; then
-            # Restore from backup if chunk is corrupted or already patched incorrectly
-            if [ -f "$CHUNK.bak" ] && [ "$(wc -c < "$CHUNK")" -lt 1000 ]; then
+            # Restore from backup if a prior run corrupted the chunk (e.g. wrote a
+            # 429 error page into it). The pristine chunk is ~542 bytes; a patched
+            # one is larger. Anything under 400 bytes is a corrupted download.
+            if [ -f "$CHUNK.bak" ] && [ "$(wc -c < "$CHUNK")" -lt 400 ]; then
+              echo "[abyss] chunk looks corrupted, restoring from backup"
               cp "$CHUNK.bak" "$CHUNK"
             fi
-            # Patch if not already patched
+            # Patch if not already patched. Only overwrite the live chunk once the
+            # download is confirmed valid (patched chunk is well over 1KB).
             if ! grep -q "spotlight" "$CHUNK" 2>/dev/null; then
               [ ! -f "$CHUNK.bak" ] && cp "$CHUNK" "$CHUNK.bak"
-              curl -sL "https://raw.githubusercontent.com/AumGupta/abyss-jellyfin/main/scripts/spotlight/home-html.chunk.js" -o "$CHUNK"
+              fetch "https://raw.githubusercontent.com/AumGupta/abyss-jellyfin/main/scripts/spotlight/home-html.chunk.js" "$CHUNK" 1000 \
+                || echo "[abyss] skipping chunk patch this run; will retry on next restart"
             fi
           fi
           echo "[abyss] Spotlight installed"
