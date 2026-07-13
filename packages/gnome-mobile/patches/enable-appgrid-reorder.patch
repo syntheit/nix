@@ -1,0 +1,16 @@
+diff --git a/js/ui/appDisplay.js b/js/ui/appDisplay.js
+index 00b3addee..da289b67c 100644
+--- a/js/ui/appDisplay.js
++++ b/js/ui/appDisplay.js
+@@ -3153,6 +3153,11 @@ export const AppIcon = GObject.registerClass({
+         longPressGesture.connect('cancel', () => this._menu.close(true));
+         this.add_action(longPressGesture);
+ 
++        // Let a drag (reorder) win over the long-press menu: the menu gesture
++        // must not cancel the drag once it starts.
++        if (this._draggable)
++            longPressGesture.can_not_cancel(this._draggable.startGesture);
++
+         const rightClickGesture = new Clutter.ClickGesture({
+             required_button: Clutter.BUTTON_SECONDARY,
+             recognize_on_press: true,
