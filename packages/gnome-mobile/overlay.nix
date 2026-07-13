@@ -60,6 +60,13 @@ in
           hash = "sha256-XafMWhohuET+1S3At+I+wykqHaL7cM+bYYmTYt74hNs=";
           fetchSubmodules = true;
         };
+        # Local fixes on top of verdre's mobile branch (device-usability;
+        # upstream separately later). Each patch = `git diff <file>` from the
+        # matching checkout in ~/Projects/gnome-shell-mobile.
+        patches = (old.patches or [ ]) ++ [
+          ./patches/enable-pin-to-dash.patch # re-enable the "Pin to Dash" menu item
+          ./patches/enable-swipe-to-close.patch # swipe a window preview up to close it
+        ];
         prePatch = ''
           cp -r ${libshew} subprojects/libshew
           chmod -R u+w subprojects/libshew
