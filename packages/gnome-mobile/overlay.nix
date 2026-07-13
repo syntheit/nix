@@ -64,8 +64,8 @@ in
         # upstream separately later). Each patch = `git diff <file>` from the
         # matching checkout in ~/Projects/gnome-shell-mobile.
         patches = (old.patches or [ ]) ++ [
-          ./patches/enable-pin-to-dash.patch # re-enable the "Pin to Dash" menu item
           ./patches/enable-swipe-to-close.patch # swipe a window preview up to close it
+          ./patches/enable-appgrid-reorder.patch # let an icon drag win over the long-press menu
         ];
         prePatch = ''
           cp -r ${libshew} subprojects/libshew
