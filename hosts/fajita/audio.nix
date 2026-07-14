@@ -2,30 +2,29 @@
 let
   # Upstream alsa-ucm-conf has NO OnePlus support: its generic sdm845 HiFi
   # verb includes the wsa881x codec sequences ("SpkrLeft COMP Switch" etc.),
-  # amps fajita doesn't have — the 6T speaker is a TFA amp on QUAT_MI2S and
+  # amps fajita doesn't have — the 6T speaker is a TFA9894 on QUAT_MI2S and
   # everything else lives on the WCD934x. wireplumber therefore fails the
   # verb ("Failed to get the verb HiFi") and exposes only a Dummy Output.
-  # pmOS audio works because it ships the sdm845-mainline alsa-ucm-conf fork,
-  # which has a fajita-specific tree keyed on the card longname. Vendor just
-  # that subset; it merges into the system ucm2 tree next to upstream's
-  # (ALSA_CONFIG_UCM2 already points at the merged system path, and the
-  # longname match "OnePlus 6T.conf" wins over the generic sdm845.conf).
-  fajitaUcm =
-    pkgs.runCommand "fajita-alsa-ucm"
-      {
-        src = pkgs.fetchFromGitLab {
-          owner = "sdm845-mainline";
-          repo = "alsa-ucm-conf";
-          rev = "45cb4c634e534ddfb255e85162fe705f94a23015";
-          sha256 = "1m1cq0v3d61hzacrg4awlvb3hsh43bxk9iwz8a7acskza82h4j4m";
-        };
-      }
-      ''
-        mkdir -p "$out/share/alsa/ucm2/conf.d/sdm845"
-        cp -r $src/ucm2/OnePlus "$out/share/alsa/ucm2/OnePlus"
-        ln -s ../../OnePlus/fajita/fajita.conf \
-          "$out/share/alsa/ucm2/conf.d/sdm845/OnePlus 6T.conf"
-      '';
+  # (mobile-nixos ships an sdm845 UCM too, but only "OnePlus 6.conf" — never
+  # matches our longname "OnePlus 6T".)
+  #
+  # ./ucm/ holds the sdm845-mainline fajita profile (what pmOS ships), locally
+  # trimmed: no card-init/ctl-remap includes (exec /bin/rm — absent on NixOS),
+  # and no Internal Speaker route — our kernel DT has no tfa9894 node, so the
+  # QUAT_MI2S controls don't exist and any cset on them fails the whole verb.
+  # => WORKS: headphones, both mics, call earpiece. NO loudspeaker until the
+  # DT gains the amp node (kernel rebuild; CONFIG_SND_SOC_TFA989X already =m).
+  # The longname match conf.d/sdm845/"OnePlus 6T.conf" wins over generic
+  # sdm845.conf in the merged system ucm2 tree (ALSA_CONFIG_UCM2).
+  fajitaUcm = pkgs.runCommand "fajita-alsa-ucm" { } ''
+    mkdir -p "$out/share/alsa/ucm2/conf.d/sdm845" \
+             "$out/share/alsa/ucm2/OnePlus/fajita"
+    cp ${./ucm/fajita.conf}    "$out/share/alsa/ucm2/OnePlus/fajita/fajita.conf"
+    cp ${./ucm/HiFi.conf}      "$out/share/alsa/ucm2/OnePlus/fajita/HiFi.conf"
+    cp ${./ucm/VoiceCall.conf} "$out/share/alsa/ucm2/OnePlus/fajita/VoiceCall.conf"
+    ln -s ../../OnePlus/fajita/fajita.conf \
+      "$out/share/alsa/ucm2/conf.d/sdm845/OnePlus 6T.conf"
+  '';
 in
 {
   environment.systemPackages = [ fajitaUcm ];
