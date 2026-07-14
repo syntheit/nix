@@ -20,6 +20,13 @@ let
       icon ? "web-browser", # freedesktop icon name, or a path to a PNG we vendor later
       comment ? name,
       categories ? [ "Network" ],
+      # dsf: force Chromium's device-scale-factor (a string, e.g. "1.3"). Only for
+      # DESKTOP-ONLY sites with no mobile layout (Slack, WhatsApp): a value < the
+      # compositor's 2.5 widens the CSS viewport so the site serves its full
+      # desktop layout, scaled down to fit and pinch-zoomable. CSS width ≈
+      # 1080 ÷ dsf (2.5→432px mobile, 1.3→~830px tablet, 1.0→1080px full desktop).
+      # Leave null for responsive apps — forcing it there breaks their mobile UI.
+      dsf ? null,
     }:
     let
       launcher = pkgs.writeShellScript "pwa-${id}" ''
@@ -28,7 +35,7 @@ let
           --class=pwa-${id} \
           --user-data-dir="$HOME/.local/share/pwa/${id}" \
           --ozone-platform-hint=auto \
-          "$@"
+          ${lib.optionalString (dsf != null) "--force-device-scale-factor=${dsf} "}"$@"
       '';
     in
     pkgs.makeDesktopItem {
@@ -50,10 +57,14 @@ let
     })
 
     # ─── Chat / comms ────────────────────────────────────────────────────────
+    # Slack & WhatsApp have no mobile web layout — force a desktop-width viewport
+    # (scaled down, pinch-zoomable) instead of a cramped/broken narrow one. Tune
+    # dsf lower for more desktop / higher toward mobile once tested on the phone.
     (mkPwa {
       id = "slack";
       name = "Slack";
       url = "https://app.slack.com/client";
+      dsf = "1.3";
     })
     (mkPwa {
       id = "telegram";
@@ -71,6 +82,7 @@ let
       id = "whatsapp";
       name = "WhatsApp";
       url = "https://web.whatsapp.com/";
+      dsf = "1.3";
     })
 
     # ─── Finance (low priority — "deal with it / web") ───────────────────────
@@ -124,6 +136,19 @@ let
       name = "Retrospend";
       url = "https://retrospend.app/";
       comment = "Expense tracker";
+    })
+
+    # ─── Media ───────────────────────────────────────────────────────────────
+    # YouTube via self-hosted Invidious on vista, reached over Tailscale. Uses
+    # the node's stable 100.x IP (MagicDNS `vista:3000` also works if resolvable).
+    # Invidious streams are DRM-free, so unlike Spotify web this plays fine in a
+    # Chromium wrapper, and its web UI is genuinely responsive on a phone screen.
+    (mkPwa {
+      id = "invidious";
+      name = "Invidious";
+      url = "http://100.96.21.56:3000/";
+      comment = "YouTube (self-hosted Invidious on vista, via Tailscale)";
+      categories = [ "AudioVideo" ];
     })
   ];
 in
