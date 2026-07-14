@@ -35,6 +35,21 @@
     firmware.enable = false;
   };
 
+  # ── T2 bridge NIC: keep NetworkManager off it (prevents a kernel lockup) ───
+  # The T2 exposes an internal USB "bridge" network interface (MAC
+  # ac:de:48:00:11:22, enp4s0f1u1) that has nothing on the other end — our real
+  # LAN is the USB-ethernet dongle (enp127s0u1c2). NetworkManager doesn't know
+  # that and auto-creates a DHCP "Wired connection" for it, retrying activation
+  # forever. Each retry pushes TX onto the bridge; when a transmit stalls, the
+  # netdev TX watchdog fires in softirq context and calls apple-bce's URB-cancel
+  # path, which *sleeps* there ("bad: scheduling from the idle thread!") and hard-
+  # locks the kernel. That froze vista for hours on 2026-07-13 until it was
+  # power-cycled. Marking the bridge unmanaged (by its stable Apple MAC) stops the
+  # DHCP retry storm — the iface stays down, nothing transmits, the bug can't fire.
+  # apple-bce's keyboard/audio functions are unaffected; this only drops IP mgmt
+  # of that one netdev. See the panic-on-lockup sysctls below for the safety net.
+  networking.networkmanager.unmanaged = [ "mac:ac:de:48:00:11:22" ];
+
   # t2linux binary cache — serves prebuilt linux-t2 kernels (and the apple-bce
   # closure) so kernel bumps download instead of compiling from source. Uses
   # extra-* so cache.nixos.org is kept, not replaced.
@@ -122,6 +137,18 @@
     "vm.vfs_cache_pressure" = 50;
     "vm.dirty_bytes" = 268435456; # 256 MB
     "vm.dirty_background_bytes" = 67108864; # 64 MB
+
+    # ── Auto-recover from a kernel lockup (safety net) ──────────────────────
+    # The Intel TCO hardware watchdog is disabled by this Mac's firmware
+    # ("iTCO_wdt: unable to reset NO_REBOOT flag, device disabled by
+    # hardware/BIOS"), so a wedged kernel has nothing to reset it — that's why
+    # the 2026-07-13 apple-bce lockup left the box dead for hours. These make a
+    # future lockup panic-and-reboot in ~30s instead of hanging indefinitely.
+    # Deliberately NOT enabling hung_task_panic / panic_on_warn: on a btrfs
+    # media box with scrub/btrbk/transcoding those risk spurious reboots.
+    "kernel.softlockup_panic" = 1; # CPU stuck spinning in kernel → panic
+    "kernel.panic_on_oops" = 1; # don't limp along in a broken state
+    "kernel.panic" = 30; # reboot 30s after any panic
   };
 
   boot.tmp.useTmpfs = true;
