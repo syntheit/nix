@@ -20,6 +20,11 @@ let
       icon ? "web-browser", # freedesktop icon name, or a path to a PNG we vendor later
       comment ? name,
       categories ? [ "Network" ],
+      # profile: share one cookie jar between PWAs (e.g. all-Google → log in
+      # once). Caveat: apps sharing a profile share one Chromium process, and
+      # the process takes the --class of whichever app launched FIRST — the
+      # shell may group their windows under that first app's icon.
+      profile ? id,
       # dsf: force Chromium's device-scale-factor (a string, e.g. "1.3"). Only for
       # DESKTOP-ONLY sites with no mobile layout (Slack, WhatsApp): a value < the
       # compositor's 2.5 widens the CSS viewport so the site serves its full
@@ -33,7 +38,7 @@ let
         exec ${browser} \
           --app=${lib.escapeShellArg url} \
           --class=pwa-${id} \
-          --user-data-dir="$HOME/.local/share/pwa/${id}" \
+          --user-data-dir="$HOME/.local/share/pwa/${profile}" \
           --ozone-platform-hint=auto \
           ${lib.optionalString (dsf != null) "--force-device-scale-factor=${dsf} "}"$@"
       '';
@@ -54,6 +59,7 @@ let
       name = "Google Maps";
       url = "https://maps.google.com/";
       comment = "Google Maps (needs Chromium for vector maps)";
+      profile = "google"; # shared Google login with gvoice
     })
 
     # ─── Chat / comms ────────────────────────────────────────────────────────
@@ -75,6 +81,7 @@ let
       id = "gvoice";
       name = "Google Voice";
       url = "https://voice.google.com/u/0/messages";
+      profile = "google"; # shared Google login with gmaps
     })
     # Stopgap for WhatsApp — the better long-term answer is a mautrix-whatsapp
     # bridge on your server surfaced through Fractal. Web logs out periodically.
@@ -91,6 +98,14 @@ let
       name = "Yahoo Finance";
       url = "https://finance.yahoo.com/portfolios";
       comment = "Stocks";
+    })
+
+    # ─── News ────────────────────────────────────────────────────────────────
+    (mkPwa {
+      id = "wsj";
+      name = "WSJ";
+      url = "https://www.wsj.com/";
+      comment = "The Wall Street Journal";
     })
 
     # ─── Fitness ─────────────────────────────────────────────────────────────
@@ -154,4 +169,13 @@ let
 in
 {
   environment.systemPackages = pwas;
+
+  # Enterprise policy (/etc/chromium/policies/managed) — applies to every
+  # Chromium instance regardless of --user-data-dir, so all PWAs get it.
+  # uBlock Origin Lite (MV3; full uBO is MV2-dead in current Chromium).
+  # Installs from the Web Store on each profile's first launch.
+  programs.chromium = {
+    enable = true;
+    extensions = [ "ddkjiahejlhfcafbddmgiahcphecmpfh" ]; # uBlock Origin Lite
+  };
 }
