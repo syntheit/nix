@@ -744,11 +744,13 @@
     # because it speaks Piped, not Invidious. Clapper below still handles
     # paste-a-link one-off playback.
     mousai                                # song recognition (Shazam-style)
-    spot                                  # Spotify client for GNOME (librespot-based)
-    # spotify proper is x86_64-only (proprietary) and the web player needs
-    # Widevine (absent on aarch64), so a PWA can't play — spot via librespot is
-    # the native answer. Premium required. NOTE: was `riff`, but pkgs.riff is
-    # actually riff.sh (a dependency-resolver CLI), not a music player. Fixed.
+    # Spotify: spotify proper is x86_64-only and the web player needs Widevine
+    # (absent on aarch64) — a librespot client is the native answer (Premium
+    # required). History: pkgs.riff = riff.sh (wrong program) → used spot →
+    # spot is UNMAINTAINED and its librespot 0.6 was broken by Spotify's 2025
+    # API changes ("no alternatives found") → vendored the real Riff (spot's
+    # maintained fork, librespot 0.8, works) in packages/riff.
+    (pkgs.callPackage ../../packages/riff { })
 
     # ─── Camera ──────────────────────────────────────────────────────────────
     # megapixels dropped — using snapshot (libcamera/pipewire-camera, libadwaita)
