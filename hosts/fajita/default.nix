@@ -179,10 +179,15 @@
 
   # WCN3990 ships a placeholder BD address in firmware → kernel sets
   # HCI_QUIRK_INVALID_BDADDR → BlueZ refuses to bring hci0 up (EOPNOTSUPP on
-  # `hciconfig up`). Same problem pmOS solves with `bootmac`. We derive a
-  # stable BT MAC from wlan0's MAC (flip the locally-administered bit, bump
-  # last byte) and set it via `btmgmt --index 0 public-addr` before
-  # bluetooth.service tries to register the controller.
+  # `hciconfig up`). Same problem pmOS solves with `bootmac`. We set a FIXED
+  # address via `btmgmt --index 0 public-addr` before bluetooth.service
+  # registers the controller. It must be CONSTANT: BlueZ keys the pairing
+  # store (/var/lib/bluetooth/<controller-mac>/) by it, so a changing address
+  # "forgets" all paired devices on reboot. The old wlan0-derived scheme did
+  # exactly that (wlan0's MAC is itself a placeholder and often not up yet →
+  # random fallback; 21 stale controller dirs accumulated by 2026-07-14).
+  # The constant below = the controller address of the 2026-07-14 boot, so
+  # pairings made that day carry forward.
   systemd.services.bluetooth-mac-fajita = {
     description = "Set BT public address (WCN3990 ships placeholder BDADDR)";
     wantedBy = [ "bluetooth.service" ];
@@ -198,20 +203,8 @@
           ${pkgs.bluez}/bin/btmgmt extinfo 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q 'hci0' && break
           ${pkgs.coreutils}/bin/sleep 0.5
         done
-        WLAN=$(${pkgs.iproute2}/bin/ip link show wlan0 \
-                | ${pkgs.gawk}/bin/awk '/link\/ether/ {print $2}')
-        if [ -z "$WLAN" ]; then
-          echo "no wlan0 MAC yet, skipping" >&2
-          exit 0
-        fi
-        BT=$(${pkgs.gawk}/bin/awk -v m="$WLAN" 'BEGIN {
-          n=split(m,b,":"); for (i=1;i<=n;i++) b[i]=strtonum("0x" b[i]);
-          b[1] = or(b[1], 2);
-          b[6] = and(b[6]+1, 0xff);
-          printf "%02X:%02X:%02X:%02X:%02X:%02X", b[1],b[2],b[3],b[4],b[5],b[6];
-        }')
-        echo "Setting hci0 public address to $BT (derived from wlan0 $WLAN)"
-        ${pkgs.bluez}/bin/btmgmt --index 0 public-addr "$BT"
+        echo "Setting hci0 public address to 4A:F2:A2:D6:D8:8D (fixed; see comment)"
+        ${pkgs.bluez}/bin/btmgmt --index 0 public-addr "4A:F2:A2:D6:D8:8D"
       '';
     };
   };
