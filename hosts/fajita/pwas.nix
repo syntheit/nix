@@ -149,7 +149,7 @@ let
     (mkPwa {
       id = "retrospend";
       name = "Retrospend";
-      url = "https://retrospend.app/";
+      url = "https://retrospend.app/dashboard";
       comment = "Expense tracker";
     })
 
