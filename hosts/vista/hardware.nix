@@ -71,7 +71,15 @@
   #    to bring the internal panel up disabled, so no compositor or console
   #    framebuffer can ever scan out to it. (External HDMI/DP connectors are
   #    untouched — plug a monitor in for recovery if ever needed.)
-  boot.kernelParams = [ "video=eDP-1:d" ];
+  # reboot=pci: make `reboot` actually restart instead of powering off. This
+  # Mac's default reset method is ACPI ("Apple Mac detected, using EFI v1.10
+  # runtime services only" + /sys/kernel/reboot/type=acpi), and on Apple firmware
+  # both the ACPI and EFI resets are handled as a *power-off*, not a restart — so
+  # `systemctl reboot` cleanly shut vista down and left it dead until physically
+  # powered on (bad for a headless, remote-managed box). The 0xcf9 PCI-reset
+  # method restarts correctly; older MacBooks get it via the kernel's DMI quirk
+  # table, but MacBookPro16,1 is too new to be listed, so we set it explicitly.
+  boot.kernelParams = [ "video=eDP-1:d" "reboot=pci" ];
 
   # 2) Belt-and-suspenders: force both backlights (main gmux panel + the OLED
   #    Touch Bar) to zero at boot, in case the PWM rail stays powered even with
