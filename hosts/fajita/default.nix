@@ -6,49 +6,24 @@
   ...
 }:
 {
-  imports = [ ./pwas.nix ];
+  imports = [
+    ../../modules/gnome-mobile.nix
+    ./pwas.nix
+  ];
 
   networking.hostName = "fajita";
 
-  # Upstream libinput 1.31.3 gates lua-plugin support on luaSupport (defaults
-  # true in nixpkgs). Mobile NixOS's lvgui pulls a libinput build where the lua
-  # dependency lookup fails — and we don't need libinput plugins on a phone
-  # anyway. Disable luaSupport entirely (removes lua5_4 from buildInputs AND
-  # passes -Dlua-plugins=disabled to meson). Scoped to fajita.
-  nixpkgs.overlays = [
-    (final: prev: {
-      libinput = prev.libinput.override { luaSupport = false; };
-    })
-  ];
-
-  # Phosh dies on every `nixos-rebuild switch`. Root cause: NixOS's activation
-  # script does `stop → start` on units whose dependencies changed, even if the
-  # unit itself didn't change. With `restartIfChanged=false` alone it still does
-  # the stop because `stopIfChanged` defaults to true. Need BOTH false to keep
-  # the running phosh session alive across rebuilds — new config's phosh takes
-  # over on next reboot.
-  systemd.services.phosh = {
-    restartIfChanged = false;
-    stopIfChanged = false;
-  };
-
-  # Phosh shell — upstream NixOS module; mobile-nixos's example imports this verbatim.
-  # phocConfig.outputs sets per-output scale and modeline in /etc/phosh/phoc.ini.
-  # scale 2.5 (vs default 2.0) is load-bearing: Phosh's top bar is hardcoded 32
-  # *logical* pixels in src/top-panel.h. At scale 2 that's 64 physical = shorter
-  # than the OnePlus 6T notch (~80 physical), so notch pokes through. At 2.5 the
-  # bar is 80 physical — fully covers the cutout. Bonus: quick-settings buttons +
-  # general UI become correctly sized for the screen, matching pmOS's default.
-  services.xserver.desktopManager.phosh = {
+  # GNOME Shell Mobile session lives in ../../modules/gnome-mobile.nix (GDM +
+  # desktopManager.gnome + the mobile overlay). Display scale is handled by
+  # GNOME/Mutter fractional scaling, not Phosh's phoc.ini. Notch coverage is
+  # gmobile's job under GNOME (oneplus,fajita cutout JSON), not a scale hack.
+  services.displayManager.autoLogin = {
     enable = true;
     user = "daniel";
-    group = "users";
-    phocConfig.outputs.DSI-1 = {
-      scale = 2.5;
-    };
   };
-  programs.calls.enable = true;
-  hardware.sensor.iio.enable = true;
+
+  programs.calls.enable = true;       # telephony UI (GNOME Calls)
+  hardware.sensor.iio.enable = true;  # iio-sensor-proxy → rotation/ALS
 
   # Pull in linux-firmware so the kernel can load /lib/firmware/qcom/a630_sqe.fw
   # and friends. Without this, GPU init fails (-2 ENOENT) and Phosh can't start
@@ -371,45 +346,12 @@
   systemd.targets.hibernate.enable = false;
   systemd.targets.hybrid-sleep.enable = false;
 
-  # SDM845 mainline display-wake-from-DPMS-off bug workaround.
-  # Symptom: power button puts display to sleep via Phosh's screen-saver. KEY_POWER
-  # event then doesn't reach phoc to undo DPMS. Phone is stuck on with no display.
-  # Until task #15 lands a proper fix (likely kernel-side), this service watches
-  # /dev/input/event0 (pm8941_pwrkey) and, on each KEY_POWER press while DPMS=Off,
-  # asks phoc to re-enable the output via the wlr-output-power-manager-v1 protocol.
-  #
-  # We avoid `chvt` here — switching VTs makes systemd's TTYVHangup=yes on
-  # phosh.service send SIGHUP to the wayland session, killing Phosh. wlr-randr
-  # talks directly to phoc as a wayland client; no VT churn, no session kill.
-  systemd.services.pwrkey-wake-watcher = {
-    description = "Force display wake on power button press (SDM845 DPMS-off bug workaround)";
-    wantedBy = [ "multi-user.target" ];
-    after = [ "systemd-udev-settle.service" "phosh.service" ];
-    serviceConfig = {
-      Type = "simple";
-      Restart = "always";
-      RestartSec = 2;
-      ExecStart = pkgs.writeShellScript "pwrkey-wake-watcher" ''
-        set -eu
-        DPMS_FILE=$(${pkgs.coreutils}/bin/ls /sys/class/drm/card*-DSI-1/dpms 2>/dev/null | head -1)
-        [ -n "$DPMS_FILE" ] || { echo "no DSI-1 found, exiting"; exit 0; }
-        # libinput debug-events opens but doesn't grab — phoc still sees events.
-        ${pkgs.libinput}/bin/libinput debug-events --device /dev/input/event0 2>/dev/null | \
-          while read -r line; do
-            case "$line" in
-              *KEY_POWER*pressed*)
-                if [ "$(${pkgs.coreutils}/bin/cat "$DPMS_FILE")" = "Off" ]; then
-                  echo "DPMS off detected after KEY_POWER — asking phoc to re-enable DSI-1"
-                  ${pkgs.sudo}/bin/sudo -u daniel \
-                    XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 \
-                    ${pkgs.wlr-randr}/bin/wlr-randr --output DSI-1 --on || true
-                fi
-              ;;
-            esac
-          done
-      '';
-    };
-  };
+  # NOTE: the old `pwrkey-wake-watcher` (phoc/wlr-randr DPMS-off workaround) was
+  # removed in the Phosh→GNOME migration — Mutter is not a wlroots compositor and
+  # does not implement wlr-output-power-management, so wlr-randr can't drive it.
+  # Power-button display wake is now Mutter's responsibility (gsd-power +
+  # logind). If the SDM845 DPMS-off-wake bug recurs under GNOME, the fix will be
+  # Mutter/gnome-shell-side (a contribution target), not a wlr-randr poke.
 
   # Tailscale — off-WiFi SSH access. After first boot:
   #   sudo tailscale up --login-server=https://headscale.matv.io --accept-routes
@@ -558,16 +500,11 @@
     description = "hexagonrpcd FastRPC bridge user";
   };
   users.groups.fastrpc = { };
-  # Register hexagonrpc + stevia systemd units. The nixpkgs phosh module
-  # registers the `phosh` package's units but NOT stevia's — meaning stevia's
-  # `mobi.phosh.Stevia.service` user unit is invisible to systemd. Stevia DOES
-  # autostart via Phosh's XDG autostart chain, but the systemd unit is the
-  # documented activation path for Phosh ≥0.50 OSK contract. Wiring it makes
-  # `systemctl --user status mobi.phosh.Stevia` work and lets stevia restart
-  # cleanly across phosh restarts.
+  # Register hexagonrpc's systemd units (the package ships them but nothing
+  # else wires them). stevia (Phosh's OSK) was dropped in the GNOME migration —
+  # GNOME Shell has its own built-in OSK.
   systemd.packages = [
     pkgs.hexagonrpc
-    pkgs.stevia
   ];
   systemd.services.hexagonrpcd-sdsp = {
     wantedBy = [ "multi-user.target" ];
@@ -575,7 +512,6 @@
     after = [ "mnt-vendor-persist.mount" ];
     requires = [ "mnt-vendor-persist.mount" ];
   };
-  systemd.user.services."mobi.phosh.Stevia".wantedBy = [ "graphical-session.target" ];
 
   # pmOS-defaults bundle. These are the "just works on pmOS" pieces — udev
   # rules + mimeapps + udiskie autostart — that postmarketos-base-ui /
@@ -637,29 +573,11 @@
     MOZ_GTK_TITLEBAR_DECORATION = "client"; # Phosh swipe-from-top works on CSD
     SDL_VIDEODRIVER = "wayland";
   };
-  # CRITICAL OSK auto-show fix: force GTK to use the wayland input-method
-  # module so text-input-v3 events flow from apps → phoc → stevia. The
-  # dconf gsetting `org.gnome.desktop.interface.gtk-im-module=""` ALONE
-  # does NOT work — many GTK apps (especially DBus-activated ones like
-  # gnome-control-center, chatty) don't read the gsetting; they need the
-  # env var. Verified by side-by-side test: same Epiphany binary, OSK
-  # auto-show worked with GTK_IM_MODULE=wayland set in env, failed without.
-  #
-  # `mkForce` because NixOS's i18n.inputMethod.ibus module sets this to
-  # "ibus" with the same priority — without mkForce we get an eval conflict.
-  # The `i18n.inputMethod.enable = false` below disables ibus at the source.
-  environment.sessionVariables.GTK_IM_MODULE = lib.mkForce "wayland";
-  environment.variables.GTK_IM_MODULE = lib.mkForce "wayland";
-  # Some upstream module (likely a gnome default in nixpkgs) enables
-  # i18n.inputMethod with ibus type, which forces GTK_IM_MODULE=ibus and
-  # silently breaks every text-input-v3 path. We want the wayland IM module
-  # for the Phosh OSK to auto-show.
-  i18n.inputMethod.enable = lib.mkForce false;
-
-  # seatd lets wlroots-based compositors (phoc) take over the TTY without being
-  # PID 1 — the libseat backend talks to seatd over a UNIX socket. Daniel needs
-  # to be in the seat group for the connection.
-  services.seatd.enable = true;
+  # NB: do NOT set GTK_IM_MODULE here. GNOME Shell speaks to IBus over its own
+  # D-Bus API; setting GTK_IM_MODULE/QT_IM_MODULE/XMODIFIERS breaks the built-in
+  # OSK auto-show. The gnome-mobile module actively unsets them in
+  # environment.extraInit. (This is the exact inverse of the Phosh setup, which
+  # needed GTK_IM_MODULE=wayland for stevia.)
 
   users.users.daniel = {
     isNormalUser = true;
@@ -671,7 +589,6 @@
       "video"
       "dialout"
       "feedbackd"
-      "seat"
       "input"
       "render"
     ];
@@ -682,66 +599,38 @@
 
   security.sudo.wheelNeedsPassword = false;
 
-  # Phosh config:
-  # - shell-layout=device → use gmobile per-device JSON (oneplus,fajita.json
-  #   ships upstream) so the top bar shifts UI around the notch instead of
-  #   getting clipped. shell-layout=device is the upstream default since
-  #   Phosh 0.29.0; setting it explicitly so we survive any stray reset.
-  # - idle-delay=0 + sleep-inactive-*=nothing → never blank the display.
-  #   Without this, Phosh blanks at the GNOME default (300s) and the power
-  #   button doesn't reliably wake it on SDM845 mainline. Until we figure out
-  #   why KEY_POWER doesn't route through libinput to phoc, just never blank.
+  # GNOME / GNOME Shell Mobile dconf defaults.
+  # Display-wake from DPMS-off is confirmed working under Mutter on SDM845, so
+  # auto-dim + screen-off are enabled. Suspend stays disabled (broken s2idle) —
+  # we only blank the display, never suspend the system.
   programs.dconf.enable = true;
   programs.dconf.profiles.user.databases = [{
     settings = with lib.gvariant; {
-      "sm/puri/phosh" = {
-        shell-layout = "device";
-      };
       "org/gnome/desktop/session" = {
-        idle-delay = mkUint32 0;
+        idle-delay = mkUint32 120;   # blank the display after 2 min idle
       };
-      # OSK: phosh-osk-stevia (bundled with phosh 0.54) is the real virtual
-      # keyboard. Two gates need to flip for it to auto-show on text-field
-      # focus:
-      # (1) GNOME's a11y screen-keyboard flag — without this, no OSK at all.
+      # Force GNOME Shell's built-in OSK on (touch device, no physical keyboard).
       "org/gnome/desktop/a11y/applications" = {
         screen-keyboard-enabled = true;
       };
-      # (2) Stevia's `ignore-hw-keyboards` — it defaults to false, meaning the
-      # OSK hides whenever a "hardware keyboard" is detected. Phoc's seat
-      # exports WL_SEAT_CAPABILITY_KEYBOARD because the phone has volume-keys
-      # and power-key as keyboard-class input devices. Result: stevia stays
-      # hidden forever. Override to true.
-      "mobi/phosh/osk" = {
-        ignore-hw-keyboards = true;
-      };
-      # (3) gtk-im-module MUST be empty string. nixpkgs gnome defaults it to
-      # 'toolkit-accessibility' system-wide. With ANY value set, GTK apps
-      # route input through that IM module and never speak text-input-v3 to
-      # phoc → phoc never calls SetVisible on stevia → no auto-show ever.
-      # Per stevia manpage: "for the keyboard to fold and unfold automatically
-      # make sure org.gnome.desktop.interface gtk-im-module is set to the
-      # empty string". This is the load-bearing OSK fix.
-      # gsd-power: never act on idle, never dim, never act on power button.
-      # Phosh handles power-button directly (short-press = lock + blank;
-      # long-press = power dialog).
+      # gsd-power: dim before blanking, but NEVER suspend (broken s2idle on
+      # SDM845). Power button isn't wired to an action — input wakes the display.
       "org/gnome/settings-daemon/plugins/power" = {
         sleep-inactive-battery-type = "nothing";
         sleep-inactive-ac-type = "nothing";
-        idle-dim = false;
+        idle-dim = true;
         power-button-action = "nothing";
       };
       # Lock screen behavior + lock screen wallpaper.
       "org/gnome/desktop/screensaver" = {
         lock-enabled = true;
-        idle-activation-enabled = false; # idle-delay=0 makes this moot, but explicit
+        idle-activation-enabled = true;  # lock when the display blanks on idle
         lock-delay = mkUint32 0;         # lock immediately on screen-off
         picture-uri = "file:///etc/wallpapers/fajita.jpg";
         picture-options = "zoom";
       };
       # UX defaults — dark mode + accent color.
       "org/gnome/desktop/interface" = {
-        gtk-im-module = "";       # see GTK_IM_MODULE env var note above
         color-scheme = "prefer-dark";
         gtk-theme = "Adwaita-dark";
         accent-color = "blue";          # Phosh 0.50+ honors GNOME accent
