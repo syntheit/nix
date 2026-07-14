@@ -67,6 +67,7 @@ in
           ./patches/enable-swipe-to-close.patch # swipe a window preview up to close it
           ./patches/enable-appgrid-reorder.patch # let an icon drag win over the long-press menu
           ./patches/osk-strut-keep-maximized.patch # OSK reserves space via strut; windows stay maximized (no floating-CSD look)
+          ./patches/manual-rotate-toggle.patch # QS portrait/landscape toggle (no accelerometer → DisplayConfig transform)
         ];
         prePatch = ''
           cp -r ${libshew} subprojects/libshew
