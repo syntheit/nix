@@ -1,0 +1,90 @@
+diff --git a/js/ui/keyboard.js b/js/ui/keyboard.js
+index 4f70a8bd7..755a212f9 100644
+--- a/js/ui/keyboard.js
++++ b/js/ui/keyboard.js
+@@ -2449,6 +2449,13 @@ export const Keyboard = GObject.registerClass({
+     _animateShowComplete() {
+         let keyboardBox = Main.layoutManager.keyboardBox;
+ 
++        // Reserve the keyboard's space with a strut: mutter re-fits
++        // maximized windows above the OSK while they keep their maximized
++        // state, so clients don't switch to the floating-window CSD look
++        // (rounded corners, shadow) like they do when unmaximized.
++        Main.layoutManager.untrackChrome(this);
++        Main.layoutManager.trackChrome(this, {affectsStruts: true});
++
+         // Toggle visibility so the keyboardBox can update its chrome region.
+         if (!Meta.is_wayland_compositor()) {
+             keyboardBox.hide();
+@@ -2457,6 +2464,11 @@ export const Keyboard = GObject.registerClass({
+     }
+ 
+     _animateHide() {
++        // Drop the keyboard strut: maximized windows re-fit the full work
++        // area while the keyboard slides out.
++        Main.layoutManager.untrackChrome(this);
++        Main.layoutManager.trackChrome(this);
++
+         if (this._focusWindow)
+             this._animateWindow(this._focusWindow, false);
+ 
+@@ -2526,42 +2538,10 @@ export const Keyboard = GObject.registerClass({
+     }
+ 
+     _animateWindow(window, show) {
+-        if (this._windowMovedId) {
+-            this._focusTracker.disconnect(this._windowMovedId);
+-            delete this._windowMovedId;
+-        }
+-
+-        if (show && window.maximized_vertically && !window.__keyboardMoved && !window.is_alien()) {
+-            const frameRect = window.get_frame_rect();
+-            const workArea = window.get_work_area_current_monitor();
+-
+-            this._bla = this.connect("notify::allocation", () => {
+-                const frameRect = window.get_frame_rect();
+-                const workArea = window.get_work_area_current_monitor();
+-
+-                window.move_resize_frame(false, frameRect.x, workArea.y, frameRect.width, workArea.height - (this.allocation.get_height() - this._bottomPanelBox.allocation.get_height()));
+-            });
+-
+-            window.unmaximize(Meta.MaximizeFlags.VERTICAL);
+-            window.move_resize_frame(false, frameRect.x, workArea.y, frameRect.width, workArea.height - (this.allocation.get_height() - this._bottomPanelBox.allocation.get_height()));
+-
+-            window.__keyboardMoved = true;
+-        } else if (!show && window.__keyboardMoved) {
+-            this.disconnect(this._bla);
+-            delete this._bla;
+-
+-            window.maximize(Meta.MaximizeFlags.VERTICAL);
+-            delete window.__keyboardMoved;
+-
+-
+-        }
+-
+-        this._windowMovedId = this._focusTracker.connect('window-maximize-changed', () => {
+-            if (this._focusWindow && this._focusWindow.maximized_vertically) {
+-                if (this._keyboardVisible && !Main.overview.visible)
+-                    this._animateWindow(this._focusWindow, true);
+-            }
+-        });
++        // The keyboard strut (see _animateShowComplete) makes mutter re-fit
++        // maximized windows above the OSK without changing their maximized
++        // state, so the old unmaximize+move_resize_frame approach (which
++        // made clients draw floating-window CSD) is no longer needed.
+     }
+ 
+     _setFocusWindow(window) {
+@@ -2583,7 +2563,11 @@ export const Keyboard = GObject.registerClass({
+             Main.layoutManager.keyboardMonitor.index);
+ 
+         if (show) {
+-            const keyboardY1 = (workArea.y + workArea.height) - (this.allocation.get_height() - this._bottomPanelBox.allocation.get_height());
++            // Compute the keyboard's top edge from the monitor geometry, not
++            // the work area: with the keyboard strut active the work area
++            // already excludes the OSK, which would skew this.
++            const keyboardMonitor = Main.layoutManager.keyboardMonitor;
++            const keyboardY1 = keyboardMonitor.y + keyboardMonitor.height - this.allocation.get_height();
+ 
+             let highestOverlap = 0;
+             for (const popover of this._focusPopovers.keys()) {

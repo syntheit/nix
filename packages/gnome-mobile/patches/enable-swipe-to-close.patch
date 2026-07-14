@@ -1,0 +1,47 @@
+diff --git a/js/ui/windowPreview.js b/js/ui/windowPreview.js
+index 9a192f402..74e21b81e 100644
+--- a/js/ui/windowPreview.js
++++ b/js/ui/windowPreview.js
+@@ -11,8 +11,6 @@ import St from 'gi://St';
+ import * as DND from './dnd.js';
+ import * as OverviewControls from './overviewControls.js';
+ 
+-import * as Main from './main.js';
+-
+ const WINDOW_DND_SIZE = 256;
+ 
+ const WINDOW_OVERLAY_IDLE_HIDE_TIMEOUT = 750;
+@@ -108,8 +106,7 @@ export const WindowPreview = GObject.registerClass({
+ 
+         this._updateAttachedDialogs();
+ 
+-/*
+-        this._panGesture = new WindowPreviewCloseGesture({
++        this._panGesture = new Clutter.PanGesture({
+             pan_axis: Clutter.PanAxis.Y,
+             max_n_points: 1,
+         });
+@@ -119,12 +116,6 @@ export const WindowPreview = GObject.registerClass({
+         this._panGesture.connect('end', this._panEnd.bind(this));
+         this._panGesture.connect('cancel', this._panCancel.bind(this));
+         this.add_action(this._panGesture);
+-*/
+-  //      Main.overview._workspacesSwipeTracker.require_failure_of(this._panGesture);
+-//        Main.overview._overviewSwipeTracker.require_failure_of(this._panGesture);
+-
+-  //      Main.overview._workspacesSwipeTracker.can_not_cancel(this._panGesture);
+-//        Main.overview._overviewSwipeTracker.can_not_cancel(this._panGesture);
+ 
+         this.connect('destroy', this._onDestroy.bind(this));
+ 
+@@ -140,6 +131,10 @@ export const WindowPreview = GObject.registerClass({
+             this);
+         this.inDrag = false;
+ 
++        // An upward swipe closes the window; only start a drag once the close
++        // gesture has failed (i.e. the motion wasn't an upward swipe).
++        this._draggable.startGesture.require_failure_of(this._panGesture);
++
+         const clickGesture = new Clutter.ClickGesture();
+         clickGesture.connect('recognize', () => this._activate());
+         this.add_action(clickGesture);
