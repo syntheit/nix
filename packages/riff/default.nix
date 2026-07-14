@@ -40,7 +40,7 @@ stdenv.mkDerivation rec {
 
   cargoDeps = rustPlatform.fetchCargoVendor {
     inherit pname version src;
-    hash = lib.fakeHash;
+    hash = "sha256-8gJILK9A97PAb/Q1z+IvW54WuwoZZSKxlJJUt7dwQWE=";
   };
 
   # Same as spot: with CARGO_BUILD_TARGET set, cargo puts the binary under a
