@@ -14,6 +14,11 @@
   home.stateVersion = "26.05";
   programs.home-manager.enable = true;
 
+  # fajita is pinned to the GNOME-49 nixpkgs (2026-05-05), whose fzf predates
+  # 0.73.0 — new home-manager asserts that version for its nushell integration.
+  # No nushell anywhere, so just turn the integration off.
+  programs.fzf.enableNushellIntegration = false;
+
   # Firefox userChrome.css / userContent.css from pmOS's mobile-config-firefox.
   # This rearranges the chrome (hides tab strip, full-width URL bar, hidden
   # spacers, full-viewport URL dropdown, etc.) so FF fits a phone screen.
