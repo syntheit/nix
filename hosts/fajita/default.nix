@@ -8,6 +8,7 @@
 {
   imports = [
     ../../modules/gnome-mobile.nix
+    ./audio.nix
     ./pwas.nix
   ];
 
