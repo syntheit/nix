@@ -71,15 +71,32 @@
   #    to bring the internal panel up disabled, so no compositor or console
   #    framebuffer can ever scan out to it. (External HDMI/DP connectors are
   #    untouched — plug a monitor in for recovery if ever needed.)
-  # reboot=pci: make `reboot` actually restart instead of powering off. This
-  # Mac's default reset method is ACPI ("Apple Mac detected, using EFI v1.10
-  # runtime services only" + /sys/kernel/reboot/type=acpi), and on Apple firmware
-  # both the ACPI and EFI resets are handled as a *power-off*, not a restart — so
-  # `systemctl reboot` cleanly shut vista down and left it dead until physically
-  # powered on (bad for a headless, remote-managed box). The 0xcf9 PCI-reset
-  # method restarts correctly; older MacBooks get it via the kernel's DMI quirk
-  # table, but MacBookPro16,1 is too new to be listed, so we set it explicitly.
-  boot.kernelParams = [ "video=eDP-1:d" "reboot=pci" ];
+  boot.kernelParams = [ "video=eDP-1:d" ];
+
+  # ── Reboots must go through kexec, not firmware ───────────────────────────
+  # This Mac's iBridge firmware treats EVERY CPU/chipset reset method — ACPI (the
+  # default), EFI, and PCI 0xcf9 — as a *power-off* rather than a restart. We
+  # verified all three: `systemctl reboot` cleanly shut vista down and left it
+  # dead until physically powered on (confirmed via the boot logs: a firmware
+  # reboot = ~4 min off + a cold POST; reboot=pci was tried and still powered
+  # off). That's unacceptable for a headless, remote-managed box, and no `reboot=`
+  # value fixes it. kexec sidesteps the firmware entirely — it jumps straight into
+  # the next kernel and never hands control back — and is the reboot path the
+  # t2linux project documents for T2 Macs (verified working here: a kexec reboot
+  # comes back in ~2-3 s with no POST).
+  #
+  # So alias `reboot` to a kexec reboot. `systemctl kexec` auto-stages the
+  # current generation's kernel via prepare-kexec.service, so this needs no extra
+  # steps and, after a `nixos-rebuild switch`, kexecs into the newly-activated
+  # kernel. Caveats:
+  #   • Run `nixos-rebuild switch` (not `boot`) before rebooting for a kernel
+  #     update — kexec boots /run/current-system/kernel, which `switch` updates
+  #     but `boot` does not.
+  #   • `poweroff` / `shutdown -h` are unaffected and correct (a clean power-off
+  #     is fine). It's only *reboot* that the firmware mishandles.
+  #   • Bypasses (`sudo reboot`, `systemctl reboot`, `shutdown -r`) still hit the
+  #     firmware and will power off — use the aliased `reboot`.
+  environment.shellAliases.reboot = "sudo systemctl kexec";
 
   # 2) Belt-and-suspenders: force both backlights (main gmux panel + the OLED
   #    Touch Bar) to zero at boot, in case the PWM rail stays powered even with
