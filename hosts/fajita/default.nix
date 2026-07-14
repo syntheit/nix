@@ -94,6 +94,14 @@
   # that pd-mapper reads from (pd-mapper is patched to read there, not /lib/firmware).
   mobile.quirks.qualcomm.sdm845-modem.enable = true;
 
+  # THE CRASHDUMP-ON-REBOOT FIX (pmOS pmaports MR !6956 / issue #3936): on
+  # shutdown, if rmtfs dies before NetworkManager has torn down wifi, the
+  # WCN3990 firmware crashes when its shared memory vanishes → hypervisor →
+  # Qualcomm CrashDump mode → every reboot needs a force-off. Ordering rmtfs
+  # Before=NetworkManager.service makes systemd stop it AFTER NetworkManager
+  # on the way down. Pure userspace fix; pmOS ships exactly this.
+  systemd.services.rmtfs.before = [ "NetworkManager.service" ];
+
   # SDM845 needs --test-quick-suspend-resume on ModemManager. Without it, MM
   # loses the modem on its first suspend probe and never recovers.
   systemd.services.ModemManager.serviceConfig.ExecStart = lib.mkForce [
