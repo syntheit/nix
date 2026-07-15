@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fajita — phone build board</title>
+<style>
+  :root {
+    --bg:#f5f7f9; --surface:#ffffff; --surface-2:#eef1f6; --surface-3:#e6ebf2;
+    --border:#d9dfe8; --border-strong:#c3ccd9;
+    --text:#1a1f28; --text-dim:#59636f; --text-faint:#8a94a2;
+    --accent:#3a5fb0; --accent-soft:rgba(58,95,176,.11);
+    --ok:#2c9a4d; --ok-soft:rgba(44,154,77,.13);
+    --pwa:#10808f; --pwa-soft:rgba(16,128,143,.13);
+    --build:#7a5bd6; --build-soft:rgba(122,91,214,.13);
+    --task:#b5771a; --task-soft:rgba(181,119,26,.14);
+    --fb:#bd4159; --fb-soft:rgba(189,65,89,.13);
+    --shadow:0 1px 2px rgba(20,30,50,.05), 0 8px 24px -12px rgba(20,30,50,.14);
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0c1017; --surface:#141a23; --surface-2:#1a212c; --surface-3:#212a37;
+      --border:#26303f; --border-strong:#33404f;
+      --text:#e7edf5; --text-dim:#93a0b1; --text-faint:#63707f;
+      --accent:#7099e8; --accent-soft:rgba(112,153,232,.15);
+      --ok:#45c766; --ok-soft:rgba(69,199,102,.14);
+      --pwa:#33bccf; --pwa-soft:rgba(51,188,207,.14);
+      --build:#a488ee; --build-soft:rgba(164,136,238,.16);
+      --task:#e2a63e; --task-soft:rgba(226,166,62,.15);
+      --fb:#e56d85; --fb-soft:rgba(229,109,133,.15);
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);
+    line-height:1.5;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1160px;margin:0 auto;padding:clamp(20px,4vw,56px) clamp(16px,4vw,40px) 80px;}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+  code{font-family:var(--mono);font-size:.86em;background:var(--surface-3);padding:.1em .4em;border-radius:5px}
+
+  .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--accent);display:flex;align-items:center;gap:.6em;margin-bottom:14px}
+  .eyebrow::before{content:"";width:22px;height:1px;background:var(--accent);opacity:.6}
+  h1{font-size:clamp(1.7rem,4.5vw,2.5rem);line-height:1.08;margin:0 0 .35em;letter-spacing:-.02em;
+    text-wrap:balance;font-weight:680}
+  .lede{font-size:clamp(1rem,1.4vw,1.12rem);color:var(--text-dim);max-width:66ch;margin:0}
+  .lede b{color:var(--text);font-weight:600}
+  .updated{font-family:var(--mono);font-size:.72rem;color:var(--text-faint);margin-top:10px}
+
+  .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:34px 0 14px}
+  @media(max-width:760px){.stats{grid-template-columns:repeat(2,1fr)}}
+  .tile{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow)}
+  .tile .n{font-family:var(--mono);font-size:1.7rem;font-weight:600;line-height:1;letter-spacing:-.01em;
+    font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:.28em}
+  .tile .n small{font-size:.82rem;color:var(--text-faint);font-weight:500}
+  .tile .l{font-size:.8rem;color:var(--text-dim);margin-top:8px}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:.15em;transform:translateY(-.1em)}
+
+  .cov{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow);margin-bottom:34px}
+  .cov-head{display:flex;justify-content:space-between;align-items:center;font-size:.8rem;color:var(--text-dim);
+    margin-bottom:10px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em}
+  .bar{display:flex;height:16px;border-radius:6px;overflow:hidden;gap:2px}
+  .bar span{display:block}
+  .cov-key{display:flex;flex-wrap:wrap;gap:12px 20px;margin-top:12px;font-size:.8rem;color:var(--text-dim)}
+  .cov-key span{display:flex;align-items:center;gap:.5em}
+  .sw{width:11px;height:11px;border-radius:3px;display:inline-block}
+
+  h2{font-size:1.3rem;letter-spacing:-.01em;margin:56px 0 6px;font-weight:660}
+  h2 .num{font-family:var(--mono);font-size:.8rem;color:var(--accent);margin-right:.6em;font-weight:600}
+  .sub{color:var(--text-dim);font-size:.94rem;margin:0 0 20px;max-width:74ch}
+
+  .devices{display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:14px}
+  @media(max-width:820px){.devices{grid-template-columns:1fr}}
+  .dev{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:12px}
+  .dev.primary{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),var(--shadow)}
+  .dev-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .dev h3{margin:0;font-size:1.05rem;font-weight:640}
+  .dev .role{font-family:var(--mono);font-size:.66rem;text-transform:uppercase;letter-spacing:.1em;padding:.32em .6em;border-radius:6px;white-space:nowrap}
+  .role.r-pri{background:var(--accent-soft);color:var(--accent)}
+  .role.r-fb{background:var(--fb-soft);color:var(--fb)}
+  .role.r-alt{background:var(--surface-3);color:var(--text-dim)}
+  .dev p{margin:0;font-size:.9rem;color:var(--text-dim)}
+  .dev ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:7px}
+  .dev li{font-size:.86rem;display:flex;gap:.6em;align-items:flex-start;color:var(--text)}
+  .dev li::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent);margin-top:.5em;flex:none;opacity:.7}
+  .dev.fb li::before{background:var(--fb)} .dev.alt li::before{background:var(--text-faint)}
+  .thesis{margin-top:16px;background:var(--accent-soft);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:10px;padding:15px 18px;font-size:.94rem}
+  .thesis b{color:var(--text)}
+
+  .twrap{overflow-x:auto;border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);background:var(--surface)}
+  table{border-collapse:collapse;width:100%;min-width:720px;font-size:.9rem}
+  thead th{position:sticky;top:0;background:var(--surface-2);text-align:left;font-family:var(--mono);font-size:.68rem;
+    text-transform:uppercase;letter-spacing:.09em;color:var(--text-dim);padding:12px 14px;border-bottom:1px solid var(--border-strong);white-space:nowrap;z-index:2}
+  thead th.nix{color:var(--accent)}
+  tbody td{padding:11px 14px;border-bottom:1px solid var(--border);vertical-align:top}
+  tbody tr:hover td{background:var(--surface-2)}
+  tr.cat td{background:var(--surface-3);padding:7px 14px;font-family:var(--mono);font-size:.68rem;text-transform:uppercase;letter-spacing:.11em;color:var(--text-dim);font-weight:600}
+  tr.cat:hover td{background:var(--surface-3)}
+  .use{font-weight:600;white-space:nowrap}
+  .ref{color:var(--text-dim);font-size:.86rem}
+  .nixcell{min-width:250px}
+  .sol{display:flex;align-items:baseline;gap:.5em}
+  .sdot{width:8px;height:8px;border-radius:50%;flex:none;transform:translateY(-.05em)}
+  .sdot.native{background:var(--ok)} .sdot.pwa{background:var(--pwa)} .sdot.task{background:var(--task)} .sdot.fb{background:var(--fb)}
+  .sol b{font-weight:600}
+  .meta{color:var(--text-faint);font-size:.8rem;margin-top:3px;padding-left:1.3em}
+  .tag{font-family:var(--mono);font-size:.62rem;text-transform:uppercase;letter-spacing:.06em;padding:.16em .5em;border-radius:5px;margin-left:.3em;white-space:nowrap}
+  .tag.native{background:var(--ok-soft);color:var(--ok)} .tag.pwa{background:var(--pwa-soft);color:var(--pwa)}
+  .tag.task{background:var(--task-soft);color:var(--task)} .tag.fb{background:var(--fb-soft);color:var(--fb)} .tag.build{background:var(--build-soft);color:var(--build)}
+  tr.hide{display:none}
+  .filters{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
+  .chip{font-family:var(--mono);font-size:.74rem;letter-spacing:.03em;padding:.42em .8em;border-radius:20px;border:1px solid var(--border-strong);
+    background:var(--surface);color:var(--text-dim);cursor:pointer;display:inline-flex;align-items:center;gap:.5em;user-select:none}
+  .chip:hover{border-color:var(--accent);color:var(--text)} .chip .sw{width:9px;height:9px}
+  .chip[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--text)}
+
+  .cards{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  @media(max-width:780px){.cards{grid-template-columns:1fr}}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:10px}
+  .card.lead{border-left:3px solid var(--build)}
+  .card .ch{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+  .card h4{margin:0;font-size:1.02rem;font-weight:640}
+  .card h4 .k{font-family:var(--mono);font-size:.72rem;color:var(--text-faint);font-weight:500;display:block;margin-top:2px}
+  .card p{margin:0;font-size:.87rem;color:var(--text-dim)}
+  .card p b,.card p strong{color:var(--text);font-weight:600}
+  .effort{font-family:var(--mono);font-size:.62rem;text-transform:uppercase;letter-spacing:.06em;padding:.24em .6em;border-radius:6px;white-space:nowrap;flex:none}
+  .e-sm{background:var(--ok-soft);color:var(--ok)} .e-md{background:var(--task-soft);color:var(--task)} .e-lg{background:var(--fb-soft);color:var(--fb)}
+  .links{display:flex;flex-wrap:wrap;gap:.4em .9em;font-family:var(--mono);font-size:.74rem;margin-top:2px}
+  .verdict{font-size:.82rem;background:var(--build-soft);border-radius:8px;padding:8px 11px;color:var(--text)}
+  .verdict b{color:var(--build)}
+
+  footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--border);color:var(--text-faint);font-size:.8rem}
+  footer .mono{font-family:var(--mono)}
+  @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">OnePlus 6T · Mobile NixOS · GNOME Shell Mobile</div>
+  <h1>fajita — phone build board</h1>
+  <p class="lede">Every use case from the plan, plus the researched path for each thing we're <b>building</b>. OnePlus/Nix is the daily driver; the iPhone stays in the bag for the shrinking set of holdouts. Live doc — this page is kept current as we ship.</p>
+  <div class="updated">last updated: 2026-07-13 · GNOME Mobile (Mutter) migration merged · 16 PWAs live · research complete (10 agents)</div>
+
+  <div class="stats">
+    <div class="tile"><div class="n">26<small>/ 31</small></div><div class="l">handled <b>on the phone</b></div></div>
+    <div class="tile"><div class="n"><span class="dot" style="background:var(--ok)"></span>12</div><div class="l">native Linux apps</div></div>
+    <div class="tile"><div class="n"><span class="dot" style="background:var(--pwa)"></span>14</div><div class="l">web-apps (PWA)</div></div>
+    <div class="tile"><div class="n"><span class="dot" style="background:var(--build)"></span>6</div><div class="l">native apps to build</div></div>
+    <div class="tile"><div class="n"><span class="dot" style="background:var(--fb)"></span>2</div><div class="l">iPhone holdouts</div></div>
+  </div>
+
+  <div class="cov">
+    <div class="cov-head"><span>Coverage · 31 use cases</span><span>OnePlus / NixOS</span></div>
+    <div class="bar" aria-label="coverage">
+      <span style="flex:12;background:var(--ok)" title="12 native"></span>
+      <span style="flex:14;background:var(--pwa)" title="14 PWA"></span>
+      <span style="flex:3;background:var(--task)" title="3 task"></span>
+      <span style="flex:2;background:var(--fb)" title="2 fallback"></span>
+    </div>
+    <div class="cov-key">
+      <span><i class="sw" style="background:var(--ok)"></i> Native app · 12</span>
+      <span><i class="sw" style="background:var(--pwa)"></i> PWA · 14</span>
+      <span><i class="sw" style="background:var(--task)"></i> Config/task · 3</span>
+      <span><i class="sw" style="background:var(--fb)"></i> iPhone fallback · 2</span>
+      <span><i class="sw" style="background:var(--build)"></i> native build queued · 6</span>
+    </div>
+  </div>
+
+  <!-- DEVICE STRATEGY -->
+  <h2><span class="num">01</span>How the devices combine</h2>
+  <p class="sub">Assign each device its job and the whole need-set is covered — then shrink the fallback set over time by shipping native apps and bridges.</p>
+  <div class="devices">
+    <div class="dev primary">
+      <div class="dev-top"><h3>OnePlus · NixOS</h3><span class="role r-pri">Daily driver</span></div>
+      <p>Everything native + PWAs. Fully declarative, yours, hackable — the actual project.</p>
+      <ul><li>All comms, notes, media, maps, auth</li><li>Finance &amp; bookmarks as web-apps (→ going native)</li><li>26 / 31 use cases live here</li></ul>
+    </div>
+    <div class="dev fb">
+      <div class="dev-top"><h3>iPhone · iOS</h3><span class="role r-fb">In-bag fallback</span></div>
+      <p>Stays in the bag. Handles only what Linux can't — zero maintenance.</p>
+      <ul><li>Garmin watch sync (no Linux client)</li><li>Camera when the shot matters</li><li>Official-only banking · WhatsApp calls</li></ul>
+    </div>
+    <div class="dev alt">
+      <div class="dev-top"><h3>Pixel · GrapheneOS</h3><span class="role r-alt">Not chosen</span></div>
+      <p>The full-native alternative if the Nix experiment is ever abandoned.</p>
+      <ul><li>Covers everything natively</li><li>Better privacy than iOS</li><li>…but another OS to maintain, and not the project</li></ul>
+    </div>
+  </div>
+  <div class="thesis"><b>The play:</b> daily-drive OnePlus/Nix; close holdouts one by one — WireGuard VPN, native note/media clients, mautrix bridges — until the iPhone is only needed to sync the Garmin.</div>
+
+  <!-- USE CASE TABLE -->
+  <h2><span class="num">02</span>Use case by use case</h2>
+  <p class="sub">What's actually on the phone now. Tap a status to filter. The <span style="color:var(--build)">violet "→ native"</span> notes point at the build roadmap below.</p>
+  <div class="filters" id="filters">
+    <button class="chip" data-f="all" aria-pressed="true">All · 31</button>
+    <button class="chip" data-f="native" aria-pressed="false"><i class="sw" style="background:var(--ok)"></i>Native · 12</button>
+    <button class="chip" data-f="pwa" aria-pressed="false"><i class="sw" style="background:var(--pwa)"></i>PWA · 14</button>
+    <button class="chip" data-f="task" aria-pressed="false"><i class="sw" style="background:var(--task)"></i>Task · 3</button>
+    <button class="chip" data-f="fb" aria-pressed="false"><i class="sw" style="background:var(--fb)"></i>Fallback · 2</button>
+  </div>
+  <div class="twrap"><table><thead><tr>
+    <th>Use</th><th>Pixel · GrapheneOS</th><th>iPhone · iOS</th><th class="nix">OnePlus · NixOS</th>
+  </tr></thead><tbody id="tbody">
+    <tr class="cat"><td colspan="4">Communication</td></tr>
+    <tr data-s="task"><td class="use">Email</td><td class="ref">Thunderbird</td><td class="ref">Apple Mail</td>
+      <td class="nixcell"><div class="sol"><span class="sdot task"></span><b>Geary</b><span class="tag task">in config · deploy pending</span></div><div class="meta">Swapped in for Thunderbird (unusable at phone width). Folds to single pane, full IMAP.</div></td></tr>
+    <tr data-s="native"><td class="use">Matrix</td><td class="ref">FluffyChat</td><td class="ref">FluffyChat</td>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Fractal</b><span class="tag native">native</span></div><div class="meta">Fractal for Matrix (real E2EE, matrix-rust-sdk); Chatty kept for SMS/MMS. Neither does Matrix calls.</div></td></tr>
+    <tr data-s="native"><td class="use">Discord</td><td class="ref">Official</td><td class="ref">Official</td>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Vesktop</b><span class="tag native">native</span></div></td></tr>
+    <tr data-s="pwa"><td class="use">Slack</td><td class="ref">Official</td><td class="ref">Official</td>
+      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>PWA</b><span class="tag pwa">dsf 1.3</span></div><div class="meta">No mobile web → desktop-scaled. <span style="color:var(--build)">→ mautrix-slack bridge into Matrix</span></div></td></tr>
+    <tr data-s="pwa"><td class="use">Telegram</td><td class="ref">Official</td><td class="ref">Official</td>
+      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>PWA</b><span class="tag pwa">wired</span></div><div class="meta">web.telegram.org/k — responsive. <span style="color:var(--build)">→ native (Paper Plane fork / grammers)</span></div></td></tr>
+    <tr data-s="pwa"><td class="use">WhatsApp</td><td class="ref">Official</td><td class="ref">Official</td>
+      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>Web PWA</b><span class="tag pwa">dsf 1.3</span></div><div class="meta">Desktop companion web. <span style="color:var(--build)">→ mautrix-whatsapp bridge</span>; calls → iPhone</div></td></tr>
+    <tr data-s="pwa"><td class="use">Google Voice</td><td class="ref">Official</td><td class="ref">Official</td>
+      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>PWA</b><span class="tag pwa">wired</span></div></td></tr>
+
+    <tr class="cat"><td colspan="4">Notes, web &amp; auth</td></tr>
+    <tr data-s="native"><td class="use">Browser</td><td class="ref">Edge</td><td class="ref">Orion</td>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Firefox</b><span class="tag native">native</span></div><div class="meta">+ Epiphany / Brave / Chromium</div></td></tr>
+    <tr data-s="pwa"><td class="use">Memos</td><td class="ref">MoeMemos</td><td class="ref">MoeMemos</td>
+      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>PWA</b><span class="tag build">→ native</span></div><div class="meta">notes.matv.io · <span style="color:var(--build)">libadwaita client (one-shot)</span></div></td></tr>
+    <tr data-s="pwa"><td class="use">Linkding</td><td class="ref">Linkdy</td><td class="ref">Linkdy</td>
+      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>PWA</b><span class="tag build">→ native</span></div><div class="meta">links.matv.io · <span style="color:var(--build)">libadwaita client (linkding-rs crate)</span></div></td></tr>
+    <tr data-s="pwa"><td class="use">Retrospend</td><td class="ref">PWA</td><td class="ref">PWA</td>
+      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>PWA</b><span class="tag pwa">wired</span></div><div class="meta">retrospend.app</div></td></tr>
+    <tr data-s="native"><td class="use">AI</td><td class="ref">Claude/GPT app</td><td class="ref">Claude/GPT app</td>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>claude-code</b> CLI<span class="tag native">native</span></div><div class="meta">+ claude.ai PWA</div></td></tr>
+    <tr data-s="pwa"><td class="use">Bitwarden</td><td class="ref">Official</td><td class="ref">Official</td>
+      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>PWA</b><span class="tag pwa">wired</span></div><div class="meta">vault.matv.io (self-hosted Vaultwarden)</div></td></tr>
+    <tr data-s="native"><td class="use">2FA</td><td class="ref">Aegis</td><td class="ref">Ente Auth</td>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Authenticator</b><span class="tag native">native</span></div></td></tr>
+
+    <tr class="cat"><td colspan="4">Media</td></tr>
+    <tr data-s="native"><td class="use">Music</td><td class="ref">Spotify</td><td class="ref">Spotify</td>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Spot</b><span class="tag native">native</span></div><div class="meta">librespot · Premium (fixed from wrong `riff` pkg)</div></td></tr>
+    <tr data-s="pwa"><td class="use">YouTube</td><td class="ref">Official</td><td class="ref">Official</td>
+      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>Invidious PWA</b><span class="tag build">→ native</span></div><div class="meta">self-hosted on vista · <span style="color:var(--build)">fork Delfin for native</span> · + Clapper for links</div></td></tr>
+    <tr data-s="native"><td class="use">Jellyfin</td><td class="ref">Official</td><td class="ref">Official</td>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Delfin</b><span class="tag native">native</span></div></td></tr>
+    <tr data-s="pwa"><td class="use">Immich</td><td class="ref">Official</td><td class="ref">Official</td>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Mimick</b><span class="tag build">packaged · deploy</span></div><div class="meta">photos.matv.io · <span style="color:var(--build)">packaged (packages/mimick, builds green) + wired into fajita — installs on next rebuild</span></div></td></tr>
+    <tr data-s="task"><td class="use">Camera</td><td class="ref">Stock</td><td class="ref">Stock</td>
+      <td class="nixcell"><div class="sol"><span class="sdot task"></span><b>Snapshot</b><span class="tag task">quality WIP</span></div><div class="meta">libcamera IPAs missing · iPhone for real shots</div></td></tr>
+    <tr data-s="native"><td class="use">Voice Notes</td><td class="ref">Stock</td><td class="ref">Stock</td>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Sound Recorder</b><span class="tag native">native</span></div></td></tr>
+
+    <tr class="cat"><td colspan="4">Maps &amp; fitness</td></tr>
+    <tr data-s="native"><td class="use">Maps</td><td class="ref">Google Maps</td><td class="ref">Google Maps</td>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>GNOME Maps</b> + OrganicMaps<span class="tag native">native</span></div><div class="meta">+ Google Maps as Chromium PWA</div></td></tr>
+    <tr data-s="fb"><td class="use">Garmin</td><td class="ref">Official</td><td class="ref">Official</td>
+      <td class="nixcell"><div class="sol"><span class="sdot fb"></span><b>iPhone</b><span class="tag fb">fallback</span></div><div class="meta">no Linux client, no BT watch sync</div></td></tr>
+    <tr data-s="pwa"><td class="use">Strava</td><td class="ref">Official</td><td class="ref">Official</td>
+      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>PWA</b><span class="tag pwa">wired</span></div></td></tr>
+
+    <tr class="cat"><td colspan="4">Finance &amp; news</td></tr>
+    <tr data-s="pwa"><td class="use">Fidelity</td><td class="ref">Official</td><td class="ref">Official</td>
+      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>PWA</b><span class="tag pwa">wired</span></div><div class="meta">digital.fidelity.com — verify fit on device</div></td></tr>
+    <tr data-s="pwa"><td class="use">Stocks</td><td class="ref">Yahoo Finance</td><td class="ref">Yahoo Finance</td>
+      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>Yahoo PWA</b><span class="tag pwa">wired</span></div><div class="meta">no good native app (Merkato = maybe, see roadmap)</div></td></tr>
+    <tr data-s="pwa"><td class="use">WSJ</td><td class="ref">Official</td><td class="ref">Official</td>
+      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>PWA</b><span class="tag pwa">wired</span></div></td></tr>
+    <tr data-s="fb"><td class="use">Misc banking</td><td class="ref">Official apps</td><td class="ref">Official apps</td>
+      <td class="nixcell"><div class="sol"><span class="sdot fb"></span><b>Web / iPhone</b><span class="tag fb">fallback</span></div><div class="meta">some are official-app-only</div></td></tr>
+
+    <tr class="cat"><td colspan="4">System &amp; network</td></tr>
+    <tr data-s="native"><td class="use">Clock</td><td class="ref">Stock</td><td class="ref">Stock</td>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>GNOME Clocks</b><span class="tag native">native</span></div></td></tr>
+    <tr data-s="native"><td class="use">Calendar</td><td class="ref">Google Calendar</td><td class="ref">iOS Calendar</td>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>GNOME Calendar</b><span class="tag native">native</span></div><div class="meta">needs Online-Accounts login</div></td></tr>
+    <tr data-s="native"><td class="use">Contacts</td><td class="ref">Stock</td><td class="ref">Stock</td>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>GNOME Contacts</b><span class="tag native">native</span></div></td></tr>
+    <tr data-s="task"><td class="use">VPN</td><td class="ref">Windscribe</td><td class="ref">Windscribe</td>
+      <td class="nixcell"><div class="sol"><span class="sdot task"></span><b>WireGuard</b><span class="tag task">config</span></div><div class="meta">Windscribe WG config → wg-quick (mtu 1280). Works on cell. See decisions.</div></td></tr>
+  </tbody></table></div>
+
+  <!-- BUILD ROADMAP -->
+  <h2><span class="num">03</span>Build-your-own roadmap</h2>
+  <p class="sub">Researched (GitHub/forums, July 2026), ordered roughly by effort. Where a decent abandoned project exists, we pick it up rather than start cold.</p>
+  <div class="cards">
+    <div class="card lead"><div class="ch"><h4>Linkding client<span class="k">Rust · GTK4 · libadwaita</span></h4><span class="effort e-sm">one-shot</span></div>
+      <p>Clean token-auth REST, and the <b>linkding-rs</b> crate already wraps it — the API layer is done. No libadwaita client exists = clean gap. MVP: paste-URL → auto-title (<code>/check</code>) → save; list/search; tag filter; open.</p>
+      <div class="verdict"><b>Verdict:</b> 🛠 building now — autonomous agent in <code>~/Projects/linkding-gtk</code>. This is the template for the Memos sibling.</div>
+      <div class="links"><a href="https://linkding.link/api/">API</a><a href="https://github.com/zbrox/linkding-rs">linkding-rs</a><a href="https://github.com/vkhitrin/cosmicding">cosmicding (libcosmic ref)</a></div></div>
+
+    <div class="card lead"><div class="ch"><h4>Memos client<span class="k">Rust · GTK4 · libadwaita</span></h4><span class="effort e-sm">one-shot</span></div>
+      <p>API is REST-over-grpc-gateway (<code>/api/v1</code>), <b>PAT auth</b>, tags inline on each memo — plain <code>reqwest</code>+<code>serde</code>, no gRPC toolchain. No native client exists. MVP: quick-capture, list, search (CEL filter), tags, attachments (base64).</p>
+      <div class="verdict"><b>Verdict:</b> build it — but <b>pin to your server version</b>, the API renames across releases.</div>
+      <div class="links"><a href="https://usememos.com/docs/api/latest">API</a><a href="https://github.com/mudkipme/MoeMemos">MoeMemos (feature ref)</a><a href="https://github.com/memospot/memospot">memospot (crib models)</a></div></div>
+
+    <div class="card"><div class="ch"><h4>Immich viewer<span class="k">adopt Mimick · Rust/GTK4</span></h4><span class="effort e-sm">package</span></div>
+      <p><b>Mimick is already mobile-ready</b> — real libadwaita breakpoints (OverlaySplitView; 2-col grids at 360px; swipe lightbox), rated "Perfect" for phones, and shipped for <b>aarch64 on Flathub</b> so it runs on the 6T today. Plain gtk4-rs; the viewer (<code>src/library/</code>) is cleanly separated from the sync engine, behind a Library-View toggle. Min server Immich v3.0.0+.</p>
+      <div class="verdict"><b>Verdict:</b> ✅ packaged at <code>packages/mimick</code> (builds green x86_64; aarch64 on the fajita rebuild) &amp; wired into fajita. Next: verify on-device → drop the PWA. Upstream nixpkgs PR is the nice follow-up (viewer-side issues #83/#77/#80).</div>
+      <div class="links"><a href="https://github.com/nicx17/mimick">Mimick</a><a href="https://flathub.org/apps/dev.nicx.mimick">Flathub (aarch64)</a><a href="https://linuxphoneapps.org/apps/dev.nicx.mimick/">linuxphoneapps</a></div></div>
+
+    <div class="card"><div class="ch"><h4>Invidious client<span class="k">fork Delfin · Rust/relm4</span></h4><span class="effort e-md">fork</span></div>
+      <p><b>Delfin</b> (Jellyfin client) is Rust/relm4/GTK4 with an <b>mpv</b> backend and an isolated <code>jellyfin_api</code> module — swap it for <code>invidious_api</code>. mpv plays Invidious' <code>dashUrl</code> natively; API is mostly no-auth (you self-host, so you control tokens). ~60–70% of the shell/player transfers.</p>
+      <div class="verdict"><b>Verdict:</b> fork Delfin (your idea — confirmed sound). No GTK Invidious client exists.</div>
+      <div class="links"><a href="https://codeberg.org/avery42/delfin">Delfin</a><a href="https://docs.invidious.io/api/">Invidious API</a></div></div>
+
+    <div class="card"><div class="ch"><h4>Email — Geary now<span class="k">GTK3 · libhandy</span></h4><span class="effort e-sm">deploy</span></div>
+      <p><b>Geary</b> is the only mail app that folds to a single-pane touch reading pane, does full IMAP, and is in nixpkgs (aarch64). GTK3/slow-maint but works today. Back it with a <b>SnappyMail PWA</b>. GTK4/libadwaita options (Envelope, Stamp) are prototypes — track for later.</p>
+      <div class="verdict"><b>Verdict:</b> ✅ swapped into the config (replaces Thunderbird) — live on the next fajita rebuild. Revisit Stamp/Envelope in 6–12 mo.</div>
+      <div class="links"><a href="https://linuxphoneapps.org/apps/org.gnome.geary/">Geary</a><a href="https://snappymail.eu/">SnappyMail</a><a href="https://gitlab.gnome.org/felinira/envelope">Envelope (track)</a></div></div>
+
+    <div class="card"><div class="ch"><h4>All-purpose chat app<span class="k">Matrix + mautrix + fork Fractal</span></h4><span class="effort e-lg">big</span></div>
+      <p>Your "Beeper-vibe" app: run <b>mautrix bridges</b> (WhatsApp/Telegram/Slack) on your homeserver — <b>mautrix-whatsapp <em>is</em> the self-hosted WhatsApp companion server</b> — and put a libadwaita Matrix client in front. Fork <b>Fractal 13</b> (Rust/GTK4/matrix-rust-sdk, e2ee done) and tighten it for mobile. Native Telegram alone = fork <b>Paper Plane</b> (own the tdlib pkg) or <b>grammers</b> (pure-Rust, no UI).</p>
+      <div class="verdict"><b>Verdict:</b> bridges + Fractal fork = the real path. Paper Plane if you want Telegram-native first.</div>
+      <div class="links"><a href="https://gitlab.gnome.org/World/fractal">Fractal</a><a href="https://github.com/mautrix/whatsapp">mautrix-whatsapp</a><a href="https://github.com/paper-plane-developers/paper-plane">Paper Plane</a><a href="https://codeberg.org/Lonami/grammers">grammers</a></div></div>
+  </div>
+
+  <!-- DECISIONS -->
+  <h2><span class="num">04</span>Decisions &amp; config</h2>
+  <p class="sub">Smaller calls that don't need a build — research-backed.</p>
+  <div class="cards">
+    <div class="card"><div class="ch"><h4>VPN on cellular</h4><span class="effort e-sm">config</span></div>
+      <p>Skip the Windscribe client: generate a <b>WireGuard config</b> (account → Config Generator) → <code>networking.wg-quick</code> with <b><code>mtu = 1280</code></b> + <code>persistentKeepalive = 25</code> (the cellular gotchas) + <code>AllowedIPs = 0.0.0.0/0</code> (auto kill-switch). Windscribe already ships <code>arm64</code> debs, so a real aarch64 client is a trivial flake fix later.</p></div>
+    <div class="card"><div class="ch"><h4>PWA icons</h4><span class="effort e-sm">polish</span></div>
+      <p>Vendor icon files in the repo → install into the hicolor theme (<code>hicolor/512x512/apps/pwa-&lt;id&gt;.png</code>) → <code>Icon = "pwa-&lt;id&gt;"</code>, wrapped with <code>symlinkJoin</code>. Prior art: <b>nix-chromium-webapps</b>. Self-hosted apps have manifest icons; brands from dashboardicons.com (full-color, not simple-icons glyphs).</p></div>
+    <div class="card"><div class="ch"><h4>Stocks</h4><span class="effort e-md">maybe</span></div>
+      <p>No maintained native GTK4 stocks app that's also phone-adaptive <em>and</em> in nixpkgs. <b>Merkato</b> (active, Rust/GTK4, no API key) is the only candidate but is flagged "Desktop Only" — would need packaging + on-device width testing. <b>Keep the Yahoo PWA</b> unless you want to try it.</p></div>
+    <div class="card"><div class="ch"><h4>Matrix client</h4><span class="effort e-sm">decided</span></div>
+      <p><b>Fractal</b> for Matrix — the only GTK4/libadwaita client with real E2EE (cross-signing + verification via matrix-rust-sdk). <b>Chatty</b> stays for SMS/MMS only (its Matrix is experimental, decrypt failures). Caveats: Fractal has no background notifications and no Matrix calls. Bonus: it already talks to mautrix bridges (portals = normal rooms) — the fork base for the all-purpose app.</p></div>
+  </div>
+
+  <footer>
+    <p class="mono">fajita phone build board · self-hosted on harbor · research: 10 agents, July 2026</p>
+    <p>Sources are linked inline per item. Hardware-level open issues (sensors, camera IPAs, DPMS wake) tracked separately in <code>hosts/fajita/TODO.md</code>.</p>
+  </footer>
+</div>
+
+<script>
+  (function(){
+    var f=document.getElementById('filters');if(!f)return;
+    var rows=[].slice.call(document.querySelectorAll('#tbody tr[data-s]'));
+    var cats=[].slice.call(document.querySelectorAll('#tbody tr.cat'));
+    f.addEventListener('click',function(e){
+      var b=e.target.closest('.chip');if(!b)return;
+      var k=b.getAttribute('data-f');
+      f.querySelectorAll('.chip').forEach(function(c){c.setAttribute('aria-pressed',c===b?'true':'false');});
+      rows.forEach(function(r){r.classList.toggle('hide',!(k==='all'||r.getAttribute('data-s')===k));});
+      cats.forEach(function(cat){var vis=false,n=cat.nextElementSibling;
+        while(n&&!n.classList.contains('cat')){if(n.matches('tr[data-s]')&&!n.classList.contains('hide')){vis=true;break;}n=n.nextElementSibling;}
+        cat.classList.toggle('hide',!vis);});
+    });
+  })();
+</script>
+</body>
+</html>
