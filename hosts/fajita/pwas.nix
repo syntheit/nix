@@ -99,6 +99,12 @@ let
       url = "https://finance.yahoo.com/portfolios";
       comment = "Stocks";
     })
+    (mkPwa {
+      id = "fidelity";
+      name = "Fidelity";
+      url = "https://digital.fidelity.com/";
+      comment = "Brokerage — verify mobile-web fit on device; add dsf if desktop-only";
+    })
 
     # ─── News ────────────────────────────────────────────────────────────────
     (mkPwa {
@@ -119,7 +125,8 @@ let
     (mkPwa {
       id = "bitwarden";
       name = "Bitwarden";
-      url = "https://vault.bitwarden.com/";
+      url = "https://vault.matv.io/";
+      comment = "Self-hosted Vaultwarden";
     })
     (mkPwa {
       id = "claude";
