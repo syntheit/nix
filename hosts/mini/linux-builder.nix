@@ -19,12 +19,25 @@
 # Determinate-designated file for manual settings (connect-timeout etc. are
 # already there).
 #
-# The VM defaults are modest. Overriding virtualisation.cores/memorySize means
-# rebuilding the VM image itself for aarch64-linux — bootstrappable only once
-# this default builder is already running. If it turns out to be too slow for
-# Mimick's codecs, bump it in two phases (or append `-smp N -m M` via
-# QEMU_OPTS in the daemon script, which the run-nixos-vm runner respects).
+# The stock VM is 1 core / 3 GiB / 20 GiB; this mini idles most of the time,
+# so give the builder most of the machine (10 cores / 16 GiB host). QEMU only
+# faults guest RAM in as it's used and the qcow2 is sparse, so the idle cost
+# is a mostly-sleeping QEMU process. NOTE: diskSize only applies when
+# run-nixos-vm creates the image — to grow an existing builder, stop the
+# daemon, delete /var/lib/linux-builder/nixos.qcow2, start it again (wipes
+# the VM's build cache, nothing else).
 
+let
+  linux-builder = pkgs.darwin.linux-builder.override (old: {
+    modules = (old.modules or [ ]) ++ [
+      {
+        virtualisation.cores = 8;
+        virtualisation.memorySize = 8192;
+        virtualisation.diskSize = 100 * 1024;
+      }
+    ];
+  });
+in
 {
   system.activationScripts.preActivation.text = ''
     mkdir -p /var/lib/linux-builder
@@ -39,7 +52,7 @@
       rm -rf $TMPDIR
       mkdir -p $TMPDIR
       trap "rm -rf $TMPDIR" EXIT
-      ${pkgs.darwin.linux-builder}/bin/create-builder
+      ${linux-builder}/bin/create-builder
     '';
     serviceConfig = {
       KeepAlive = true;
@@ -58,9 +71,9 @@
   '';
 
   # Fields: URI systems sshKey maxJobs speedFactor supported mandatory pubHostKey.
-  # maxJobs 1 matches the VM's single core. The host key is baked into the stock
+  # maxJobs matches the VM's cores. The host key is baked into the stock
   # VM image; this is the same base64 blob nix-darwin's module hardcodes.
   environment.etc."nix/machines".text = ''
-    ssh-ng://builder@linux-builder aarch64-linux /etc/nix/builder_ed25519 1 1 kvm,benchmark,big-parallel - c3NoLWVkMjU1MTkgQUFBQUMzTnphQzFsWkRJMU5URTVBQUFBSUpCV2N4Yi9CbGFxdDFhdU90RStGOFFVV3JVb3RpQzVxQkorVXVFV2RWQ2Igcm9vdEBuaXhvcwo=
+    ssh-ng://builder@linux-builder aarch64-linux /etc/nix/builder_ed25519 8 1 kvm,benchmark,big-parallel - c3NoLWVkMjU1MTkgQUFBQUMzTnphQzFsWkRJMU5URTVBQUFBSUpCV2N4Yi9CbGFxdDFhdU90RStGOFFVV3JVb3RpQzVxQkorVXVFV2RWQ2Igcm9vdEBuaXhvcwo=
   '';
 }
