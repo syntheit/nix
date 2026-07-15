@@ -756,6 +756,7 @@
     # those crates to link system libs). Immich PWA stays until then.
     # mimick
     gnome-mobile-torch                    # flashlight/torch Quick Settings toggle (packages/gnome-mobile-torch)
+    anchorage                             # Linkding bookmark client (GTK4/libadwaita) — inputs.anchorage (github)
     # YouTube → self-hosted Invidious as a PWA (see pwas.nix). Dropped `pipeline`
     # because it speaks Piped, not Invidious. Clapper below still handles
     # paste-a-link one-off playback.
