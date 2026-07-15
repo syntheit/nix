@@ -711,7 +711,8 @@
     # telegram-desktop dropped — desktop-only, painful on touch. Use the PWA at
     # https://web.telegram.org via Epiphany ("Install Site as Web Application"
     # in the Phosh menu) until paper-plane is revived upstream.
-    thunderbird                           # Email; not adaptive but the option you use elsewhere
+    geary                                 # Email — folds to single-pane at phone width (GTK3/libhandy),
+                                          # full IMAP. Replaces Thunderbird, which is unusable on mobile.
 
     # ─── Phone-to-desktop integration ────────────────────────────────────────
     valent                                # KDE Connect protocol, GTK4/libadwaita (better mobile UX than kdeconnect-kde)
@@ -741,6 +742,8 @@
     totem                                 # GNOME Videos; libadwaita
     vlc                                   # fallback for anything clapper/totem can't handle
     delfin                                # Jellyfin client, GTK4/libadwaita
+    mimick                                # Immich client (GTK4/libadwaita, mobile-adaptive) — packages/mimick;
+                                          # replaces the Immich PWA once verified on-device (photos.matv.io)
     # YouTube → self-hosted Invidious as a PWA (see pwas.nix). Dropped `pipeline`
     # because it speaks Piped, not Invidious. Clapper below still handles
     # paste-a-link one-off playback.
