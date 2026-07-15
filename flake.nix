@@ -136,13 +136,6 @@
       url = "github:syntheit/vestal";
       inputs.nixpkgs.follows = "nixpkgs-darwin";
     };
-
-    # Local Linkding client (GTK4/libadwaita), not pushed to GitHub yet — build
-    # from the working copy on harbor. Switch to github:syntheit/anchorage once published.
-    anchorage = {
-      url = "git+file:///home/matv/Projects/anchorage";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
   outputs =
