@@ -30,10 +30,12 @@
 let
   linux-builder = pkgs.darwin.linux-builder.override (old: {
     modules = (old.modules or [ ]) ++ [
+      { lib, ... }:
       {
         virtualisation.cores = 8;
         virtualisation.memorySize = 8192;
-        virtualisation.diskSize = 100 * 1024;
+        # the nix-builder-vm profile sets 20480 at normal priority
+        virtualisation.diskSize = lib.mkForce (100 * 1024);
       }
     ];
   });
