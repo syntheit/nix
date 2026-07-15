@@ -742,8 +742,11 @@
     totem                                 # GNOME Videos; libadwaita
     vlc                                   # fallback for anything clapper/totem can't handle
     delfin                                # Jellyfin client, GTK4/libadwaita
-    mimick                                # Immich client (GTK4/libadwaita, mobile-adaptive) — packages/mimick;
-                                          # replaces the Immich PWA once verified on-device (photos.matv.io)
+    # mimick — Immich client (packages/mimick). HELD OFF THE PHONE: its gtk4-rs 0.11
+    # bindings need gtk4 >= 4.22 (gdk4-sys wants >= 4.21) but the pinned nixpkgs has
+    # gtk4 4.20.3, so the aarch64 build fails. Re-enable after a nixpkgs bump to
+    # gtk4 >= 4.22. The package derivation itself is correct; Immich PWA stays.
+    # mimick
     # YouTube → self-hosted Invidious as a PWA (see pwas.nix). Dropped `pipeline`
     # because it speaks Piped, not Invidious. Clapper below still handles
     # paste-a-link one-off playback.
