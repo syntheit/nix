@@ -24,5 +24,6 @@
   hexagonrpc = pkgs.callPackage ./hexagonrpc { };
   alsa-ucm-fajita = pkgs.callPackage ./alsa-ucm-fajita { };
   mobile-config-firefox = pkgs.callPackage ./mobile-config-firefox { };
+  mimick = pkgs.callPackage ./mimick { }; # GTK4/libadwaita Immich client
 }
 
