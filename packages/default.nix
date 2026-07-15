@@ -25,5 +25,6 @@
   alsa-ucm-fajita = pkgs.callPackage ./alsa-ucm-fajita { };
   mobile-config-firefox = pkgs.callPackage ./mobile-config-firefox { };
   mimick = pkgs.callPackage ./mimick { }; # GTK4/libadwaita Immich client
+  gnome-mobile-torch = pkgs.callPackage ./gnome-mobile-torch { }; # flashlight QS toggle
 }
 
