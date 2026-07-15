@@ -615,6 +615,13 @@
       "org/gnome/desktop/a11y/applications" = {
         screen-keyboard-enabled = true;
       };
+      # Flashlight: enable the torch Quick Settings toggle (packages/gnome-mobile-torch).
+      # It drives /sys/class/leds/{white,yellow}:flash via logind SetBrightness —
+      # no udev rule needed (the LED's :seat: tag is sufficient).
+      "org/gnome/shell" = {
+        disable-user-extensions = false;
+        enabled-extensions = [ "torch@vixalien.com" ];
+      };
       # gsd-power: dim before blanking, but NEVER suspend (broken s2idle on
       # SDM845). Power button isn't wired to an action — input wakes the display.
       "org/gnome/settings-daemon/plugins/power" = {
@@ -742,11 +749,14 @@
     totem                                 # GNOME Videos; libadwaita
     vlc                                   # fallback for anything clapper/totem can't handle
     delfin                                # Jellyfin client, GTK4/libadwaita
-    # mimick — Immich client (packages/mimick). HELD OFF THE PHONE: its gtk4-rs 0.11
-    # bindings need gtk4 >= 4.22 (gdk4-sys wants >= 4.21) but the pinned nixpkgs has
-    # gtk4 4.20.3, so the aarch64 build fails. Re-enable after a nixpkgs bump to
-    # gtk4 >= 4.22. The package derivation itself is correct; Immich PWA stays.
+    # mimick — builds on x86_64, and gtk4 is fine now, BUT its aarch64 build fails
+    # under harbor's qemu: the bundled image-codec -sys crates (libwebp-sys,
+    # turbojpeg, libraw…) compile vendored C and qemu-user chokes spawning the
+    # parallel cc jobs (exit 127). Needs a NATIVE aarch64 builder (or patching
+    # those crates to link system libs). Immich PWA stays until then.
     # mimick
+    gnome-mobile-torch                    # flashlight/torch Quick Settings toggle (packages/gnome-mobile-torch)
+    anchorage                             # Linkding bookmark client (GTK4/libadwaita) — inputs.anchorage (local repo)
     # YouTube → self-hosted Invidious as a PWA (see pwas.nix). Dropped `pipeline`
     # because it speaks Piped, not Invidious. Clapper below still handles
     # paste-a-link one-off playback.
