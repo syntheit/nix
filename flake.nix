@@ -3,7 +3,12 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    nixpkgs-darwin.url = "github:nixos/nixpkgs/nixpkgs-unstable";
+    # nixpkgs-unstable pinned to 2026-07-05: the 2026-07-13 channel bump
+    # switched the darwin toolchain to ld64 957.1 / SDK 26.5, whose ld
+    # dies with SIGTRAP linking real framework symbols on macOS 26.3
+    # (first casualty: blueutil), and Hydra has no cached binaries for it
+    # yet. Unpin back to nixpkgs-unstable once the toolchain builds clean.
+    nixpkgs-darwin.url = "github:nixos/nixpkgs/f205b5574fd0cb7da5b702a2da51507b7f4fdd1b";
 
     # GNOME 49 pin for fajita's GNOME Shell Mobile session. verdre's
     # gnome-shell-mobile / mutter-mobile top out at the GNOME 49
