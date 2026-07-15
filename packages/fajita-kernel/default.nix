@@ -16,15 +16,16 @@
 }:
 
 let
-  # kernelrelease = 6.16.7 + CONFIG_LOCALVERSION="-sdm845" (set in the tree's
-  # arch/arm64/configs/sdm845.config) — modDirVersion must match it exactly.
-  version = "6.16.7-sdm845";
+  # NB: the tree's sdm845.config sets CONFIG_LOCALVERSION="-sdm845" but the
+  # kernel-builder normalizes it away — kernelrelease comes out plain 6.16.7
+  # (build fails with the right value in the error if this ever drifts).
+  version = "6.16.7";
 
   kernelSrc = fetchFromGitLab {
     owner = "sdm845-mainline";
     repo = "linux";
     rev = "c4804e960aef0f399cd5417c3a522d1c191285b0"; # tag sdm845-6.16.7-r0
-    hash = "sha256-PLACEHOLDER";
+    sha256 = "06b6hhzlj9fq65jsyx441b48zb3gyknbmslv9qifpfd96sxmg2ax";
   };
 
   configfile = stdenv.mkDerivation {
