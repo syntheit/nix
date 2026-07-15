@@ -136,6 +136,12 @@
       url = "github:syntheit/vestal";
       inputs.nixpkgs.follows = "nixpkgs-darwin";
     };
+
+    # Anchorage — native GTK4/libadwaita Linkding client (Linkding bookmarks).
+    anchorage = {
+      url = "git+ssh://git@github.com/syntheit/anchorage.git";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
