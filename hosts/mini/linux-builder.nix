@@ -33,9 +33,9 @@ let
       (
         { lib, ... }:
         {
-          virtualisation.cores = 8;
-          virtualisation.memorySize = 8192;
-          # the nix-builder-vm profile sets 20480 at normal priority
+          # the nix-builder-vm profile pins all three at normal priority
+          virtualisation.cores = lib.mkForce 8;
+          virtualisation.memorySize = lib.mkForce 8192;
           virtualisation.diskSize = lib.mkForce (100 * 1024);
         }
       )
