@@ -15,6 +15,13 @@ in
 
   networking.hostName = "mini";
 
+  # Native aarch64-linux builder VM. Apple Silicon runs it at native speed, so we
+  # can compile Linux aarch64 (Mimick's image codecs, gtk4-rs apps) without qemu.
+  # Exposes a local `linux-builder` build machine. NOTE: this Mac runs
+  # Determinate nix (nix.enable = false in common.nix); if darwin-rebuild rejects
+  # this option, fall back to a manual create-builder + nix.custom.conf setup.
+  nix.linux-builder.enable = true;
+
   matv.darwin.tccGrants = tccGrants;
 
   # Mac mini has no TouchID — no PAM hooks needed. Sudo works via password
