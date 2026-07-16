@@ -1,0 +1,69 @@
+diff --git a/js/ui/status/autoRotate.js b/js/ui/status/autoRotate.js
+index 277e5fc86..c99c5c77a 100644
+--- a/js/ui/status/autoRotate.js
++++ b/js/ui/status/autoRotate.js
+@@ -1,37 +1,39 @@
+ import Gio from 'gi://Gio';
+ import GObject from 'gi://GObject';
+ 
+-import * as SystemActions from '../../misc/systemActions.js';
+-
+ import {QuickToggle, SystemIndicator} from '../quickSettings.js';
+ 
+-const RotationToggle = GObject.registerClass(
+-class RotationToggle extends QuickToggle {
++// Auto-rotate toggle. Actual rotation is done by the fajita-autorotate user
++// daemon (GNOME 49 dropped gsd-orientation, and mutter doesn't self-manage
++// this panel — so verdre's stock RotationToggle never becomes available since
++// it gates on panel-orientation-managed). This toggle just flips the standard
++// orientation-lock gsetting, which the daemon reads: checked = auto-rotate on.
++const AutoRotateToggle = GObject.registerClass(
++class AutoRotateToggle extends QuickToggle {
+     _init() {
+-        this._systemActions = new SystemActions.getDefault();
+-
+         super._init({
+             title: _('Auto Rotate'),
+         });
+ 
+-        this._systemActions.bind_property('can-lock-orientation',
+-            this, 'visible',
+-            GObject.BindingFlags.DEFAULT |
+-            GObject.BindingFlags.SYNC_CREATE);
+-        this._systemActions.bind_property('orientation-lock-icon',
+-            this, 'icon-name',
+-            GObject.BindingFlags.DEFAULT |
+-            GObject.BindingFlags.SYNC_CREATE);
+-
+         this._settings = new Gio.Settings({
+             schema_id: 'org.gnome.settings-daemon.peripherals.touchscreen',
+         });
+         this._settings.bind('orientation-lock',
+             this, 'checked',
+             Gio.SettingsBindFlags.INVERT_BOOLEAN);
++        this._sync();
++        this._settings.connect('changed::orientation-lock', () => this._sync());
++
++        this.connect('clicked', () => {
++            this._settings.set_boolean('orientation-lock',
++                !this._settings.get_boolean('orientation-lock'));
++        });
++    }
+ 
+-        this.connect('clicked',
+-            () => this._systemActions.activateLockOrientation());
++    _sync() {
++        this.iconName = this._settings.get_boolean('orientation-lock')
++            ? 'rotation-locked-symbolic'
++            : 'rotation-allowed-symbolic';
+     }
+ });
+ 
+@@ -40,6 +42,6 @@ class Indicator extends SystemIndicator {
+     _init() {
+         super._init();
+ 
+-        this.quickSettingsItems.push(new RotationToggle());
++        this.quickSettingsItems.push(new AutoRotateToggle());
+     }
+ });

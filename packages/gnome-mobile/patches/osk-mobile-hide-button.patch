@@ -1,0 +1,48 @@
+diff --git a/data/osk-layouts/us-mobile.json b/data/osk-layouts/us-mobile.json
+index 7271a6575..ec9a99921 100644
+--- a/data/osk-layouts/us-mobile.json
++++ b/data/osk-layouts/us-mobile.json
+@@ -230,6 +230,10 @@
+             "iconName": "osk-enter-symbolic",
+             "keyval": "0xff0d",
+             "width": 1.5
++          },
++          {
++            "action": "hide",
++            "iconName": "osk-hide-symbolic"
+           }
+         ]
+       ]
+@@ -464,6 +468,10 @@
+             "iconName": "osk-enter-symbolic",
+             "keyval": "0xff0d",
+             "width": 1.5
++          },
++          {
++            "action": "hide",
++            "iconName": "osk-hide-symbolic"
+           }
+         ]
+       ]
+@@ -705,6 +713,10 @@
+             "iconName": "osk-enter-symbolic",
+             "keyval": "0xff0d",
+             "width": 1.5
++          },
++          {
++            "action": "hide",
++            "iconName": "osk-hide-symbolic"
+           }
+         ]
+       ]
+@@ -922,6 +934,10 @@
+             "iconName": "osk-enter-symbolic",
+             "keyval": "0xff0d",
+             "width": 1.5
++          },
++          {
++            "action": "hide",
++            "iconName": "osk-hide-symbolic"
+           }
+         ]
+       ]
