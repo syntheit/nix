@@ -730,6 +730,9 @@
     geary                                 # Email — folds to single-pane at phone width (GTK3/libhandy),
                                           # full IMAP. Replaces Thunderbird, which is unusable on mobile.
 
+    # ─── Diagnostics ─────────────────────────────────────────────────────────
+    (pkgs.callPackage ./phone-check { }) # sensor readouts + keyring re-key button
+
     # ─── Phone-to-desktop integration ────────────────────────────────────────
     valent                                # KDE Connect protocol, GTK4/libadwaita (better mobile UX than kdeconnect-kde)
 
