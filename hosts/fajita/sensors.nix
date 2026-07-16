@@ -49,19 +49,58 @@ in
     })
   ];
 
-  # Point the (package-shipped) hexagonrpcd-sdsp unit at the serve tree, and
-  # give it clean shutdown ordering. The upstream unit has NONE, so it's killed
-  # early at multi-user.target teardown — while the SLPI DSP may still be
-  # mid-FastRPC transaction. Leaving the SLPI in a bad state on shutdown makes
-  # the hypervisor flag a subsystem crash → Qualcomm CrashDump mode on the NEXT
-  # boot (same failure shape as the rmtfs/wifi bug we already fixed). Fix is
-  # ORDERING-ONLY: stop it before the shutdown targets and give the FastRPC
-  # channel time to close. Do NOT echo-stop the remoteproc — that path caused a
-  # kernel panic on this device before. See ~/fajita-notes.
+  # The DEVICE-SPECIFIC sensor calibration — including the accelerometer mount
+  # matrix (bmi160_0_platform.accel corr_mat / orient / placement) — lives on
+  # the /persist partition, NOT in the pmOS firmware package (whose accel
+  # platform files are empty stubs). Serve the generic package's registry and
+  # the accel streams a frozen 0,0,9 default (no mount matrix) → orientation
+  # "undefined" → no auto-rotate. Light/compass don't need per-device cal so
+  # they worked regardless. Fix: assemble a serve root at boot that symlinks the
+  # static DSP blobs + sensor configs from the nix package, but takes the
+  # registry from a WRITABLE copy of /persist (fastrpc can't read /persist
+  # directly — it's root-only — and the SLPI writes runtime cal back, so it
+  # can't be read-only either).
+  systemd.services.fajita-sensor-serve = {
+    description = "Assemble SLPI serve root (static DSP blobs + device registry from /persist)";
+    after = [ "mnt-vendor-persist.mount" ];
+    requires = [ "mnt-vendor-persist.mount" ];
+    before = [ "hexagonrpcd-sdsp.service" ];
+    requiredBy = [ "hexagonrpcd-sdsp.service" ];
+    unitConfig.ConditionPathExists = "/mnt/vendor/persist/sensors/registry/registry";
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = pkgs.writeShellScript "fajita-sensor-serve" ''
+        set -eu
+        src=${sensorTree}/share/qcom/sdm845/OnePlus/oneplus6
+        dst=/var/lib/hexagonrpc/serve
+        ${pkgs.coreutils}/bin/rm -rf "$dst"
+        ${pkgs.coreutils}/bin/mkdir -p "$dst/sensors"
+        ${pkgs.coreutils}/bin/ln -s "$src/dsp" "$dst/dsp"
+        ${pkgs.coreutils}/bin/ln -s "$src/sensors/config" "$dst/sensors/config"
+        [ -e "$src/sensors/sns_reg.conf" ] && \
+          ${pkgs.coreutils}/bin/ln -s "$src/sensors/sns_reg.conf" "$dst/sensors/sns_reg.conf" || true
+        ${pkgs.coreutils}/bin/cp -aL /mnt/vendor/persist/sensors/registry/registry "$dst/sensors/registry"
+        ${pkgs.coreutils}/bin/chown -R fastrpc:fastrpc /var/lib/hexagonrpc
+        ${pkgs.coreutils}/bin/chmod -R u+rwX "$dst/sensors/registry"
+      '';
+    };
+  };
+
+  # Point the (package-shipped) hexagonrpcd-sdsp unit at the assembled serve
+  # root, and give it clean shutdown ordering. The upstream unit has NONE, so
+  # it's killed early at multi-user.target teardown — while the SLPI DSP may
+  # still be mid-FastRPC transaction. Leaving the SLPI in a bad state on
+  # shutdown makes the hypervisor flag a subsystem crash → Qualcomm CrashDump
+  # mode on the NEXT boot (same failure shape as the rmtfs/wifi bug). Fix is
+  # ORDERING-ONLY: stop before the shutdown targets, give the FastRPC channel
+  # time to close. Do NOT echo-stop the remoteproc — that kernel-panicked before.
   systemd.services.hexagonrpcd-sdsp = {
+    after = [ "fajita-sensor-serve.service" ];
+    requires = [ "fajita-sensor-serve.service" ];
     serviceConfig.ExecStart = [
       ""
-      "${pkgs.hexagonrpc}/bin/hexagonrpcd -f /dev/fastrpc-sdsp -d sdsp -s -R ${sensorTree}/share/qcom/sdm845/OnePlus/fajita"
+      "${pkgs.hexagonrpc}/bin/hexagonrpcd -f /dev/fastrpc-sdsp -d sdsp -s -R /var/lib/hexagonrpc/serve"
     ];
     serviceConfig.TimeoutStopSec = 10;
     unitConfig = {
