@@ -749,12 +749,12 @@
     totem                                 # GNOME Videos; libadwaita
     vlc                                   # fallback for anything clapper/totem can't handle
     delfin                                # Jellyfin client, GTK4/libadwaita
-    # mimick — builds on x86_64, and gtk4 is fine now, BUT its aarch64 build fails
-    # under harbor's qemu: the bundled image-codec -sys crates (libwebp-sys,
-    # turbojpeg, libraw…) compile vendored C and qemu-user chokes spawning the
-    # parallel cc jobs (exit 127). Needs a NATIVE aarch64 builder (or patching
-    # those crates to link system libs). Immich PWA stays until then.
-    # mimick
+    # mimick — Immich client. Its ARM build (vendored image-codec C + LTO link)
+    # is too heavy for harbor's qemu, so it builds natively on the mini's aarch64
+    # builder — harbor offloads aarch64 (hosts/harbor/nix-builder.nix). Built from
+    # the default nixpkgs (gtk4 4.22) via overlays/default.nix, since
+    # nixpkgs-gnome49's 4.20.3 is too old for gdk4-sys.
+    mimick
     gnome-mobile-torch                    # flashlight/torch Quick Settings toggle (packages/gnome-mobile-torch)
     anchorage                             # Linkding bookmark client (GTK4/libadwaita) — inputs.anchorage (github)
     # YouTube → self-hosted Invidious as a PWA (see pwas.nix). Dropped `pipeline`
