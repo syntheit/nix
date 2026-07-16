@@ -49,11 +49,26 @@ in
     })
   ];
 
-  # Point the (package-shipped) hexagonrpcd-sdsp unit at the serve tree.
-  systemd.services.hexagonrpcd-sdsp.serviceConfig.ExecStart = [
-    ""
-    "${pkgs.hexagonrpc}/bin/hexagonrpcd -f /dev/fastrpc-sdsp -d sdsp -s -R ${sensorTree}/share/qcom/sdm845/OnePlus/fajita"
-  ];
+  # Point the (package-shipped) hexagonrpcd-sdsp unit at the serve tree, and
+  # give it clean shutdown ordering. The upstream unit has NONE, so it's killed
+  # early at multi-user.target teardown — while the SLPI DSP may still be
+  # mid-FastRPC transaction. Leaving the SLPI in a bad state on shutdown makes
+  # the hypervisor flag a subsystem crash → Qualcomm CrashDump mode on the NEXT
+  # boot (same failure shape as the rmtfs/wifi bug we already fixed). Fix is
+  # ORDERING-ONLY: stop it before the shutdown targets and give the FastRPC
+  # channel time to close. Do NOT echo-stop the remoteproc — that path caused a
+  # kernel panic on this device before. See ~/fajita-notes.
+  systemd.services.hexagonrpcd-sdsp = {
+    serviceConfig.ExecStart = [
+      ""
+      "${pkgs.hexagonrpc}/bin/hexagonrpcd -f /dev/fastrpc-sdsp -d sdsp -s -R ${sensorTree}/share/qcom/sdm845/OnePlus/fajita"
+    ];
+    serviceConfig.TimeoutStopSec = 10;
+    unitConfig = {
+      Before = "shutdown.target reboot.target halt.target poweroff.target";
+      Conflicts = "shutdown.target reboot.target halt.target poweroff.target";
+    };
+  };
 
   # iio-sensor-proxy probes SSC (QRTR svc 400) at startup and EXITS if the
   # sensor core hasn't enumerated its sensors yet — which takes a few seconds
