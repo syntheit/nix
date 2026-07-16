@@ -25,9 +25,25 @@ let
     ln -s ../../OnePlus/fajita/fajita.conf \
       "$out/share/alsa/ucm2/conf.d/sdm845/OnePlus 6T.conf"
   '';
+  # TFA9894 speaker-amp firmware container. The sdm845-mainline kernel carries
+  # NXP's vendor tfa98xx driver (that's what binds nxp,tfa9894), and it refuses
+  # to start its DAI without this container ("Container file not loaded" →
+  # DAI startup -22 → Speaker PCM open EINVAL → wireplumber drops the whole
+  # HiFi profile). pmOS ships it in firmware-oneplus-sdm845; the driver
+  # requests plain "tfa98xx.cnt".
+  tfaContainer = pkgs.runCommand "tfa98xx-container-firmware" {
+    cnt = pkgs.fetchurl {
+      url = "https://gitlab.com/sdm845-mainline/firmware-oneplus-sdm845/-/raw/176ca713448c5237a983fb1f158cf3a5c251d775/lib/firmware/postmarketos/tfa98xx.cnt";
+      sha256 = "19xp6sx6pv32n702lr0x5021wmpzbagis5rxipvs3vvqpplp7ps3";
+    };
+  } ''
+    install -Dm644 $cnt $out/lib/firmware/tfa98xx.cnt
+  '';
 in
 {
   environment.systemPackages = [ fajitaUcm ];
+
+  hardware.firmware = [ tfaContainer ];
 
   # pmOS's sdm845 wireplumber tuning: the Q6 DSP path wants S16LE/48k and
   # large periods; defaults cause xruns/silence.
