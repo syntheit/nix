@@ -9,6 +9,7 @@
     ./hardware-configuration.nix
     ./hardware.nix
     ./secrets.nix
+    ./nix-builder.nix
     ./storage.nix
     ./containers
     ./access.nix

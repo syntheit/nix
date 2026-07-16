@@ -52,8 +52,12 @@
       "fs.inotify.max_user_watches" = 2097152;
     };
 
-    # qemu-user binfmt for aarch64 — lets harbor build Mobile NixOS images for fajita.
-    binfmt.emulatedSystems = [ "aarch64-linux" ];
+    # aarch64 (fajita / Mobile NixOS) builds are offloaded to the mini's native
+    # builder VM — see hosts/harbor/nix-builder.nix. qemu-user binfmt is left
+    # OFF on purpose: with it, nix builds aarch64 locally under emulation (slow,
+    # and fails on mimick/tdlib). Re-enable this line only to build fajita while
+    # the mini is unreachable.
+    # binfmt.emulatedSystems = [ "aarch64-linux" ];
   };
 
   # GPU drivers — headless server, no X11 needed
