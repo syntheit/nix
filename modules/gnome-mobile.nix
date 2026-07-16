@@ -80,6 +80,11 @@
     serviceConfig = {
       Type = "oneshot";
       ExecStart = pkgs.writeShellScript "gnome-mobile-lock-on-start" ''
+        # Let goa-daemon fetch its online-account credentials before we lock:
+        # locking the screen sends the keyring a Lock while goa is mid-Unlock,
+        # and gnome-keyring 48 crashes on that concurrent pair (assertion in
+        # gkd-secret-unlock.c) — which then drops the whole session's keyring.
+        ${pkgs.coreutils}/bin/sleep 6
         # Wait for gnome-shell's ScreenSaver interface to appear, then lock.
         for i in $(${pkgs.coreutils}/bin/seq 1 30); do
           if ${pkgs.glib}/bin/gdbus call --session \
