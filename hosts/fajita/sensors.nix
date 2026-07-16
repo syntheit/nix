@@ -68,9 +68,15 @@ in
     };
   };
 
-  # Accelerometer mount matrix for fajita (pmOS 81-libssc-oneplus-fajita.rules):
-  # the IMU is mounted rotated; without this auto-rotate picks wrong quadrants.
+  # Two udev pieces:
+  # 1) upstream iio-sensor-proxy's 80- rule only tags fastrpc devices with
+  #    "ssc-light ssc-compass" — accel/proximity are opt-in (accel is wrong
+  #    without a per-device mount matrix, so upstream stays conservative).
+  #    Tag them in; this was the final gate to HasAccelerometer=true.
+  # 2) fajita's accelerometer mount matrix (pmOS 81-libssc-oneplus-fajita.rules):
+  #    the IMU is mounted rotated; without it auto-rotate picks wrong quadrants.
   services.udev.extraRules = ''
+    SUBSYSTEM=="misc", KERNEL=="fastrpc-*", ENV{IIO_SENSOR_PROXY_TYPE}+="ssc-accel ssc-proximity"
     SUBSYSTEM=="misc", KERNEL=="fastrpc-*", ENV{ACCEL_MOUNT_MATRIX}+="-1, 0, 0; 0, 1, 0; 0, 0, -1"
   '';
 }
