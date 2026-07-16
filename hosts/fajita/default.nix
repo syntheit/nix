@@ -10,6 +10,7 @@
     ../../modules/gnome-mobile.nix
     ./audio.nix
     ./pwas.nix
+    ./sensors.nix
   ];
 
   networking.hostName = "fajita";
