@@ -9,8 +9,10 @@
   imports = [
     ../../modules/gnome-mobile.nix
     ./audio.nix
+    ./clocks-alarm.nix
     ./pwas.nix
     ./sensors.nix
+    ./cursor.nix   # hide the phantom mouse pointer on this touch-only device
   ];
 
   networking.hostName = "fajita";
@@ -663,6 +665,37 @@
         picture-uri-dark = "file:///etc/wallpapers/fajita.jpg";
         picture-options = "zoom";
       };
+      # Ptyxis — touch-scroll fix.
+      #
+      # Root cause: GtkScrolledWindow only activates its CAPTURE-phase pan gesture
+      # (the mechanism behind kinetic/touch-drag scrolling) when may_vscroll=true,
+      # which requires vscrollbar_visible=true. With GTK_POLICY_AUTOMATIC (the default
+      # when scrollbar-policy='system' + overlay-scrolling=true), vscrollbar_visible
+      # is only true when the VTE adjustment.upper > page_size — i.e., only when
+      # there is already scrollback content. At a fresh prompt it is false, so a
+      # finger drag is never intercepted by GtkScrolledWindow's pan gesture; instead
+      # it falls through to VTE's BUBBLE-phase click gesture, which starts text
+      # selection rather than scrolling.
+      #
+      # 'always' → GTK_POLICY_ALWAYS → vscrollbar_visible=TRUE unconditionally →
+      # CAPTURE-phase pan gesture active from the first touch-down, regardless of
+      # how much (or how little) scrollback is present. Kinetic scroll works even
+      # at an empty prompt. The scrollbar is also permanently visible, which is
+      # helpful on a phone where you can't see scroll position otherwise.
+      #
+      # Ref: GtkScrolledWindow source (check_attach_pan_gesture, may_vscroll),
+      # Ptyxis issue #567 ("Scrolling with touch screen no longer works"),
+      # GNOME Console issue #451 ("No longer working on touch devices").
+      "org/gnome/Ptyxis" = {
+        scrollbar-policy = "always";
+      };
+      # Set Ptyxis as the default terminal (xdg-terminal-exec is not installed
+      # on fajita, so the previous exec value silently failed for any app that
+      # tries to open a terminal via the GNOME default-applications key).
+      "org/gnome/desktop/default-applications/terminal" = {
+        exec = "ptyxis";
+        exec-arg = "-x";
+      };
     };
   }];
 
@@ -711,7 +744,7 @@
 
   environment.systemPackages = with pkgs; [
     # ─── Browsers ────────────────────────────────────────────────────────────
-    ptyxis                                # libadwaita terminal (GNOME Console's GTK4 successor, adaptive)
+    ptyxis                                # libadwaita terminal; scrollbar-policy='always' (see dconf above) enables touch-drag scroll
     epiphany                              # Phosh-native, adaptive — best mobile browser
     brave                                 # Chromium-based, has aarch64 builds
     chromium                              # for sites that explicitly require Chrome (e.g. Preply Classroom)
@@ -751,7 +784,7 @@
     # Nautilus handles mount/unmount of external media; for anything heavier
     # ssh in and use parted/fdisk/wipefs.
     gnome-weather
-    gnome-clocks
+    # gnome-clocks is replaced by the overrideAttrs build in clocks-alarm.nix (Oxygen alarm tone)
     gnome-sound-recorder                  # Voice Notes — simple libadwaita recorder (World/vocalis)
     resources                             # System monitor, GNOME Circle, libadwaita
     mission-center                        # alt system monitor, also libadwaita
