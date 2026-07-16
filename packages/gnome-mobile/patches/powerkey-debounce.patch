@@ -1,24 +1,43 @@
 diff --git a/js/misc/powerManager.js b/js/misc/powerManager.js
-index ce89bed5c..b9240388e 100644
+index ce89bed5c..9598a5bae 100644
 --- a/js/misc/powerManager.js
 +++ b/js/misc/powerManager.js
-@@ -43,6 +43,15 @@ const SensorDaemonProxy = Gio.DBusProxy.makeProxyWrapper(SensorDaemonIface);
+@@ -43,6 +43,20 @@ const SensorDaemonProxy = Gio.DBusProxy.makeProxyWrapper(SensorDaemonIface);
  
  const DEFAULT_SCREEN_FADE_OUT_TIME_MS = 250;
  
-+// The OnePlus 6T pm8941 pwrkey emits a doubled KEY_POWER press on the
-+// sdm845-mainline kernel. When the screen is blanked, press #1 wakes it (cancels
-+// the blank action, clearing _isInAction); press #2 then sees no action ongoing
-+// and arms _powerPressHappened, so the following release blanks the screen right
-+// back — the "press several times to wake" symptom. Drop press events that
-+// arrive within this window of the previous one (releases are unaffected, so
-+// press-to-blank still works).
++// Power-key wake robustness on the OnePlus 6T (sdm845-mainline 6.16.7).
++// Waking the DSI panel takes ~1s, so a user pressing power on a blanked screen
++// tends to press again before it's visibly on. The first press wakes it
++// (cancels the blank, clearing _isInAction); a later press then sees no action
++// ongoing and arms a blank-on-release, which turns the screen right back off —
++// the "press it 3 times to wake" ping-pong. Guard it two ways:
++//  - drop rapid duplicate PRESS events (also covers doubled hardware events),
++//  - refuse to blank-on-release for a grace period after a power-key WAKE, so
++//    the reflexive re-presses can't turn the just-woken screen back off.
++// Releases are otherwise untouched, so pressing power to blank an in-use screen
++// still works (its wake was longer ago than the grace window).
 +const POWER_PRESS_DEBOUNCE_MS = 400;
++const POWER_WAKE_GRACE_MS = 1500;
 +
  Gio._promisify(Shell, 'util_start_systemd_unit');
  Gio._promisify(Shell, 'util_stop_systemd_unit');
  
-@@ -1143,6 +1152,15 @@ log("POWERMANAGER: turn on this._fadeInTimeout " + this._fadeInTimeout + " this.
+@@ -1125,6 +1139,13 @@ log("POWERMANAGER: turn on this._fadeInTimeout " + this._fadeInTimeout + " this.
+             }
+ 
+             if (screenIsOn) {
++                if (this._lastWakeMs !== undefined &&
++                    timeNowMs - this._lastWakeMs < POWER_WAKE_GRACE_MS) {
++                    // The screen was just woken by the power key; don't blank it
++                    // right back (see POWER_WAKE_GRACE_MS).
++                    return;
++                }
++
+                 let action = this._powerSettings.get_string('power-button-action');
+                 if (action === 'nothing') { // FIXME: get rid of this in favor of new action
+                     action = 'blank';
+@@ -1143,12 +1164,24 @@ log("POWERMANAGER: turn on this._fadeInTimeout " + this._fadeInTimeout + " this.
          } else {
   //   log("POWERMANAGER: power key press, flags " +  event.get_flags() + " " + (event.get_flags() & Clutter.EventFlags.FLAG_INPUT_METHOD));
  
@@ -34,3 +53,12 @@ index ce89bed5c..b9240388e 100644
              if (this._ignoreInputAfterSuspend) {
                  log("POWERMANAGER: ignoring power key press (event age " + (timeNowMs - eventTimeMs) + "ms) after suspend wakeup (" + (timeNowMs - this._ignoreInputAfterSuspendStartMs) + "ms after wakeup)");
                  return;
+             }
+ 
+             if (this._isInAction) {
++                // This press wakes the screen (cancels a blank). Remember when,
++                // so a reflexive re-press's release can't blank it right back.
++                this._lastWakeMs = timeNowMs;
+                 await this._maybeCancelAction('power-button-press');
+                 // return here because we don't want to set this._powerPressHappened,
+                 // otherwise we'd do an action on the release of this press, and
