@@ -30,6 +30,25 @@ let
       '';
 in
 {
+  # libssc 0.2.2 (nixpkgs) is too old to enumerate the accelerometer through
+  # SSC — with it, iio-sensor-proxy finds only ambient_light + rotv (compass);
+  # HasAccelerometer stays false, no auto-rotate. pmOS ships 0.4.4 and has
+  # status_accel=Y on this device. Bump via overlay; iio-sensor-proxy rebuilds
+  # against it automatically.
+  nixpkgs.overlays = [
+    (final: prev: {
+      libssc = prev.libssc.overrideAttrs (old: {
+        version = "0.4.4";
+        src = prev.fetchFromCodeberg {
+          owner = "DylanVanAssche";
+          repo = "libssc";
+          tag = "v0.4.4";
+          sha256 = "0wpj9ckdp7w86p8wqll890qmky00hvcf2bw9824x9kh6v4v39l0b";
+        };
+      });
+    })
+  ];
+
   # Point the (package-shipped) hexagonrpcd-sdsp unit at the serve tree.
   systemd.services.hexagonrpcd-sdsp.serviceConfig.ExecStart = [
     ""
