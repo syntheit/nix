@@ -108,7 +108,10 @@
 
   # GNOME default apps that aren't mobile-friendly yet (fajita ships adaptive
   # replacements: papers, resources/mission-center, snapshot, etc.).
+  # gnome-console is excluded because Ptyxis is the configured terminal; having
+  # two terminal entries in the app drawer is confusing on a phone-sized screen.
   environment.gnome.excludePackages = with pkgs; [
+    gnome-console
     simple-scan
     gnome-system-monitor
     yelp
