@@ -126,13 +126,9 @@ let
       # kOverlayScrollbar is FEATURE_DISABLED_BY_DEFAULT on desktop; must be set
       # explicitly. "FluentOverlayScrollbars" is not a real BASE_FEATURE string.
       extraArgs = [ "--enable-features=OverlayScrollbar" ];
-      # Start in fullscreen so the Chromium-drawn CSD title bar is hidden.
-      # On GNOME/Wayland the only reliable way to suppress the CSD title bar is a
-      # true fullscreen surface (--start-fullscreen). Mutter doesn't do SSD, so
-      # no compositor rule or GNOME extension can strip Chromium's own CSD chrome.
-      # --start-fullscreen: F11 exits, GNOME overview swipe still works.
-      # --kiosk would also work but disables F11 — overkill on a phone.
-      startFullscreen = true;
+      # Title bar kept (not fullscreen): Daniel prefers the window title bar +
+      # GNOME status bar visible over the fullscreen-hides-both tradeoff. The
+      # overlay scrollbars above stay regardless.
     })
 
     # ─── Fitness ─────────────────────────────────────────────────────────────
