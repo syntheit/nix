@@ -76,6 +76,18 @@
 
       # Detach
       bind -n M-d detach-client
+
+      # ── Touch-friendly scroll (fajita / mobile) ──
+      # Scroll 1 line per wheel tick in copy-mode — prevents 5-line jumps
+      # that make touchpad/touch scroll uncontrollably fast.
+      bind -Tcopy-mode-vi WheelUpPane   { select-pane; send -N1 -X scroll-up }
+      bind -Tcopy-mode-vi WheelDownPane { select-pane; send -N1 -X scroll-down }
+
+      # Direct Alt-binding to enter copy-mode (single OSK chord, no prefix needed)
+      bind -n M-u copy-mode
+
+      # PgUp directly enters copy-mode and scrolls up one page (OSK PgUp tap)
+      bind -n PPage copy-mode -u
     '';
   };
 }

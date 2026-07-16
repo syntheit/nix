@@ -142,6 +142,11 @@
       url = "git+ssh://git@github.com/syntheit/anchorage.git";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Jotter — native GTK4/libadwaita Memos client (notes.matv.io).
+    jotter = {
+      url = "git+ssh://git@github.com/syntheit/jotter.git";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
