@@ -48,6 +48,11 @@
         IdentityFile = "~/.ssh/mainkey";
         User = "daniel";
       };
+      "mac" = {
+        HostName = "100.75.241.25";
+        IdentityFile = "~/.ssh/mainkey";
+        User = "daniel";
+      };
       "mantle" = {
         HostName = "100.75.104.50";
         IdentityFile = "~/.ssh/mainkey";
