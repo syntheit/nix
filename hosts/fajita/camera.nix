@@ -24,6 +24,30 @@ let
   # file it falls back to uncalibrated.yaml (no black level → the all-black
   # bug on these sensors).
   libcamera-fajita = pkgs.libcamera.overrideAttrs (old: {
+    # Phase 3: soft-ISP autofocus + manual controls. Vendored from
+    # gitlab.com/tui/libcamera branch millicam_af_6 (Vasiliy Doylov + Pavel
+    # Machek; manual-focus patch is patchwork #26241, tested upstream on
+    # OnePlus 6) — rebased onto the branch's pristine base so they apply to
+    # vanilla 0.7.0, mcam-app hunks dropped. AF activates per-sensor via the
+    # tuning YAMLs: imx376 lists `Af:` (has the lc898217xc VCM), imx371 must
+    # not (fixed-focus). The CDAF auto-starts through its focus-loss
+    # detector, so Snapshot needs no AfTrigger plumbing.
+    patches = (old.patches or [ ]) ++ [
+      ./camera/patches/01-libcamera-software_isp-Add-focus-control.patch
+      ./camera/patches/02-libcamera-software_isp-Add-brightness-control.patch
+      ./camera/patches/03-libcamera-software_isp-Add-AGC-disable-control.patch
+      ./camera/patches/04-libcamera-software_isp-Add-manual-exposure-control.patch
+      ./camera/patches/05-libcamera-software_isp-Add-autofocus.patch
+      ./camera/patches/06-AF-detect-focus-loss.patch
+      ./camera/patches/07-af-Less-phases-only-take-center-of-picture-for-sha.patch
+      ./camera/patches/08-af-slower-focus-but-seems-to-work.patch
+      ./camera/patches/09-af-reindent-to-match-rest-of-code.patch
+      # OURS (candidate for upstream feedback on the AF series): the branch's
+      # focus-loss check restarts the sweep on ANY single-frame ±30% sharpness
+      # deviation → continuous hunting on static scenes (observed in Snapshot).
+      # Debounced: drop-only, 10-frame persistence, adopts improvements.
+      ./camera/patches/10-af-debounce-focus-loss-detection.patch
+    ];
     postInstall = (old.postInstall or "") + ''
       install -Dm644 ${./camera/tuning/imx371.yaml} $out/share/libcamera/ipa/simple/imx371.yaml
       install -Dm644 ${./camera/tuning/imx376.yaml} $out/share/libcamera/ipa/simple/imx376.yaml
@@ -118,6 +142,9 @@ in
     pkgs.v4l-utils # v4l2-ctl + media-ctl — subdev controls / media-graph poking
     libcamera-fajita # `cam` CLI — enumeration + capture through the (tuned) soft ISP
     fajita-cam-survey
+    # Phase 2: fajita-focus — manual/auto focus via the lc898217xc VCM
+    # (contrast hill-climb over `cam` captures; see packages/fajita-camera-tools)
+    (pkgs.callPackage ../../packages/fajita-camera-tools { })
   ];
 
   # Camera path only — audio/BT config for pipewire lives in default.nix and
