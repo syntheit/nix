@@ -1,0 +1,96 @@
+From ce8b3dec83109a285de459f81fe84e73968cf1e9 Mon Sep 17 00:00:00 2001
+From: Daniel <daniel@matv.io>
+Date: Thu, 16 Jul 2026 16:24:25 -0400
+Subject: [PATCH] af: debounce focus-loss detection (drop-only, 10-frame
+ persistence)
+
+The lock-state check restarted a full sweep whenever a SINGLE frame's
+sharpness deviated more than 30% from the sweep-time peak, in EITHER
+direction. Steady-state sharpness is noisy (AGC breathing, handshake),
+so the lens hunted continuously on static scenes, and getting sharper
+also counted as 'lost'. Adopt upward improvements as the new baseline
+and only restart after 10 consecutive frames below 50% of the locked
+sharpness (~1/3s at 30fps): blips are ignored, pointing at a genuinely
+new subject still refocuses within half a second.
+
+Observed on OnePlus 6T (fajita) running GNOME Snapshot via
+pipewire->libcamera: continuous back-and-forth hunting on a propped,
+static, well-lit subject.
+---
+ src/ipa/simple/algorithms/af.cpp | 32 +++++++++++++++++++++++++++-----
+ src/ipa/simple/ipa_context.h     |  1 +
+ 2 files changed, 28 insertions(+), 5 deletions(-)
+
+diff --git a/src/ipa/simple/algorithms/af.cpp b/src/ipa/simple/algorithms/af.cpp
+index 0c640ec..39d3329 100644
+--- a/src/ipa/simple/algorithms/af.cpp
++++ b/src/ipa/simple/algorithms/af.cpp
+@@ -18,6 +18,9 @@ namespace libcamera {
+ 
+ LOG_DEFINE_CATEGORY(IPASoftAutoFocus)
+ 
++/* Consecutive low-sharpness frames before declaring focus lost (~1/3 s @30fps) */
++static constexpr uint32_t kFocusLostFrames = 10;
++
+ namespace ipa::soft::algorithms {
+ 
+ Af::Af()
+@@ -88,6 +91,7 @@ void Af::restart(IPAContext &context) {
+ 	context.configuration.focus.step = 2;
+ 	context.configuration.focus.skip = 10;
+ 	context.activeState.knobs.focus_pos = 0;
++	context.configuration.focus.lost_frames = 0;
+ 	context.activeState.knobs.focus_sweep = true;
+ 	LOG(IPASoftAutoFocus, Info) << "Starting focus sweep";
+ }
+@@ -99,12 +103,30 @@ void Af::step(IPAContext &context, double& focus_pos, uint64_t sharp, bool& swee
+ 		context.configuration.focus.skip --;
+ 		return;
+ 	}
+-	if(!sweep){
+-		if(utils::abs_diff(sharp, context.configuration.focus.sharpness_max) > context.configuration.focus.sharpness_max*0.3){
+-			LOG(IPASoftAutoFocus, Info) << "Focus lost :( -- " << sharp << " " << context.configuration.focus.sharpness_max;
+-			restart(context);
++	if (!sweep) {
++		/*
++		 * Locked. Steady-state sharpness is noisy (AGC breathing,
++		 * hand shake), so a single-frame deviation must not restart
++		 * the sweep. Adopt improvements as the new baseline; only a
++		 * sustained drop below half the locked sharpness (~1/3 s)
++		 * means the scene really changed.
++		 */
++		if (sharp > context.configuration.focus.sharpness_max) {
++			context.configuration.focus.sharpness_max = sharp;
++			context.configuration.focus.lost_frames = 0;
++			return;
+ 		}
+-		return;			
++		if (sharp < context.configuration.focus.sharpness_max / 2) {
++			if (++context.configuration.focus.lost_frames >= kFocusLostFrames) {
++				LOG(IPASoftAutoFocus, Info)
++					<< "Focus lost -- " << sharp << " vs "
++					<< context.configuration.focus.sharpness_max;
++				restart(context);
++			}
++		} else {
++			context.configuration.focus.lost_frames = 0;
++		}
++		return;
+ 	}
+ 	if (sharp > context.configuration.focus.sharpness_max) {
+ 		context.configuration.focus.sharpness_max = sharp;
+diff --git a/src/ipa/simple/ipa_context.h b/src/ipa/simple/ipa_context.h
+index 3339f9a..cbe3b76 100644
+--- a/src/ipa/simple/ipa_context.h
++++ b/src/ipa/simple/ipa_context.h
+@@ -39,6 +39,7 @@ struct IPASessionConfiguration {
+ 		uint64_t sharpness_max;
+ 		double start, stop, step;
+ 		uint32_t skip;
++		uint32_t lost_frames;
+ 	} focus;
+ };
+ 
+-- 
+2.54.0
+

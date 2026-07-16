@@ -1,0 +1,86 @@
+From 1fe9f7609d75685557b107f68d13efdc03a64283 Mon Sep 17 00:00:00 2001
+From: Pavel Machek <pavel@ucw.cz>
+Date: Thu, 26 Feb 2026 22:19:45 +0100
+Subject: [PATCH] af: reindent to match rest of code
+
+---
+ src/ipa/simple/algorithms/af.cpp | 44 ++++++++++++++++----------------
+ 1 file changed, 22 insertions(+), 22 deletions(-)
+
+diff --git a/src/ipa/simple/algorithms/af.cpp b/src/ipa/simple/algorithms/af.cpp
+index c97c643..0c640ec 100644
+--- a/src/ipa/simple/algorithms/af.cpp
++++ b/src/ipa/simple/algorithms/af.cpp
+@@ -80,29 +80,29 @@ void Af::updateFocus([[maybe_unused]] IPAContext &context, [[maybe_unused]] IPAF
+ static int steps;
+ 
+ void Af::restart(IPAContext &context) {
+-  steps = 0;
+-  context.configuration.focus.focus_max_pos = 0;
+-  context.configuration.focus.sharpness_max = 0;
+-  context.configuration.focus.start = 0;
+-  context.configuration.focus.stop = 100;
+-  context.configuration.focus.step = 2;
+-  context.configuration.focus.skip = 10;
+-  context.activeState.knobs.focus_pos = 0;
+-  context.activeState.knobs.focus_sweep = true;
+-  LOG(IPASoftAutoFocus, Info) << "Starting focus sweep";
++	steps = 0;
++	context.configuration.focus.focus_max_pos = 0;
++	context.configuration.focus.sharpness_max = 0;
++	context.configuration.focus.start = 0;
++	context.configuration.focus.stop = 100;
++	context.configuration.focus.step = 2;
++	context.configuration.focus.skip = 10;
++	context.activeState.knobs.focus_pos = 0;
++	context.activeState.knobs.focus_sweep = true;
++	LOG(IPASoftAutoFocus, Info) << "Starting focus sweep";
+ }
+ 
+ void Af::step(IPAContext &context, double& focus_pos, uint64_t sharp, bool& sweep){
+-  steps ++;
+-  // Even for sweep, we need some time to move to new lens position
+-  if(context.configuration.focus.skip != 0){
+-    context.configuration.focus.skip --;
+-    return;
+-  }
++	steps ++;
++	// Even for sweep, we need some time to move to new lens position
++	if(context.configuration.focus.skip != 0){
++		context.configuration.focus.skip --;
++		return;
++	}
+ 	if(!sweep){
+ 		if(utils::abs_diff(sharp, context.configuration.focus.sharpness_max) > context.configuration.focus.sharpness_max*0.3){
+-		  LOG(IPASoftAutoFocus, Info) << "Focus lost :( -- " << sharp << " " << context.configuration.focus.sharpness_max;
+-		  restart(context);
++			LOG(IPASoftAutoFocus, Info) << "Focus lost :( -- " << sharp << " " << context.configuration.focus.sharpness_max;
++			restart(context);
+ 		}
+ 		return;			
+ 	}
+@@ -112,7 +112,7 @@ void Af::step(IPAContext &context, double& focus_pos, uint64_t sharp, bool& swee
+ 	}
+ 	focus_pos += context.configuration.focus.step;	
+ 	if (focus_pos > context.configuration.focus.start && focus_pos < context.configuration.focus.stop)
+-	  return;
++		return;
+ 
+ 	int spread = 5;
+ 	context.configuration.focus.start = std::clamp(context.configuration.focus.focus_max_pos - context.configuration.focus.step*spread, 0.0, 100.0);
+@@ -122,9 +122,9 @@ void Af::step(IPAContext &context, double& focus_pos, uint64_t sharp, bool& swee
+ 	context.configuration.focus.step /= 10; // HERE
+ 	context.configuration.focus.skip = 10; // We need lens to settle after big move
+ 	if (context.configuration.focus.step > 0.2){
+-	  // We want to search for maximum at smaller step, forget maximum from prev step
+-	  context.configuration.focus.sharpness_max = 0;
+-	  return;
++		// We want to search for maximum at smaller step, forget maximum from prev step
++		context.configuration.focus.sharpness_max = 0;
++		return;
+ 	}
+ 
+ 	//We are done
+-- 
+2.54.0
+

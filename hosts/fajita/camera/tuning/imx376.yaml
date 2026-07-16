@@ -13,4 +13,9 @@ algorithms:
   - Awb:
   - Adjust:
   - Agc:
+  # Contrast-detect autofocus (phase-3 vendored patches; drives the
+  # lc898217xc VCM). Auto-starts via the focus-loss detector — no
+  # AfTrigger needed, so Snapshot gets AF passively. Rear sensor only:
+  # the front imx371 has no lens, so its tuning file must NOT list Af.
+  - Af:
 ...

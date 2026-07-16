@@ -1,0 +1,68 @@
+From 2ae7b66803310ede935316ca57d8d4e9038b0fc5 Mon Sep 17 00:00:00 2001
+From: Pavel Machek <pavel@ucw.cz>
+Date: Thu, 26 Feb 2026 11:12:23 +0100
+Subject: [PATCH] af: slower focus, but seems to work
+
+af: robot says skip one pixel to ignore highest frequencies, do that
+and also attempt to compensate for brightness
+af: slower focus, but actually seems to find right spot
+af: tweak search area
+---
+ src/ipa/simple/algorithms/af.cpp           | 9 +++++----
+ src/libcamera/software_isp/swstats_cpu.cpp | 6 +++---
+ 2 files changed, 8 insertions(+), 7 deletions(-)
+
+diff --git a/src/ipa/simple/algorithms/af.cpp b/src/ipa/simple/algorithms/af.cpp
+index 3ce3c51..c97c643 100644
+--- a/src/ipa/simple/algorithms/af.cpp
++++ b/src/ipa/simple/algorithms/af.cpp
+@@ -85,7 +85,7 @@ void Af::restart(IPAContext &context) {
+   context.configuration.focus.sharpness_max = 0;
+   context.configuration.focus.start = 0;
+   context.configuration.focus.stop = 100;
+-  context.configuration.focus.step = 10;
++  context.configuration.focus.step = 2;
+   context.configuration.focus.skip = 10;
+   context.activeState.knobs.focus_pos = 0;
+   context.activeState.knobs.focus_sweep = true;
+@@ -113,9 +113,10 @@ void Af::step(IPAContext &context, double& focus_pos, uint64_t sharp, bool& swee
+ 	focus_pos += context.configuration.focus.step;	
+ 	if (focus_pos > context.configuration.focus.start && focus_pos < context.configuration.focus.stop)
+ 	  return;
+-	
+-	context.configuration.focus.start = std::clamp(context.configuration.focus.focus_max_pos - context.configuration.focus.step, 0.0, 100.0);
+-	context.configuration.focus.stop = std::clamp(context.configuration.focus.focus_max_pos +  context.configuration.focus.step, 0.0, 100.0);
++
++	int spread = 5;
++	context.configuration.focus.start = std::clamp(context.configuration.focus.focus_max_pos - context.configuration.focus.step*spread, 0.0, 100.0);
++	context.configuration.focus.stop = std::clamp(context.configuration.focus.focus_max_pos +  context.configuration.focus.step*spread, 0.0, 100.0);
+ 	LOG(IPASoftAutoFocus, Info) << "Best focus on step " <<context.configuration.focus.step << " (" << context.configuration.focus.start << ".." << context.configuration.focus.stop << "): " << focus_pos << " value " << context.configuration.focus.sharpness_max;
+ 	focus_pos = context.configuration.focus.start;
+ 	context.configuration.focus.step /= 10; // HERE
+diff --git a/src/libcamera/software_isp/swstats_cpu.cpp b/src/libcamera/software_isp/swstats_cpu.cpp
+index ef00e94..5c30c85 100644
+--- a/src/libcamera/software_isp/swstats_cpu.cpp
++++ b/src/libcamera/software_isp/swstats_cpu.cpp
+@@ -186,8 +186,8 @@ static constexpr unsigned int kBlueYMul = 29; /* 0.114 * 256 */
+ 	yVal += g * kGreenYMul;            \
+ 	yVal += b * kBlueYMul;             \
+ 	stats_.yHistogram[yVal * SwIspStats::kYHistogramSize / (256 * 256 * (div))]++; \
+-	if (r0 != 0 && ((5*x) / window_.width == 3) && ((5*y) / window_.height == 3)) \
+-		sharpness += abs(r - 2*r1 + r0) * kRedYMul + abs(g - 2*g1 + g0) * kGreenYMul + abs(b - 2*b1 + b0) * kBlueYMul; \
++	if (1 && r0 != 0 && ((5*x) / window_.width == 3) && ((5*y) / window_.height == 3)) \
++	  sharpness += (g-g0) * (g-g0); \
+ 	r0 = r1; g0 = g1; b0 = b1; \
+ 	r1 = r; g1 = g; b1 = b; \
+ 
+@@ -196,7 +196,7 @@ static constexpr unsigned int kBlueYMul = 29; /* 0.114 * 256 */
+ 	stats_.sum_.r() += sumR;    \
+ 	stats_.sum_.g() += sumG;    \
+ 	stats_.sum_.b() += sumB;    \
+-	stats_.sharpness += sharpness;
++	stats_.sharpness += 1000*sharpness / sumG;
+ 
+ void SwStatsCpu::statsBGGR8Line0(const uint8_t *src[], int y)
+ {
+-- 
+2.54.0
+
