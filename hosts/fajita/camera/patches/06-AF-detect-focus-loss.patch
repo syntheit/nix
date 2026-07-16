@@ -1,0 +1,57 @@
+From df07d29aabe824dabeeb99eff0bda30b8dda7a67 Mon Sep 17 00:00:00 2001
+From: Vasiliy Doylov <nekocwd@mainlining.org>
+Date: Mon, 25 Aug 2025 17:10:47 +0300
+Subject: [PATCH] AF: detect focus loss
+
+---
+ src/ipa/simple/algorithms/af.cpp | 20 +++++++++++++++++---
+ 1 file changed, 17 insertions(+), 3 deletions(-)
+
+diff --git a/src/ipa/simple/algorithms/af.cpp b/src/ipa/simple/algorithms/af.cpp
+index df4ecd1..d572d59 100644
+--- a/src/ipa/simple/algorithms/af.cpp
++++ b/src/ipa/simple/algorithms/af.cpp
+@@ -10,6 +10,7 @@
+ #include <stdint.h>
+ 
+ #include <libcamera/base/log.h>
++#include "libcamera/base/utils.h"
+ 
+ #include "control_ids.h"
+ 
+@@ -74,8 +75,22 @@ void Af::updateFocus([[maybe_unused]] IPAContext &context, [[maybe_unused]] IPAF
+ }
+ 
+ void Af::step(uint32_t& skip, double& start, double& stop, double& step, double& focus_pos, double& max_pos, uint64_t& max_sharp, uint64_t sharp, bool& sweep){
+-	if(!sweep)
+-		return;
++
++	if(!sweep){
++		if(utils::abs_diff(sharp, max_sharp) > max_sharp*0.3){
++			LOG(IPASoftAutoFocus, Info) << "Focus lost :(";
++			sweep = true;
++			max_sharp = 0;
++			max_pos = 0;
++			focus_pos = 0;
++			start = 0;
++			stop = 100;
++			step = 25;
++		}
++		else {
++			return;			
++		}
++	}
+ 	if(skip != 0){
+ 		skip --;
+ 		return;
+@@ -94,7 +109,6 @@ void Af::step(uint32_t& skip, double& start, double& stop, double& step, double&
+ 		start = std::clamp(max_pos - step, 0.0, 100.0);
+ 		stop = std::clamp(max_pos +  step, 0.0, 100.0);
+ 		focus_pos = start;
+-		max_sharp = 0;
+ 		step /= 2;
+ 		if(step <= 0.2){
+ 			sweep = false;
+-- 
+2.54.0
+

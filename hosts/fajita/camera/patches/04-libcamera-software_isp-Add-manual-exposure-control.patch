@@ -1,0 +1,78 @@
+From 235b0da321a5ac8e88484d06aa18cd57985a7ec9 Mon Sep 17 00:00:00 2001
+From: Vasiliy Doylov <nekocwd@mainlining.org>
+Date: Wed, 21 May 2025 21:24:09 +0300
+Subject: [PATCH] libcamera: software_isp: Add manual exposure control
+
+Signed-off-by: Vasiliy Doylov <nekocwd@mainlining.org>
+---
+ src/ipa/simple/algorithms/agc.cpp | 14 ++++++++++++--
+ src/ipa/simple/ipa_context.h      |  2 ++
+ 2 files changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/src/ipa/simple/algorithms/agc.cpp b/src/ipa/simple/algorithms/agc.cpp
+index 85aa10a..e14c965 100644
+--- a/src/ipa/simple/algorithms/agc.cpp
++++ b/src/ipa/simple/algorithms/agc.cpp
+@@ -46,6 +46,8 @@ int Agc::init(IPAContext &context,
+ {
+ 	context.ctrlMap[&controls::AeEnable] = ControlInfo(false, true, true);
+ 	context.ctrlMap[&controls::Brightness] = ControlInfo(0.0f, 2.0f, 1.0f);
++	context.ctrlMap[&controls::ExposureValue] = ControlInfo(0.0f, 0.5f, 1.0f);
++
+ 	return 0;
+ }
+ 
+@@ -65,6 +67,7 @@ void Agc::queueRequest(typename Module::Context &context,
+ {
+ 	const auto &brightness = controls.get(controls::Brightness);
+ 	const auto &ae_enabled = controls.get(controls::AeEnable);
++	const auto &exposure_value = controls.get(controls::ExposureValue);
+ 	if (brightness.has_value()) {
+ 		context.activeState.knobs.brightness = brightness;
+ 		LOG(IPASoftExposure, Debug) << "Setting brightness to " << brightness.value();
+@@ -73,6 +76,10 @@ void Agc::queueRequest(typename Module::Context &context,
+ 		context.activeState.knobs.ae_enabled = ae_enabled;
+ 		LOG(IPASoftExposure, Debug) << "Setting ae_enable to " << ae_enabled.value();
+ 	}
++	if (exposure_value.has_value()) {
++		context.activeState.knobs.exposure_value = exposure_value.value();
++		LOG(IPASoftExposure, Debug) << "Setting exposure value to " << exposure_value.value();
++	}
+ }
+ 
+ void Agc::updateExposure(IPAContext &context, IPAFrameContext &frameContext, double exposureMSV)
+@@ -142,13 +149,16 @@ void Agc::process(IPAContext &context,
+ 		  ControlList &metadata)
+ {
+ 	const auto ae_enable = context.activeState.knobs.ae_enabled.value_or(true);
+-	if (!ae_enable)
+-		return;
+ 
++	if (!ae_enable)
++		frameContext.sensor.exposure = (int32_t)( context.activeState.knobs.exposure_value.value_or(0.5) * (context.configuration.agc.exposureMax - context.configuration.agc.exposureMin));
+ 	utils::Duration exposureTime =
+ 		context.configuration.agc.lineDuration * frameContext.sensor.exposure;
+ 	metadata.set(controls::ExposureTime, exposureTime.get<std::micro>());
+ 	metadata.set(controls::AnalogueGain, frameContext.sensor.gain);
++	LOG(IPASoftExposure, Debug) << "Setting exposure value to " << frameContext.sensor.exposure;
++	if (!ae_enable)
++		return;
+ 
+ 	if (!context.activeState.agc.valid) {
+ 		/*
+diff --git a/src/ipa/simple/ipa_context.h b/src/ipa/simple/ipa_context.h
+index 29a6ff9..c84ffa2 100644
+--- a/src/ipa/simple/ipa_context.h
++++ b/src/ipa/simple/ipa_context.h
+@@ -67,6 +67,8 @@ struct IPAActiveState {
+ 		std::optional<double> brightness;
+ 		/* 0..1 range, 1 = normal */
+ 		std::optional<bool> ae_enabled;
++		/* 0..1 range, 0.5 = normal */
++		std::optional<double> exposure_value;
+ 		/* 0..100 range, 50.0 = normal */
+ 		std::optional<double> focus_pos;
+ 	} knobs;
+-- 
+2.54.0
+
