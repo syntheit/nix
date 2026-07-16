@@ -137,6 +137,18 @@ has NO VCM — tool must refuse `--camera front` gracefully.
 
 **Rollback:** tools are additive; remove from systemPackages.
 
+**COMPLETED 2026-07-16 — two discoveries now binding on later phases:**
+1. *CCI power constraint:* focus (any camera-block i2c) writes only work
+   while a stream is active — this tree powers the pipeline only when
+   streaming. All VCM writes are mid-stream; `--hold` re-asserts through
+   gaps.
+2. *CRASHDUMP hazard:* rapid pipeline start/stop cycles (~50 over 30 min)
+   crashed the SoC into Qualcomm CrashDump mode. NEVER design measurement
+   loops that cycle the pipeline; use one continuous stream per session.
+Result: auto-AF converges in 8.2 s, dead-repeatable (382/382/382), proof
+photos in camera-tests/phase-2/. The <4 s target was a bad estimate (28
+measurements × 0.3 s); in-IPA AF (Phase 3) supersedes it.
+
 ---
 
 ## Phase 3 — Autofocus in Snapshot (libcamera AF overlay)
