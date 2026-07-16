@@ -7,6 +7,12 @@ previous one's acceptance criteria. Everything here is **userspace-only** —
 every phase deploys with a plain `nixos-rebuild switch`, no boot.img reflash,
 rollback is `nixos-rebuild --rollback` / previous generation.
 
+**PROGRESS (2026-07-16): Phases 0-3 COMPLETE** — commits a61dddc / d0e188d /
+3a11aee / 8a9edc6. Snapshot autofocuses autonomously on the rear camera.
+Next: Phase 4 (real CCM — colors still muted), Phase 5 (Megapixels/flash),
+Phase 6 (harbor darkroom), Phase 7 (front FoV). Upstream draft ready in
+`~/fajita-notes/upstream/libcamera-af-feedback.md` (patch 10 + test report).
+
 **Goal (Tier 0/1):** autofocused, color-correct 20MP rear photos + properly
 processed selfies + LED/screen flash + a harbor-side "darkroom" pipeline for
 low-light shots. **Out of scope (Tier 2, planned separately):** IMX519/C-PHY
