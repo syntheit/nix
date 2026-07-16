@@ -26,6 +26,14 @@
   programs.calls.enable = true;       # telephony UI (GNOME Calls)
   hardware.sensor.iio.enable = true;  # iio-sensor-proxy → rotation/ALS
 
+  # KERNEL: sdm845-mainline curated tree (what pmOS ships) instead of the
+  # mwlaboratories linux-next snapshot. Fixes mic capture (Q6/SLIMbus TX was
+  # digital-silence on 6.19-next) and adds the tfa9894 loudspeaker DT node
+  # (upstream /delete-node/s it). See packages/fajita-kernel/default.nix.
+  # NOTE: kernel changes need a boot.img REFLASH, not just s-t-c boot.
+  # (mkForce: the sdm845-mainline family module pins its kernel at normal priority.)
+  mobile.boot.stage-1.kernel.package = lib.mkForce (pkgs.callPackage ../../packages/fajita-kernel { });
+
   # Pull in linux-firmware so the kernel can load /lib/firmware/qcom/a630_sqe.fw
   # and friends. Without this, GPU init fails (-2 ENOENT) and Phosh can't start
   # because Wayland/DRM has no working renderer.
