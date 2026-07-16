@@ -122,6 +122,25 @@ in
     };
   };
 
+  # Auto-rotate: GNOME 49 dropped gsd's orientation plugin and mutter doesn't
+  # self-manage this DSI panel's rotation, so nothing turns accelerometer
+  # orientation into a screen rotation. This user daemon does it (claims the
+  # accel — authorized because it runs inside the active graphical session —
+  # and applies the DisplayConfig transform our manual QS toggle already uses).
+  systemd.user.services.fajita-autorotate = {
+    description = "Auto-rotate the screen from the accelerometer (gsd-orientation replacement)";
+    wantedBy = [ "graphical-session.target" ];
+    partOf = [ "graphical-session.target" ];
+    after = [ "graphical-session.target" ];
+    serviceConfig = {
+      ExecStart = "${pkgs.callPackage ./autorotate { }}/bin/fajita-autorotate";
+      # SensorProxy / the accel may not be enumerated the instant the session
+      # comes up; retry until the claim succeeds.
+      Restart = "on-failure";
+      RestartSec = 5;
+    };
+  };
+
   # Two udev pieces:
   # 1) upstream iio-sensor-proxy's 80- rule only tags fastrpc devices with
   #    "ssc-light ssc-compass" — accel/proximity are opt-in (accel is wrong

@@ -67,7 +67,8 @@ in
           ./patches/enable-swipe-to-close.patch # swipe a window preview up to close it
           ./patches/enable-appgrid-reorder.patch # let an icon drag win over the long-press menu
           ./patches/osk-strut-keep-maximized.patch # OSK reserves space via strut; windows stay maximized (no floating-CSD look)
-          ./patches/manual-rotate-toggle.patch # QS portrait/landscape toggle (no accelerometer → DisplayConfig transform)
+          ./patches/auto-rotate-toggle.patch # QS Auto Rotate toggle → orientation-lock gsetting (fajita-autorotate daemon reads it)
+          ./patches/osk-mobile-hide-button.patch # add hide-keyboard button to us-mobile layout (mobile layout omits it; swipe-down has no visual affordance)
         ];
         prePatch = ''
           cp -r ${libshew} subprojects/libshew
