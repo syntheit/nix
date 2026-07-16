@@ -69,6 +69,7 @@ in
           ./patches/osk-strut-keep-maximized.patch # OSK reserves space via strut; windows stay maximized (no floating-CSD look)
           ./patches/auto-rotate-toggle.patch # QS Auto Rotate toggle → orientation-lock gsetting (fajita-autorotate daemon reads it)
           ./patches/osk-mobile-hide-button.patch # add hide-keyboard button to us-mobile layout (mobile layout omits it; swipe-down has no visual affordance)
+          ./patches/powerkey-debounce.patch # drop doubled pwrkey press (6.16.7) that wakes then re-blanks the screen
         ];
         prePatch = ''
           cp -r ${libshew} subprojects/libshew
