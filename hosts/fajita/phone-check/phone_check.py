@@ -28,7 +28,10 @@ class PhoneCheck(Adw.Application):
         self.sensor = None
 
     def do_activate(self):
+        # Keyring (org.freedesktop.secrets) is on the session bus; the sensor
+        # proxy (net.hadess.SensorProxy) is a SYSTEM-bus service.
         self.bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        self.sysbus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
 
         win = Adw.ApplicationWindow(application=self, title="Phone Check")
         win.set_default_size(420, 720)
@@ -61,7 +64,7 @@ class PhoneCheck(Adw.Application):
         # Live sensors
         try:
             self.sensor = Gio.DBusProxy.new_sync(
-                self.bus, Gio.DBusProxyFlags.NONE, None,
+                self.sysbus, Gio.DBusProxyFlags.NONE, None,
                 SENSOR, SENSOR_PATH, SENSOR, None)
             for m in ("ClaimAccelerometer", "ClaimLight", "ClaimProximity"):
                 try:
