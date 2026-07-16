@@ -13,6 +13,7 @@
     ./pwas.nix
     ./sensors.nix
     ./cursor.nix   # hide the phantom mouse pointer on this touch-only device
+    ./camera.nix   # camera bring-up (tools/tuning/AF) — see CAMERA_PLAN.md
   ];
 
   networking.hostName = "fajita";
