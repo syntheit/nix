@@ -693,8 +693,8 @@
       # on fajita, so the previous exec value silently failed for any app that
       # tries to open a terminal via the GNOME default-applications key).
       "org/gnome/desktop/default-applications/terminal" = {
-        exec = "ptyxis";
-        exec-arg = "-x";
+        exec = "foot";
+        exec-arg = "-e";
       };
     };
   }];
@@ -802,6 +802,7 @@
     mimick
     gnome-mobile-torch                    # flashlight/torch Quick Settings toggle (packages/gnome-mobile-torch)
     anchorage                             # Linkding bookmark client (GTK4/libadwaita) — inputs.anchorage (github)
+    jotter                                # Memos notes client (GTK4/libadwaita) — inputs.jotter (github)
     # YouTube → self-hosted Invidious as a PWA (see pwas.nix). Dropped `pipeline`
     # because it speaks Piped, not Invidious. Clapper below still handles
     # paste-a-link one-off playback.

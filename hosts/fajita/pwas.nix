@@ -32,6 +32,13 @@ let
       # 1080 ÷ dsf (2.5→432px mobile, 1.3→~830px tablet, 1.0→1080px full desktop).
       # Leave null for responsive apps — forcing it there breaks their mobile UI.
       dsf ? null,
+      # extraArgs: list of additional Chromium command-line flags for this PWA only.
+      # e.g. [ "--enable-features=OverlayScrollbar" ]
+      extraArgs ? [ ],
+      # startFullscreen: launch in fullscreen so the Chromium CSD title bar is
+      # hidden. On GNOME/Wayland the only way to suppress the client-drawn title
+      # bar without compositor cooperation is a fullscreen Wayland surface.
+      startFullscreen ? false,
     }:
     let
       launcher = pkgs.writeShellScript "pwa-${id}" ''
@@ -40,7 +47,9 @@ let
           --class=pwa-${id} \
           --user-data-dir="$HOME/.local/share/pwa/${profile}" \
           --ozone-platform-hint=auto \
-          ${lib.optionalString (dsf != null) "--force-device-scale-factor=${dsf} "}"$@"
+          ${lib.optionalString (dsf != null) "--force-device-scale-factor=${dsf} "}\
+          ${lib.optionalString startFullscreen "--start-fullscreen "}\
+          ${lib.concatStringsSep " " extraArgs}${lib.optionalString (extraArgs != [ ]) " "}"$@"
       '';
     in
     pkgs.makeDesktopItem {
@@ -113,6 +122,17 @@ let
       url = "https://www.wsj.com/";
       comment = "The Wall Street Journal";
       icon = ./wsj-icon.png;
+      # Overlay scrollbars: auto-hiding, zero layout width (Fluent style on Linux).
+      # kOverlayScrollbar is FEATURE_DISABLED_BY_DEFAULT on desktop; must be set
+      # explicitly. "FluentOverlayScrollbars" is not a real BASE_FEATURE string.
+      extraArgs = [ "--enable-features=OverlayScrollbar" ];
+      # Start in fullscreen so the Chromium-drawn CSD title bar is hidden.
+      # On GNOME/Wayland the only reliable way to suppress the CSD title bar is a
+      # true fullscreen surface (--start-fullscreen). Mutter doesn't do SSD, so
+      # no compositor rule or GNOME extension can strip Chromium's own CSD chrome.
+      # --start-fullscreen: F11 exits, GNOME overview swipe still works.
+      # --kiosk would also work but disables F11 — overkill on a phone.
+      startFullscreen = true;
     })
 
     # ─── Fitness ─────────────────────────────────────────────────────────────

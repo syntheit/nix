@@ -38,6 +38,24 @@
     };
   };
 
+  # foot is the tmux terminal on fajita. VTE-based terminals (Ptyxis/Console)
+  # can't do single-finger touch scroll inside tmux — VTE has no GtkGestureDrag
+  # for one-finger drag (upstream bug), so swipe-scroll never reaches the pty.
+  # foot handles touch scroll itself and forwards it as wheel events, which tmux
+  # (mouse on) turns into scrollback. Tuned for a phone: readable font, deep
+  # scrollback, and a longer long-press so a scroll drag isn't read as a tap.
+  programs.foot = {
+    enable = true;
+    settings = {
+      main = {
+        font = "monospace:size=11";
+        pad = "6x6";
+      };
+      scrollback.lines = 50000;
+      touch.long-press-delay = 400;
+    };
+  };
+
   home.packages = with pkgs; [
     bat
     btop

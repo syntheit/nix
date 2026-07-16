@@ -33,6 +33,7 @@ let
         elliot = inputs.elliot.packages.${final.stdenv.hostPlatform.system}.default;
         jelly-recs = inputs.jelly-recs.packages.${final.stdenv.hostPlatform.system}.default;
         anchorage = inputs.anchorage.packages.${final.stdenv.hostPlatform.system}.default;
+        jotter = inputs.jotter.packages.${final.stdenv.hostPlatform.system}.default;
         mimick = (import ../packages { inherit lib; pkgs = pkgsDefault; }).mimick;
       };
   };
