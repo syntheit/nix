@@ -1,25 +1,50 @@
 # Camera bring-up (Tier 0/1) — the plan lives in CAMERA_PLAN.md.
 #
-# Phase 0 (this file, current state): diagnostics only. CLI tools, device-node
-# access, and a survey script that dumps the whole camera stack's ground truth
-# (media graph, sensor controls, VCM range, LED flash nodes) for the evidence
-# trail in ~/fajita-notes/camera-tests/.
+# Phase 0: diagnostics — CLI tools, device-node access, and a survey script
+# that dumps the camera stack's ground truth (media graph, sensor controls,
+# VCM range, LED flash nodes) for the evidence trail in
+# ~/fajita-notes/camera-tests/.
 #
-# Later phases extend this module: libcamera tuning + AF patches (scoped via
-# services.pipewire.package override, NOT a global overlay — avoids a world
-# rebuild), Megapixels + oneplus,fajita.conf, LED/screen flash, and the phone
-# side of the harbor darkroom pipeline.
+# Phase 1: soft-ISP tuning files. pmOS's black-level YAMLs for IMX371/IMX376
+# (vendored from pmaports temp/libcamera, see camera/tuning/) fix the known
+# libcamera bug where untuned sensors render all-black with purple/red
+# flashes, and give the rear sensor an interim CCM (borrowed from s5kjn1 —
+# replaced by a fajita-derived matrix in Phase 4). The patched libcamera is
+# injected via SCOPED overrides (pipewire + wireplumber only), NOT a global
+# overlay — a global overlay would rebuild gnome-shell and most of the
+# desktop under emulation for no benefit.
+#
+# Later phases extend this module: AF patches into the same libcamera-fajita
+# derivation (Phase 3), Megapixels + oneplus,fajita.conf + flash (Phase 5),
+# and the phone side of the harbor darkroom pipeline (Phase 6).
 { pkgs, ... }:
 let
+  # libcamera + per-sensor tuning for the simple/soft IPA. The soft IPA looks
+  # up <sensor-name>.yaml in <prefix>/share/libcamera/ipa/simple/ — without a
+  # file it falls back to uncalibrated.yaml (no black level → the all-black
+  # bug on these sensors).
+  libcamera-fajita = pkgs.libcamera.overrideAttrs (old: {
+    postInstall = (old.postInstall or "") + ''
+      install -Dm644 ${./camera/tuning/imx371.yaml} $out/share/libcamera/ipa/simple/imx371.yaml
+      install -Dm644 ${./camera/tuning/imx376.yaml} $out/share/libcamera/ipa/simple/imx376.yaml
+    '';
+  });
+
+  # The libcamera SPA plugin ships inside pipewire's package, and WirePlumber
+  # (which hosts the camera monitor) resolves SPA plugins via ITS pipewire
+  # input — both must see libcamera-fajita or the session keeps loading the
+  # untuned stack.
+  pipewire-fajita = pkgs.pipewire.override { libcamera = libcamera-fajita; };
+  wireplumber-fajita = pkgs.wireplumber.override { pipewire = pipewire-fajita; };
   # Ground-truth dump of the camera stack. Read-only — safe to run any time.
   # Usage (from harbor): ssh fajita fajita-cam-survey > survey.log
   fajita-cam-survey = pkgs.writeShellApplication {
     name = "fajita-cam-survey";
-    runtimeInputs = with pkgs; [
-      v4l-utils
-      libcamera
-      coreutils
-      gnugrep
+    runtimeInputs = [
+      pkgs.v4l-utils
+      libcamera-fajita
+      pkgs.coreutils
+      pkgs.gnugrep
     ];
     text = ''
       shopt -s nullglob
@@ -91,9 +116,14 @@ in
 {
   environment.systemPackages = [
     pkgs.v4l-utils # v4l2-ctl + media-ctl — subdev controls / media-graph poking
-    pkgs.libcamera # `cam` CLI — enumeration + capture through the soft ISP
+    libcamera-fajita # `cam` CLI — enumeration + capture through the (tuned) soft ISP
     fajita-cam-survey
   ];
+
+  # Camera path only — audio/BT config for pipewire lives in default.nix and
+  # is unaffected (same pipewire source, just built with our libcamera).
+  services.pipewire.package = pipewire-fajita;
+  services.pipewire.wireplumber.package = wireplumber-fajita;
 
   # Camera device nodes. systemd's default 70-uaccess rules already tag
   # video4linux devices for the active seat; make it explicit and cover the

@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: CC0-1.0
+# NOTE (fajita, 2026-07-16): pmaports upstream ships this file WITH a Ccm block
+# borrowed from the Samsung s5kjn1 — on our IMX376 it miscorrects badly
+# (neon-magenta highlights, pink cast; see camera-tests/phase-1/snapshot-2).
+# Stripped until Phase 4 derives a real fajita CCM. Without a Ccm the output
+# is desaturated but sane (matches the front camera's behavior).
+%YAML 1.1
+---
+version: 1
+algorithms:
+  - BlackLevel:
+      blackLevel: 4096
+  - Awb:
+  - Adjust:
+  - Agc:
+...
