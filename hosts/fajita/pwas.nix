@@ -112,6 +112,7 @@ let
       name = "WSJ";
       url = "https://www.wsj.com/";
       comment = "The Wall Street Journal";
+      icon = ./wsj-icon.png;
     })
 
     # ─── Fitness ─────────────────────────────────────────────────────────────
@@ -142,17 +143,8 @@ let
       url = "https://photos.matv.io/";
       comment = "Photos (viewer — backup via immich CLI, tracked separately)";
     })
-    (mkPwa {
-      id = "linkding";
-      name = "Linkding";
-      url = "https://links.matv.io/";
-      comment = "Bookmarks";
-    })
-    (mkPwa {
-      id = "memos";
-      name = "Memos";
-      url = "https://notes.matv.io/";
-    })
+    # Linkding + Memos PWAs dropped — replaced by the native anchorage (Linkding)
+    # and jotter (Memos) GTK apps in systemPackages.
     (mkPwa {
       id = "retrospend";
       name = "Retrospend";
