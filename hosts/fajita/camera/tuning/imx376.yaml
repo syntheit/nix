@@ -1,12 +1,16 @@
 # SPDX-License-Identifier: CC0-1.0
-# NOTE (fajita, 2026-07-17): the Ccm below is OUR OWN, derived Phase 4 from a
-# 24-patch ColorChecker shown on a color-calibrated MacBook screen in a dark
-# room, shot raw on this exact IMX376, solved least-squares (rows sum to 1 so
-# neutrals stay neutral). Mean residual ~7.9/255, max ~36 — good for a
-# screen-based calibration. Replaces pmaports' borrowed-from-Samsung-s5kjn1
-# matrix, which miscorrected into neon-magenta here (see phase-1 notes).
-# Single illuminant (~6500K screen white); a warm-lamp entry is a future
-# refinement. Solver + evidence in ~/fajita-notes/camera-tests/phase-4/.
+# NOTE (fajita, 2026-07-17): OUR OWN Ccm, derived Phase 4 from a 24-patch
+# ColorChecker on a calibrated MacBook screen (dark room), shot raw on this
+# IMX376, solved least-squares (rows sum to 1 → neutrals preserved). Raw fit
+# was excellent (~7.9/255) BUT the full-strength matrix tinted real scenes:
+# strong off-diagonals amplify the runtime gray-world AWB's per-scene gain
+# mismatch → magenta highlights + green midtones (worst where the
+# green-heavy sensor clips first). Screen narrowband-green also over-drives
+# the matrix vs broadband real-world reflectance. So the shipped matrix is
+# blended 50% toward identity: M' = 0.5*I + 0.5*M_solved. Keeps the
+# saturated-color correction (deep blues, reds) that clearly works, stops
+# amplifying the neutral tint. The raw solved matrix is in git history +
+# phase-4 notes if we later improve the AWB or shoot a real chart.
 %YAML 1.1
 ---
 version: 1
@@ -17,9 +21,9 @@ algorithms:
   - Ccm:
       ccms:
         - ct: 6500
-          ccm: [  1.64895, -0.69694,  0.04799,
-                 -0.26600,  1.62365, -0.35765,
-                 -0.16022, -0.61066,  1.77088 ]
+          ccm: [  1.32448, -0.34847,  0.02400,
+                 -0.13300,  1.31183, -0.17883,
+                 -0.08011, -0.30533,  1.38544 ]
   - Adjust:
   - Agc:
   # Contrast-detect autofocus (phase-3 vendored patches; drives the
