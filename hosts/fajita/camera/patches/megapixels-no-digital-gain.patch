@@ -1,0 +1,44 @@
+diff -ur mp-orig/src/io_pipeline.c mp-rel/src/io_pipeline.c
+--- mp-orig/src/io_pipeline.c	2026-07-17 03:24:19.176009924 -0400
++++ mp-rel/src/io_pipeline.c	2026-07-17 03:24:19.187507059 -0400
+@@ -180,7 +180,9 @@
+         // the value seems to be 248 which creates a 5 frame burst
+         // for manual gain you can go up to 11 frames
+         state_io.gain.value = mp_camera_control_get_int32(&state_io.gain.control);
+-        state_io.dgain.value = mp_camera_control_get_int32(&state_io.dgain.control);
++        if (state_io.dgain.control.id)
++                state_io.dgain.value = mp_camera_control_get_int32(
++                        &state_io.dgain.control);
+         gain_norm = (float)state_io.gain.value / (float)state_io.gain.max;
+         state_io.burst_length = (int)fmax(sqrtf(gain_norm) * 10, 2) + 1;
+         state_io.burst_length = MAX(1, state_io.burst_length);
+@@ -526,7 +528,13 @@
+         }
+ 
+         MPControl dgain_control;
+-        if (mp_camera_query_control(
++        /* fajita: NEVER drive digital gain. The AE model assumes the
++         * control's minimum is the 1x baseline, but Sony sensors here use
++         * min=0/default=1024(=1x) — the "too bright" branch walks dgain
++         * toward 0 first, crushing the sensor output to black, and the
++         * value persists in the driver after exit. Analogue gain (0-480)
++         * plus exposure is plenty. */
++        if (0 && mp_camera_query_control(
+                     state_io.camera->sensor_fd, V4L2_CID_DIGITAL_GAIN, &dgain_control)) {
+                 state_io.dgain.control = dgain_control;
+                 state_io.dgain.min = dgain_control.min;
+diff -ur mp-orig/src/process_pipeline.c mp-rel/src/process_pipeline.c
+--- mp-orig/src/process_pipeline.c	2026-07-17 03:24:19.176091507 -0400
++++ mp-rel/src/process_pipeline.c	2026-07-17 03:24:19.187569753 -0400
+@@ -514,8 +514,9 @@
+ 
+ 	/* Gain */
+ 	gain = state_proc.gain.value / ((float) state_proc.gain.min);
+-	/* dgain */
+-	gain *= state_proc.dgain.value / ((float) state_proc.dgain.min);
++	/* dgain (guarded: control may be absent, and min can be 0) */
++	if (state_proc.dgain.control.id && state_proc.dgain.min > 0)
++		gain *= state_proc.dgain.value / ((float) state_proc.dgain.min);
+ 
+ 	/* Focus */
+ 	diopt = (state_proc.focus.value-focus_inf) / ((float) state_proc.focus.max-focus_inf);
