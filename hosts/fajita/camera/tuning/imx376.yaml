@@ -18,12 +18,11 @@ algorithms:
   - BlackLevel:
       blackLevel: 4096
   - Awb:
-  - Ccm:
-      ccms:
-        - ct: 6500
-          ccm: [  1.32448, -0.34847,  0.02400,
-                 -0.13300,  1.31183, -0.17883,
-                 -0.08011, -0.30533,  1.38544 ]
+  # Ccm PARKED (2026-07-17 night): the violet-night bug lives BELOW the CCM
+  # (no-CCM diagnostic frame still violet at near-neutral gains; green
+  # crushed in the raw-to-render path at low signal — suspected per-channel
+  # black-level/gamma residue). Re-enable after that's fixed; both solved
+  # matrices are in git history (full: 81e388e^, softened: 81e388e).
   - Adjust:
   - Agc:
   # Contrast-detect autofocus (phase-3 vendored patches; drives the
