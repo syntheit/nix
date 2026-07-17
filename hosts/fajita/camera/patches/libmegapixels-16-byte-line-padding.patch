@@ -1,0 +1,29 @@
+Subject: [PATCH] mode: pad raw lines to 16 bytes (qcom-camss VFE alignment)
+
+libmegapixels assumes raw Bayer lines are padded to 8-byte alignment, but
+the Qualcomm CAMSS VFE (SDM845/fajita, verified via VIDIOC_G_FMT) pads
+bytesperline to 16: 2592px @10bpp -> 3248 (not 3240), 4656px -> 5824 (not
+5820). The mismatch trips Megapixels' capture-buffer size assert and would
+skew every stride computation (GL debayer padding ratio, repacking, DNG).
+
+Device-scoped workaround for fajita. The proper upstream fix is to stop
+recomputing entirely: pipeline.c already records the driver's true
+bytesperline in mode->stride — consumers should use it.
+
+--- a/src/mode.c
++++ b/src/mode.c
+@@ -329,12 +329,12 @@ libmegapixels_mode_width_to_padding(int index, uint32_t width)
+ 	if (mode_lut[index].bpp == 8) {
+ 		return 0;
+ 	}
+ 	uint64_t bytes_per_width = libmegapixels_mode_width_to_bytes(index, width);
+-	uint64_t remainder = bytes_per_width % 8;
++	uint64_t remainder = bytes_per_width % 16;
+ 	if (remainder == 0)
+ 		return remainder;
+
+-	return 8 - remainder;
++	return 16 - remainder;
+ }
+
+ uint32_t

@@ -60,6 +60,47 @@ let
   # untuned stack.
   pipewire-fajita = pkgs.pipewire.override { libcamera = libcamera-fajita; };
   wireplumber-fajita = pkgs.wireplumber.override { pipewire = pipewire-fajita; };
+
+  # Phase 5: Megapixels raw-capture stack. Two fajita-specific fixes:
+  # 1. VFE stride: the CAMSS VFE pads raw lines to 16 bytes; libmegapixels
+  #    assumed 8 → capture-buffer assert crash (verified: 2592px→3248 B/line,
+  #    4656px→5824). Patch scoped here; proper upstream fix = use the
+  #    driver-reported mode->stride that pipeline.c already records.
+  # 2. Config discovery: nix meson defaults sysconfdir into the store, so
+  #    findconfig.c never searched the real /etc — point it back.
+  libmegapixels-fajita = pkgs.libmegapixels.overrideAttrs (old: {
+    patches = (old.patches or [ ]) ++ [ ./camera/patches/libmegapixels-16-byte-line-padding.patch ];
+    mesonFlags = (old.mesonFlags or [ ]) ++ [ "--sysconfdir=/etc" ];
+  });
+  megapixels-fajita =
+    (pkgs.megapixels.override { libmegapixels = libmegapixels-fajita; }).overrideAttrs
+      (old: {
+        # Megapixels' AE assumes digital-gain min == 1x baseline; Sony
+        # sensors here are min=0/default=1024(=1x), so its "too bright"
+        # branch walks dgain to ~0 → black viewfinder, and the value
+        # persists in the driver after exit (poisons Snapshot too).
+        # Patch: never drive digital gain (analogue 0-480 + exposure is
+        # plenty) + guard a /0 in the ISO display math.
+        patches = (old.patches or [ ]) ++ [ ./camera/patches/megapixels-no-digital-gain.patch ];
+      });
+
+  # Megapixels rewires the media graph via raw V4L2; WirePlumber's libcamera
+  # monitor gives up permanently if it re-probes into that state → Snapshot
+  # reports "No camera found" until the graph is reset and the monitor
+  # bounced. Wrap the launcher so every Megapixels exit restores the world.
+  megapixels-wrapped = pkgs.symlinkJoin {
+    name = "megapixels-fajita";
+    paths = [
+      (pkgs.writeShellScriptBin "megapixels" ''
+        ${megapixels-fajita}/bin/megapixels "$@"
+        rc=$?
+        ${pkgs.v4l-utils}/bin/media-ctl -d /dev/media0 -r 2>/dev/null || true
+        systemctl --user restart wireplumber 2>/dev/null || true
+        exit $rc
+      '')
+      megapixels-fajita # .desktop file, icons, schemas — bin/ shadowed by wrapper
+    ];
+  };
   # Ground-truth dump of the camera stack. Read-only — safe to run any time.
   # Usage (from harbor): ssh fajita fajita-cam-survey > survey.log
   fajita-cam-survey = pkgs.writeShellApplication {
@@ -145,12 +186,25 @@ in
     # Phase 2: fajita-focus — manual/auto focus via the lc898217xc VCM
     # (contrast hill-climb over `cam` captures; see packages/fajita-camera-tools)
     (pkgs.callPackage ../../packages/fajita-camera-tools { })
+    # Phase 5: Megapixels — raw-DNG capture + LED/screen flash. Uses the
+    # device config from /etc/megapixels/config/ (below). No AF (direct
+    # V4L2); pair with fajita-focus --hold when focus matters.
+    megapixels-wrapped
   ];
 
   # Camera path only — audio/BT config for pipewire lives in default.nix and
   # is unaffected (same pipewire source, just built with our libcamera).
   services.pipewire.package = pipewire-fajita;
   services.pipewire.wireplumber.package = wireplumber-fajita;
+
+  # Phase 5a: Megapixels device config — raw-DNG capture + flash tool
+  # (Snapshot stays the AF daily shooter; Megapixels bypasses libcamera and
+  # has no focus support). /etc/megapixels/config/ is a libmegapixels search
+  # path, so config iteration needs no rebuild, just a switch.
+  # Repo file is comma-free (store path names forbid ','); the /etc target
+  # keeps the comma libmegapixels expects (DT-compatible-based lookup).
+  environment.etc."megapixels/config/oneplus,fajita.conf".source =
+    ./camera/megapixels/oneplus-fajita.conf;
 
   # Camera device nodes. systemd's default 70-uaccess rules already tag
   # video4linux devices for the active seat; make it explicit and cover the
@@ -159,5 +213,11 @@ in
   services.udev.extraRules = ''
     SUBSYSTEM=="video4linux", GROUP="video", MODE="0660", TAG+="uaccess"
     SUBSYSTEM=="media", GROUP="video", MODE="0660", TAG+="uaccess"
+
+    # Phase 5b: pmi8998 flash LED — Megapixels strobes it by writing 1 to
+    # flash_strobe, which is root-only sysfs by default. Group-write for
+    # video. (The torch QS toggle uses logind SetBrightness — unaffected.)
+    ACTION=="add", SUBSYSTEM=="leds", KERNEL=="white:flash", \
+      RUN+="${pkgs.runtimeShell} -c 'chgrp video /sys%p/flash_strobe /sys%p/flash_brightness /sys%p/brightness; chmod 664 /sys%p/flash_strobe /sys%p/flash_brightness /sys%p/brightness'"
   '';
 }
