@@ -1,0 +1,129 @@
+diff -ur snap-orig/aperture/src/utils.rs snap-new/aperture/src/utils.rs
+--- snap-orig/aperture/src/utils.rs	2026-07-17 18:51:19.751419960 -0400
++++ snap-new/aperture/src/utils.rs	2026-07-17 18:51:19.767025471 -0400
+@@ -32,7 +32,8 @@
+     pub(crate) fn best_mode(caps: &gst::Caps) -> Option<Size> {
+         const MIN_WIDTH: i32 = 640;
+         const MIN_HEIGHT: i32 = 480;
+-        const MAX_HEIGHT: i32 = 1080;
++        // fajita: raised from 1080 so the IMX376's native 2592x1940 negotiates
++const MAX_HEIGHT: i32 = 1944;
+         const OPTIMAL_RATIO: f32 = 16.0 / 9.0;
+ 
+         let mut best_size_optimal_ratio: Option<Size> = None;
+diff -ur snap-orig/data/org.gnome.Snapshot.gschema.xml.in snap-new/data/org.gnome.Snapshot.gschema.xml.in
+--- snap-orig/data/org.gnome.Snapshot.gschema.xml.in	2026-07-17 18:51:19.752801026 -0400
++++ snap-new/data/org.gnome.Snapshot.gschema.xml.in	2026-07-17 18:51:19.767052744 -0400
+@@ -24,6 +24,11 @@
+       <summary>Default window maximized behaviour</summary>
+       <description></description>
+     </key>
++    <key name="flash-enabled" type="b">
++      <default>false</default>
++      <summary>Fire the flash when taking pictures</summary>
++      <description>Rear: strobe the LED flash. Front: warm screen flash.</description>
++    </key>
+     <key name="play-shutter-sound" type="b">
+       <default>true</default>
+       <summary>Play shutter sound</summary>
+diff -ur snap-orig/src/widgets/camera.rs snap-new/src/widgets/camera.rs
+--- snap-orig/src/widgets/camera.rs	2026-07-17 18:51:19.754202704 -0400
++++ snap-new/src/widgets/camera.rs	2026-07-17 18:51:19.767135614 -0400
+@@ -428,10 +428,35 @@
+         let filename = utils::picture_file_name(format);
+         let path = utils::pictures_dir()?.join(filename);
+ 
++        // fajita flash (gsettings key `flash-enabled`, default off):
++        //  - rear: strobe the pmi8998 LED via sysfs (kernel self-terminates
++        //    the strobe; node is group-video writable via udev rule);
++        //  - front: paint the panel warm-white BEFORE capture so it lights
++        //    the subject while the sensor integrates.
++        let settings = imp.settings();
++        let flash_enabled = settings.boolean("flash-enabled");
++        let is_front = imp
++            .viewfinder
++            .camera()
++            .map(|c| !matches!(c.location(), aperture::CameraLocation::Back))
++            .unwrap_or(false);
++        if flash_enabled {
++            if is_front {
++                imp.flash_bin.flash_warm();
++                glib::timeout_future(std::time::Duration::from_millis(140)).await;
++            } else {
++                let _ = std::fs::write(
++                    "/sys/class/leds/white:flash/flash_strobe",
++                    "1",
++                );
++            }
++        }
++
+         imp.viewfinder.take_picture(path)?;
+-        imp.flash_bin.flash();
++        if !(flash_enabled && is_front) {
++            imp.flash_bin.flash();
++        }
+ 
+-        let settings = imp.settings();
+         if settings.boolean("play-shutter-sound") {
+             self.play_shutter_sound();
+         }
+diff -ur snap-orig/src/widgets/flash_bin.rs snap-new/src/widgets/flash_bin.rs
+--- snap-orig/src/widgets/flash_bin.rs	2026-07-17 18:51:19.754183891 -0400
++++ snap-new/src/widgets/flash_bin.rs	2026-07-17 18:51:19.767073329 -0400
+@@ -4,13 +4,15 @@
+ use gtk::{gdk, glib, graphene};
+ 
+ mod imp {
+-    use std::cell::OnceCell;
++    use std::cell::{Cell, OnceCell};
+ 
+     use super::*;
+ 
+     #[derive(Debug, Default)]
+     pub struct FlashBin {
+         pub flash_ani: OnceCell<adw::TimedAnimation>,
++        /// fajita: warm screen-flash mode (front-camera fill light)
++        pub warm: Cell<bool>,
+     }
+ 
+     #[glib::object_subclass]
+@@ -54,9 +56,15 @@
+             let alpha = easing(animation.value()) as f32;
+ 
+             let rect = graphene::Rect::new(0.0, 0.0, w, h);
+-            let black = gdk::RGBA::new(0.0, 0.0, 0.0, alpha);
++            // fajita: warm-white fill for selfie flash, black for the
++            // regular shutter effect.
++            let color = if self.warm.get() {
++                gdk::RGBA::new(1.0, 0.93, 0.78, alpha)
++            } else {
++                gdk::RGBA::new(0.0, 0.0, 0.0, alpha)
++            };
+ 
+-            snapshot.append_color(&black, &rect);
++            snapshot.append_color(&color, &rect);
+         }
+     }
+ 
+@@ -77,7 +85,20 @@
+ 
+ impl FlashBin {
+     pub fn flash(&self) {
+-        self.imp().flash_ani.get().unwrap().play();
++        let imp = self.imp();
++        imp.warm.set(false);
++        let ani = imp.flash_ani.get().unwrap();
++        ani.set_duration(250);
++        ani.play();
++    }
++
++    /// fajita: longer warm-white flash used as a front-camera fill light.
++    pub fn flash_warm(&self) {
++        let imp = self.imp();
++        imp.warm.set(true);
++        let ani = imp.flash_ani.get().unwrap();
++        ani.set_duration(550);
++        ani.play();
+     }
+ }
+ 
