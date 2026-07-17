@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: CC0-1.0
-# NOTE (fajita, 2026-07-16): pmaports upstream ships this file WITH a Ccm block
-# borrowed from the Samsung s5kjn1 — on our IMX376 it miscorrects badly
-# (neon-magenta highlights, pink cast; see camera-tests/phase-1/snapshot-2).
-# Stripped until Phase 4 derives a real fajita CCM. Without a Ccm the output
-# is desaturated but sane (matches the front camera's behavior).
+# NOTE (fajita, 2026-07-17): the Ccm below is OUR OWN, derived Phase 4 from a
+# 24-patch ColorChecker shown on a color-calibrated MacBook screen in a dark
+# room, shot raw on this exact IMX376, solved least-squares (rows sum to 1 so
+# neutrals stay neutral). Mean residual ~7.9/255, max ~36 — good for a
+# screen-based calibration. Replaces pmaports' borrowed-from-Samsung-s5kjn1
+# matrix, which miscorrected into neon-magenta here (see phase-1 notes).
+# Single illuminant (~6500K screen white); a warm-lamp entry is a future
+# refinement. Solver + evidence in ~/fajita-notes/camera-tests/phase-4/.
 %YAML 1.1
 ---
 version: 1
@@ -11,6 +14,12 @@ algorithms:
   - BlackLevel:
       blackLevel: 4096
   - Awb:
+  - Ccm:
+      ccms:
+        - ct: 6500
+          ccm: [  1.64895, -0.69694,  0.04799,
+                 -0.26600,  1.62365, -0.35765,
+                 -0.16022, -0.61066,  1.77088 ]
   - Adjust:
   - Agc:
   # Contrast-detect autofocus (phase-3 vendored patches; drives the
