@@ -1,0 +1,33 @@
+diff -ur awb-orig/src/ipa/simple/algorithms/awb.cpp awb-new/src/ipa/simple/algorithms/awb.cpp
+--- awb-orig/src/ipa/simple/algorithms/awb.cpp	2026-07-17 17:55:23.936364749 -0400
++++ awb-new/src/ipa/simple/algorithms/awb.cpp	2026-07-17 17:55:23.951740366 -0400
+@@ -7,6 +7,7 @@
+ 
+ #include "awb.h"
+ 
++#include <algorithm>
+ #include <numeric>
+ #include <stdint.h>
+ 
+@@ -96,6 +97,21 @@
+ 		sum.b() <= sum.g() / 4 ? 4.0f : static_cast<float>(sum.g()) / sum.b(),
+ 	} };
+ 
++	/*
++	 * fajita (IMX376): constrain gray-world gains to the range real
++	 * illuminants can produce on this sensor. Measured D65 reference
++	 * (ColorChecker calibration): R 2.04, B 1.57. Bounds span roughly
++	 * 2300K-9500K around that point. Without this, blue-deficient night
++	 * lighting drives gain_B toward the 4.0 cap and any CCM with a
++	 * negative G-row B-term then crushes green -> the violet-photo
++	 * failure. Proper upstream fix: a CT-locus constraint in the AWB.
++	 */
++	gains = { {
++		std::clamp(gains.r(), 1.10f, 2.70f),
++		1.0,
++		std::clamp(gains.b(), 1.15f, 2.60f),
++	} };
++
+ 	RGB<double> rgbGains{ { 1 / gains.r(), 1 / gains.g(), 1 / gains.b() } };
+ 	context.activeState.awb.temperatureK = estimateCCT(rgbGains);
+ 	metadata.set(controls::ColourTemperature, context.activeState.awb.temperatureK);
