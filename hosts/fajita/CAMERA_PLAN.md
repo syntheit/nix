@@ -13,6 +13,21 @@ Next: Phase 4 (real CCM — colors still muted), Phase 5 (Megapixels/flash),
 Phase 6 (harbor darkroom), Phase 7 (front FoV). Upstream draft ready in
 `~/fajita-notes/upstream/libcamera-af-feedback.md` (patch 10 + test report).
 
+**PLAN REVISION (2026-07-17, post phase-5 bring-up):** Megapixels is OUT as
+a user-facing app (Daniel verified: quality far below the tuned+AF Snapshot
+path, desktop-shaped UI). Snapshot-centric from here: raw capture =
+`cam --camera <rear-id> --stream role=raw --file=x.dng` (libtiff added to
+libcamera-fajita); flash + full-res + warm screen-flash land in a
+**Snapshot fork** (new item, replaces 5c); Phase 6 darkroom consumes
+cam-produced DNGs. Phase-5 bring-up still paid for itself: 3 upstreamable
+bug finds (libmegapixels 16-byte VFE stride, nix sysconfdir config
+discovery, AE digital-gain black-out that persists across sessions —
+likely bites every Sony-sensor phone). GOTCHA for all tooling: libcamera
+camera INDICES are not stable across boots — select by DT path substring
+(rear = i2c-bus@1/camera@10). Also: 3 hard SoC crashes today, all
+camera-adjacent (camss power-domain fragility) → Tier-2 kernel item; no
+rapid remote camera cycling.
+
 **Goal (Tier 0/1):** autofocused, color-correct 20MP rear photos + properly
 processed selfies + LED/screen flash + a harbor-side "darkroom" pipeline for
 low-light shots. **Out of scope (Tier 2, planned separately):** IMX519/C-PHY
