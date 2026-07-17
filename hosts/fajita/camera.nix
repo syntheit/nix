@@ -144,6 +144,28 @@ let
   };
 in
 {
+  # Snapshot fork (the "Snapshot-centric" plan): overlay the stock snapshot
+  # with our patch — nothing else depends on snapshot, so this rebuilds one
+  # leaf package. Features (patch 20, applies to the in-tree Aperture too —
+  # vendored deps, so no cargo-hash pain):
+  #  1. Full-res capture: Aperture's MAX_HEIGHT 1080 -> 1944 so the rear
+  #     IMX376 negotiates its native 2592x1940 instead of 1080p.
+  #  2. LED flash: rear photos strobe the pmi8998 white:flash via sysfs
+  #     when the `flash-enabled` gsettings key is on (default off; toggle:
+  #     gsettings set org.gnome.World.Snapshot flash-enabled true — check
+  #     schema id with `gsettings list-schemas | grep -i snapshot`).
+  #  3. Warm screen flash: front photos paint the panel warm-white for
+  #     ~550ms starting just before capture (FlashBin gains a warm mode).
+  nixpkgs.overlays = [
+    (final: prev: {
+      snapshot = prev.snapshot.overrideAttrs (old: {
+        patches = (old.patches or [ ]) ++ [
+          ./camera/patches/20-snapshot-flash-and-fullres.patch
+        ];
+      });
+    })
+  ];
+
   environment.systemPackages = [
     pkgs.v4l-utils # v4l2-ctl + media-ctl — subdev controls / media-graph poking
     libcamera-fajita # `cam` CLI — enumeration + capture through the (tuned) soft ISP
