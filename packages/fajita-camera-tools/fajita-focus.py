@@ -47,10 +47,25 @@ FOCUS_CID = 0x009A090A       # V4L2_CID_FOCUS_ABSOLUTE (survey: phase-0)
 VIDIOC_S_CTRL = 0xC008561C   # _IOWR('V', 28, struct v4l2_control)
 FOCUS_MAX = 2047
 SETTLE_S = 0.08              # fajita-webcam: 80 ms per move
-CAM_INDEX = {"rear": 1}      # `cam --list`: 1 = back (imx376), 2 = front
+# Camera INDICES ARE NOT STABLE across boots (enumeration order flips).
+# Select by DT path: the rear imx376 sits on cci i2c-bus@1.
+REAR_ID_SUBSTR = "i2c-bus@1/camera@10"
 ROI = 640                    # center crop for the sharpness metric — 256 was
 #                              too tight at full res (2584x1940): it can land
 #                              on a featureless patch and flatten the curve
+
+
+def resolve_camera(camera):
+    if camera != "rear":
+        sys.exit("error: only the rear camera has a VCM")
+    out = subprocess.run(["cam", "--list"], capture_output=True,
+                         text=True).stdout
+    for line in out.splitlines():
+        if REAR_ID_SUBSTR in line:
+            m = re.search(r"\((/base[^)]+)\)", line)
+            if m:
+                return m.group(1)
+    sys.exit("error: rear camera not found in `cam --list`")
 
 
 def find_vcm():
@@ -126,7 +141,7 @@ class Streamer:
     def __init__(self, camera):
         self.d = tempfile.mkdtemp(prefix="fajita-focus-")
         self.proc = subprocess.Popen(
-            ["cam", f"-c{CAM_INDEX[camera]}", "--capture=100000",
+            ["cam", f"--camera={camera}", "--capture=100000",
              f"--file={self.d}/f#.ppm"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
@@ -182,7 +197,7 @@ def pulse_stream(camera, during=None, frames=40, keep=3):
     d = tempfile.mkdtemp(prefix="fajita-focus-")
     try:
         proc = subprocess.Popen(
-            ["cam", f"-c{CAM_INDEX[camera]}", f"--capture={frames}",
+            ["cam", f"--camera={camera}", f"--capture={frames}",
              f"--file={d}/f#.ppm"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
@@ -302,6 +317,7 @@ def main():
     if args.camera == "front":
         sys.exit("error: the front camera (imx371) is fixed-focus — no VCM")
 
+    args.camera = resolve_camera(args.camera)
     vcm = Vcm()
     {"set": cmd_set, "sweep": cmd_sweep, "auto": cmd_auto}[args.cmd](args, vcm)
 
