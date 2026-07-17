@@ -1,0 +1,67 @@
+diff --git a/js/misc/powerManager.js b/js/misc/powerManager.js
+index ce89bed5c..250019a74 100644
+--- a/js/misc/powerManager.js
++++ b/js/misc/powerManager.js
+@@ -597,6 +597,18 @@ log("POWERMANAGER: turn on this._fadeInTimeout " + this._fadeInTimeout + " this.
+ 
+         this._lightbox.remove_all_transitions();
+ 
++        log("POWERMANAGER: _turnOnScreen(), dpms mode " + this._displayConfigProxy.PowerSaveMode + " opacity " + this._lightbox.opacity);
++
++        // Power the panel FIRST. The brightness restores below end up as sysfs
++        // writes, and on DSI panels the kernel rejects those while the panel is
++        // off or still preparing (EINVAL) - doing them before the DPMS change
++        // meant the restore was silently lost on every wake, so in the worst
++        // case the panel came back at an invisible brightness ("wakes but stays
++        // black"). The fade-in gives the panel time to finish preparing before
++        // the writes land.
++        this._displayConfigProxy.PowerSaveMode = 0;
++        await this._fadeIn();
++
+         if (this._adaptiveBacklightInhibited) {
+             delete this._adaptiveBacklightInhibited;
+ 
+@@ -608,14 +620,9 @@ log("POWERMANAGER: turn on this._fadeInTimeout " + this._fadeInTimeout + " this.
+             }
+         }
+ 
+-        log("POWERMANAGER: _turnOnScreen(), dpms mode " + this._displayConfigProxy.PowerSaveMode + " opacity " + this._lightbox.opacity);
+-
+         // undim in case we were dimmed earlier and got woken up by something that's not a user active watch
+         this._sensorDaemonProxy.UndimBacklightAsync(0).catch(e =>
+             log("POWERMANAGER: Undim backlight failed: " + e));
+-
+-        this._displayConfigProxy.PowerSaveMode = 0;
+-        await this._fadeIn();
+     }
+ 
+     async _fadeOut(duration) {
+@@ -1125,6 +1132,15 @@ log("POWERMANAGER: turn on this._fadeInTimeout " + this._fadeInTimeout + " this.
+             }
+ 
+             if (screenIsOn) {
++                if (!this._powerPressScreenWasOn) {
++                    // The screen turned on during this press (it was off when
++                    // the press started), so this press was a wake - don't let
++                    // its release blank the screen right back. Same semantics
++                    // as Phosh's screen-saver-manager: snapshot the state on
++                    // press, only act on release if it didn't change.
++                    return;
++                }
++
+                 let action = this._powerSettings.get_string('power-button-action');
+                 if (action === 'nothing') { // FIXME: get rid of this in favor of new action
+                     action = 'blank';
+@@ -1143,6 +1159,12 @@ log("POWERMANAGER: turn on this._fadeInTimeout " + this._fadeInTimeout + " this.
+         } else {
+  //   log("POWERMANAGER: power key press, flags " +  event.get_flags() + " " + (event.get_flags() & Clutter.EventFlags.FLAG_INPUT_METHOD));
+ 
++            // Snapshot the screen state at press time - the release handler
++            // uses it to distinguish "press that woke the screen" (state
++            // changed during the press, do nothing on release) from "press on
++            // an already-on screen" (blank on release).
++            this._powerPressScreenWasOn = screenIsOn;
++
+             if (this._ignoreInputAfterSuspend) {
+                 log("POWERMANAGER: ignoring power key press (event age " + (timeNowMs - eventTimeMs) + "ms) after suspend wakeup (" + (timeNowMs - this._ignoreInputAfterSuspendStartMs) + "ms after wakeup)");
+                 return;

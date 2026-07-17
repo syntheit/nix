@@ -1,0 +1,103 @@
+diff --git a/js/dbusServices/sensorDaemon/autoBacklightBrightness.js b/js/dbusServices/sensorDaemon/autoBacklightBrightness.js
+index fed1a6908..fe4bbaa5f 100644
+--- a/js/dbusServices/sensorDaemon/autoBacklightBrightness.js
++++ b/js/dbusServices/sensorDaemon/autoBacklightBrightness.js
+@@ -142,6 +142,40 @@ const DEVICE_BRIGHTNESS_CONFIG = {
+             20000, 5000,
+         ],
+     },
++    // OnePlus 6T
++    // Panel: samsung,s6e3fc2x01 (same-class OLED as enchilada's sofef00, both
++    // 1-1023 pwm, ~430 nits peak) - we reuse enchilada's measured
++    // brightness->nits curve until we measure our own panel.
++    // The lux->nits curve is our own: enchilada's (and default's) low end maps
++    // to pwm 1-9 on this panel, which is visually OFF on an OLED - the cause of
++    // the "wakes to a black screen in a dark room" bug. Floor raised so 0 lux
++    // is dim-but-clearly-visible, indoor range biased up (user preference).
++    'oneplus,fajita': {
++        get brightnessToNitsCurve() {
++            return DEVICE_BRIGHTNESS_CONFIG['oneplus,enchilada'].brightnessToNitsCurve;
++        },
++        ambientLuxToNits: [
++            0, 8,
++            1, 10,
++            4, 16,
++            12, 32,
++            20, 42,
++            40, 55,
++            65, 68,
++            95, 80,
++            140, 92,
++            200, 103,
++            350, 115,
++            650, 140,
++            1300, 165,
++            2000, 200,
++            3300, 380,
++            6000, 410,
++            10000, 427.6287,
++            // set higher values than what display supports, relative perceived brightness profits from that
++            20000, 5000,
++        ],
++    },
+     // Microsoft Surface Pro 2017
+     'Microsoft Corporation,Surface Pro,Surface_Pro_1796': {
+         minMaxNits: [ 4, 440 ],
+@@ -508,7 +542,27 @@ export class AutoBacklightBrightness extends Signals.EventEmitter {
+         if (this._lastSetPwm !== newPwm) {
+             this._inStep = true;
+ 
+-            this._brightnessProxy.SetBrightnessAsync("backlight", this._backlightName, newPwm).catch(e => console.error(e)).finally(() => {
++            this._brightnessProxy.SetBrightnessAsync("backlight", this._backlightName, newPwm).then(() => {
++                this._writeRetries = 0;
++            }).catch(e => {
++                console.error(e);
++                // A write can race a DPMS transition: on DSI panels the kernel
++                // rejects brightness writes while the panel is off/preparing
++                // (EINVAL -> EPROTO over logind). If that happens on the final
++                // update the target brightness would silently never be applied -
++                // on wake-from-blank that means a panel lit at a stale (possibly
++                // invisible) level. Retry the final value a few times.
++                if (isFinalUpdate && (this._writeRetries ?? 0) < 3) {
++                    this._writeRetries = (this._writeRetries ?? 0) + 1;
++                    GLib.timeout_add(GLib.PRIORITY_DEFAULT, 300, () => {
++                        log(`AUTOBACKLIGHT: retrying failed brightness write (attempt ${this._writeRetries})`);
++                        this._brightnessProxy.SetBrightnessAsync("backlight", this._backlightName, newPwm)
++                            .then(() => (this._writeRetries = 0))
++                            .catch(e2 => console.error(e2));
++                        return GLib.SOURCE_REMOVE;
++                    });
++                }
++            }).finally(() => {
+                 this._lastSetPwm = newPwm;
+                 this._curPerceived = newPerceived;
+ 
+@@ -772,7 +826,11 @@ export class AutoBacklightBrightness extends Signals.EventEmitter {
+ 
+         this._history.push([timeNowMs, level]);
+ 
+-        if (lastLevel !== -1 && Math.abs(level - lastLevel) < level * 0.01) {
++        // The relative deadband is useless at low lux (1% of 1 lux) - in a dark
++        // room every sensor flicker (including the screen's own glow feeding
++        // back into the sensor) passed through here, causing write storms of
++        // 50+ brightness updates per second. Add an absolute floor.
++        if (lastLevel !== -1 && Math.abs(level - lastLevel) < Math.max(level * 0.01, 0.5)) {
+             return;
+         }
+ 
+@@ -815,7 +873,14 @@ export class AutoBacklightBrightness extends Signals.EventEmitter {
+         const autoPerceived = this._nitsToAbsPerceived(autoBrightnessNits);
+         const closeToMin = (this._curPerceived - this._minPerceived) > 0.1 && (autoPerceived - this._minPerceived) < 0.1;
+         const closeToMax = (this._maxPerceived - this._curPerceived) > 0.1 && (this._maxPerceived - autoPerceived) < 0.1;
+-        if (this._autoPerceived === undefined || Math.abs(this._autoPerceived - autoPerceived) > 0.7 || closeToMin || closeToMax) {
++        // The closeToMin/closeToMax bypasses skip the 0.7 hysteresis entirely,
++        // so while sitting near either end of the range every single sensor
++        // event became a brightness write. Rate-limit the bypasses.
++        const sinceLastEdgeAdjustMs = timeNowMs - (this._lastEdgeAdjustMs ?? 0);
++        const edgeAdjust = (closeToMin || closeToMax) && sinceLastEdgeAdjustMs > 1000;
++        if (this._autoPerceived === undefined || Math.abs(this._autoPerceived - autoPerceived) > 0.7 || edgeAdjust) {
++            if (edgeAdjust)
++                this._lastEdgeAdjustMs = timeNowMs;
+             log(`AUTOBACKLIGHT: ambient brightness went to ${level} lux, adjusting`);
+ 
+             const durationSec =
