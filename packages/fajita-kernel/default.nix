@@ -203,14 +203,17 @@ mobile-nixos.kernel-builder {
   src = kernelSrc;
 
   patches = [
-    # Zombie-panel fix: ~50% of DPMS off->on cycles left the s6e3fc2x01
-    # non-displaying (ACKs DCS writes, emits no light) because our tag's driver
-    # re-inits from deep standby blind — regulator cycle + hardware reset are
-    # commented out (re-enabled upstream in tag sdm845-6.18.2-r0; this adopts
-    # that flow) and nothing verifies the panel came up. Adds GET_POWER_MODE
-    # read-back after init + escalating retry (reset pulse, then full rail
-    # power-cycle). See ~/fajita-notes/power-button-brightness.md.
-    ./patches/panel-s6e3fc2x01-verify-retry.patch
+    # BOTH panel/display patches below are DISABLED after two failed flash
+    # attempts (2026-07-18) — full postmortem in
+    # ~/fajita-notes/power-button-brightness.md. Do NOT re-enable and flash
+    # without reworking; the stock kernel is the known-good daily driver.
+    #
+    # DISABLED — kills the DSI link: adopting 6.18.2's rails-off-on-blank flow
+    # on our 6.16.7 base leaves every subsequent DCS transfer timing out
+    # (-110) after the first blank; even the verify-retry can't recover a dead
+    # link. Rework planned: keep the normal path byte-identical to stock, add
+    # ONLY GET_POWER_MODE verify + reset-pulse retry on provable failure.
+    # ./patches/panel-s6e3fc2x01-verify-retry.patch
     # DISABLED 2026-07-18 — BREAKS BOOT on this 6.16 tree: with
     # CLK_OPS_PARENT_ENABLE the clk core enables the DSI PHY PLL during early
     # RCG ops, before the PHY driver has configured it -> "DSI PLL(0) lock
