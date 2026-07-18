@@ -1,0 +1,389 @@
+diff --git a/engine/hunspell_table.py b/engine/hunspell_table.py
+index fb229b4..bf6b02b 100644
+--- a/engine/hunspell_table.py
++++ b/engine/hunspell_table.py
+@@ -38,6 +38,7 @@ else:
+     from typing_extensions import Literal
+ # pylint: enable=wrong-import-position
+ import unicodedata
++import itertools
+ import os
+ import fnmatch
+ import ast
+@@ -775,6 +776,16 @@ class TypingBoosterEngine(IBus.Engine):
+ 
+         self._avoid_forward_key_event: bool = self._settings_dict[
+             'avoidforwardkeyevent']['user']
++        # fajita fork (OSK no-preedit + autocorrect), env-gated:
++        self._osk_no_preedit = os.getenv(
++            'IBUS_TYPING_BOOSTER_OSK_NO_PREEDIT', '') not in ('', '0')
++        self._osk_autocorrect = os.getenv(
++            'IBUS_TYPING_BOOSTER_OSK_AUTOCORRECT', '') not in ('', '0')
++        self._osk_np_word = ''  # shadow of the word already committed to the app
++        self._osk_np_prev_consumed_val = None
++        self._osk_np_last_finished = ('', 0.0)
++        self._osk_np_recent_corrections = {}
++        self._osk_np_last_commit_time = 0.0
+ 
+         self._prefer_commit: bool = self._settings_dict[
+             'prefercommit']['user']
+@@ -3306,6 +3317,15 @@ class TypingBoosterEngine(IBus.Engine):
+         '''Update Preedit String in UI'''
+         if self._debug_level > 1:
+             LOGGER.debug('entering function')
++        if self._osk_no_preedit:
++            # fajita fork: the word is committed to the app as it is typed,
++            # never held in preedit (client toolkits underline preedit and
++            # the mobile OSK never routes Backspace through the engine).
++            if self._current_preedit_text.text_str:
++                self.update_preedit_text_with_mode(
++                    IBus.Text.new_from_string(''), 0, False,
++                    IBus.PreeditFocusMode.COMMIT)
++            return
+         if (self._show_raw_input >= 2  # Show *always*
+             and self._typed_string
+             and (self._lookup_table.hidden
+@@ -7227,6 +7247,11 @@ class TypingBoosterEngine(IBus.Engine):
+             self.remove_candidate_from_user_database(index)
+             self._update_ui()
+             return
++        if (self._osk_no_preedit and button == 1
++            and self.get_current_imes()[0] == 'NoIME'):
++            # fajita fork: the word is already committed in the app
++            if self._osk_np_candidate_clicked():
++                return
+         if button == 1:
+             phrase = self.get_string_from_lookup_table_cursor_pos()
+             if phrase:
+@@ -9140,6 +9165,291 @@ class TypingBoosterEngine(IBus.Engine):
+         self._trigger_surrounding_text_update()
+         return True
+ 
++    # --- fajita fork: OSK no-preedit mode + autocorrect ---------------------
++    #
++    # Rationale: on GNOME Shell Mobile the OSK feeds printable keys through
++    # IBus but Backspace and cursor movement never reach the engine (the
++    # shell deletes via text-input directly), so a long-lived preedit
++    # desyncs and is rendered underlined by the client toolkit. In this
++    # mode every typed character is committed to the application
++    # immediately; the engine keeps a shadow buffer for the suggestion
++    # strip and replaces already-committed words via
++    # delete_surrounding_text(), guarded by surrounding-text checks.
++    # Gated by $IBUS_TYPING_BOOSTER_OSK_NO_PREEDIT / .._OSK_AUTOCORRECT.
++    # See ~/fajita-notes/keyboard-prediction.md (fajita nix repo).
++
++    _OSK_NP_WORD_JOINERS = ("'", '\u2019', '-')
++    _OSK_NP_AUTOCORRECT_SEPARATORS = ' .,!?;:'
++    _OSK_NP_RECENT_CORRECTION_SECONDS = 180.0
++
++    def _osk_np_before_cursor(self) -> Optional[str]:
++        """Surrounding text before the cursor, or None if unavailable."""
++        if not self.has_surrounding_text:
++            return None
++        text = self._surrounding_text.text
++        cursor_pos = self._surrounding_text.cursor_pos
++        if cursor_pos > len(text):
++            return None
++        return text[:cursor_pos]
++
++    @classmethod
++    def _osk_np_trailing_word(cls, text: str) -> str:
++        """The trailing word-character run of `text`."""
++        i = len(text)
++        while i > 0:
++            char = text[i-1]
++            if (char.isalnum()
++                or unicodedata.category(char) == 'Mn'
++                or char in cls._OSK_NP_WORD_JOINERS):
++                i -= 1
++            else:
++                break
++        return text[i:]
++
++    def _osk_np_is_word_char(self, uchar: str) -> bool:
++        if uchar.isalnum() or unicodedata.category(uchar) == 'Mn':
++            return True
++        # apostrophe/hyphen only word-internal:
++        return bool(self._osk_np_word) and uchar in self._OSK_NP_WORD_JOINERS
++
++    @staticmethod
++    def _osk_np_edit_distance(word_a: str, word_b: str, cap: int) -> int:
++        """Optimal-string-alignment distance (transposition = 1), capped."""
++        if abs(len(word_a) - len(word_b)) > cap:
++            return cap + 1
++        prev_prev: Optional[List[int]] = None
++        prev = list(range(len(word_b) + 1))
++        for i, char_a in enumerate(word_a, 1):
++            cur = [i]
++            for j, char_b in enumerate(word_b, 1):
++                cost = min(prev[j] + 1,
++                           cur[j-1] + 1,
++                           prev[j-1] + (char_a != char_b))
++                if (prev_prev is not None and i > 1 and j > 1
++                    and char_a == word_b[j-2] and word_a[i-2] == char_b):
++                    cost = min(cost, prev_prev[j-2] + 1)
++                cur.append(cost)
++            if min(cur) > cap:
++                return cap + 1
++            prev_prev = prev
++            prev = cur
++        return prev[len(word_b)]
++
++    def _osk_np_check_sync(self) -> None:
++        """Keep the stock candidate machinery (_typed_string) in sync with
++        the shadow buffer (do_reset may have cleared _typed_string)."""
++        if ''.join(self._typed_string) == self._osk_np_word:
++            return
++        self._clear_input()
++        if self._osk_np_word:
++            self._insert_string_at_cursor(list(self._osk_np_word))
++
++    def _osk_np_resync_empty(self) -> None:
++        """With an empty buffer, adopt the word the cursor touches (user
++        tapped into/behind an existing word, or backspaced into one)."""
++        if self._osk_np_word:
++            return
++        before = self._osk_np_before_cursor()
++        if not before:
++            return
++        word = self._osk_np_trailing_word(before)
++        if not word or len(word) > 24:
++            return
++        finished_word, finished_time = self._osk_np_last_finished
++        if (word == finished_word
++            and time.time() - finished_time < 3.0):
++            # surrounding text still lags the separator we just committed
++            return
++        self._osk_np_word = word
++        self.get_context()
++
++    def _osk_np_learn(self, word: str) -> None:
++        """Record a word the user insisted on (bypasses record-mode: an
++        explicitly re-typed word after an unwanted autocorrect must stick)."""
++        if self._off_the_record or self._hide_input:
++            return
++        stripped = itb_util_core.strip_token(word)
++        if not stripped:
++            return
++        self.database.check_phrase_and_update_frequency(
++            input_phrase=stripped,
++            phrase=stripped,
++            p_phrase=self.get_p_phrase(),
++            pp_phrase=self.get_pp_phrase(),
++            user_freq_increment=3)  # jump straight past the protection bar
++
++    def _osk_np_autocorrect_candidate(self, typed: str) -> Optional[str]:
++        """Android-style autocorrect decision at a word boundary.
++
++        Returns the replacement word or None. Conservative on purpose:
++        only corrects out-of-vocabulary words, only to nearby known words,
++        and never fights the user (a re-typed word is learned instead)."""
++        stripped = itb_util_core.strip_token(typed)
++        if not 1 < len(stripped) <= 24:
++            return None
++        if any(char.isdigit() for char in stripped):
++            return None
++        if any(char.isupper() for char in stripped[1:]):
++            return None  # iPhone, McD..., ALLCAPS: intentional
++        low = stripped.lower()
++        now = time.time()
++        for old in [w for w, t in self._osk_np_recent_corrections.items()
++                    if now - t > self._OSK_NP_RECENT_CORRECTION_SECONDS]:
++            del self._osk_np_recent_corrections[old]
++        if low in self._osk_np_recent_corrections:
++            # We corrected this word moments ago and the user typed it
++            # again: they mean it. Learn it, never correct it again.
++            self._osk_np_learn(stripped)
++            del self._osk_np_recent_corrections[low]
++            return None
++        if self.database.hunspell_obj.spellcheck(stripped):
++            return None
++        if self.database.phrase_exists(stripped) >= 3:
++            # genuinely learned by the user (or force-learned on re-type);
++            # low-frequency strays (corpus-seed noise like "teh") don't count
++            return None
++        # Correction source: real spell suggestions from each active
++        # dictionary (needs a pyhunspell/enchant backend — the engine's
++        # _candidates are completion-oriented and often miss corrections).
++        # Interleave en/es so neither language starves the other.
++        deaccented_typed = itb_util_core.remove_accents(low)
++        per_dict = [dictionary.spellcheck_suggest(stripped)
++                    for dictionary
++                    in self.database.hunspell_obj._dictionaries]  # pylint: disable=protected-access
++        suggestions = []
++        for tier in itertools.zip_longest(*per_dict):
++            for phrase in tier:
++                if phrase is not None and phrase not in suggestions:
++                    suggestions.append(phrase)
++        for phrase in suggestions[:8]:
++            phrase = itb_util_core.strip_token(phrase)
++            if not phrase or phrase.lower() == low:
++                continue
++            if any(char.isdigit() for char in phrase):
++                continue
++            if ' ' in phrase or '-' in phrase:
++                continue  # no multi-word/hyphen splits from one word
++            deaccented_phrase = itb_util_core.remove_accents(phrase.lower())
++            if deaccented_phrase != deaccented_typed:
++                # not a pure accent/case fix: require closeness
++                if not deaccented_phrase or not deaccented_typed:
++                    continue
++                if deaccented_phrase[0] != deaccented_typed[0]:
++                    continue
++                cap = 1 if len(stripped) <= 4 else 2
++                if self._osk_np_edit_distance(
++                        low, phrase.lower(), cap) > cap:
++                    continue
++            if stripped[0].isupper() and not phrase[0].isupper():
++                phrase = phrase[0].upper() + phrase[1:]
++            return phrase
++        return None
++
++    def _osk_np_boundary(self, key: itb_util_core.KeyEvent, sep: str) -> bool:
++        """Handle a word-boundary character (space/punctuation)."""
++        typed = self._osk_np_word
++        corrected = None
++        if (self._osk_autocorrect
++            and typed
++            and sep in self._OSK_NP_AUTOCORRECT_SEPARATORS):
++            corrected = self._osk_np_autocorrect_candidate(typed)
++        if corrected:
++            before = self._osk_np_before_cursor()
++            lag_ok = (before is not None
++                      and typed.startswith(
++                          self._osk_np_trailing_word(before)))
++            if before is not None and (before.endswith(typed) or lag_ok):
++                self.delete_surrounding_text(-len(typed), len(typed))
++                super().commit_text(
++                    IBus.Text.new_from_string(corrected + sep))
++                self._osk_np_recent_corrections[typed.lower()] = time.time()
++                self._record_in_database_and_push_context(
++                    commit_phrase=corrected, input_phrase=typed)
++            else:
++                # surrounding text disagrees (lag or external edit): play safe
++                corrected = None
++        if not corrected:
++            super().commit_text(IBus.Text.new_from_string(sep))
++            if typed:
++                self._record_in_database_and_push_context(
++                    commit_phrase=typed, input_phrase=typed)
++        self._commit_happened_after_focus_in = True
++        self._osk_np_last_commit_time = time.time()
++        self._osk_np_last_finished = (corrected or typed, time.time())
++        self._osk_np_word = ''
++        self._clear_input()
++        self._trigger_surrounding_text_update()
++        GLib.timeout_add(5, self._update_ui_empty_input_try_completion)
++        return True
++
++    def _osk_np_candidate_clicked(self) -> bool:
++        """Replace the committed word with the tapped candidate.
++        Returns True when handled."""
++        phrase = self.get_string_from_lookup_table_cursor_pos()
++        if not phrase:
++            return True
++        typed = self._osk_np_word
++        if typed:
++            before = self._osk_np_before_cursor()
++            lag_ok = (before is not None
++                      and typed.startswith(
++                          self._osk_np_trailing_word(before)))
++            if before is None or not (before.endswith(typed) or lag_ok):
++                LOGGER.warning(
++                    'osk-np: surrounding text does not end with %r, '
++                    'not replacing', typed)
++                return True
++            self.delete_surrounding_text(-len(typed), len(typed))
++        commit = phrase + ' ' if self._add_space_on_commit else phrase
++        super().commit_text(IBus.Text.new_from_string(commit))
++        self._commit_happened_after_focus_in = True
++        self._osk_np_last_commit_time = time.time()
++        self._record_in_database_and_push_context(
++            commit_phrase=phrase, input_phrase=typed or phrase)
++        self._osk_np_last_finished = (phrase, time.time())
++        self._osk_np_word = ''
++        self._clear_input()
++        self._trigger_surrounding_text_update()
++        GLib.timeout_add(5, self._update_ui_empty_input_try_completion)
++        return True
++
++    def _osk_np_process_key(self, key: itb_util_core.KeyEvent) -> Optional[bool]:
++        """No-preedit key handling. None = fall through to stock code."""
++        if self.get_current_imes()[0] != 'NoIME':
++            return None
++        if key.release:
++            if self._osk_np_prev_consumed_val == key.val:
++                self._osk_np_prev_consumed_val = None
++                return True
++            return None
++        if (key.control or key.mod1 or key.mod4
++            or key.super or key.hyper or key.meta):
++            return None
++        if key.val in (IBus.KEY_Return, IBus.KEY_KP_Enter, IBus.KEY_ISO_Enter,
++                       IBus.KEY_Tab, IBus.KEY_BackSpace, IBus.KEY_Delete,
++                       IBus.KEY_Escape, IBus.KEY_Left, IBus.KEY_Right,
++                       IBus.KEY_Up, IBus.KEY_Down):
++            return None
++        uchar = key.unicode
++        if not uchar or unicodedata.category(uchar[0]) in ('Cc', 'Cf'):
++            return None
++        self._osk_np_resync_empty()
++        self._osk_np_check_sync()
++        if self._osk_np_is_word_char(uchar[0]):
++            if not self._osk_np_word:
++                self.get_context()
++            super().commit_text(IBus.Text.new_from_string(uchar))
++            self._commit_happened_after_focus_in = True
++            self._osk_np_last_commit_time = time.time()
++            self._osk_np_word += uchar
++            self._insert_string_at_cursor(list(uchar))
++            self._trigger_surrounding_text_update()
++            self._update_ui()
++            self._osk_np_prev_consumed_val = key.val
++            return True
++        self._osk_np_prev_consumed_val = key.val
++        return self._osk_np_boundary(key, uchar)
++
+     def _return_false(self, key: itb_util_core.KeyEvent) -> bool:
+         '''A replacement for “return False” in do_process_key_event()
+ 
+@@ -10321,6 +10631,10 @@ class TypingBoosterEngine(IBus.Engine):
+ 
+         if disabled:
+             return self._return_false(key)
++        if self._osk_no_preedit and not self._typed_compose_sequence:
++            osk_np_result = self._osk_np_process_key(key)
++            if osk_np_result is not None:
++                return osk_np_result
+ 
+         if self._handle_m17n_candidates(key):
+             return self._return_true(key)
+@@ -11279,6 +11593,11 @@ class TypingBoosterEngine(IBus.Engine):
+         # if the input purpose is set correctly on focus in, then it
+         # should not be necessary to reset it here.
+         self._client_info.client = ''
++        if self._osk_no_preedit:
++            # fajita fork: the word is already committed in the app; make
++            # sure the stale-preedit recording below does not see it twice.
++            self._osk_np_word = ''
++            self._osk_np_prev_consumed_val = None
+         # The preëdit, if there was any, has already been committed
+         # automatically because
+         # update_preedit_text_with_mode(,,,IBus.PreeditFocusMode.COMMIT)
+@@ -11331,6 +11650,16 @@ class TypingBoosterEngine(IBus.Engine):
+         if self._ollama_chat_query_thread:
+             self._ollama_chat_query_cancel(commit_selection=False)
+             return
++        if (self._osk_no_preedit and self._osk_np_word
++            and time.time() - self._osk_np_last_commit_time > 0.5):
++            # fajita fork: reset fires on Backspace presses and cursor
++            # moves, which never reach the engine — drop the shadow word
++            # if the app text no longer ends with it (but never right
++            # after our own commit: surrounding text may just be lagging).
++            osk_np_before = self._osk_np_before_cursor()
++            if (osk_np_before is None
++                or not osk_np_before.endswith(self._osk_np_word)):
++                self._osk_np_word = ''
+         # The press events of arrow keys like `Left` and `BackSpace`
+         # cause a call to `do_reset()`. If that clears
+         # self._surrounding_text_old() the comparison of

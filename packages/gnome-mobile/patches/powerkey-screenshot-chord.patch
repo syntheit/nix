@@ -1,0 +1,157 @@
+--- a/js/misc/powerManager.js
++++ b/js/misc/powerManager.js
+@@ -10,6 +10,7 @@
+ import * as GnomeSession from './gnomeSession.js';
+ import * as LoginManager from './loginManager.js';
+ import * as Lightbox from '../ui/lightbox.js';
++import * as Screenshot from '../ui/screenshot.js';
+ import {loadInterfaceXML} from './fileUtils.js';
+ import * as Main from '../ui/main.js';
+ 
+@@ -179,6 +180,8 @@
+         this._updateScreensaverIdleWatch();
+         this._updatePowersaveIdleWatch();
+ 
++        this._initScreenshotChord();
++
+         const setupLoginSession = async () => {
+             this._loginSession = await this._loginManager.getCurrentSessionProxy();
+             this._loginSession.connect('g-properties-changed',
+@@ -1157,6 +1160,17 @@
+                 this._doSystemAction(action, 'power key released', false).catch(e => console.error(e));
+             }
+         } else {
++            // fajita: Volume-Up + Power = full-screen screenshot (iOS/Android
++            // style). Volup-first order: if vol-up is already held when power
++            // goes down, capture + flash and swallow the press entirely — we
++            // return before arming _powerPressHappened, so the release does
++            // nothing and the screen never blanks. (Power-first order is
++            // handled from _onVolumeUpPressed.)
++            if (this._volumeUpHeld && screenIsOn) {
++                this._fireScreenshotChord();
++                return;
++            }
++
+  //   log("POWERMANAGER: power key press, flags " +  event.get_flags() + " " + (event.get_flags() & Clutter.EventFlags.FLAG_INPUT_METHOD));
+ 
+             // Snapshot the screen state at press time - the release handler
+@@ -1190,6 +1204,119 @@
+         }
+     }
+ 
++    // ── Volume-Up + Power screenshot chord ──────────────────────────────────
++    // gsd grabs the volume keys, so the shell never sees them through Clutter.
++    // We open the volume-keys evdev node read-only (kernel fans events out to
++    // every reader, so this doesn't disturb the volume OSD) and track vol-up
++    // hold state. The power key is already handled here in powerButtonEvent(),
++    // so keeping both in one place lets us capture + flash and suppress the
++    // blank cleanly, without a separate daemon or the D-Bus caller allowlist.
++    _initScreenshotChord() {
++        this._volumeUpHeld = false;
++
++        const path = this._findVolumeInputDevice();
++        if (!path) {
++            console.warn('POWERMANAGER: screenshot chord disabled (no volume input device found)');
++            return;
++        }
++
++        try {
++            this._volStream = Gio.File.new_for_path(path).read(null);
++        } catch (e) {
++            console.warn(`POWERMANAGER: screenshot chord disabled (${e.message})`);
++            return;
++        }
++
++        this._volCancellable = new Gio.Cancellable();
++        this._readVolumeEvent();
++    }
++
++    _findVolumeInputDevice() {
++        // Resolve by device name — evdev event numbers aren't stable across boots.
++        let contents;
++        try {
++            [, contents] = GLib.file_get_contents('/proc/bus/input/devices');
++        } catch (e) {
++            return null;
++        }
++
++        for (const block of new TextDecoder().decode(contents).split('\n\n')) {
++            if (!/N: Name="[^"]*[Vv]olume/.test(block))
++                continue;
++            const m = block.match(/H: Handlers=[^\n]*\b(event\d+)\b/);
++            if (m)
++                return `/dev/input/${m[1]}`;
++        }
++        return null;
++    }
++
++    _readVolumeEvent() {
++        // struct input_event (64-bit): 16-byte timeval + u16 type + u16 code +
++        // s32 value = 24 bytes. Only EV_KEY / KEY_VOLUMEUP matters here.
++        this._volStream.read_bytes_async(24 * 32, GLib.PRIORITY_DEFAULT,
++            this._volCancellable, (stream, res) => {
++                let bytes;
++                try {
++                    bytes = stream.read_bytes_finish(res);
++                } catch (e) {
++                    if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
++                        console.error(e, 'POWERMANAGER: volume evdev read failed');
++                    return;
++                }
++                if (bytes.get_size() === 0)
++                    return;
++
++                const data = bytes.get_data();
++                const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
++                const EV_KEY = 1, KEY_VOLUMEUP = 115;
++                for (let off = 0; off + 24 <= data.byteLength; off += 24) {
++                    if (view.getUint16(off + 16, true) !== EV_KEY ||
++                        view.getUint16(off + 18, true) !== KEY_VOLUMEUP)
++                        continue;
++                    const value = view.getInt32(off + 20, true);
++                    if (value === 1) {
++                        this._volumeUpHeld = true;
++                        this._onVolumeUpPressed();
++                    } else if (value === 0) {
++                        this._volumeUpHeld = false;
++                    }
++                }
++
++                this._readVolumeEvent();
++            });
++    }
++
++    _onVolumeUpPressed() {
++        // Power-first order: power is already held and armed to blank on
++        // release. Complete the chord — cancel the pending power action (so the
++        // release neither opens the hold menu nor blanks) and capture.
++        if (!this._powerPressHappened || !this._powerPressScreenWasOn)
++            return;
++
++        if (this._powerHoldId) {
++            GLib.source_remove(this._powerHoldId);
++            delete this._powerHoldId;
++        }
++        delete this._powerPressHappened;
++        this._fireScreenshotChord();
++    }
++
++    async _fireScreenshotChord() {
++        try {
++            const shooter = new Shell.Screenshot();
++            const [content] = await shooter.screenshot_stage_to_content();
++            const texture = content.get_texture();
++
++            // The stage is captured into `content` above, so flashing now won't
++            // taint the saved image — same order the built-in capture uses.
++            new Screenshot.Flashspot(Main.layoutManager.primaryMonitor).fire();
++
++            await Screenshot.captureScreenshot(texture, null, 1, null);
++        } catch (e) {
++            console.error(e, 'POWERMANAGER: screenshot chord failed');
++        }
++    }
++
+     suspend() {
+         this._doSystemAction('suspend', 'powerManager.suspend() called', false).catch(e => console.error(e));
+     }

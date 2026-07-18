@@ -1,0 +1,192 @@
+--- a/drivers/gpu/drm/panel/panel-samsung-s6e3fc2x01.c
++++ b/drivers/gpu/drm/panel/panel-samsung-s6e3fc2x01.c
+@@ -26,7 +26,7 @@
+ 	struct mipi_dsi_device *dsi;
+ 	bool first_prepare;
+ 	struct regulator_bulk_data supplies[3];
+-	//struct gpio_desc *reset_gpio;
++	struct gpio_desc *reset_gpio;
+ };
+ 
+ static inline
+@@ -35,13 +35,40 @@
+ 	return container_of(panel, struct samsung_s6e3fc2x01, panel);
+ }
+ 
+-// static void samsung_s6e3fc2x01_reset(struct samsung_s6e3fc2x01 *ctx)
+-// {
+-// 	gpiod_set_value_cansleep(ctx->reset_gpio, 1);
+-// 	usleep_range(2000, 3000);
+-// 	gpiod_set_value_cansleep(ctx->reset_gpio, 0);
+-// 	usleep_range(10000, 11000);
+-// }
++static void samsung_s6e3fc2x01_reset(struct samsung_s6e3fc2x01 *ctx)
++{
++	gpiod_set_value_cansleep(ctx->reset_gpio, 1);
++	usleep_range(2000, 3000);
++	gpiod_set_value_cansleep(ctx->reset_gpio, 0);
++	usleep_range(10000, 11000);
++}
++
++/*
++ * Read back the DCS power mode and check that the panel actually reached
++ * "sleep out + display on". This panel intermittently stays dark after a
++ * re-init from deep standby (it ACKs commands but does not light up); the
++ * only reliable way to know is to ask it.
++ *
++ * Returns 0 if the panel reports displaying, -ENODEV if it is provably not
++ * displaying, or the (negative) read error if the query itself failed.
++ */
++static int samsung_s6e3fc2x01_verify_on(struct samsung_s6e3fc2x01 *ctx,
++					u8 *power_mode)
++{
++	static const u8 wanted = MIPI_DSI_DCS_POWER_MODE_DISPLAY |
++				 MIPI_DSI_DCS_POWER_MODE_SLEEP;
++	int ret;
++
++	*power_mode = 0;
++	ret = mipi_dsi_dcs_get_power_mode(ctx->dsi, power_mode);
++	if (ret < 0)
++		return ret;
++
++	if ((*power_mode & wanted) != wanted)
++		return -ENODEV;
++
++	return 0;
++}
+ 
+ static int samsung_s6e3fc2x01_on(struct samsung_s6e3fc2x01 *ctx)
+ {
+@@ -159,22 +186,86 @@
+ 		return 0;
+ 	}
+ 
+-	// ret = regulator_bulk_enable(ARRAY_SIZE(ctx->supplies), ctx->supplies);
+-	// if (ret < 0) {
+-	// 	dev_err(dev, "Failed to enable regulator: %d\n", ret);
+-	// 	return ret;
+-	// }
+-
+-	//samsung_s6e3fc2x01_reset(ctx);
+-
+-	ret = samsung_s6e3fc2x01_on(ctx);
++	/*
++	 * Full power-cycle + hardware reset on every prepare, as re-enabled
++	 * upstream in sdm845-mainline tag 6.18.2 (in our 6.16.7 tag this was
++	 * commented out, so DPMS off->on re-sent the init sequence to a panel
++	 * still sitting in deep standby — the cause of the ~50% "ACKs DCS
++	 * writes but stays dark" zombie wakes).
++	 */
++	ret = regulator_bulk_enable(ARRAY_SIZE(ctx->supplies), ctx->supplies);
+ 	if (ret < 0) {
+-		dev_err(dev, "Failed to initialize panel: %d\n", ret);
+-		//gpiod_set_value_cansleep(ctx->reset_gpio, 1);
+-		//regulator_bulk_disable(ARRAY_SIZE(ctx->supplies), ctx->supplies);
++		dev_err(dev, "Failed to enable regulator: %d\n", ret);
+ 		return ret;
+ 	}
+ 
++	samsung_s6e3fc2x01_reset(ctx);
++
++	/*
++	 * Init with verification and escalating recovery. Even a reset panel
++	 * has been seen to come up non-displaying; the only reliable check is
++	 * asking it (GET_POWER_MODE — same pattern the downstream Qualcomm
++	 * techpack uses, expected good value 0x9c):
++	 *   attempt 1: init after the reset above
++	 *   attempt 2: another reset pulse, re-init
++	 *   attempt 3: full rail power-cycle + reset, re-init
++	 */
++	for (int attempt = 0; attempt < 3; attempt++) {
++		u8 power_mode;
++
++		if (attempt == 1) {
++			samsung_s6e3fc2x01_reset(ctx);
++		} else if (attempt == 2) {
++			gpiod_set_value_cansleep(ctx->reset_gpio, 1);
++			regulator_bulk_disable(ARRAY_SIZE(ctx->supplies),
++					       ctx->supplies);
++			msleep(100);
++			ret = regulator_bulk_enable(ARRAY_SIZE(ctx->supplies),
++						    ctx->supplies);
++			if (ret < 0) {
++				dev_err(dev, "Failed to re-enable regulators: %d\n",
++					ret);
++				return ret;
++			}
++			samsung_s6e3fc2x01_reset(ctx);
++		}
++
++		ret = samsung_s6e3fc2x01_on(ctx);
++		if (ret < 0) {
++			dev_err(dev, "Failed to initialize panel (attempt %d): %d\n",
++				attempt + 1, ret);
++			continue;
++		}
++
++		ret = samsung_s6e3fc2x01_verify_on(ctx, &power_mode);
++		if (ret == 0) {
++			if (attempt > 0)
++				dev_warn(dev, "panel recovered on attempt %d\n",
++					 attempt + 1);
++			return 0;
++		}
++
++		if (ret != -ENODEV) {
++			/*
++			 * The power-mode read itself failed; we cannot verify.
++			 * Assume the init worked rather than retry-cycling a
++			 * (probably) healthy panel forever.
++			 */
++			dev_warn(dev, "cannot read panel power mode (%d), skipping verification\n",
++				 ret);
++			return 0;
++		}
++
++		dev_warn(dev, "panel not displaying after init (power_mode %#04x, attempt %d)\n",
++			 power_mode, attempt + 1);
++	}
++
++	dev_err(dev, "panel still not displaying after 3 attempts, giving up\n");
++
++	/*
++	 * Deliberately do not fail the modeset: a failed prepare wedges the
++	 * display pipeline harder than a dark panel the user can re-cycle.
++	 */
+ 	return 0;
+ }
+ 
+@@ -186,8 +277,9 @@
+ 
+ 	samsung_s6e3fc2x01_off(ctx);
+ 
+-	//gpiod_set_value_cansleep(ctx->reset_gpio, 1);
+-	//regulator_bulk_disable(ARRAY_SIZE(ctx->supplies), ctx->supplies);
++	/* Power the panel fully down (re-enabled in 6.18.2, see prepare) */
++	gpiod_set_value_cansleep(ctx->reset_gpio, 1);
++	regulator_bulk_disable(ARRAY_SIZE(ctx->supplies), ctx->supplies);
+ 
+ 	return 0;
+ }
+@@ -295,10 +387,17 @@
+ 				     "Failed to enable regulators\n");
+ 
+ 	ctx->first_prepare = true;
+-	// ctx->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
+-	// if (IS_ERR(ctx->reset_gpio))
+-	// 	return dev_err_probe(dev, PTR_ERR(ctx->reset_gpio),
+-	// 			     "Failed to get reset-gpios\n");
++
++	/*
++	 * GPIOD_OUT_LOW = logical 0 = reset DEasserted (the line is
++	 * GPIO_ACTIVE_LOW in the DT), matching the already-running boot panel,
++	 * so acquiring it does not glitch the display. Optional so a DT
++	 * without reset-gpios simply skips the hardware-reset recovery step.
++	 */
++	ctx->reset_gpio = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
++	if (IS_ERR(ctx->reset_gpio))
++		return dev_err_probe(dev, PTR_ERR(ctx->reset_gpio),
++				     "Failed to get reset-gpios\n");
+ 
+ 	ctx->dsi = dsi;
+ 	mipi_dsi_set_drvdata(dsi, ctx);
