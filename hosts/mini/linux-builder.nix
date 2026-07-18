@@ -101,6 +101,34 @@ in
     };
   };
 
+  # QEMU under hvf occasionally hard-hangs under heavy build load (3x on
+  # 2026-07-18: process stays alive, port 31022 LISTENs but accept() is never
+  # serviced, so every connection stalls at banner exchange / gets refused
+  # once the backlog fills). KeepAlive can't catch this — the process never
+  # exits — so probe the guest's sshd every 2 minutes and force-restart the
+  # builder after 3 consecutive failures (~6 min of grace, enough to never
+  # fire during a normal boot or store.img regeneration).
+  launchd.daemons.linux-builder-watchdog = {
+    script = ''
+      state=/var/lib/linux-builder/watchdog-failures
+      if /usr/bin/ssh -o ConnectTimeout=10 -o BatchMode=yes \
+           -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+           -i /etc/nix/builder_ed25519 -p 31022 builder@localhost true \
+           2>/dev/null; then
+        rm -f "$state"
+        exit 0
+      fi
+      n=$(( $(cat "$state" 2>/dev/null || echo 0) + 1 ))
+      echo "$n" > "$state"
+      if [ "$n" -ge 3 ]; then
+        rm -f "$state"
+        /usr/bin/pkill -9 -f qemu-system-aarch64 || true
+        /bin/launchctl kickstart -k system/org.nixos.linux-builder
+      fi
+    '';
+    serviceConfig.StartInterval = 120;
+  };
+
   environment.etc."ssh/ssh_config.d/100-linux-builder.conf".text = ''
     Host linux-builder
       User builder
