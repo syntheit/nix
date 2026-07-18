@@ -156,6 +156,11 @@
       url = "git+ssh://git@github.com/syntheit/jotter.git";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Warden — native GTK4/libadwaita Bitwarden/Vaultwarden client (over rbw).
+    warden = {
+      url = "git+ssh://git@github.com/syntheit/warden.git";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =

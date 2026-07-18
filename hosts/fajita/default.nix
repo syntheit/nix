@@ -859,6 +859,7 @@
     gnome-mobile-torch                    # flashlight/torch Quick Settings toggle (packages/gnome-mobile-torch)
     anchorage                             # Linkding bookmark client (GTK4/libadwaita) — inputs.anchorage (github)
     jotter                                # Memos notes client (GTK4/libadwaita) — inputs.jotter (github)
+    warden                                # Bitwarden/Vaultwarden client (GTK4/libadwaita, over rbw) — inputs.warden (github)
     # YouTube → self-hosted Invidious as a PWA (see pwas.nix). Dropped `pipeline`
     # because it speaks Piped, not Invidious. Clapper below still handles
     # paste-a-link one-off playback.
