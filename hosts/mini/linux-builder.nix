@@ -37,6 +37,26 @@ let
           virtualisation.cores = lib.mkForce 8;
           virtualisation.memorySize = lib.mkForce 8192;
           virtualisation.diskSize = lib.mkForce (100 * 1024);
+
+          # Auto-GC INSIDE the guest. The stock darwin.linux-builder ships NO gc
+          # timer, so every fajita aarch64 rebuild piles up in the guest store
+          # and the qcow2 grows toward its 100 GiB ceiling until the mini's APFS
+          # container fills and the VM's /nix goes read-only (this is exactly
+          # what wedged the builder 2026-07-18). Weekly GC keeping 14 days is the
+          # real safety net. min-free/max-free make the daemon also GC when the
+          # guest store gets low — but note the guest can't see the *host* APFS
+          # running out, so it can't rely on that alone; the timer is primary.
+          nix.gc = {
+            automatic = true;
+            dates = "weekly";
+            options = "--delete-older-than 14d";
+          };
+          # The nix-builder-vm profile already pins min-free/max-free at normal
+          # priority, so these need mkForce (same as the sizing options above).
+          nix.settings = {
+            min-free = lib.mkForce (1024 * 1024 * 1024); # 1 GiB
+            max-free = lib.mkForce (5 * 1024 * 1024 * 1024); # 5 GiB
+          };
         }
       )
     ];
@@ -56,6 +76,22 @@ in
       rm -rf $TMPDIR
       mkdir -p $TMPDIR
       trap "rm -rf $TMPDIR" EXIT
+      # Pin the builder identity. add-keys (inside create-builder) generates a
+      # FRESH keypair whenever ./keys is empty — and the keys dir gets wiped by
+      # disk-full recoveries and even darwin-rebuild switch (both observed
+      # 2026-07-18). Every regeneration silently desyncs harbor's sops-pinned
+      # copy of this key → "Permission denied" on all remote builds.
+      # /etc/nix/builder_ed25519 is the canonical copy; reseed ./keys from it
+      # (cwd is /var/lib/linux-builder) so add-keys never regenerates. A new
+      # key can now only appear if BOTH copies are lost — if you ever rotate
+      # it on purpose, update harbor's sops secret mac_builder_ssh_key too.
+      if [ -f /etc/nix/builder_ed25519 ] && [ -f /etc/nix/builder_ed25519.pub ]; then
+        mkdir -p keys
+        cp -f /etc/nix/builder_ed25519 keys/builder_ed25519
+        cp -f /etc/nix/builder_ed25519.pub keys/builder_ed25519.pub
+        chmod 600 keys/builder_ed25519
+        chmod 644 keys/builder_ed25519.pub
+      fi
       ${linux-builder}/bin/create-builder
     '';
     serviceConfig = {
