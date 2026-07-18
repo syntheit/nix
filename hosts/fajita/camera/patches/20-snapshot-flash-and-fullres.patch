@@ -13,7 +13,7 @@ diff -ur snap-orig/aperture/src/utils.rs snap-new/aperture/src/utils.rs
          let mut best_size_optimal_ratio: Option<Size> = None;
 diff -ur snap-orig/aperture/src/viewfinder.rs snap-new/aperture/src/viewfinder.rs
 --- snap-orig/aperture/src/viewfinder.rs	2026-07-17 23:12:26.841001293 -0400
-+++ snap-new/aperture/src/viewfinder.rs	2026-07-17 23:52:15.266455029 -0400
++++ snap-new/aperture/src/viewfinder.rs	2026-07-18 00:19:28.116224568 -0400
 @@ -56,6 +56,9 @@
          pub camera_element: OnceCell<gst::Element>,
          pub capsfilter: OnceCell<gst::Element>,
@@ -46,7 +46,7 @@ diff -ur snap-orig/aperture/src/viewfinder.rs snap-new/aperture/src/viewfinder.r
              camerabin.set_property("viewfinder-sink", &tee);
  
              let videoconvert_video = gst::ElementFactory::make("videoconvert")
-@@ -589,15 +607,58 @@
+@@ -589,15 +607,53 @@
              return Err(crate::CaptureError::RecordingInProgress);
          }
  
@@ -60,13 +60,23 @@ diff -ur snap-orig/aperture/src/viewfinder.rs snap-new/aperture/src/viewfinder.r
 +        // The viewfinder already runs at the max negotiated resolution on
 +        // this stack, so nothing is lost: photo == viewfinder by
 +        // construction.
-+        let Some(sample) = imp
-+            .wysiwyg_sink
-+            .get()
-+            .and_then(|sink| sink.property::<Option<gst::Sample>>("last-sample"))
-+        else {
++        let Some(wysiwyg_sink) = imp.wysiwyg_sink.get() else {
 +            return Err(crate::CaptureError::NotReady);
 +        };
++        let Some(sample) = wysiwyg_sink.property::<Option<gst::Sample>>("last-sample") else {
++            return Err(crate::CaptureError::NotReady);
++        };
++
++        // The source pipeline carries a sticky image-orientation tag (on
++        // fajita: rear rotate-90, front rotate-270) that gtk4paintablesink
++        // honors for the preview and camerabin's jifmux used to bake into
++        // EXIF. Bake it into the PIXELS instead — EXIF-only orientation is
++        // ignored by enough consumers to have been a standing complaint.
++        let direction = wysiwyg_sink
++            .static_pad("sink")
++            .and_then(|pad| pad.sticky_event::<gst::event::Tag>(0))
++            .and_then(|event| gst_video::VideoOrientationMethod::from_tag(event.tag()))
++            .unwrap_or(gst_video::VideoOrientationMethod::Identity);
 +
          // Set after we cannot fail anymore.
          imp.is_taking_picture.set(true);
@@ -78,39 +88,94 @@ diff -ur snap-orig/aperture/src/viewfinder.rs snap-new/aperture/src/viewfinder.r
 -        camerabin.set_property("location", location.as_ref().display().to_string());
 -        camerabin.emit_by_name::<()>("start-capture", &[]);
 +        let path = location.as_ref().to_owned();
-+        let obj = self.downgrade();
-+        gst_video::convert_sample_async_local(
-+            &sample,
-+            &gst::Caps::builder("image/jpeg").build(),
-+            Some(gst::ClockTime::from_seconds(5)),
-+            move |result| {
++        let obj = glib::SendWeakRef::from(self.downgrade());
++        std::thread::spawn(move || {
++            let result = encode_oriented_jpeg(&sample, direction, &path);
++            glib::MainContext::default().invoke(move || {
 +                let Some(obj) = obj.upgrade() else { return };
-+                let saved = match result {
-+                    Ok(jpeg) => match jpeg.buffer().map(|b| b.map_readable()) {
-+                        Some(Ok(map)) => std::fs::write(&path, map.as_slice())
-+                            .map_err(|err| log::error!("Failed to write picture: {err}"))
-+                            .is_ok(),
-+                        _ => {
-+                            log::error!("Converted JPEG sample has no readable buffer");
-+                            false
-+                        }
-+                    },
-+                    Err(err) => {
-+                        log::error!("Failed to encode viewfinder frame as JPEG: {err}");
-+                        false
-+                    }
-+                };
 +                obj.imp().is_taking_picture.set(false);
-+                if saved {
-+                    obj.emit_picture_done(Some(&gio::File::for_path(&path)));
-+                } else {
-+                    obj.emit_picture_done(None);
++                match result {
++                    Ok(()) => obj.emit_picture_done(Some(&gio::File::for_path(&path))),
++                    Err(err) => {
++                        log::error!("WYSIWYG capture failed: {err}");
++                        obj.emit_picture_done(None);
++                    }
 +                }
-+            },
-+        );
++            });
++        });
  
          Ok(())
      }
+@@ -1192,3 +1248,69 @@
+ 
+     Ok(bin.upcast())
+ }
++
++/// fajita: one-shot memory pipeline that rotates a raw video sample per
++/// `direction` and writes it to `path` as JPEG. Runs synchronously — call
++/// from a worker thread. Pure CPU elements, no camera involvement, so it
++/// cannot touch the fragile camss power domains.
++fn encode_oriented_jpeg(
++    sample: &gst::Sample,
++    direction: gst_video::VideoOrientationMethod,
++    path: &Path,
++) -> Result<(), String> {
++    let caps = sample.caps().ok_or("sample has no caps")?.to_owned();
++    let buffer = sample.buffer_owned().ok_or("sample has no buffer")?;
++
++    let pipeline = gst::Pipeline::default();
++    let appsrc = gst::ElementFactory::make("appsrc")
++        .property("caps", &caps)
++        .build()
++        .map_err(|err| format!("appsrc: {err}"))?;
++    let flip = gst::ElementFactory::make("videoflip")
++        .property("video-direction", direction)
++        .build()
++        .map_err(|err| format!("videoflip: {err}"))?;
++    let convert = gst::ElementFactory::make("videoconvert")
++        .build()
++        .map_err(|err| format!("videoconvert: {err}"))?;
++    let enc = gst::ElementFactory::make("jpegenc")
++        .property("quality", 90i32)
++        .build()
++        .map_err(|err| format!("jpegenc: {err}"))?;
++    let sink = gst::ElementFactory::make("filesink")
++        .property("location", path.display().to_string())
++        .build()
++        .map_err(|err| format!("filesink: {err}"))?;
++
++    pipeline
++        .add_many([&appsrc, &flip, &convert, &enc, &sink])
++        .map_err(|err| err.to_string())?;
++    gst::Element::link_many([&appsrc, &flip, &convert, &enc, &sink])
++        .map_err(|err| err.to_string())?;
++
++    pipeline
++        .set_state(gst::State::Playing)
++        .map_err(|err| err.to_string())?;
++    let push_ret = appsrc.emit_by_name::<gst::FlowReturn>("push-buffer", &[&buffer]);
++    let _ = appsrc.emit_by_name::<gst::FlowReturn>("end-of-stream", &[]);
++
++    let msg = pipeline.bus().and_then(|bus| {
++        bus.timed_pop_filtered(
++            gst::ClockTime::from_seconds(10),
++            &[gst::MessageType::Eos, gst::MessageType::Error],
++        )
++    });
++    let _ = pipeline.set_state(gst::State::Null);
++
++    if push_ret != gst::FlowReturn::Ok {
++        return Err(format!("push-buffer: {push_ret:?}"));
++    }
++    match msg {
++        Some(msg) => match msg.view() {
++            gst::MessageView::Eos(_) => Ok(()),
++            gst::MessageView::Error(err) => Err(err.error().to_string()),
++            _ => Err("unexpected bus message".into()),
++        },
++        None => Err("JPEG encode timed out".into()),
++    }
++}
 diff -ur snap-orig/data/org.gnome.Snapshot.gschema.xml.in snap-new/data/org.gnome.Snapshot.gschema.xml.in
 --- snap-orig/data/org.gnome.Snapshot.gschema.xml.in	2026-07-17 18:51:19.752801026 -0400
 +++ snap-new/data/org.gnome.Snapshot.gschema.xml.in	2026-07-17 18:51:19.767052744 -0400
