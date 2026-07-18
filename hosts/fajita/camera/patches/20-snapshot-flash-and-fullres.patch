@@ -13,7 +13,7 @@ diff -ur snap-orig/aperture/src/utils.rs snap-new/aperture/src/utils.rs
          let mut best_size_optimal_ratio: Option<Size> = None;
 diff -ur snap-orig/aperture/src/viewfinder.rs snap-new/aperture/src/viewfinder.rs
 --- snap-orig/aperture/src/viewfinder.rs	2026-07-17 23:12:26.841001293 -0400
-+++ snap-new/aperture/src/viewfinder.rs	2026-07-18 00:19:28.116224568 -0400
++++ snap-new/aperture/src/viewfinder.rs	2026-07-18 00:24:10.472412091 -0400
 @@ -56,6 +56,9 @@
          pub camera_element: OnceCell<gst::Element>,
          pub capsfilter: OnceCell<gst::Element>,
@@ -46,7 +46,7 @@ diff -ur snap-orig/aperture/src/viewfinder.rs snap-new/aperture/src/viewfinder.r
              camerabin.set_property("viewfinder-sink", &tee);
  
              let videoconvert_video = gst::ElementFactory::make("videoconvert")
-@@ -589,15 +607,53 @@
+@@ -589,15 +607,69 @@
              return Err(crate::CaptureError::RecordingInProgress);
          }
  
@@ -72,10 +72,26 @@ diff -ur snap-orig/aperture/src/viewfinder.rs snap-new/aperture/src/viewfinder.r
 +        // honors for the preview and camerabin's jifmux used to bake into
 +        // EXIF. Bake it into the PIXELS instead — EXIF-only orientation is
 +        // ignored by enough consumers to have been a standing complaint.
++        // Same mapping as gst_video_orientation_from_tag (the Rust binding
++        // gates it behind the v1_20 feature, which we don't have enabled).
 +        let direction = wysiwyg_sink
 +            .static_pad("sink")
 +            .and_then(|pad| pad.sticky_event::<gst::event::Tag>(0))
-+            .and_then(|event| gst_video::VideoOrientationMethod::from_tag(event.tag()))
++            .and_then(|event| {
++                event
++                    .tag()
++                    .get::<gst::tags::ImageOrientation>()
++                    .map(|orientation| match orientation.get() {
++                        "rotate-90" => gst_video::VideoOrientationMethod::_90r,
++                        "rotate-180" => gst_video::VideoOrientationMethod::_180,
++                        "rotate-270" => gst_video::VideoOrientationMethod::_90l,
++                        "flip-rotate-0" => gst_video::VideoOrientationMethod::Horiz,
++                        "flip-rotate-90" => gst_video::VideoOrientationMethod::UlLr,
++                        "flip-rotate-180" => gst_video::VideoOrientationMethod::Vert,
++                        "flip-rotate-270" => gst_video::VideoOrientationMethod::UrLl,
++                        _ => gst_video::VideoOrientationMethod::Identity,
++                    })
++            })
 +            .unwrap_or(gst_video::VideoOrientationMethod::Identity);
 +
          // Set after we cannot fail anymore.
@@ -106,7 +122,7 @@ diff -ur snap-orig/aperture/src/viewfinder.rs snap-new/aperture/src/viewfinder.r
  
          Ok(())
      }
-@@ -1192,3 +1248,69 @@
+@@ -1192,3 +1264,69 @@
  
      Ok(bin.upcast())
  }
