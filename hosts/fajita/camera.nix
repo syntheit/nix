@@ -155,7 +155,13 @@ in
   #     gsettings set org.gnome.World.Snapshot flash-enabled true — check
   #     schema id with `gsettings list-schemas | grep -i snapshot`).
   #  3. Warm screen flash: front photos paint the panel warm-white for
-  #     ~550ms starting just before capture (FlashBin gains a warm mode).
+  #     ~1.4s (FlashBin gains a warm mode); the capture happens mid-hold.
+  #  4. WYSIWYG capture: take_picture saves the viewfinder's own last
+  #     frame (fakesink branch on the tee + convert_sample_async) instead
+  #     of going through camerabin's capture path — camerabin renegotiates
+  #     the source per capture, restarting libcamera and resetting the
+  #     soft-ISP's AWB/AF, which made photos violet/defocused even when
+  #     the viewfinder looked perfect. Photo == viewfinder by construction.
   nixpkgs.overlays = [
     (final: prev: {
       snapshot = prev.snapshot.overrideAttrs (old: {

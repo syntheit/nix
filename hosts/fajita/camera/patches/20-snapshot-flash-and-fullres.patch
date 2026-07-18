@@ -13,24 +13,104 @@ diff -ur snap-orig/aperture/src/utils.rs snap-new/aperture/src/utils.rs
          let mut best_size_optimal_ratio: Option<Size> = None;
 diff -ur snap-orig/aperture/src/viewfinder.rs snap-new/aperture/src/viewfinder.rs
 --- snap-orig/aperture/src/viewfinder.rs	2026-07-17 23:12:26.841001293 -0400
-+++ snap-new/aperture/src/viewfinder.rs	2026-07-17 23:12:26.866200203 -0400
-@@ -596,6 +596,16 @@
++++ snap-new/aperture/src/viewfinder.rs	2026-07-17 23:52:15.266455029 -0400
+@@ -56,6 +56,9 @@
+         pub camera_element: OnceCell<gst::Element>,
+         pub capsfilter: OnceCell<gst::Element>,
+         pub sink_paintable: OnceCell<gst::Element>,
++        /// fajita: fakesink branch on the viewfinder tee that keeps the
++        /// last displayed frame in system memory for WYSIWYG capture.
++        pub wysiwyg_sink: OnceCell<gst::Element>,
+         pub tee: OnceCell<crate::PipelineTee>,
+         pub bus_watch: OnceCell<gst::bus::BusWatchGuard>,
  
-         let camerabin = imp.camerabin();
-         camerabin.set_property_from_str("mode", "mode-image");
-+        // fajita: pin image capture to the caps the viewfinder is ALREADY
-+        // running. Without this camerabin renegotiates the source for the
-+        // capture, which restarts the libcamera pipeline and resets the
-+        // soft-ISP's AWB/AF state — the captured frame is then unconverged
-+        // (wrong color, defocused) and never matches what the viewfinder
-+        // showed.
-+        if let Some(capsfilter) = imp.capsfilter.get() {
-+            let caps = capsfilter.property::<gst::Caps>("caps");
-+            camerabin.set_property("image-capture-caps", &caps);
-+        }
-         camerabin.set_property("location", location.as_ref().display().to_string());
-         camerabin.emit_by_name::<()>("start-capture", &[]);
+@@ -303,6 +306,21 @@
+             };
  
+             tee.add_branch(&sink);
++
++            // fajita: second tee branch that only holds the newest frame
++            // (`last-sample`), so take_picture() can encode exactly what the
++            // viewfinder is showing. Tapping the tee — before any GL upload
++            // in the display branch — guarantees system-memory buffers that
++            // gst_video::convert_sample can handle.
++            let wysiwyg_sink = gst::ElementFactory::make("fakesink")
++                .property("sync", false)
++                .property("async", false)
++                .property("enable-last-sample", true)
++                .build()
++                .expect("Missing GStreamer Core Elements");
++            tee.add_branch(&wysiwyg_sink);
++            self.wysiwyg_sink.set(wysiwyg_sink).unwrap();
++
+             camerabin.set_property("viewfinder-sink", &tee);
+ 
+             let videoconvert_video = gst::ElementFactory::make("videoconvert")
+@@ -589,15 +607,58 @@
+             return Err(crate::CaptureError::RecordingInProgress);
+         }
+ 
++        // fajita WYSIWYG capture: encode the frame the viewfinder is showing
++        // RIGHT NOW instead of asking camerabin for a fresh capture.
++        // camerabin's capture path renegotiates the source — the libcamera
++        // pipeline stops and restarts, the soft-ISP's AWB/AF convergence
++        // resets, and the stored frame comes out violet/defocused even when
++        // the viewfinder looked perfect (pinning image-capture-caps did not
++        // stop the renegotiation; it happens inside wrappercamerabinsrc).
++        // The viewfinder already runs at the max negotiated resolution on
++        // this stack, so nothing is lost: photo == viewfinder by
++        // construction.
++        let Some(sample) = imp
++            .wysiwyg_sink
++            .get()
++            .and_then(|sink| sink.property::<Option<gst::Sample>>("last-sample"))
++        else {
++            return Err(crate::CaptureError::NotReady);
++        };
++
+         // Set after we cannot fail anymore.
+         imp.is_taking_picture.set(true);
+ 
+-        self.set_tags();
+-
+-        let camerabin = imp.camerabin();
+-        camerabin.set_property_from_str("mode", "mode-image");
+-        camerabin.set_property("location", location.as_ref().display().to_string());
+-        camerabin.emit_by_name::<()>("start-capture", &[]);
++        let path = location.as_ref().to_owned();
++        let obj = self.downgrade();
++        gst_video::convert_sample_async_local(
++            &sample,
++            &gst::Caps::builder("image/jpeg").build(),
++            Some(gst::ClockTime::from_seconds(5)),
++            move |result| {
++                let Some(obj) = obj.upgrade() else { return };
++                let saved = match result {
++                    Ok(jpeg) => match jpeg.buffer().map(|b| b.map_readable()) {
++                        Some(Ok(map)) => std::fs::write(&path, map.as_slice())
++                            .map_err(|err| log::error!("Failed to write picture: {err}"))
++                            .is_ok(),
++                        _ => {
++                            log::error!("Converted JPEG sample has no readable buffer");
++                            false
++                        }
++                    },
++                    Err(err) => {
++                        log::error!("Failed to encode viewfinder frame as JPEG: {err}");
++                        false
++                    }
++                };
++                obj.imp().is_taking_picture.set(false);
++                if saved {
++                    obj.emit_picture_done(Some(&gio::File::for_path(&path)));
++                } else {
++                    obj.emit_picture_done(None);
++                }
++            },
++        );
+ 
+         Ok(())
+     }
 diff -ur snap-orig/data/org.gnome.Snapshot.gschema.xml.in snap-new/data/org.gnome.Snapshot.gschema.xml.in
 --- snap-orig/data/org.gnome.Snapshot.gschema.xml.in	2026-07-17 18:51:19.752801026 -0400
 +++ snap-new/data/org.gnome.Snapshot.gschema.xml.in	2026-07-17 18:51:19.767052744 -0400
@@ -48,16 +128,19 @@ diff -ur snap-orig/data/org.gnome.Snapshot.gschema.xml.in snap-new/data/org.gnom
        <summary>Play shutter sound</summary>
 diff -ur snap-orig/src/widgets/camera.rs snap-new/src/widgets/camera.rs
 --- snap-orig/src/widgets/camera.rs	2026-07-17 18:51:19.754202704 -0400
-+++ snap-new/src/widgets/camera.rs	2026-07-17 23:12:26.866576197 -0400
-@@ -428,10 +428,83 @@
++++ snap-new/src/widgets/camera.rs	2026-07-17 23:52:39.184982530 -0400
+@@ -428,10 +428,47 @@
          let filename = utils::picture_file_name(format);
          let path = utils::pictures_dir()?.join(filename);
  
-+        // fajita flash (gsettings key `flash-enabled`, default off):
++        // fajita flash (gsettings key `flash-enabled`, default off).
++        // WYSIWYG capture saves the frame the viewfinder is showing at
++        // take_picture() time, so the flash must be lit BEFORE the call and
++        // the scene given a few sensor frames to reach the screen lit:
 +        //  - rear: strobe the pmi8998 LED via sysfs (kernel self-terminates
-+        //    the strobe; node is group-video writable via udev rule);
-+        //  - front: paint the panel warm-white BEFORE capture so it lights
-+        //    the subject while the sensor integrates.
++        //    the strobe; node is group-video writable via udev rule),
++        //    re-strobe in case the first burst timed out, capture mid-light;
++        //  - front: paint the panel warm-white and capture mid-hold.
 +        let settings = imp.settings();
 +        let flash_enabled = settings.boolean("flash-enabled");
 +        let is_front = imp
@@ -67,61 +150,22 @@ diff -ur snap-orig/src/widgets/camera.rs snap-new/src/widgets/camera.rs
 +            .unwrap_or(false);
 +        if flash_enabled {
 +            if is_front {
-+                // Max the panel brightness for the duration of the warm
-+                // flash (gsd-power DBus), restoring the old value after.
-+                glib::spawn_future_local(async {
-+                    if let Ok(bus) = gio::bus_get_future(gio::BusType::Session).await {
-+                        let dest = Some("org.gnome.SettingsDaemon.Power");
-+                        let path = "/org/gnome/SettingsDaemon/Power";
-+                        let iface = "org.gnome.SettingsDaemon.Power.Screen";
-+                        let old_val = bus
-+                            .call_future(
-+                                dest, path,
-+                                "org.freedesktop.DBus.Properties", "Get",
-+                                Some(&(iface, "Brightness").to_variant()),
-+                                None, gio::DBusCallFlags::NONE, 1000,
-+                            )
-+                            .await
-+                            .ok()
-+                            .and_then(|v| v.child_value(0).as_variant())
-+                            .and_then(|v| v.get::<i32>());
-+                        let set = |value: i32| {
-+                            bus.call_future(
-+                                dest, path,
-+                                "org.freedesktop.DBus.Properties", "Set",
-+                                Some(&(iface, "Brightness", value.to_variant()).to_variant()),
-+                                None, gio::DBusCallFlags::NONE, 1000,
-+                            )
-+                        };
-+                        let _ = set(100).await;
-+                        glib::timeout_future(std::time::Duration::from_millis(2400)).await;
-+                        if let Some(old_val) = old_val {
-+                            let _ = set(old_val).await;
-+                        }
-+                    }
-+                });
-+                // 2.2s rise-hold-fall so the panel is still lit when the
-+                // capture happens.
 +                imp.flash_bin.flash_warm();
-+                glib::timeout_future(std::time::Duration::from_millis(50)).await;
++                // Panel is fully warm ~10% into the 1.4s animation; the
++                // extra wait lets the lit scene propagate through the
++                // soft-ISP to the viewfinder before the grab.
++                glib::timeout_future(std::time::Duration::from_millis(700)).await;
 +            } else {
-+                // Strobe now and re-strobe across the capture-latency
-+                // window — camerabin's mode switch delays real exposure.
 +                let _ = std::fs::write(
 +                    "/sys/class/leds/white:flash/flash_strobe",
 +                    "1",
 +                );
-+                for delay in [400u64, 800] {
-+                    glib::timeout_add_local_once(
-+                        std::time::Duration::from_millis(delay),
-+                        || {
-+                            let _ = std::fs::write(
-+                                "/sys/class/leds/white:flash/flash_strobe",
-+                                "1",
-+                            );
-+                        },
-+                    );
-+                }
++                glib::timeout_future(std::time::Duration::from_millis(400)).await;
++                let _ = std::fs::write(
++                    "/sys/class/leds/white:flash/flash_strobe",
++                    "1",
++                );
++                glib::timeout_future(std::time::Duration::from_millis(150)).await;
 +            }
 +        }
 +
@@ -137,7 +181,7 @@ diff -ur snap-orig/src/widgets/camera.rs snap-new/src/widgets/camera.rs
          }
 diff -ur snap-orig/src/widgets/flash_bin.rs snap-new/src/widgets/flash_bin.rs
 --- snap-orig/src/widgets/flash_bin.rs	2026-07-17 18:51:19.754183891 -0400
-+++ snap-new/src/widgets/flash_bin.rs	2026-07-17 22:55:30.787846897 -0400
++++ snap-new/src/widgets/flash_bin.rs	2026-07-17 23:53:08.638631783 -0400
 @@ -4,13 +4,15 @@
  use gtk::{gdk, glib, graphene};
  
@@ -161,9 +205,9 @@ diff -ur snap-orig/src/widgets/flash_bin.rs snap-new/src/widgets/flash_bin.rs
              }
 -            let alpha = easing(animation.value()) as f32;
 +            let v = animation.value();
-+            // Warm fill light: fast rise, long hold, fast fall — must
-+            // still be lit when the delayed exposure happens. Shutter
-+            // effect keeps the original bell curve.
++            // Warm fill light: fast rise, long hold, fast fall — the
++            // WYSIWYG grab happens mid-hold. Shutter effect keeps the
++            // original bell curve.
 +            let alpha = if self.warm.get() {
 +                if v < 0.1 {
 +                    (v / 0.1) as f32
@@ -208,7 +252,7 @@ diff -ur snap-orig/src/widgets/flash_bin.rs snap-new/src/widgets/flash_bin.rs
 +        let imp = self.imp();
 +        imp.warm.set(true);
 +        let ani = imp.flash_ani.get().unwrap();
-+        ani.set_duration(2200);
++        ani.set_duration(1400);
 +        ani.play();
      }
  }
