@@ -40,11 +40,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1784178698,
-        "narHash": "sha256-RS67aLC0djrm9j7k/40TDVueUegI3MqzL3bFudcBEeY=",
+        "lastModified": 1784349286,
+        "narHash": "sha256-h+VZp5g9ONOSU987XNqteexS6quc/yJUQ0J7oTEt/3w=",
         "ref": "refs/heads/main",
-        "rev": "fede2e63f37b942d9ea85e7602065d3297e71bc6",
-        "revCount": 18,
+        "rev": "6a744e4a49869b811c287ce84674357c72b4409b",
+        "revCount": 27,
         "type": "git",
         "url": "ssh://git@github.com/syntheit/anchorage.git"
       },
@@ -817,11 +817,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1784179079,
-        "narHash": "sha256-bmRJOxFAhcvzReH54gAAtuH6vt7IZU2U5HHDRrocIN0=",
+        "lastModified": 1784349334,
+        "narHash": "sha256-Jemgc5fqSbK8jBTaJSPvNUsTTdGbYuswLh3WUXdTVx0=",
         "ref": "refs/heads/main",
-        "rev": "503c99a6208c3cfeaf6d0779d4f67bee347823f7",
-        "revCount": 14,
+        "rev": "2468497bb30abf2b6bb04ec400e2644072ea43c4",
+        "revCount": 24,
         "type": "git",
         "url": "ssh://git@github.com/syntheit/jotter.git"
       },
