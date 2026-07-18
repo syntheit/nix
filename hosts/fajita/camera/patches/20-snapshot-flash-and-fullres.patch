@@ -11,6 +11,26 @@ diff -ur snap-orig/aperture/src/utils.rs snap-new/aperture/src/utils.rs
          const OPTIMAL_RATIO: f32 = 16.0 / 9.0;
  
          let mut best_size_optimal_ratio: Option<Size> = None;
+diff -ur snap-orig/aperture/src/viewfinder.rs snap-new/aperture/src/viewfinder.rs
+--- snap-orig/aperture/src/viewfinder.rs	2026-07-17 23:12:26.841001293 -0400
++++ snap-new/aperture/src/viewfinder.rs	2026-07-17 23:12:26.866200203 -0400
+@@ -596,6 +596,16 @@
+ 
+         let camerabin = imp.camerabin();
+         camerabin.set_property_from_str("mode", "mode-image");
++        // fajita: pin image capture to the caps the viewfinder is ALREADY
++        // running. Without this camerabin renegotiates the source for the
++        // capture, which restarts the libcamera pipeline and resets the
++        // soft-ISP's AWB/AF state — the captured frame is then unconverged
++        // (wrong color, defocused) and never matches what the viewfinder
++        // showed.
++        if let Some(capsfilter) = imp.capsfilter.get() {
++            let caps = capsfilter.property::<gst::Caps>("caps");
++            camerabin.set_property("image-capture-caps", &caps);
++        }
+         camerabin.set_property("location", location.as_ref().display().to_string());
+         camerabin.emit_by_name::<()>("start-capture", &[]);
+ 
 diff -ur snap-orig/data/org.gnome.Snapshot.gschema.xml.in snap-new/data/org.gnome.Snapshot.gschema.xml.in
 --- snap-orig/data/org.gnome.Snapshot.gschema.xml.in	2026-07-17 18:51:19.752801026 -0400
 +++ snap-new/data/org.gnome.Snapshot.gschema.xml.in	2026-07-17 18:51:19.767052744 -0400
@@ -28,8 +48,8 @@ diff -ur snap-orig/data/org.gnome.Snapshot.gschema.xml.in snap-new/data/org.gnom
        <summary>Play shutter sound</summary>
 diff -ur snap-orig/src/widgets/camera.rs snap-new/src/widgets/camera.rs
 --- snap-orig/src/widgets/camera.rs	2026-07-17 18:51:19.754202704 -0400
-+++ snap-new/src/widgets/camera.rs	2026-07-17 22:55:30.787804365 -0400
-@@ -428,10 +428,50 @@
++++ snap-new/src/widgets/camera.rs	2026-07-17 23:12:26.866576197 -0400
+@@ -428,10 +428,83 @@
          let filename = utils::picture_file_name(format);
          let path = utils::pictures_dir()?.join(filename);
  
@@ -47,8 +67,41 @@ diff -ur snap-orig/src/widgets/camera.rs snap-new/src/widgets/camera.rs
 +            .unwrap_or(false);
 +        if flash_enabled {
 +            if is_front {
++                // Max the panel brightness for the duration of the warm
++                // flash (gsd-power DBus), restoring the old value after.
++                glib::spawn_future_local(async {
++                    if let Ok(bus) = gio::bus_get_future(gio::BusType::Session).await {
++                        let dest = Some("org.gnome.SettingsDaemon.Power");
++                        let path = "/org/gnome/SettingsDaemon/Power";
++                        let iface = "org.gnome.SettingsDaemon.Power.Screen";
++                        let old_val = bus
++                            .call_future(
++                                dest, path,
++                                "org.freedesktop.DBus.Properties", "Get",
++                                Some(&(iface, "Brightness").to_variant()),
++                                None, gio::DBusCallFlags::NONE, 1000,
++                            )
++                            .await
++                            .ok()
++                            .and_then(|v| v.child_value(0).as_variant())
++                            .and_then(|v| v.get::<i32>());
++                        let set = |value: i32| {
++                            bus.call_future(
++                                dest, path,
++                                "org.freedesktop.DBus.Properties", "Set",
++                                Some(&(iface, "Brightness", value.to_variant()).to_variant()),
++                                None, gio::DBusCallFlags::NONE, 1000,
++                            )
++                        };
++                        let _ = set(100).await;
++                        glib::timeout_future(std::time::Duration::from_millis(2400)).await;
++                        if let Some(old_val) = old_val {
++                            let _ = set(old_val).await;
++                        }
++                    }
++                });
 +                // 2.2s rise-hold-fall so the panel is still lit when the
-+                // pipeline's image-mode switch finally exposes (~0.5-1s).
++                // capture happens.
 +                imp.flash_bin.flash_warm();
 +                glib::timeout_future(std::time::Duration::from_millis(50)).await;
 +            } else {
