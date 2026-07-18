@@ -162,6 +162,11 @@ in
   #     the source per capture, restarting libcamera and resetting the
   #     soft-ISP's AWB/AF, which made photos violet/defocused even when
   #     the viewfinder looked perfect. Photo == viewfinder by construction.
+  #  5. Upright pixels: the capture path rotates the frame per the
+  #     pipeline's sticky image-orientation tag (rear rotate-90, front
+  #     rotate-270) via videoflip before JPEG encode. camerabin only wrote
+  #     EXIF orientation (which many viewers ignore); v4 briefly lost even
+  #     that by bypassing camerabin's tagsetter.
   nixpkgs.overlays = [
     (final: prev: {
       snapshot = prev.snapshot.overrideAttrs (old: {
