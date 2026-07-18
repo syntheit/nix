@@ -44,7 +44,13 @@
       sshKey = config.sops.secrets.mac_builder_ssh_key.path;
       protocol = "ssh-ng";
       systems = [ "aarch64-linux" ];
-      maxJobs = 8;
+      # 4, not 8: eight concurrent derivations on the 8 GiB guest is ~1 GiB
+      # per job — guest OOM has killed builds before ("rustc terminated by a
+      # deadly signal"), and the resulting I/O storms correlate with the
+      # 2026-07-18 QEMU/hvf hangs. Big derivations (kernel, mesa) are
+      # single big-parallel jobs anyway; this mostly serializes the
+      # many-small-package phases.
+      maxJobs = 4;
       speedFactor = 4;
       supportedFeatures = [ "kvm" "benchmark" "big-parallel" ];
       publicHostKey = "c3NoLWVkMjU1MTkgQUFBQUMzTnphQzFsWkRJMU5URTVBQUFBSUpCV2N4Yi9CbGFxdDFhdU90RStGOFFVV3JVb3RpQzVxQkorVXVFV2RWQ2Igcm9vdEBuaXhvcwo=";
