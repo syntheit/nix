@@ -1,0 +1,18 @@
+diff --git a/js/ui/unlockDialog.js b/js/ui/unlockDialog.js
+index 56de9a0d1..b969482db 100644
+--- a/js/ui/unlockDialog.js
++++ b/js/ui/unlockDialog.js
+@@ -32,8 +32,11 @@ const CROSSFADE_TIME = 300;
+ const FADE_OUT_TRANSLATION = 500;
+ const FADE_OUT_SCALE = 0.3;
+ 
+-const BLUR_BRIGHTNESS = 0.65;
+-const BLUR_RADIUS = 90;
++// fajita: show the lock-screen wallpaper sharp and bright (no Gaussian blur,
++// no dimming) — like an iOS/Android lock screen photo. Scoped to UnlockDialog
++// only; the normal desktop wallpaper is unaffected.
++const BLUR_BRIGHTNESS = 1.0;
++const BLUR_RADIUS = 0;
+ 
+ const Clock = GObject.registerClass(
+ class UnlockDialogClock extends St.BoxLayout {

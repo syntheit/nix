@@ -1,0 +1,253 @@
+diff --git a/js/ui/status/network.js b/js/ui/status/network.js
+index 8e4957f1e..977d32620 100644
+--- a/js/ui/status/network.js
++++ b/js/ui/status/network.js
+@@ -674,33 +674,14 @@ class NMModemDeviceItem extends NMDeviceItem {
+             case 'connecting':
+                 return 'network-cellular-acquiring-symbolic';
+             case 'connected': {
+-                if (this.state === NM.ActiveConnectionState.ACTIVATING) {
++                if (this.state === NM.ActiveConnectionState.ACTIVATING)
+                     return 'network-cellular-acquiring-symbolic';
+-                } else if (this.state === NM.ActiveConnectionState.ACTIVATED) {
+-                    // When connected to mobile data, we show 3g/4g technology icon.
+-                    // When connected to telephony service only we show signal strength.
+-                    switch (this._mobileDevice.accessTechnology) {
+-                    case 'GSM':
+-                        // Not sure GSM itself even does mobile data, but let's not
+-                        // make this too complicated..
+-                        return 'network-cellular-2g-symbolic';
+-                    case '2G':
+-                        return 'network-cellular-2g-symbolic';
+-                    case '3G':
+-                        return 'network-cellular-3g-symbolic';
+-                    case '4G':
+-                        return 'network-cellular-4g-symbolic';
+-                    case '5G':
+-                        return 'network-cellular-5g-symbolic';
+-                    case 'unknown':
+-                    case 'other':
+-                        // we don't know this type of network, let's show a generic icon
+-                        return 'network-cellular-connected-symbolic';
+-                    }
+-                } else {
+-                    const qualityString = signalToIcon(this._mobileDevice.signal_quality);
+-                    return `network-cellular-signal-${qualityString}-symbolic`;
+-                }
++
++                // fajita: always show signal-strength BARS in the panel/tile;
++                // the network generation (2G/3G/4G/5G) is rendered as a separate
++                // text label beside the bars in the panel Indicator, iOS-style.
++                const qualityString = signalToIcon(this._mobileDevice.signal_quality);
++                return `network-cellular-signal-${qualityString}-symbolic`;
+             }
+             case 'locked':
+                 return 'auth-sim-locked-symbolic';
+@@ -2149,8 +2130,21 @@ class Indicator extends SystemIndicator {
+ 
+         this._primaryIndicator = this._addIndicator();
+         this._secondaryIndicator = this._addIndicator();
++        // fajita: network-generation text ("4G"/"5G"…) shown beside the
++        // cellular bars, in place of the stylised 4G glyph.
++        this._cellLabel = new St.Label({
++            y_align: Clutter.ActorAlign.CENTER,
++            visible: false,
++            style: 'font-size: 9px; font-weight: bold; padding: 0 1px 0 2px;',
++        });
++        this.add_child(this._cellLabel);
++        this._cellLabel.connect('notify::visible',
++            () => this._syncIndicatorsVisible());
+         this._vpnIndicator = this._addIndicator();
+ 
++        this._modemDevice = null;
++        this._qsMenu = null;
++
+         this._primaryIndicatorBinding = new GObject.BindingGroup();
+         this._primaryIndicatorBinding.bind('icon-name',
+             this._primaryIndicator, 'icon-name',
+@@ -2173,6 +2167,11 @@ class Indicator extends SystemIndicator {
+                 this._updateIcon()
+         });
+ 
++        // fajita: track the active modem device item so we can render its
++        // access technology as text and keep it in sync.
++        this._modemToggle._itemBinding.connect('notify::source',
++            () => this._onModemItemChanged());
++
+         this._getClient().catch(logError);
+     }
+ 
+@@ -2310,5 +2309,57 @@ class Indicator extends SystemIndicator {
+         const state = this._client.get_state();
+         const connected = state === NM.State.CONNECTED_GLOBAL;
+         this._primaryIndicator.visible = (primaryToggle != null) || connected;
++
++        this._syncCellular();
++    }
++
++    _onModemItemChanged() {
++        this._modemDevice?.disconnectObject(this);
++        const item = this._modemToggle._itemBinding.source;
++        this._modemDevice = item?._mobileDevice ?? null;
++        this._modemDevice?.connectObject(
++            'notify::access-technology', () => this._syncCellular(),
++            'notify::simple-state', () => this._syncCellular(),
++            this);
++        this._syncCellular();
++    }
++
++    _syncCellular() {
++        const connected = this._modemDevice?.simpleState === 'connected';
++        const techText = connected ? this._cellTechText(this._modemDevice.accessTechnology) : '';
++
++        // Is wifi the primary (in-use) connection?
++        const wifiPrimary =
++            this._primaryIndicatorBinding.source === this._wirelessToggle;
++        const qsOpen = this._getQsMenu()?.isOpen ?? false;
++
++        // Cellular shows in the bar when it's the primary connection, OR when
++        // wifi is primary but the QS sheet is pulled down. When wifi is primary
++        // and QS is closed, hide the cellular bars + text entirely (iOS-style).
++        const showCell = techText !== '' && (!wifiPrimary || qsOpen);
++
++        this._cellLabel.text = techText;
++        this._cellLabel.visible = showCell;
++        if (wifiPrimary)
++            this._secondaryIndicator.visible = showCell && this._modemToggle.visible;
++    }
++
++    _cellTechText(tech) {
++        switch (tech) {
++        case '5G': return '5G';
++        case '4G': return '4G';
++        case '3G': return '3G';
++        case '2G':
++        case 'GSM': return '2G';
++        default: return '';
++        }
++    }
++
++    _getQsMenu() {
++        if (!this._qsMenu) {
++            this._qsMenu = Main.panel.statusArea.quickSettings?.menu ?? null;
++            this._qsMenu?.connect('open-state-changed', () => this._syncCellular());
++        }
++        return this._qsMenu;
+     }
+ });
+diff --git a/js/ui/status/system.js b/js/ui/status/system.js
+index b4bce7c1b..b0ea69122 100644
+--- a/js/ui/status/system.js
++++ b/js/ui/status/system.js
+@@ -318,25 +318,49 @@ class Indicator extends SystemIndicator {
+             `changed::${SHOW_BATTERY_PERCENTAGE}`, () => this._sync(), this);
+ 
+         this._indicator = this._addIndicator();
++
++        // fajita: iOS/Android-style battery — a rounded outline with the
++        // percentage NUMBER inside it. The symbolic battery icon (_indicator)
++        // is kept only as the no-battery fallback (hidden when a battery
++        // exists). Sizing/colours are inline so the glyph is self-contained;
++        // tune the px values in _applyBatteryStyle() to taste.
+         this._percentageLabel = new St.Label({
++            x_align: Clutter.ActorAlign.CENTER,
++            y_align: Clutter.ActorAlign.CENTER,
++        });
++        this._batteryBody = new St.Bin({
++            child: this._percentageLabel,
++            x_align: Clutter.ActorAlign.CENTER,
++            y_align: Clutter.ActorAlign.CENTER,
++        });
++        this._batteryNub = new St.Widget({y_align: Clutter.ActorAlign.CENTER});
++        this._batteryGlyph = new St.BoxLayout({
+             y_expand: true,
+             y_align: Clutter.ActorAlign.CENTER,
+         });
+-        this.add_child(this._percentageLabel);
++        this._batteryGlyph.add_child(this._batteryBody);
++        this._batteryGlyph.add_child(this._batteryNub);
++        this.add_child(this._batteryGlyph);
++        this._batteryGlyph.connect('notify::visible',
++            () => this._syncIndicatorsVisible());
+         this.add_style_class_name('power-status');
+ 
+         this._systemItem = new SystemItem();
+ 
+         const {powerToggle} = this._systemItem;
+ 
+-        powerToggle.bind_property('title',
++        // Show just the number (strip the "%") — the outline reads as "battery".
++        powerToggle.bind_property_full('title',
+             this._percentageLabel, 'text',
+-            GObject.BindingFlags.SYNC_CREATE);
++            GObject.BindingFlags.SYNC_CREATE,
++            (bind, title) => [true, (title ?? '').replace(/\D/g, '')],
++            null);
+ 
+         powerToggle.connectObject(
+             'notify::visible', () => this._sync(),
+             'notify::gicon', () => this._sync(),
+             'notify::fallback-icon-name', () => this._sync(),
++            'notify::title', () => this._sync(),
+             this);
+ 
+         this.quickSettingsItems.push(this._systemItem);
+@@ -347,16 +371,34 @@ class Indicator extends SystemIndicator {
+     _sync() {
+         const {powerToggle} = this._systemItem;
+         if (powerToggle.visible) {
+-            this._indicator.set({
+-                gicon: powerToggle.gicon,
+-                fallback_icon_name: powerToggle.fallback_icon_name,
+-            });
+-            this._percentageLabel.visible =
+-                this._desktopSettings.get_boolean(SHOW_BATTERY_PERCENTAGE);
++            // Battery present: show the outline+number glyph, hide the icon.
++            this._indicator.hide();
++            this._batteryGlyph.show();
++
++            const iconName =
++                `${powerToggle.gicon?.get_names?.()?.join(' ') ?? ''} ${powerToggle.fallback_icon_name ?? ''}`;
++            const charging = /charging|charged|plugged/.test(iconName);
++            const pct = parseInt((powerToggle.title ?? '').replace(/\D/g, ''), 10);
++            const low = Number.isFinite(pct) && pct <= 15 && !charging;
++
++            this._applyBatteryStyle(charging ? '#3ddc84' : low ? '#ff4d4d' : 'white');
+         } else {
+-            // If there's no battery, then we use the power icon.
++            // No battery: fall back to the plain power icon.
++            this._batteryGlyph.hide();
+             this._indicator.icon_name = 'system-shutdown-symbolic';
+-            this._percentageLabel.hide();
++            this._indicator.show();
+         }
+     }
++
++    _applyBatteryStyle(color) {
++        this._batteryBody.style =
++            'min-width: 19px; min-height: 11px; padding: 0 2px;' +
++            `border-width: 1px; border-color: ${color}; border-radius: 3px;`;
++        this._batteryNub.style =
++            `background-color: ${color}; min-width: 2px; min-height: 5px;` +
++            'border-radius: 0 2px 2px 0; margin-left: 1px;';
++        this._percentageLabel.style =
++            `color: ${color}; font-size: 8px; font-weight: 800;` +
++            'font-feature-settings: "tnum";';
++    }
+ });
+diff --git a/js/ui/status/volume.js b/js/ui/status/volume.js
+index b8f8d8fb4..6b0d4ebf0 100644
+--- a/js/ui/status/volume.js
++++ b/js/ui/status/volume.js
+@@ -477,7 +477,10 @@ class OutputIndicator extends VolumeIndicator {
+ 
+             if (icon)
+                 this._indicator.icon_name = icon;
+-            this._indicator.visible = icon !== null;
++            // fajita: no persistent sound icon in the top bar (iOS/Android
++            // don't show one — only a transient OSD on volume-key press). The
++            // QS volume slider stays; just the panel indicator is suppressed.
++            this._indicator.visible = false;
+         });
+ 
+         this.quickSettingsItems.push(this._output);

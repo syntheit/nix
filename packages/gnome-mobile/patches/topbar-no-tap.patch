@@ -1,0 +1,32 @@
+diff --git a/js/ui/dateMenu.js b/js/ui/dateMenu.js
+index fbf376bcd..77958322b 100644
+--- a/js/ui/dateMenu.js
++++ b/js/ui/dateMenu.js
+@@ -864,6 +864,10 @@ class DateMenuButton extends PanelMenu.Button {
+ 
+         super._init(0.5);
+ 
++        // fajita: the clock is a passive label on mobile — no tap-to-open
++        // calendar/notifications. Swipe down on the panel for QS instead.
++        this._clickGesture.enabled = false;
++
+         this._clockDisplay = new St.Label({style_class: 'clock'});
+         this._clockDisplay.clutter_text.y_align = Clutter.ActorAlign.CENTER;
+         this._clockDisplay.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
+diff --git a/js/ui/panel.js b/js/ui/panel.js
+index 4fbe3de8d..ab9d751e4 100644
+--- a/js/ui/panel.js
++++ b/js/ui/panel.js
+@@ -292,6 +292,12 @@ class QuickSettings extends PanelMenu.Button {
+ 
+         this.setMenu(new QuickSettingsMenu(this));
+ 
++        // fajita: no tap-to-open on the top bar. The QS sheet (which also holds
++        // the notification list on mobile) stays reachable by swiping down on
++        // the panel — only the tap affordance is removed so stray taps while
++        // handling the phone don't drop the sheet open.
++        this._clickGesture.enabled = false;
++
+         this._setupIndicators().catch(error =>
+             logError(error, 'Failed to setup quick settings'));
+     }

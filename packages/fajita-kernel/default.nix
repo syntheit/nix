@@ -202,7 +202,25 @@ mobile-nixos.kernel-builder {
   configfile = configfile;
   src = kernelSrc;
 
-  patches = [ ];
+  patches = [
+    # Zombie-panel fix: ~50% of DPMS off->on cycles left the s6e3fc2x01
+    # non-displaying (ACKs DCS writes, emits no light) because our tag's driver
+    # re-inits from deep standby blind — regulator cycle + hardware reset are
+    # commented out (re-enabled upstream in tag sdm845-6.18.2-r0; this adopts
+    # that flow) and nothing verifies the panel came up. Adds GET_POWER_MODE
+    # read-back after init + escalating retry (reset pulse, then full rail
+    # power-cycle). See ~/fajita-notes/power-button-brightness.md.
+    ./patches/panel-s6e3fc2x01-verify-retry.patch
+    # DISABLED 2026-07-18 — BREAKS BOOT on this 6.16 tree: with
+    # CLK_OPS_PARENT_ENABLE the clk core enables the DSI PHY PLL during early
+    # RCG ops, before the PHY driver has configured it -> "DSI PLL(0) lock
+    # failed" at dsi_phy_driver_probe -> display dead from power-on (flashed,
+    # confirmed, rolled back). Upstream landed on 6.20 where the companion
+    # rcg2/DSI guards exist; re-attempt only together with those prerequisites.
+    # Patch kept for that future backport. (It fixes rare random freezes /
+    # crashdumps on OP6/6T — mainline a1d63493634e.)
+    # ./patches/dispcc-sdm845-pixel-clk-parent-enable.patch
+  ];
 
   nativeBuildInputs = [ buildPackages.python3 buildPackages.zstd buildPackages.kmod ];
 
