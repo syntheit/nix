@@ -28,8 +28,8 @@ diff -ur snap-orig/data/org.gnome.Snapshot.gschema.xml.in snap-new/data/org.gnom
        <summary>Play shutter sound</summary>
 diff -ur snap-orig/src/widgets/camera.rs snap-new/src/widgets/camera.rs
 --- snap-orig/src/widgets/camera.rs	2026-07-17 18:51:19.754202704 -0400
-+++ snap-new/src/widgets/camera.rs	2026-07-17 18:51:19.767135614 -0400
-@@ -428,10 +428,35 @@
++++ snap-new/src/widgets/camera.rs	2026-07-17 22:55:30.787804365 -0400
+@@ -428,10 +428,50 @@
          let filename = utils::picture_file_name(format);
          let path = utils::pictures_dir()?.join(filename);
  
@@ -47,13 +47,28 @@ diff -ur snap-orig/src/widgets/camera.rs snap-new/src/widgets/camera.rs
 +            .unwrap_or(false);
 +        if flash_enabled {
 +            if is_front {
++                // 2.2s rise-hold-fall so the panel is still lit when the
++                // pipeline's image-mode switch finally exposes (~0.5-1s).
 +                imp.flash_bin.flash_warm();
-+                glib::timeout_future(std::time::Duration::from_millis(140)).await;
++                glib::timeout_future(std::time::Duration::from_millis(50)).await;
 +            } else {
++                // Strobe now and re-strobe across the capture-latency
++                // window — camerabin's mode switch delays real exposure.
 +                let _ = std::fs::write(
 +                    "/sys/class/leds/white:flash/flash_strobe",
 +                    "1",
 +                );
++                for delay in [400u64, 800] {
++                    glib::timeout_add_local_once(
++                        std::time::Duration::from_millis(delay),
++                        || {
++                            let _ = std::fs::write(
++                                "/sys/class/leds/white:flash/flash_strobe",
++                                "1",
++                            );
++                        },
++                    );
++                }
 +            }
 +        }
 +
@@ -69,7 +84,7 @@ diff -ur snap-orig/src/widgets/camera.rs snap-new/src/widgets/camera.rs
          }
 diff -ur snap-orig/src/widgets/flash_bin.rs snap-new/src/widgets/flash_bin.rs
 --- snap-orig/src/widgets/flash_bin.rs	2026-07-17 18:51:19.754183891 -0400
-+++ snap-new/src/widgets/flash_bin.rs	2026-07-17 18:51:19.767073329 -0400
++++ snap-new/src/widgets/flash_bin.rs	2026-07-17 22:55:30.787846897 -0400
 @@ -4,13 +4,15 @@
  use gtk::{gdk, glib, graphene};
  
@@ -87,8 +102,26 @@ diff -ur snap-orig/src/widgets/flash_bin.rs snap-new/src/widgets/flash_bin.rs
      }
  
      #[glib::object_subclass]
-@@ -54,9 +56,15 @@
-             let alpha = easing(animation.value()) as f32;
+@@ -51,12 +53,32 @@
+             if !matches!(animation.state(), adw::AnimationState::Playing) {
+                 return;
+             }
+-            let alpha = easing(animation.value()) as f32;
++            let v = animation.value();
++            // Warm fill light: fast rise, long hold, fast fall — must
++            // still be lit when the delayed exposure happens. Shutter
++            // effect keeps the original bell curve.
++            let alpha = if self.warm.get() {
++                if v < 0.1 {
++                    (v / 0.1) as f32
++                } else if v < 0.85 {
++                    1.0
++                } else {
++                    ((1.0 - v) / 0.15) as f32
++                }
++            } else {
++                easing(v) as f32
++            };
  
              let rect = graphene::Rect::new(0.0, 0.0, w, h);
 -            let black = gdk::RGBA::new(0.0, 0.0, 0.0, alpha);
@@ -105,7 +138,7 @@ diff -ur snap-orig/src/widgets/flash_bin.rs snap-new/src/widgets/flash_bin.rs
          }
      }
  
-@@ -77,7 +85,20 @@
+@@ -77,7 +99,20 @@
  
  impl FlashBin {
      pub fn flash(&self) {
@@ -122,7 +155,7 @@ diff -ur snap-orig/src/widgets/flash_bin.rs snap-new/src/widgets/flash_bin.rs
 +        let imp = self.imp();
 +        imp.warm.set(true);
 +        let ani = imp.flash_ani.get().unwrap();
-+        ani.set_duration(550);
++        ani.set_duration(2200);
 +        ani.play();
      }
  }
