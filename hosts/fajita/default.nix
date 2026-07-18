@@ -594,6 +594,28 @@
   # environment.extraInit. (This is the exact inverse of the Phosh setup, which
   # needed GTK_IM_MODULE=wayland for stevia.)
 
+  # OSK text prediction (keyboard phase 0 — ~/fajita-notes/keyboard-prediction.md).
+  # GNOME Shell's OSK has carried a 3-slot suggestion strip since GNOME 43 that
+  # activates iff the "typing-booster" IBus engine exists: on OSK open the shell
+  # swaps the active engine to typing-booster and routes its candidates into the
+  # strip; tap commits word+space (js/misc/ibusManager.js setCompletionEnabled,
+  # js/ui/ibusCandidatePopup.js). So prediction = just shipping the engine, the
+  # hunspell dictionaries, and settings — no shell patches.
+  # waylandFrontend=true stops the module setting GTK/QT_IM_MODULE (see NB
+  # above; apps must keep speaking text-input-v3 to mutter). XMODIFIERS is
+  # still set but neutralized by the gnome-mobile extraInit unset.
+  i18n.inputMethod = {
+    enable = true;
+    type = "ibus";
+    ibus.waylandFrontend = true;
+    ibus.engines = [
+      # en_US + es_AR dictionaries on DICPATH; typing-booster queries ALL
+      # configured dicts on every keystroke — true simultaneous bilingual
+      # suggestions (iOS-style), no language switching.
+      (pkgs.ibus-engines.typing-booster.override { langs = [ "en-us" "es-ar" ]; })
+    ];
+  };
+
   users.users.daniel = {
     isNormalUser = true;
     description = "Daniel";
@@ -627,6 +649,34 @@
       # Force GNOME Shell's built-in OSK on (touch device, no physical keyboard).
       "org/gnome/desktop/a11y/applications" = {
         screen-keyboard-enabled = true;
+      };
+      # ibus-typing-booster — the OSK suggestion-strip engine (see
+      # i18n.inputMethod below). Learning data stays on-device in
+      # ~/.local/share/ibus-typing-booster/user.db.
+      "org/freedesktop/ibus/engine/typing-booster" = {
+        dictionary = "en_US,es_AR"; # BOTH live at once; names = .dic files on DICPATH
+        wordpredictions = true;
+        emojipredictions = false; # the OSK has its own emoji panel
+        mincharcomplete = mkInt32 1;
+        tabenable = false;
+        inlinecompletion = mkInt32 0; # strip-only; inline gray preedit is desktop UX
+        lookuptableorientation = mkInt32 0; # horizontal, matches the 3-slot strip
+        pagesize = mkInt32 3; # the strip shows at most 3 anyway
+        autoselectcandidate = mkInt32 0; # suggestions-only; real autocorrect = phase 2
+        addspaceoncommit = true; # tap suggestion -> word + trailing space
+        # Learn only correctly-spelled or previously-recorded words: keeps typos
+        # AND password-field garbage out of the learning DB (gnome-shell #6693).
+        # Tradeoff: unknown slang needs a manual first tap before it's learned —
+        # revisit (recordmode=0) if that annoys in practice.
+        recordmode = mkInt32 1;
+        offtherecord = false;
+        candidatesdelaymilliseconds = mkUint32 0; # no anti-flicker delay on a phone
+        # Never forward synthetic arrow-key events for "cursor correction" after
+        # commits: GTK4-on-Wayland drops them silently and the step count is
+        # miscomputed for accented chars (NFD) — net effect was the cursor landing
+        # mid-word after typing past an ignored suggestion (engine lines 5176/10854;
+        # their own docs admit forward_key_event is broken on gtk4-im + gnome-wayland).
+        avoidforwardkeyevent = true;
       };
       # Flashlight: enable the torch Quick Settings toggle (packages/gnome-mobile-torch).
       # It drives /sys/class/leds/{white,yellow}:flash via logind SetBrightness —
