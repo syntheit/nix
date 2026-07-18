@@ -587,6 +587,11 @@
     MOZ_ENABLE_WAYLAND = "1";
     MOZ_GTK_TITLEBAR_DECORATION = "client"; # Phosh swipe-from-top works on CSD
     SDL_VIDEODRIVER = "wayland";
+    # OSK keyboard fork switches (read by our patched ibus-typing-booster at
+    # startup; ibus-daemon inherits the session env). Set to "0" + ibus
+    # restart to fall back to stock engine behavior.
+    IBUS_TYPING_BOOSTER_OSK_NO_PREEDIT = "1"; # commit chars directly, no underlined preedit
+    IBUS_TYPING_BOOSTER_OSK_AUTOCORRECT = "1"; # auto-fix OOV words on space/punct, learn on re-type
   };
   # NB: do NOT set GTK_IM_MODULE here. GNOME Shell speaks to IBus over its own
   # D-Bus API; setting GTK_IM_MODULE/QT_IM_MODULE/XMODIFIERS breaks the built-in
@@ -612,7 +617,42 @@
       # en_US + es_AR dictionaries on DICPATH; typing-booster queries ALL
       # configured dicts on every keystroke — true simultaneous bilingual
       # suggestions (iOS-style), no language switching.
-      (pkgs.ibus-engines.typing-booster.override { langs = [ "en-us" "es-ar" ]; })
+      # FORKED (keyboard/patches/): no-preedit mode + Android-style autocorrect.
+      # Stock typing-booster holds the current word in IM preedit, but on
+      # GNOME Shell Mobile the OSK never routes Backspace/cursor keys through
+      # the engine → preedit desyncs, renders underlined, and backspace eats
+      # text behind it. The fork commits each char immediately, keeps a shadow
+      # buffer for the strip, and replaces words via delete_surrounding_text.
+      # Both behaviors are env-gated (see sessionVariables) — unset env =
+      # bone-stock engine, which is also the emergency kill switch.
+      (pkgs.ibus-engines.typing-booster.override {
+        langs = [ "en-us" "es-ar" ];
+        typing-booster =
+          (pkgs.ibus-engines.typing-booster-unwrapped.override {
+            # The engine's spellcheck/suggestion layer needs a Python backend
+            # (pyenchant or pyhunspell) and nixpkgs ships NEITHER — stock
+            # typing-booster on NixOS cannot produce corrections at all
+            # ("teh" never suggests "the"). Inject our pyhunspell
+            # (packages/pyhunspell) into the derivation's private
+            # python3.withPackages env by piggybacking on dbus-python's
+            # propagated deps — the withPackages list is hardcoded upstream,
+            # this is the least-invasive way in.
+            python3 = pkgs.python3.override {
+              packageOverrides = pyself: pysuper: {
+                dbus-python = pysuper.dbus-python.overridePythonAttrs (o: {
+                  propagatedBuildInputs = (o.propagatedBuildInputs or [ ]) ++ [
+                    (pyself.callPackage ../../packages/pyhunspell { })
+                  ];
+                });
+              };
+            };
+          }).overrideAttrs
+            (old: {
+              patches = (old.patches or [ ]) ++ [
+                ./keyboard/patches/typing-booster-osk-no-preedit-autocorrect.patch
+              ];
+            });
+      })
     ];
   };
 
