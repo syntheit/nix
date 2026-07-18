@@ -25,6 +25,58 @@ let
     src = inputs.marble-shell-theme;
     inherit accent;
     mode = null; # build BOTH dark + light; `variant` selects the active one
+
+    # Bare top bar: no pill/background behind the panel elements…
+    extraArgs = [ "--panel-no-pill" ];
+    # …and force the panel itself to solid black (Marble's default is a dark
+    # blue-grey rgba(21,23,25); this makes it pure black). No !important, so the
+    # more-specific #panel:overview / .unlock-screen / .login-screen rules keep
+    # their transparency; only the normal top bar goes black.
+    extraCss = ''
+      #panel { background-color: black; }
+
+      /* On-screen keyboard: the non-letter/function keys (.default-key — Shift,
+         Backspace, ?123, Enter, punctuation) inherit BUTTON-COLOR = the bright
+         ACCENT-COLOR, so brightening the accent made them loud. Mute just those
+         to a desaturated steel blue; letter keys and the QS accent are untouched. */
+      .keyboard-key.default-key { background-color: rgba(72, 103, 133, 1); }
+      .keyboard-key.default-key:hover { background-color: rgba(88, 120, 150, 1); }
+      .keyboard-key.default-key:active,
+      .keyboard-key.default-key:checked,
+      .keyboard-key.default-key:latched,
+      .keyboard-key.shift-key-uppercase { background-color: rgba(104, 140, 172, 1); }
+
+      /* Solid keyboard — no see-through. Marble's #keyboard panel is
+         rgba(24,26,27,0.95) and the long-press popup uses the same token, so the
+         app behind bleeds through. Make them fully opaque; the letter keys then
+         sit on a solid surface and keep their look without leaking the app. */
+      #keyboard { background-color: rgba(24, 26, 27, 1); }
+      .keyboard-subkeys { -arrow-background-color: rgba(24, 26, 27, 1); }
+    '';
+
+    # Brighter, less-gloomy blue in dark mode. Marble's dark accent is a very
+    # dark navy (ACCENT-COLOR dark l:26); lift the active-toggle accent family
+    # toward a GNOME-Adwaita-like bright blue. Only the .dark values change, so
+    # the light variant is untouched. hue stays 210 (from `accent = "blue"`).
+    colorsOverride = {
+      elements = {
+        "ACCENT-COLOR".dark = {
+          s = 70;
+          l = 56;
+          a = 1;
+        }; # resting active toggle
+        "ACCENT_HOVER".dark = {
+          s = 72;
+          l = 50;
+          a = 1;
+        }; # hover
+        "ACCENT_ACTIVE".dark = {
+          s = 74;
+          l = 44;
+          a = 1;
+        }; # pressed
+      };
+    };
   };
 in
 {

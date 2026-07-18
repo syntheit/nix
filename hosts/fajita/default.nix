@@ -14,6 +14,7 @@
     ./sensors.nix
     ./cursor.nix   # hide the phantom mouse pointer on this touch-only device
     ./camera.nix   # camera bring-up (tools/tuning/AF) — see CAMERA_PLAN.md
+    ./theme.nix    # Marble GNOME Shell theme (accent + dark/light defined there)
   ];
 
   networking.hostName = "fajita";
@@ -632,7 +633,11 @@
       # no udev rule needed (the LED's :seat: tag is sufficient).
       "org/gnome/shell" = {
         disable-user-extensions = false;
-        enabled-extensions = [ "torch@vixalien.com" ];
+        enabled-extensions = [
+          "torch@vixalien.com"
+          # User Themes — loads the Marble shell theme selected in theme.nix.
+          "user-theme@gnome-shell-extensions.gcampax.github.com"
+        ];
       };
       # gsd-power: dim before blanking, but NEVER suspend (broken s2idle on
       # SDM845). Power button isn't wired to an action — input wakes the display.
