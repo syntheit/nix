@@ -858,6 +858,23 @@
         "url": "ssh://git@github.com/syntheit/malli-nix.git"
       }
     },
+    "marble-shell-theme": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1784234067,
+        "narHash": "sha256-K6ZkWauwLfxEHiLkFpw48CirCnVGIITjIJ0d8FZy8AU=",
+        "owner": "syntheit",
+        "repo": "Marble-shell-theme",
+        "rev": "04f81576383e2eb7856a193267afb8533229d04a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "syntheit",
+        "ref": "gnome-49-50-support",
+        "repo": "Marble-shell-theme",
+        "type": "github"
+      }
+    },
     "mobile-nixos": {
       "flake": false,
       "locked": {
@@ -1336,6 +1353,7 @@
         "jelly-recs": "jelly-recs",
         "jotter": "jotter",
         "malli-nix": "malli-nix",
+        "marble-shell-theme": "marble-shell-theme",
         "mobile-nixos": "mobile-nixos",
         "nix-darwin": "nix-darwin_2",
         "nix-homebrew": "nix-homebrew_2",

@@ -15,6 +15,7 @@
   lib,
   stdenvNoCC,
   python3,
+  writeText,
   src,
   # ── the knobs ──────────────────────────────────────────────────────────
   accent ? "blue", # named colour from colors.json (red/yellow/green/blue/purple/gray)
@@ -23,6 +24,16 @@
   mode ? null, # "dark" | "light" | null = build BOTH
   filled ? false, # more vibrant accent
   sat ? null, # saturation 0-250 (100 = stock)
+  extraArgs ? [ ], # extra install.py flags, e.g. [ "--panel-no-pill" ]
+  # Personal tweaks kept OUT of the fork's shared design:
+  #   colorsOverride — deep-merged into colors.json before the build (e.g. bump
+  #     the dark-mode accent lightness); keeps the upstream palette pristine.
+  #   extraCss — appended verbatim to every generated gnome-shell.css (last wins;
+  #     use for token-free rules like forcing the panel background). NB: colour
+  #     TOKENS are already resolved by this point, so put raw values here, not
+  #     Marble tokens — token-bearing tweaks belong in extraArgs/the fork.
+  colorsOverride ? { },
+  extraCss ? "",
   # Target GNOME Shell major. There is no running gnome-shell in the build
   # sandbox, so we force it — otherwise the 47../48.. style overlays are
   # silently skipped and the theme renders unstyled on GNOME 47+.
@@ -43,7 +54,17 @@ let
     ++ lib.optionals (mode != null) [ "--mode" mode ]
     ++ lib.optional filled "--filled"
     ++ lib.optionals (sat != null) [ "--sat" (toString sat) ]
-    ++ [ "--gnome-version" gnomeVersion ];
+    ++ [ "--gnome-version" gnomeVersion ]
+    ++ extraArgs;
+
+  # colors.json with `colorsOverride` deep-merged in — swapped over the fork's
+  # copy before install.py runs, so the palette customisation is a build input,
+  # not a change to the shared theme.
+  patchedColorsJson = writeText "colors.json" (
+    builtins.toJSON (lib.recursiveUpdate (builtins.fromJSON (builtins.readFile "${src}/colors.json")) colorsOverride)
+  );
+
+  extraCssFile = writeText "marble-extra.css" extraCss;
 in
 stdenvNoCC.mkDerivation {
   pname = "marble-shell-theme";
@@ -53,11 +74,21 @@ stdenvNoCC.mkDerivation {
 
   nativeBuildInputs = [ python3 ];
 
+  # Swap in the palette override (no-op if colorsOverride is empty).
+  postPatch = lib.optionalString (colorsOverride != { }) ''
+    cp ${patchedColorsJson} colors.json
+  '';
+
   buildPhase = ''
     runHook preBuild
     export HOME="$NIX_BUILD_TOP/build-home"
     mkdir -p "$HOME"
     python install.py ${lib.escapeShellArgs installArgs}
+    ${lib.optionalString (extraCss != "") ''
+      for css in "$HOME"/.themes/Marble-*/gnome-shell/gnome-shell.css; do
+        cat ${extraCssFile} >> "$css"
+      done
+    ''}
     runHook postBuild
   '';
 

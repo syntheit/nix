@@ -117,6 +117,15 @@
       flake = false;
     };
 
+    # Marble GNOME Shell theme — our fork adds GNOME 49/50 support + the
+    # --gnome-version flag (needed to build the theme in a sandbox). Plain
+    # Python source (not a flake); built by packages/marble-shell-theme and
+    # wired up in hosts/fajita/theme.nix.
+    marble-shell-theme = {
+      url = "github:syntheit/Marble-shell-theme/gnome-49-50-support";
+      flake = false;
+    };
+
     malli-nix = {
       url = "git+ssh://git@github.com/syntheit/malli-nix.git";
       inputs.nixpkgs.follows = "nixpkgs";
