@@ -75,6 +75,8 @@ in
           ./patches/topbar-no-tap.patch # top bar = passive status bar: no tap-to-open calendar/QS (swipe-down still opens QS)
           ./patches/lockscreen-no-blur.patch # lock-screen wallpaper shown sharp + bright (no Gaussian blur/dim); scoped to UnlockDialog only
           ./patches/topbar-icons.patch # iOS/Android status bar: battery %-inside-outline, no sound icon, cellular = bars + "4G" text, cell hidden when wifi active (shown when QS open)
+          ./patches/osk-spacebar-cursor-slide.patch # spacebar long-press → cursor-slide mode: horizontal drag emits Left/Right; keyboard dims; finger-up suppresses the space
+          ./patches/osk-autocaps-committed-tail.patch # auto-cap: replace dead surrounding-text dance with synchronous committedTail from _onCommitText (inputMethod.js); backspace/Enter handled
         ];
         prePatch = ''
           cp -r ${libshew} subprojects/libshew

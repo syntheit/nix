@@ -1,0 +1,150 @@
+diff --git a/js/ui/keyboard.js b/js/ui/keyboard.js
+index 4f70a8bd7..149b3cbf7 100644
+--- a/js/ui/keyboard.js
++++ b/js/ui/keyboard.js
+@@ -19,6 +19,8 @@ import * as SwipeTracker from './swipeTracker.js';
+ 
+ const KEYBOARD_ANIMATION_TIME = 150;
+ const KEY_LONG_PRESS_TIME = 250;
++// fajita: spacebar long-press cursor slide — logical px of drag per cursor step
++const SPACE_CURSOR_SLIDE_PX = 12;
+ 
+ const A11Y_APPLICATIONS_SCHEMA = 'org.gnome.desktop.a11y.applications';
+ const SHOW_KEYBOARD = 'screen-keyboard-enabled';
+@@ -318,6 +320,10 @@ class LanguageSelectionPopup extends PopupMenu.PopupMenu {
+ 
+ const KeyContainerGesture = GObject.registerClass({
+     Signals: {
++        // fajita: spacebar cursor-slide signals
++        'cursor-slide-begin': {},
++        'cursor-slide-step': {param_types: [GObject.TYPE_INT]},
++        'cursor-slide-end': {},
+     },
+ }, class KeyContainerGesture extends Clutter.Gesture {
+     _init() {
+@@ -329,6 +335,9 @@ const KeyContainerGesture = GObject.registerClass({
+         this._currentPoint = null;
+         this._inLongPressDrag = false;
+         this._keyLongPressTimeout = 0;
++        // fajita: spacebar cursor-slide state
++        this._inCursorSlide = false;
++        this._cursorSlideLastX = 0;
+     }
+ 
+     _findNearestRowOrCol(array, index) {
+@@ -433,7 +442,15 @@ const KeyContainerGesture = GObject.registerClass({
+ 
+         // If a key is already pressed down by another finger, release it
+         if (this._pressedKey) {
+-            this._pressedKey.release();
++            // fajita: during cursor slide a second finger must not type a space;
++            // cancel the slide and absorb the event without committing.
++            if (this._inCursorSlide) {
++                this._pressedKey.cancel();
++                this._inCursorSlide = false;
++                this.emit('cursor-slide-end');
++            } else {
++                this._pressedKey.release();
++            }
+ 
+             if (this._keyLongPressTimeout) {
+                 GLib.source_remove(this._keyLongPressTimeout);
+@@ -457,6 +474,16 @@ const KeyContainerGesture = GObject.registerClass({
+                 this._pressedKey.longPressMoved(global.stage.get_event_actor(event));
+             }
+ 
++            // fajita: if long-press didn't open a subkey popup (space has
++            // none), and this is the space key, enter cursor-slide mode
++            if (!this._inLongPressDrag && this._pressedKey.cursorSlideKey) {
++                this._inCursorSlide = true;
++                this.set_state(Clutter.GestureState.RECOGNIZING);
++                this._cursorSlideLastX =
++                    this.get_point_coords(this._currentPoint).x;
++                this.emit('cursor-slide-begin');
++            }
++
+             this._keyLongPressTimeout = 0;
+             return GLib.SOURCE_REMOVE;
+         });
+@@ -477,6 +504,19 @@ const KeyContainerGesture = GObject.registerClass({
+         if (this._inLongPressDrag)
+             return;
+ 
++        // fajita: cursor slide — emit a step for each SPACE_CURSOR_SLIDE_PX
++        // of horizontal movement; consume the event without hitting the
++        // key-switched-under-finger cancel path below.
++        if (this._inCursorSlide) {
++            const dx = this.get_point_coords(point).x - this._cursorSlideLastX;
++            const steps = Math.trunc(dx / SPACE_CURSOR_SLIDE_PX);
++            if (steps !== 0) {
++                this._cursorSlideLastX += steps * SPACE_CURSOR_SLIDE_PX;
++                this.emit('cursor-slide-step', steps);
++            }
++            return;
++        }
++
+         const coords = this.get_point_coords(point);
+         const key = this._getKeyForCoords(coords);
+         if (!key || !key.enabled || key !== this._pressedKey)
+@@ -505,8 +545,14 @@ const KeyContainerGesture = GObject.registerClass({
+         if (this._pressedKey && newState === Clutter.GestureState.CANCELLED)
+             this._pressedKey.cancel();
+ 
+-        if (newState === Clutter.GestureState.COMPLETED)
+-            this._pressedKey.release();
++        if (newState === Clutter.GestureState.COMPLETED) {
++            // fajita: finger-up after a cursor slide must NOT commit a space;
++            // cancel the key instead of releasing it.
++            if (this._inCursorSlide)
++                this._pressedKey.cancel();
++            else
++                this._pressedKey.release();
++        }
+ 
+         if (newState === Clutter.GestureState.COMPLETED ||
+             newState === Clutter.GestureState.CANCELLED) {
+@@ -515,6 +561,12 @@ const KeyContainerGesture = GObject.registerClass({
+                 this._keyLongPressTimeout = 0;
+             }
+ 
++            // fajita: end cursor slide before clearing state
++            if (this._inCursorSlide) {
++                this._inCursorSlide = false;
++                this.emit('cursor-slide-end');
++            }
++
+             this._pressedKey = null;
+             this._currentPoint = null;
+             this._inLongPressDrag = false;
+@@ -1995,6 +2047,19 @@ export const Keyboard = GObject.registerClass({
+         this._keyContainerGesture = new KeyContainerGesture();
+         layout.add_action(this._keyContainerGesture);
+ 
++        // fajita: wire spacebar cursor-slide signals for this layout's gesture
++        this._keyContainerGesture.connect('cursor-slide-begin',
++            () => (this._aspectContainer.opacity = 128));
++        this._keyContainerGesture.connect('cursor-slide-end',
++            () => (this._aspectContainer.opacity = 255));
++        this._keyContainerGesture.connect('cursor-slide-step', (_g, steps) => {
++            const keyval = steps < 0 ? Clutter.KEY_Left : Clutter.KEY_Right;
++            for (let i = 0; i < Math.abs(steps); i++) {
++                this._keyboardController.keyvalPress(keyval);
++                this._keyboardController.keyvalRelease(keyval);
++            }
++        });
++
+         keyboardModel.getLevels().forEach(currentLevel => {
+             let levelLayout = new KeyContainer(this._keyContainerGesture);
+             levelLayout.shiftKeys = [];
+@@ -2055,6 +2120,11 @@ export const Keyboard = GObject.registerClass({
+                 useInternalClickGesture: false,
+             }, strings);
+ 
++            // fajita: mark the space key so KeyContainerGesture can enter
++            // cursor-slide mode on long-press (space has no subkey popup).
++            if (commitString === ' ')
++                button.cursorSlideKey = true;
++
+             if (commitString && commitString !== ' ') {
+                 button.set_pivot_point(1, 1);
+ 
