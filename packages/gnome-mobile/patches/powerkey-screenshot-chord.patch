@@ -72,7 +72,7 @@
   //   log("POWERMANAGER: power key press, flags " +  event.get_flags() + " " + (event.get_flags() & Clutter.EventFlags.FLAG_INPUT_METHOD));
  
              // Snapshot the screen state at press time - the release handler
-@@ -1190,6 +1230,98 @@
+@@ -1190,6 +1230,117 @@
          }
      }
  
@@ -162,9 +162,28 @@
 +            return;
 +
 +        app.activate();
-+        const id = app.connect('windows-changed', () => {
-+            if (raise())
++
++        // Raise the window once it appears — and tear the handler down whether or
++        // not that happens (a camera that never opens a window would otherwise
++        // leave this connected for the life of the shell).
++        let id = 0;
++        let timeoutId = 0;
++        const cleanup = () => {
++            if (id)
 +                app.disconnect(id);
++            if (timeoutId)
++                GLib.source_remove(timeoutId);
++            id = 0;
++            timeoutId = 0;
++        };
++        id = app.connect('windows-changed', () => {
++            if (raise())
++                cleanup();
++        });
++        timeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 5000, () => {
++            timeoutId = 0;
++            cleanup();
++            return GLib.SOURCE_REMOVE;
 +        });
 +    }
 +

@@ -1,8 +1,8 @@
 diff --git a/data/theme/gnome-shell-sass/widgets/_panel.scss b/data/theme/gnome-shell-sass/widgets/_panel.scss
-index 6e611c5c7..bfc67a547 100644
+index 6e611c5c7..54503dbdc 100644
 --- a/data/theme/gnome-shell-sass/widgets/_panel.scss
 +++ b/data/theme/gnome-shell-sass/widgets/_panel.scss
-@@ -216,3 +216,72 @@ $panel_transition_duration: 250ms; // same as the overview transition duration
+@@ -216,3 +216,60 @@ $panel_transition_duration: 250ms; // same as the overview transition duration
      }
    }
  }
@@ -43,33 +43,21 @@ index 6e611c5c7..bfc67a547 100644
 +.fajita-battery.charging .fajita-battery-num,
 +.fajita-battery.charging .fajita-battery-bolt { color: white; }
 +
-+// Home/overview: transparent panel over a light wallpaper → whole bar goes a
-+// soft near-black; battery becomes a dark pill with a light number.
-+//
-+// The clock is the St.Label with .clock. The base overview theme sets a light
-+// $system_panel_fg_color on the .clock-display *button* (parent) AND, via the
-+// panel_button() $highlighted_child mixin, emits an equal-specificity
-+// `#panel:overview .panel-button.clock-display .clock` child rule. To beat that
-+// on the label itself we set the color directly on .clock via the same short,
-+// single-descendant selector shape that works for the icons/battery below —
-+// `#panel:overview .clock` — so the dark color reliably lands on the label.
-+#panel:overview .panel-button,
-+#panel:overview .clock,
-+#panel:overview .panel-button.clock-display .clock,
-+#panel:overview .system-status-icon { color: rgba(0, 0, 0, 0.82); }
-+#panel:overview .fajita-battery-body,
-+#panel:overview .fajita-battery-nub { background-color: rgba(0, 0, 0, 0.82); }
-+#panel:overview .fajita-battery-num,
-+#panel:overview .fajita-battery-bolt { color: white; }
-+#panel:overview .fajita-battery.charging .fajita-battery-body,
-+#panel:overview .fajita-battery.charging .fajita-battery-nub { background-color: #34c759; }
-+#panel:overview .fajita-battery.charging .fajita-battery-num,
-+#panel:overview .fajita-battery.charging .fajita-battery-bolt { color: white; }
++// Home/overview dark-invert: NOT here. St gives the Marble user theme higher
++// cascade priority than this base theme, so a base override can't beat Marble's
++// own `#panel:overview .panel-button` colour (that was the white-clock bug). The
++// overview invert therefore lives in Marble (hosts/fajita/theme.nix), which only
++// applies on the home screen anyway (Marble is off on lock/login, which aren't
++// :overview). Don't re-add it here — it's dead.
 +
 +// Lock / login screen: the bar sits over the wallpaper. Keep it white (iOS
 +// style) and add a soft shadow so the icons stay legible on a bright wallpaper.
 +#panel.unlock-screen .system-status-icon,
 +#panel.login-screen  .system-status-icon { icon-shadow: 0 1px 3px rgba(0, 0, 0, 0.5); }
++// The battery pill is a white St.Bin (not a .system-status-icon), so give it its
++// own shadow so it doesn't bleed into a bright lock-screen wallpaper.
++#panel.unlock-screen .fajita-battery-body,
++#panel.login-screen  .fajita-battery-body { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5); }
 +
 +// Big lock-screen clock: shadow so the white time/date don't blend with a bright
 +// wallpaper.
