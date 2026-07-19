@@ -1,5 +1,5 @@
 diff --git a/js/ui/status/network.js b/js/ui/status/network.js
-index 8e4957f1e..83026faf0 100644
+index 8e4957f1e..e25aa6e6f 100644
 --- a/js/ui/status/network.js
 +++ b/js/ui/status/network.js
 @@ -674,33 +674,14 @@ class NMModemDeviceItem extends NMDeviceItem {
@@ -77,7 +77,7 @@ index 8e4957f1e..83026faf0 100644
          this._getClient().catch(logError);
      }
  
-@@ -2310,5 +2309,54 @@ class Indicator extends SystemIndicator {
+@@ -2310,5 +2309,60 @@ class Indicator extends SystemIndicator {
          const state = this._client.get_state();
          const connected = state === NM.State.CONNECTED_GLOBAL;
          this._primaryIndicator.visible = (primaryToggle != null) || connected;
@@ -88,6 +88,10 @@ index 8e4957f1e..83026faf0 100644
 +    _onModemItemChanged() {
 +        this._modemDevice?.disconnectObject(this);
 +        const item = this._modemToggle._itemBinding.source;
++        // We reach into upstream-private fields (_itemBinding.source._mobileDevice);
++        // warn loudly if a GNOME rebase renames them, instead of silently blanking.
++        if (item && !('_mobileDevice' in item))
++            console.warn('fajita: NMModemDeviceItem._mobileDevice missing — cellular "4G" label will not update');
 +        this._modemDevice = item?._mobileDevice ?? null;
 +        this._modemDevice?.connectObject(
 +            'notify::access-technology', () => this._syncCellular(),
@@ -127,7 +131,9 @@ index 8e4957f1e..83026faf0 100644
 +    _getQsMenu() {
 +        if (!this._qsMenu) {
 +            this._qsMenu = Main.panel.statusArea.quickSettings?.menu ?? null;
-+            this._qsMenu?.connect('open-state-changed', () => this._syncCellular());
++            // connectObject so the handler is torn down with this indicator.
++            this._qsMenu?.connectObject('open-state-changed',
++                () => this._syncCellular(), this);
 +        }
 +        return this._qsMenu;
      }

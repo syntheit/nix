@@ -1,0 +1,106 @@
+/* orion-chrome: mobile urlbar suggestions panel — layered on top of mobile-config-firefox 5.1.0 */
+/* MCF already makes .urlbarView full-bleed (position:fixed, inset 0 0 84px 0, width:100%).      */
+/* This layer fixes the row layout: two-line touch rows, larger favicon, hidden em-dash title sep.*/
+
+@media (max-width: 700px) {
+
+  /* ── Panel surface ──────────────────────────────────────────────────────── */
+  /* MCF sets background:var(--arrowpanel-background); keep it, just harden    */
+  /* the edges so it reads as a full-screen surface, not a floating dropdown.  */
+  .urlbarView {
+    border-radius: 0 !important;
+    border-top: none !important;
+    box-shadow: none !important;
+    padding-block: 0 !important;
+  }
+
+  /* Body inner: no extra inset padding — let rows go edge-to-edge vertically. */
+  .urlbarView-body-inner {
+    padding-block: 0 !important;
+  }
+
+  /* ── Rows: touch-sized ──────────────────────────────────────────────────── */
+  .urlbarView-row {
+    min-height: 44px !important;
+    padding-inline: 16px !important;
+    padding-block: 0 !important;
+    align-items: center !important;
+    /* Shrink MCF/FF default row gutter so rows pack tightly */
+    --urlbarView-row-gutter: 0px !important;
+  }
+
+  /* row-inner switches from baseline inline-flex to a column so title/url   */
+  /* stack on two separate lines instead of sitting side-by-side.            */
+  .urlbarView-row-inner {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    justify-content: center !important;
+    flex-wrap: nowrap !important;
+    gap: 0 !important;
+    overflow: hidden !important;
+    padding-block: 6px !important;
+  }
+
+  /* ── Favicon ────────────────────────────────────────────────────────────── */
+  .urlbarView-favicon {
+    width: 24px !important;
+    height: 24px !important;
+    min-width: 24px !important;
+    margin-inline-end: 12px !important;
+    margin-inline-start: 0 !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* ── Title — first line ──────────────────────────────────────────────────  */
+  .urlbarView-title {
+    font-size: 15px !important;
+    line-height: 1.3 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    width: 100% !important;
+    display: block !important;
+  }
+
+  /* ── Em-dash separator — hide it; url goes on its own line below ─────────  */
+  .urlbarView-title-separator {
+    display: none !important;
+  }
+
+  /* ── URL / action — second line ──────────────────────────────────────────  */
+  .urlbarView-url,
+  .urlbarView-action {
+    font-size: 12px !important;
+    line-height: 1.2 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    width: 100% !important;
+    display: block !important;
+    opacity: 0.65 !important;
+    /* Use FF's own secondary-text variable where available; fall through to   */
+    /* a color-mix dim of the foreground so dark/light themes are both covered.*/
+    color: var(--urlbarView-secondary-text-color,
+             color-mix(in srgb, currentColor 65%, transparent)) !important;
+  }
+
+  /* ── Section headers ("Recent Searches", etc.) ───────────────────────────  */
+  .urlbarView-row[type="group"] .urlbarView-row-inner,
+  .urlbarView-group-label,
+  /* FF may render section labels as plain divs with this class: */
+  [class*="urlbarView"][class*="label"] {
+    font-size: 11px !important;
+    font-variant: small-caps !important;
+    opacity: 0.55 !important;
+    padding-block-start: 14px !important;
+    padding-block-end: 4px !important;
+    letter-spacing: 0.04em !important;
+  }
+
+  /* ── Type icon (redundant with favicon) — suppress ───────────────────────  */
+  .urlbarView-type-icon {
+    display: none !important;
+  }
+
+}
