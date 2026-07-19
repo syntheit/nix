@@ -113,12 +113,21 @@ in
   # sensor core hasn't enumerated its sensors yet — which takes a few seconds
   # after hexagonrpcd starts serving. Order it after the bridge and let it
   # retry instead of staying dead until D-Bus pokes it.
+  #
+  # CRITICAL: on zero-sensor boots (SLPI came up frozen) it logs "No sensors
+  # ... Exiting" and exits CLEANLY (code 0) — Restart=on-failure never fires,
+  # SensorProxy stays absent for the whole boot, and everything downstream
+  # degrades: autorotate can't claim the accel, and gnome-shell was observed
+  # spinning its main loop all boot (the 2026-07-18 battery audit's 2.6 W
+  # drain). Restart=always + no start limit keeps it retrying until the SLPI
+  # enumerates; a retry every 30 s is noise-free and self-heals late sensors.
   systemd.services.iio-sensor-proxy = {
     after = [ "hexagonrpcd-sdsp.service" ];
     wants = [ "hexagonrpcd-sdsp.service" ];
+    unitConfig.StartLimitIntervalSec = 0;
     serviceConfig = {
-      Restart = "on-failure";
-      RestartSec = 5;
+      Restart = "always";
+      RestartSec = 30;
     };
   };
 
@@ -132,12 +141,18 @@ in
     wantedBy = [ "graphical-session.target" ];
     partOf = [ "graphical-session.target" ];
     after = [ "graphical-session.target" ];
+    unitConfig = {
+      # The daemon now waits/retries for SensorProxy internally, so a systemd
+      # restart only means a genuine crash. Restart gently and give up on a
+      # hot loop (the 2026-07-18 audit caught the old crashing version at
+      # 3922 restarts in one boot).
+      StartLimitBurst = 5;
+      StartLimitIntervalSec = 300;
+    };
     serviceConfig = {
       ExecStart = "${pkgs.callPackage ./autorotate { }}/bin/fajita-autorotate";
-      # SensorProxy / the accel may not be enumerated the instant the session
-      # comes up; retry until the claim succeeds.
       Restart = "on-failure";
-      RestartSec = 5;
+      RestartSec = 30;
     };
   };
 
