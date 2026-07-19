@@ -1,5 +1,5 @@
 diff --git a/js/ui/status/network.js b/js/ui/status/network.js
-index 8e4957f1e..977d32620 100644
+index 8e4957f1e..83026faf0 100644
 --- a/js/ui/status/network.js
 +++ b/js/ui/status/network.js
 @@ -674,33 +674,14 @@ class NMModemDeviceItem extends NMDeviceItem {
@@ -77,7 +77,7 @@ index 8e4957f1e..977d32620 100644
          this._getClient().catch(logError);
      }
  
-@@ -2310,5 +2309,57 @@ class Indicator extends SystemIndicator {
+@@ -2310,5 +2309,54 @@ class Indicator extends SystemIndicator {
          const state = this._client.get_state();
          const connected = state === NM.State.CONNECTED_GLOBAL;
          this._primaryIndicator.visible = (primaryToggle != null) || connected;
@@ -105,15 +105,12 @@ index 8e4957f1e..977d32620 100644
 +            this._primaryIndicatorBinding.source === this._wirelessToggle;
 +        const qsOpen = this._getQsMenu()?.isOpen ?? false;
 +
-+        // Cellular shows in the bar when it's the primary connection, OR when
-+        // wifi is primary but the QS sheet is pulled down. When wifi is primary
-+        // and QS is closed, hide the cellular bars + text entirely (iOS-style).
-+        const showCell = techText !== '' && (!wifiPrimary || qsOpen);
-+
++        // The signal BARS always show (handled by _updateIcon, incl. the
++        // secondary slot when wifi is primary). The generation text ("4G"/"5G")
++        // shows only when cellular is the active data path (i.e. NOT on wifi),
++        // or when the QS sheet is pulled down.
 +        this._cellLabel.text = techText;
-+        this._cellLabel.visible = showCell;
-+        if (wifiPrimary)
-+            this._secondaryIndicator.visible = showCell && this._modemToggle.visible;
++        this._cellLabel.visible = techText !== '' && (!wifiPrimary || qsOpen);
 +    }
 +
 +    _cellTechText(tech) {
@@ -136,30 +133,53 @@ index 8e4957f1e..977d32620 100644
      }
  });
 diff --git a/js/ui/status/system.js b/js/ui/status/system.js
-index b4bce7c1b..b0ea69122 100644
+index b4bce7c1b..8d18bd230 100644
 --- a/js/ui/status/system.js
 +++ b/js/ui/status/system.js
-@@ -318,25 +318,49 @@ class Indicator extends SystemIndicator {
+@@ -318,25 +318,72 @@ class Indicator extends SystemIndicator {
              `changed::${SHOW_BATTERY_PERCENTAGE}`, () => this._sync(), this);
  
          this._indicator = this._addIndicator();
 +
-+        // fajita: iOS/Android-style battery — a rounded outline with the
-+        // percentage NUMBER inside it. The symbolic battery icon (_indicator)
-+        // is kept only as the no-battery fallback (hidden when a battery
-+        // exists). Sizing/colours are inline so the glyph is self-contained;
-+        // tune the px values in _applyBatteryStyle() to taste.
++        // fajita: iOS-style battery — a solid rounded pill with the percentage
++        // NUMBER inside it, plus a terminal nub and a charging bolt. Monochrome;
++        // all styling (incl. the black-on-light-background invert in the
++        // overview) lives in the shell theme CSS under the .fajita-battery-*
++        // classes (hosts/fajita/theme.nix), so it tunes with a fast theme-only
++        // rebuild. The symbolic battery icon (_indicator) is kept only as the
++        // no-battery fallback (hidden when a battery exists).
          this._percentageLabel = new St.Label({
++            style_class: 'fajita-battery-num',
++            y_align: Clutter.ActorAlign.CENTER,
++        });
++        // Simple iOS-style lightning bolt, drawn (no clean bolt exists in the
++        // symbolic icon set). Filled with the CSS foreground colour so it
++        // recolours with the theme (white on the green charging pill).
++        this._boltIcon = new St.DrawingArea({
++            style_class: 'fajita-battery-bolt',
++            y_align: Clutter.ActorAlign.CENTER,
++            visible: false,
++        });
++        this._boltIcon.connect('repaint', area => this._drawBolt(area));
++        this._boltIcon.connect('style-changed', () => this._boltIcon.queue_repaint());
++        const batteryContent = new St.BoxLayout({
 +            x_align: Clutter.ActorAlign.CENTER,
 +            y_align: Clutter.ActorAlign.CENTER,
 +        });
++        batteryContent.add_child(this._percentageLabel);
++        batteryContent.add_child(this._boltIcon);
 +        this._batteryBody = new St.Bin({
-+            child: this._percentageLabel,
++            style_class: 'fajita-battery-body',
++            child: batteryContent,
 +            x_align: Clutter.ActorAlign.CENTER,
 +            y_align: Clutter.ActorAlign.CENTER,
 +        });
-+        this._batteryNub = new St.Widget({y_align: Clutter.ActorAlign.CENTER});
++        this._batteryNub = new St.Widget({
++            style_class: 'fajita-battery-nub',
++            y_align: Clutter.ActorAlign.CENTER,
++        });
 +        this._batteryGlyph = new St.BoxLayout({
++            style_class: 'fajita-battery',
              y_expand: true,
              y_align: Clutter.ActorAlign.CENTER,
          });
@@ -192,7 +212,7 @@ index b4bce7c1b..b0ea69122 100644
              this);
  
          this.quickSettingsItems.push(this._systemItem);
-@@ -347,16 +371,34 @@ class Indicator extends SystemIndicator {
+@@ -347,16 +394,43 @@ class Indicator extends SystemIndicator {
      _sync() {
          const {powerToggle} = this._systemItem;
          if (powerToggle.visible) {
@@ -202,17 +222,19 @@ index b4bce7c1b..b0ea69122 100644
 -            });
 -            this._percentageLabel.visible =
 -                this._desktopSettings.get_boolean(SHOW_BATTERY_PERCENTAGE);
-+            // Battery present: show the outline+number glyph, hide the icon.
++            // Battery present: show the pill glyph, hide the fallback icon.
 +            this._indicator.hide();
 +            this._batteryGlyph.show();
 +
 +            const iconName =
 +                `${powerToggle.gicon?.get_names?.()?.join(' ') ?? ''} ${powerToggle.fallback_icon_name ?? ''}`;
 +            const charging = /charging|charged|plugged/.test(iconName);
-+            const pct = parseInt((powerToggle.title ?? '').replace(/\D/g, ''), 10);
-+            const low = Number.isFinite(pct) && pct <= 15 && !charging;
-+
-+            this._applyBatteryStyle(charging ? '#3ddc84' : low ? '#ff4d4d' : 'white');
++            this._boltIcon.visible = charging;
++            // .charging on the glyph → green pill + white number/bolt (theme CSS).
++            if (charging)
++                this._batteryGlyph.add_style_class_name('charging');
++            else
++                this._batteryGlyph.remove_style_class_name('charging');
          } else {
 -            // If there's no battery, then we use the power icon.
 +            // No battery: fall back to the plain power icon.
@@ -223,16 +245,23 @@ index b4bce7c1b..b0ea69122 100644
          }
      }
 +
-+    _applyBatteryStyle(color) {
-+        this._batteryBody.style =
-+            'min-width: 19px; min-height: 11px; padding: 0 2px;' +
-+            `border-width: 1px; border-color: ${color}; border-radius: 3px;`;
-+        this._batteryNub.style =
-+            `background-color: ${color}; min-width: 2px; min-height: 5px;` +
-+            'border-radius: 0 2px 2px 0; margin-left: 1px;';
-+        this._percentageLabel.style =
-+            `color: ${color}; font-size: 8px; font-weight: 800;` +
-+            'font-feature-settings: "tnum";';
++    _drawBolt(area) {
++        const cr = area.get_context();
++        const [w, h] = area.get_surface_size();
++        const c = area.get_theme_node().get_foreground_color();
++        cr.setSourceRGBA(c.red / 255, c.green / 255, c.blue / 255, c.alpha / 255);
++
++        // A simple filled lightning bolt (normalised points, y down).
++        const pts = [
++            [0.58, 0.0], [0.16, 0.55], [0.46, 0.55],
++            [0.38, 1.0], [0.86, 0.42], [0.54, 0.42],
++        ];
++        cr.moveTo(pts[0][0] * w, pts[0][1] * h);
++        for (let i = 1; i < pts.length; i++)
++            cr.lineTo(pts[i][0] * w, pts[i][1] * h);
++        cr.closePath();
++        cr.fill();
++        cr.$dispose();
 +    }
  });
 diff --git a/js/ui/status/volume.js b/js/ui/status/volume.js
