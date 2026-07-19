@@ -10,10 +10,10 @@
 #
 # For python3.pkgs.callPackage (see hosts/fajita/default.nix ibus.engines).
 {
+  lib,
   buildPythonPackage,
   fetchPypi,
   setuptools,
-  pkg-config,
   hunspell, # the C library (resolves from top-level pkgs, no python attr exists)
   hunspellDicts,
 }:
@@ -25,29 +25,27 @@ buildPythonPackage rec {
 
   src = fetchPypi {
     inherit pname version;
-    sha256 = "sha256-D4MLaL2MOS9NW04hw44ogJ4U1k7Ge95IJyySC2Nob1M=";
+    hash = "sha256-D4MLaL2MOS9NW04hw44ogJ4U1k7Ge95IJyySC2Nob1M=";
   };
 
+  # setup.py links plain -lhunspell but nixpkgs ships only the versioned
+  # libhunspell-1.x; point it at the real name (linux branch):
+  postPatch = ''
+    substituteInPlace setup.py --replace-fail \
+      "main_module_kwargs['libraries'] = ['hunspell']" \
+      "main_module_kwargs['libraries'] = ['hunspell-${lib.versions.majorMinor hunspell.version}']"
+  '';
+
   build-system = [ setuptools ];
-  nativeBuildInputs = [ pkg-config ];
   buildInputs = [ hunspell ];
 
-  # setup.py hardcodes /usr/include/hunspell and links plain -lhunspell;
-  # nixpkgs ships versioned libhunspell-1.x only — shim both, then pin the
-  # runtime path with an explicit rpath.
-  env.NIX_CFLAGS_COMPILE = "-I${hunspell.dev}/include/hunspell";
-  preBuild = ''
-    mkdir -p $TMPDIR/libshim
-    ln -s ${hunspell.out}/lib/libhunspell-*.so $TMPDIR/libshim/libhunspell.so
-    export NIX_LDFLAGS="$NIX_LDFLAGS -L$TMPDIR/libshim -L${hunspell.out}/lib"
-  '';
-  postFixup = ''
-    find $out -name "hunspell*.so" -exec patchelf --add-rpath ${hunspell.out}/lib {} \;
-  '';
+  # setup.py's own hook: each $INCLUDE_PATH entry gets /hunspell appended.
+  env.INCLUDE_PATH = "${lib.getDev hunspell}/include";
 
   # Smoke test with a real dictionary: exactly the call path typing-booster's
   # Dictionary.spellcheck_suggest_pyhunspell uses.
   checkPhase = ''
+    runHook preCheck
     python -c "
     import hunspell
     h = hunspell.HunSpell(
@@ -57,7 +55,16 @@ buildPythonPackage rec {
     assert 'the' in h.suggest('teh')
     print('pyhunspell OK')
     "
+    runHook postCheck
   '';
 
   pythonImportsCheck = [ "hunspell" ];
+
+  meta = {
+    description = "Python bindings for the Hunspell spellchecker engine";
+    homepage = "https://github.com/pyhunspell/pyhunspell";
+    changelog = "https://github.com/pyhunspell/pyhunspell/releases/tag/${version}";
+    license = lib.licenses.lgpl3Plus;
+    platforms = lib.platforms.linux;
+  };
 }
