@@ -69,7 +69,12 @@ in
           ./patches/osk-strut-keep-maximized.patch # OSK reserves space via strut; windows stay maximized (no floating-CSD look)
           ./patches/auto-rotate-toggle.patch # QS Auto Rotate toggle → orientation-lock gsetting (fajita-autorotate daemon reads it)
           ./patches/osk-mobile-hide-button.patch # add hide-keyboard button to us-mobile layout (mobile layout omits it; swipe-down has no visual affordance)
-          ./patches/powerkey-debounce.patch # drop doubled pwrkey press (6.16.7) that wakes then re-blanks the screen
+          ./patches/powerkey-wake-brightness.patch # panel on BEFORE brightness restore (EINVAL race = wake-to-black); power key = Phosh-style press-state snapshot (replaces debounce+grace)
+          ./patches/powerkey-screenshot-chord.patch # Volume-Up + Power = full-screen screenshot + iOS-style flash (reads volume evdev in powerManager; suppresses the blank). MUST stay after powerkey-wake-brightness (same file)
+          ./patches/autobacklight-fajita.patch # oneplus,fajita brightness curves (default linear = pwm 1 in the dark, visually OFF); ALS deadband + write rate-limit + retry
+          ./patches/topbar-no-tap.patch # top bar = passive status bar: no tap-to-open calendar/QS (swipe-down still opens QS)
+          ./patches/lockscreen-no-blur.patch # lock-screen wallpaper shown sharp + bright (no Gaussian blur/dim); scoped to UnlockDialog only
+          ./patches/topbar-icons.patch # iOS/Android status bar: battery %-inside-outline, no sound icon, cellular = bars + "4G" text, cell hidden when wifi active (shown when QS open)
         ];
         prePatch = ''
           cp -r ${libshew} subprojects/libshew
