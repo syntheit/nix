@@ -132,6 +132,25 @@
     splash = lib.mkDefault true;
   };
 
+  # …but make the splash actually END. gdm-mobile never does the plymouth
+  # handoff, so plymouthd stays alive in --mode=boot forever (2026-07-18
+  # battery audit: 2.5% CPU + 2:48 CPU-time six hours after boot, plus the
+  # ask-password forwarders). Tell it to quit once the display manager is up.
+  systemd.services.fajita-plymouth-quit = {
+    description = "Quit the Plymouth boot splash after the session takes over";
+    wantedBy = [ "graphical.target" ];
+    after = [ "display-manager.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = "-${pkgs.plymouth}/bin/plymouth quit";
+    };
+  };
+
+  # NetworkManager periodic connectivity probes are useless on a phone that is
+  # basically always online via WiFi/LTE — be explicit that they're off so
+  # they never wake the modem for a captive-portal check.
+  networking.networkmanager.settings.connectivity.enabled = false;
+
   # Networking — NetworkManager (iwd backend was getting confused; just use wpa_supplicant default)
   networking.networkmanager.enable = true;
   networking.networkmanager.ensureProfiles.profiles = {
@@ -342,17 +361,18 @@
     enable = true;
     nssmdns4 = true;
     openFirewall = true;
-    publish = {
-      enable = true;
-      addresses = true;
-      workstation = true;
-    };
+    # Publish disabled 2026-07-19 (battery pass): ssh reaches the phone over
+    # Tailscale MagicDNS, and nothing discovers the phone by mDNS — announcing
+    # ourselves periodically only chatters the WiFi radio. Resolving OTHER
+    # hosts (harbor.local, Chromecasts) still works via nssmdns above.
+    publish.enable = false;
   };
 
-  # CUPS — print from the phone. mDNS-discovered network printers show up in
-  # Phosh Settings → Printers automatically (avahi above).
+  # CUPS — disabled 2026-07-19 (battery pass): printing from the phone was
+  # never used (print shop + USB instead). Flip enable back on if ever needed;
+  # the drivers line is kept for that day.
   services.printing = {
-    enable = true;
+    enable = false;
     drivers = with pkgs; [ gutenprint hplip ];
   };
 
@@ -599,13 +619,12 @@
   # environment.extraInit. (This is the exact inverse of the Phosh setup, which
   # needed GTK_IM_MODULE=wayland for stevia.)
 
-  # OSK text prediction (keyboard phase 0 — ~/fajita-notes/keyboard-prediction.md).
-  # GNOME Shell's OSK has carried a 3-slot suggestion strip since GNOME 43 that
-  # activates iff the "typing-booster" IBus engine exists: on OSK open the shell
-  # swaps the active engine to typing-booster and routes its candidates into the
-  # strip; tap commits word+space (js/misc/ibusManager.js setCompletionEnabled,
-  # js/ui/ibusCandidatePopup.js). So prediction = just shipping the engine, the
-  # hunspell dictionaries, and settings — no shell patches.
+  # OSK text prediction + cursor slide + auto-caps (rev 9 — ~/fajita-notes/keyboard-prediction.md).
+  # The shell OSK has a 3-slot suggestion strip since GNOME 43 (keyboard.js, ibusCandidatePopup.js)
+  # that activates iff the "typing-booster" IBus engine exists; tap commits word+space.
+  # Shell patches add spacebar cursor-slide and committed-text auto-caps
+  # (packages/gnome-mobile/patches/osk-spacebar-cursor-slide.patch + osk-autocaps-committed-tail.patch).
+  # The engine fork (keyboard/patches/) adds no-preedit mode + real autocorrect + bilingual learning.
   # waylandFrontend=true stops the module setting GTK/QT_IM_MODULE (see NB
   # above; apps must keep speaking text-input-v3 to mutter). XMODIFIERS is
   # still set but neutralized by the gnome-mobile extraInit unset.
@@ -702,7 +721,8 @@
         inlinecompletion = mkInt32 0; # strip-only; inline gray preedit is desktop UX
         lookuptableorientation = mkInt32 0; # horizontal, matches the 3-slot strip
         pagesize = mkInt32 3; # the strip shows at most 3 anyway
-        autoselectcandidate = mkInt32 0; # suggestions-only; real autocorrect = phase 2
+        autoselectcandidate = mkInt32 0; # suppress stock autocorrect; the engine fork's
+                                         # smarter autocorrect is live via IBUS_TYPING_BOOSTER_OSK_AUTOCORRECT
         addspaceoncommit = true; # tap suggestion -> word + trailing space
         # Learn only correctly-spelled or previously-recorded words: keeps typos
         # AND password-field garbage out of the learning DB (gnome-shell #6693).

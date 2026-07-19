@@ -1,8 +1,16 @@
 diff --git a/engine/hunspell_table.py b/engine/hunspell_table.py
-index fb229b4..0dcb879 100644
+index fb229b4..68ec7a9 100644
 --- a/engine/hunspell_table.py
 +++ b/engine/hunspell_table.py
-@@ -38,6 +38,7 @@ else:
+@@ -25,6 +25,7 @@ This file implements the ibus engine for ibus-typing-booster
+ from typing import Any
+ from typing import Dict
+ from typing import List
++from typing import Set
+ from typing import Tuple
+ from typing import Union
+ from typing import Optional
+@@ -38,6 +39,7 @@ else:
      from typing_extensions import Literal
  # pylint: enable=wrong-import-position
  import unicodedata
@@ -10,7 +18,7 @@ index fb229b4..0dcb879 100644
  import os
  import fnmatch
  import ast
-@@ -775,6 +776,17 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -775,6 +777,17 @@ class TypingBoosterEngine(IBus.Engine):
  
          self._avoid_forward_key_event: bool = self._settings_dict[
              'avoidforwardkeyevent']['user']
@@ -20,7 +28,7 @@ index fb229b4..0dcb879 100644
 +        self._osk_autocorrect = os.getenv(
 +            'IBUS_TYPING_BOOSTER_OSK_AUTOCORRECT', '') not in ('', '0')
 +        self._osk_np_word = ''  # shadow of the word already committed to the app
-+        self._osk_np_prev_consumed_val = None
++        self._osk_np_consumed_vals: Set[int] = set()
 +        self._osk_np_last_finished = ('', 0.0)
 +        self._osk_np_recent_corrections = {}
 +        self._osk_np_last_commit_time = 0.0
@@ -28,7 +36,7 @@ index fb229b4..0dcb879 100644
  
          self._prefer_commit: bool = self._settings_dict[
              'prefercommit']['user']
-@@ -1211,7 +1223,11 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -1211,7 +1224,11 @@ class TypingBoosterEngine(IBus.Engine):
      @property
      def has_osk(self) -> bool:
          '''Return True if OSK capability flag is set.'''
@@ -41,7 +49,7 @@ index fb229b4..0dcb879 100644
  
      @property
      def has_surrounding_text(self) -> bool:
-@@ -3306,6 +3322,15 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -3306,6 +3323,15 @@ class TypingBoosterEngine(IBus.Engine):
          '''Update Preedit String in UI'''
          if self._debug_level > 1:
              LOGGER.debug('entering function')
@@ -57,7 +65,7 @@ index fb229b4..0dcb879 100644
          if (self._show_raw_input >= 2  # Show *always*
              and self._typed_string
              and (self._lookup_table.hidden
-@@ -3578,6 +3603,24 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -3578,6 +3604,24 @@ class TypingBoosterEngine(IBus.Engine):
                      and user_freq > 0.2):
                      self._lookup_table.set_cursor_visible(True)
                      self._is_candidate_auto_selected = True
@@ -82,7 +90,7 @@ index fb229b4..0dcb879 100644
          self._update_lookup_table()
          self._timeout_source_id = 0
  
-@@ -3635,6 +3678,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -3635,6 +3679,7 @@ class TypingBoosterEngine(IBus.Engine):
              return
          self.get_context()
          if (not self._unit_test
@@ -90,7 +98,7 @@ index fb229b4..0dcb879 100644
              and
              (not self._surrounding_text.event.is_set()
               or not self._is_context_from_surrounding_text)):
-@@ -7227,6 +7271,11 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7227,6 +7272,11 @@ class TypingBoosterEngine(IBus.Engine):
              self.remove_candidate_from_user_database(index)
              self._update_ui()
              return
@@ -102,7 +110,7 @@ index fb229b4..0dcb879 100644
          if button == 1:
              phrase = self.get_string_from_lookup_table_cursor_pos()
              if phrase:
-@@ -9140,6 +9189,403 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9140,6 +9190,408 @@ class TypingBoosterEngine(IBus.Engine):
          self._trigger_surrounding_text_update()
          return True
  
@@ -122,6 +130,9 @@ index fb229b4..0dcb879 100644
 +    _OSK_NP_WORD_JOINERS = ("'", '\u2019', '-')
 +    _OSK_NP_AUTOCORRECT_SEPARATORS = ' .,!?;:'
 +    _OSK_NP_RECENT_CORRECTION_SECONDS = 180.0
++    # A reset arriving within this window of our own commit is treated as
++    # the client-side echo of that commit, not as a genuine cursor move:
++    _OSK_NP_RESET_ECHO_SECONDS = 1.0
 +
 +    def _osk_np_before_cursor(self) -> Optional[str]:
 +        """Surrounding text before the cursor, or None if unavailable."""
@@ -198,7 +209,7 @@ index fb229b4..0dcb879 100644
 +            return
 +        finished_word, finished_time = self._osk_np_last_finished
 +        if (word == finished_word
-+            and time.time() - finished_time < 3.0):
++            and time.monotonic() - finished_time < 3.0):
 +            # surrounding text still lags the separator we just committed
 +            return
 +        self._osk_np_word = word
@@ -258,7 +269,9 @@ index fb229b4..0dcb879 100644
 +    def _osk_np_learn(self, word: str) -> None:
 +        """Record a word the user insisted on (bypasses record-mode: an
 +        explicitly re-typed word after an unwanted autocorrect must stick)."""
-+        if self._off_the_record or self._hide_input:
++        if (self._off_the_record
++            or self._hide_input
++            or self._input_hints & itb_util_gui.InputHints.PRIVATE):
 +            return
 +        stripped = itb_util_core.strip_token(word)
 +        if not stripped:
@@ -289,7 +302,7 @@ index fb229b4..0dcb879 100644
 +        if any(char.isupper() for char in stripped[1:]):
 +            return None  # iPhone, McD..., ALLCAPS: intentional
 +        low = stripped.lower()
-+        now = time.time()
++        now = time.monotonic()
 +        for old in [w for w, t in self._osk_np_recent_corrections.items()
 +                    if now - t > self._OSK_NP_RECENT_CORRECTION_SECONDS]:
 +            del self._osk_np_recent_corrections[old]
@@ -409,7 +422,7 @@ index fb229b4..0dcb879 100644
 +                self.delete_surrounding_text(-len(typed), len(typed))
 +                super().commit_text(
 +                    IBus.Text.new_from_string(corrected + sep))
-+                self._osk_np_recent_corrections[typed.lower()] = time.time()
++                self._osk_np_recent_corrections[typed.lower()] = time.monotonic()
 +                self._record_in_database_and_push_context(
 +                    commit_phrase=corrected, input_phrase=typed)
 +            else:
@@ -423,8 +436,8 @@ index fb229b4..0dcb879 100644
 +        self._commit_happened_after_focus_in = True
 +        if typed:
 +            self._osk_np_vote_language(corrected or typed)
-+        self._osk_np_last_commit_time = time.time()
-+        self._osk_np_last_finished = (corrected or typed, time.time())
++        self._osk_np_last_commit_time = time.monotonic()
++        self._osk_np_last_finished = (corrected or typed, time.monotonic())
 +        self._osk_np_word = ''
 +        self._clear_input()
 +        self._trigger_surrounding_text_update()
@@ -454,11 +467,11 @@ index fb229b4..0dcb879 100644
 +        commit = phrase + ' ' if self._add_space_on_commit else phrase
 +        super().commit_text(IBus.Text.new_from_string(commit))
 +        self._commit_happened_after_focus_in = True
-+        self._osk_np_last_commit_time = time.time()
++        self._osk_np_last_commit_time = time.monotonic()
 +        self._record_in_database_and_push_context(
 +            commit_phrase=phrase, input_phrase=typed or phrase)
 +        self._osk_np_vote_language(phrase)
-+        self._osk_np_last_finished = (phrase, time.time())
++        self._osk_np_last_finished = (phrase, time.monotonic())
 +        self._osk_np_word = ''
 +        self._clear_input()
 +        self._trigger_surrounding_text_update()
@@ -471,8 +484,8 @@ index fb229b4..0dcb879 100644
 +        if self.get_current_imes()[0] != 'NoIME':
 +            return None
 +        if key.release:
-+            if self._osk_np_prev_consumed_val == key.val:
-+                self._osk_np_prev_consumed_val = None
++            if key.val in self._osk_np_consumed_vals:
++                self._osk_np_consumed_vals.discard(key.val)
 +                return True
 +            return None
 +        if (key.control or key.mod1 or key.mod4
@@ -493,31 +506,42 @@ index fb229b4..0dcb879 100644
 +                self.get_context()
 +            super().commit_text(IBus.Text.new_from_string(uchar))
 +            self._commit_happened_after_focus_in = True
-+            self._osk_np_last_commit_time = time.time()
++            self._osk_np_last_commit_time = time.monotonic()
 +            self._osk_np_word += uchar
 +            self._insert_string_at_cursor(list(uchar))
 +            self._trigger_surrounding_text_update()
 +            self._update_ui()
-+            self._osk_np_prev_consumed_val = key.val
++            self._osk_np_consumed_vals.add(key.val)
 +            return True
-+        self._osk_np_prev_consumed_val = key.val
++        self._osk_np_consumed_vals.add(key.val)
 +        return self._osk_np_boundary(key, uchar)
 +
      def _return_false(self, key: itb_util_core.KeyEvent) -> bool:
          '''A replacement for “return False” in do_process_key_event()
  
-@@ -10321,6 +10767,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10321,6 +10773,21 @@ class TypingBoosterEngine(IBus.Engine):
  
          if disabled:
              return self._return_false(key)
 +        if self._osk_no_preedit and not self._typed_compose_sequence:
-+            osk_np_result = self._osk_np_process_key(key)
++            try:
++                osk_np_result = self._osk_np_process_key(key)
++            except Exception as error:  # pylint: disable=broad-except
++                LOGGER.exception(
++                    'osk-np: error handling key %s: %s: %s — '
++                    'dropping input state, passing key through',
++                    key, error.__class__.__name__, error)
++                self._osk_np_word = ''
++                self._clear_input()
++                osk_np_result = None
 +            if osk_np_result is not None:
-+                return osk_np_result
++                if osk_np_result:
++                    return self._return_true(key)
++                return self._return_false(key)
  
          if self._handle_m17n_candidates(key):
              return self._return_true(key)
-@@ -11279,6 +11729,13 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11279,6 +11746,15 @@ class TypingBoosterEngine(IBus.Engine):
          # if the input purpose is set correctly on focus in, then it
          # should not be necessary to reset it here.
          self._client_info.client = ''
@@ -525,39 +549,43 @@ index fb229b4..0dcb879 100644
 +            # fajita fork: the word is already committed in the app; make
 +            # sure the stale-preedit recording below does not see it twice.
 +            self._osk_np_word = ''
-+            self._osk_np_prev_consumed_val = None
++            self._osk_np_consumed_vals.clear()
++            self._osk_np_last_commit_time = 0.0
++            self._osk_np_last_finished = ('', 0.0)
 +            # a new app is a new conversation: drop the language bias
 +            self._osk_np_lang_votes.clear()
          # The preëdit, if there was any, has already been committed
          # automatically because
          # update_preedit_text_with_mode(,,,IBus.PreeditFocusMode.COMMIT)
-@@ -11331,6 +11788,29 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11331,6 +11807,31 @@ class TypingBoosterEngine(IBus.Engine):
          if self._ollama_chat_query_thread:
              self._ollama_chat_query_cancel(commit_selection=False)
              return
-+        if (self._osk_no_preedit and self._osk_np_word
-+            and time.time() - self._osk_np_last_commit_time > 0.5):
-+            # fajita fork: reset fires on Backspace presses and cursor
-+            # moves, which never reach the engine — drop the shadow word
-+            # if the app text no longer ends with it (but never right
-+            # after our own commit: surrounding text may just be lagging).
-+            osk_np_before = self._osk_np_before_cursor()
-+            if (osk_np_before is None
-+                or not osk_np_before.endswith(self._osk_np_word)):
-+                self._osk_np_word = ''
-+        if (self._osk_no_preedit
-+            and time.time() - self._osk_np_last_commit_time < 1.0):
-+            # fajita fork: real clients (mutter/GTK) reset the input
-+            # context as a side effect of applying our own commits — and
-+            # in no-preedit mode every typed character is a commit. The
-+            # stock code below clears the lookup table and the remembered
-+            # n-gram context on every reset, so the context could never
-+            # chain two words and next-word predictions were always empty
-+            # on-glass. A reset this soon after our own commit cannot be
-+            # a genuine cursor move: keep the UI and the context.
-+            self._surrounding_text = SurroundingText()
-+            self._trigger_surrounding_text_update()
-+            return
++        if self._osk_no_preedit:
++            recent_own_commit = (
++                time.monotonic() - self._osk_np_last_commit_time
++                < self._OSK_NP_RESET_ECHO_SECONDS)
++            if recent_own_commit:
++                # Real clients (mutter/GTK) reset the input context as a
++                # side effect of applying our own commits — and in
++                # no-preedit mode every typed character is a commit. The
++                # stock code below clears the lookup table and the
++                # remembered n-gram context on every reset, so the context
++                # could never chain two words and next-word predictions
++                # were always empty. A reset this soon after our own
++                # commit cannot be a genuine cursor move: keep the UI and
++                # the context.
++                self._surrounding_text = SurroundingText()
++                self._trigger_surrounding_text_update()
++                return
++            if self._osk_np_word:
++                # A genuine reset (Backspace press, cursor move — which
++                # never reach the engine): drop the shadow word if the app
++                # text no longer provably ends with it.
++                osk_np_before = self._osk_np_before_cursor()
++                if (osk_np_before is None
++                    or not osk_np_before.endswith(self._osk_np_word)):
++                    self._osk_np_word = ''
          # The press events of arrow keys like `Left` and `BackSpace`
          # cause a call to `do_reset()`. If that clears
          # self._surrounding_text_old() the comparison of
