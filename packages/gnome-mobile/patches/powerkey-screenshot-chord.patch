@@ -1,14 +1,15 @@
 --- a/js/misc/powerManager.js
 +++ b/js/misc/powerManager.js
-@@ -10,6 +10,7 @@
+@@ -10,6 +10,8 @@
  import * as GnomeSession from './gnomeSession.js';
  import * as LoginManager from './loginManager.js';
  import * as Lightbox from '../ui/lightbox.js';
 +import * as Screenshot from '../ui/screenshot.js';
++import * as Volume from '../ui/status/volume.js';
  import {loadInterfaceXML} from './fileUtils.js';
  import * as Main from '../ui/main.js';
  
-@@ -179,6 +180,8 @@
+@@ -179,6 +181,8 @@
          this._updateScreensaverIdleWatch();
          this._updatePowersaveIdleWatch();
  
@@ -17,7 +18,7 @@
          const setupLoginSession = async () => {
              this._loginSession = await this._loginManager.getCurrentSessionProxy();
              this._loginSession.connect('g-properties-changed',
-@@ -1157,6 +1160,17 @@
+@@ -1157,6 +1161,17 @@
                  this._doSystemAction(action, 'power key released', false).catch(e => console.error(e));
              }
          } else {
@@ -35,7 +36,7 @@
   //   log("POWERMANAGER: power key press, flags " +  event.get_flags() + " " + (event.get_flags() & Clutter.EventFlags.FLAG_INPUT_METHOD));
  
              // Snapshot the screen state at press time - the release handler
-@@ -1190,6 +1204,119 @@
+@@ -1190,6 +1205,146 @@
          }
      }
  
@@ -111,6 +112,10 @@
 +                    const value = view.getInt32(off + 20, true);
 +                    if (value === 1) {
 +                        this._volumeUpHeld = true;
++                        // Snapshot the level BEFORE gsd's async raise lands, so a
++                        // screenshot chord can undo the accidental volume bump.
++                        const sink = Volume.getMixerControl().get_default_sink();
++                        this._preChordVolume = sink ? sink.volume : null;
 +                        this._onVolumeUpPressed();
 +                    } else if (value === 0) {
 +                        this._volumeUpHeld = false;
@@ -136,7 +141,30 @@
 +        this._fireScreenshotChord();
 +    }
 +
++    _undoVolumeBump() {
++        // Vol-Up also reaches gsd-media-keys (we only read the evdev node — GJS
++        // can't grab it), so the chord bumps the volume up by one step. Restore
++        // the pre-chord level once gsd's async change has settled.
++        if (this._preChordVolume == null)
++            return;
++        const target = this._preChordVolume;
++        this._preChordVolume = null;
++
++        if (this._volRestoreId)
++            GLib.source_remove(this._volRestoreId);
++        this._volRestoreId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 250, () => {
++            const sink = Volume.getMixerControl().get_default_sink();
++            if (sink) {
++                sink.volume = target;
++                sink.push_volume();
++            }
++            delete this._volRestoreId;
++            return GLib.SOURCE_REMOVE;
++        });
++    }
++
 +    async _fireScreenshotChord() {
++        this._undoVolumeBump();
 +        try {
 +            const shooter = new Shell.Screenshot();
 +            const [content] = await shooter.screenshot_stage_to_content();

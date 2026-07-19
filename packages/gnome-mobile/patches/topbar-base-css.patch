@@ -1,0 +1,68 @@
+diff --git a/data/theme/gnome-shell-sass/widgets/_panel.scss b/data/theme/gnome-shell-sass/widgets/_panel.scss
+index 6e611c5c7..93b4835c7 100644
+--- a/data/theme/gnome-shell-sass/widgets/_panel.scss
++++ b/data/theme/gnome-shell-sass/widgets/_panel.scss
+@@ -216,3 +216,63 @@ $panel_transition_duration: 250ms; // same as the overview transition duration
+     }
+   }
+ }
++
++// ── fajita: iOS-style status bar ────────────────────────────────────────────
++// These live in the BASE theme (not the Marble user theme) on purpose: the User
++// Themes extension is disabled on the lock / login screens, so putting them here
++// is the only way the battery pill, inset and clock shadow reach those screens.
++
++// Top-bar inset — the panel lays out #panelLeft/#panelRight in vfunc_allocate
++// using the full width and IGNORES #panel padding, so pad the boxes themselves.
++// Clears the OnePlus 6T's rounded corners.
++#panelLeft  { padding-left: 24px; }
++#panelRight { padding-right: 24px; }
++
++// Battery: solid monochrome pill + % number inside + nub + charging bolt.
++.fajita-battery { spacing: 0px; }
++.fajita-battery-body {
++  background-color: white;
++  border-radius: 4px;
++  min-width: 16px;
++  min-height: 12px;
++  padding: 0px 2px;
++}
++.fajita-battery-nub {
++  background-color: white;
++  min-width: 2px;
++  min-height: 5px;
++  border-radius: 0px 3px 3px 0px;
++  margin-left: 1px;
++}
++.fajita-battery-num  { color: black; font-size: 9px; font-weight: bold; }
++.fajita-battery-bolt { color: black; min-width: 7px; min-height: 10px; margin-left: 1px; }
++
++// Charging = green pill + white number/bolt.
++.fajita-battery.charging .fajita-battery-body,
++.fajita-battery.charging .fajita-battery-nub { background-color: #34c759; }
++.fajita-battery.charging .fajita-battery-num,
++.fajita-battery.charging .fajita-battery-bolt { color: white; }
++
++// Home/overview: transparent panel over a light wallpaper → whole bar goes a
++// soft near-black; battery becomes a dark pill with a light number.
++#panel:overview .panel-button,
++#panel:overview .clock,
++#panel:overview .system-status-icon { color: rgba(0, 0, 0, 0.82); }
++#panel:overview .fajita-battery-body,
++#panel:overview .fajita-battery-nub { background-color: rgba(0, 0, 0, 0.82); }
++#panel:overview .fajita-battery-num,
++#panel:overview .fajita-battery-bolt { color: white; }
++#panel:overview .fajita-battery.charging .fajita-battery-body,
++#panel:overview .fajita-battery.charging .fajita-battery-nub { background-color: #34c759; }
++#panel:overview .fajita-battery.charging .fajita-battery-num,
++#panel:overview .fajita-battery.charging .fajita-battery-bolt { color: white; }
++
++// Lock / login screen: the bar sits over the wallpaper. Keep it white (iOS
++// style) and add a soft shadow so the icons stay legible on a bright wallpaper.
++#panel.unlock-screen .system-status-icon,
++#panel.login-screen  .system-status-icon { icon-shadow: 0 1px 3px rgba(0, 0, 0, 0.5); }
++
++// Big lock-screen clock: shadow so the white time/date don't blend with a bright
++// wallpaper.
++.unlock-dialog-clock-time { text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); }
++.unlock-dialog-clock-date { text-shadow: 0 1px 5px rgba(0, 0, 0, 0.5); }
