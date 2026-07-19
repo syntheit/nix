@@ -2,10 +2,30 @@ diff --git a/js/ui/keyboard.js b/js/ui/keyboard.js
 index 4f70a8bd7..755a212f9 100644
 --- a/js/ui/keyboard.js
 +++ b/js/ui/keyboard.js
-@@ -2449,6 +2449,13 @@ export const Keyboard = GObject.registerClass({
+@@ -2446,9 +2446,39 @@ export const Keyboard = GObject.registerClass({
+         this.emit('visibility-changed');
+     }
+
++    // Deferred nudge: re-fit the focused window into the current work area.
++    // Called after both strut-set and strut-remove so maximized windows snap
++    // to the right size without mutter's lone configure being raced away.
++    _refitFocusWindow() {
++        const laters = global.compositor.get_laters();
++        laters.add(Meta.LaterType.BEFORE_REDRAW, () => {
++            const focus = global.display.focus_window;
++            if (!focus || !focus.maximized_vertically)
++                return false;
++            const wa = focus.get_work_area_current_monitor();
++            const fr = focus.get_frame_rect();
++            if (fr.height !== wa.height || fr.y !== wa.y)
++                focus.move_resize_frame(false, fr.x, wa.y, fr.width, wa.height);
++            return false;
++        });
++    }
++
      _animateShowComplete() {
          let keyboardBox = Main.layoutManager.keyboardBox;
- 
+
 +        // Reserve the keyboard's space with a strut: mutter re-fits
 +        // maximized windows above the OSK while they keep their maximized
 +        // state, so clients don't switch to the floating-window CSD look
@@ -13,24 +33,34 @@ index 4f70a8bd7..755a212f9 100644
 +        Main.layoutManager.untrackChrome(this);
 +        Main.layoutManager.trackChrome(this, {affectsStruts: true});
 +
++        // Nudge the focused window into the new (strut-reduced) work area.
++        // The strut queues a BEFORE_REDRAW regions update; we add a second
++        // BEFORE_REDRAW later immediately after so it runs once regions are
++        // settled and the work area reflects the OSK height.
++        this._refitFocusWindow();
++
          // Toggle visibility so the keyboardBox can update its chrome region.
          if (!Meta.is_wayland_compositor()) {
              keyboardBox.hide();
-@@ -2457,6 +2464,11 @@ export const Keyboard = GObject.registerClass({
+@@ -2457,6 +2487,15 @@ export const Keyboard = GObject.registerClass({
      }
- 
+
      _animateHide() {
 +        // Drop the keyboard strut: maximized windows re-fit the full work
 +        // area while the keyboard slides out.
 +        Main.layoutManager.untrackChrome(this);
 +        Main.layoutManager.trackChrome(this);
 +
++        // Nudge the focused window back into the full work area once the
++        // strut removal has updated the regions (same sequencing as show).
++        this._refitFocusWindow();
++
          if (this._focusWindow)
              this._animateWindow(this._focusWindow, false);
- 
-@@ -2526,42 +2538,10 @@ export const Keyboard = GObject.registerClass({
+
+@@ -2526,42 +2565,10 @@ export const Keyboard = GObject.registerClass({
      }
- 
+
      _animateWindow(window, show) {
 -        if (this._windowMovedId) {
 -            this._focusTracker.disconnect(this._windowMovedId);
@@ -73,11 +103,11 @@ index 4f70a8bd7..755a212f9 100644
 +        // state, so the old unmaximize+move_resize_frame approach (which
 +        // made clients draw floating-window CSD) is no longer needed.
      }
- 
+
      _setFocusWindow(window) {
-@@ -2583,7 +2563,11 @@ export const Keyboard = GObject.registerClass({
+@@ -2583,7 +2590,11 @@ export const Keyboard = GObject.registerClass({
              Main.layoutManager.keyboardMonitor.index);
- 
+
          if (show) {
 -            const keyboardY1 = (workArea.y + workArea.height) - (this.allocation.get_height() - this._bottomPanelBox.allocation.get_height());
 +            // Compute the keyboard's top edge from the monitor geometry, not
@@ -85,6 +115,6 @@ index 4f70a8bd7..755a212f9 100644
 +            // already excludes the OSK, which would skew this.
 +            const keyboardMonitor = Main.layoutManager.keyboardMonitor;
 +            const keyboardY1 = keyboardMonitor.y + keyboardMonitor.height - this.allocation.get_height();
- 
+
              let highestOverlap = 0;
              for (const popover of this._focusPopovers.keys()) {
