@@ -15,6 +15,7 @@
     ./disko.nix
     ./secrets.nix
     ./invidious.nix
+    ./nix-builder.nix
     ../../system
     ../../services
   ];
