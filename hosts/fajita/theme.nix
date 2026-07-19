@@ -35,12 +35,31 @@ let
     extraCss = ''
       #panel { background-color: black; }
 
-      /* The iOS-style top bar (inset, battery pill, overview invert, charging,
-         lock-screen shadows, clock shadow) now lives in the BASE gnome-shell
-         theme — see packages/gnome-mobile/patches/topbar-base-css.patch. It has
-         to be in the base theme because the User Themes extension (this Marble
-         theme) is disabled on the lock/login screens, so anything here never
-         reaches them. */
+      /* Most of the iOS-style top bar (battery pill, inset, charging, lock/login
+         shadows, clock shadow) lives in the BASE gnome-shell theme — see
+         packages/gnome-mobile/patches/topbar-base-css.patch — because the User
+         Themes extension (this Marble theme) is disabled on the lock/login
+         screens, so base is the only way to reach them.
+
+         EXCEPTION: the home-screen (overview) dark-invert must live HERE in
+         Marble, not in the base theme. St gives the user theme higher cascade
+         priority than the base theme, so Marble's own `#panel:overview
+         .panel-button { color }` beats a base-theme override — the clock stayed
+         white. Putting the invert in Marble lets it win. (This only ever applies
+         on the home screen, where Marble is active; lock/login aren't :overview,
+         so nothing is lost.) */
+      #panel:overview .panel-button,
+      #panel:overview .clock,
+      #panel:overview .panel-button.clock-display .clock,
+      #panel:overview .system-status-icon { color: rgba(0, 0, 0, 0.82); }
+      #panel:overview .fajita-battery-body,
+      #panel:overview .fajita-battery-nub { background-color: rgba(0, 0, 0, 0.82); }
+      #panel:overview .fajita-battery-num,
+      #panel:overview .fajita-battery-bolt { color: white; }
+      #panel:overview .fajita-battery.charging .fajita-battery-body,
+      #panel:overview .fajita-battery.charging .fajita-battery-nub { background-color: #34c759; }
+      #panel:overview .fajita-battery.charging .fajita-battery-num,
+      #panel:overview .fajita-battery.charging .fajita-battery-bolt { color: white; }
 
       /* On-screen keyboard: the non-letter/function keys (.default-key — Shift,
          Backspace, ?123, Enter, punctuation) inherit BUTTON-COLOR = the bright
@@ -63,6 +82,12 @@ let
       /* OSK suggestion strip: tuck the pills up toward the app edge
          (Daniel-tuned via screenshots 2026-07-19). */
       .word-suggestions { padding-top: 2px; padding-bottom: 10px; }
+
+      /* OSK swipe-typing trail dots (fajita swipe bundle). Retune via dconf/CSS live. */
+      .gesture-trail-dot {
+        background-color: rgba(53, 132, 228, 0.75);
+        border-radius: 7px;
+      }
     '';
 
     # Brighter, less-gloomy blue in dark mode. Marble's dark accent is a very

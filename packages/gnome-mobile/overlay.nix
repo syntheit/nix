@@ -70,14 +70,17 @@ in
           ./patches/auto-rotate-toggle.patch # QS Auto Rotate toggle → orientation-lock gsetting (fajita-autorotate daemon reads it)
           ./patches/osk-mobile-hide-button.patch # add hide-keyboard button to us-mobile layout (mobile layout omits it; swipe-down has no visual affordance)
           ./patches/powerkey-wake-brightness.patch # panel on BEFORE brightness restore (EINVAL race = wake-to-black); power key = Phosh-style press-state snapshot (replaces debounce+grace)
-          ./patches/powerkey-screenshot-chord.patch # Volume-Up + Power = full-screen screenshot + iOS-style flash (reads volume evdev in powerManager; suppresses the blank). MUST stay after powerkey-wake-brightness (same file)
+          ./patches/powerkey-screenshot-chord.patch # Volume-Up + Power = full-screen screenshot + iOS-style flash (coordinates the Vol-Up accelerator via shellDBus; withholds the gsd forward during the chord so the volume never moves / no OSD; suppresses the blank). MUST stay after powerkey-wake-brightness (same file); pairs with shelldbus-volume-chord.patch
           ./patches/autobacklight-fajita.patch # oneplus,fajita brightness curves (default linear = pwm 1 in the dark, visually OFF); ALS deadband + write rate-limit + retry
           ./patches/topbar-no-tap.patch # top bar = passive status bar: no tap-to-open calendar/QS (swipe-down still opens QS)
           ./patches/lockscreen-no-blur.patch # lock-screen wallpaper shown sharp + bright (no Gaussian blur/dim); scoped to UnlockDialog only
           ./patches/topbar-icons.patch # iOS/Android status bar: battery %-inside-outline, no sound icon, cellular = bars + "4G" text, cell hidden when wifi active (shown when QS open)
           ./patches/topbar-base-css.patch # the top-bar CSS (battery pill, inset, overview invert, charging, lock-screen shadows, clock shadow) baked into the BASE theme so it also applies on the lock/login screen (User Themes ext is off there)
+          ./patches/shelldbus-volume-chord.patch # withhold Vol-Up accelerator from gsd during the screenshot chord (no volume bump / OSD)
           ./patches/osk-spacebar-cursor-slide.patch # spacebar long-press → cursor-slide mode: horizontal drag emits Left/Right; keyboard dims; finger-up suppresses the space
           ./patches/osk-autocaps-committed-tail.patch # auto-cap: replace dead surrounding-text dance with synchronous committedTail from _onCommitText (inputMethod.js); backspace/Enter handled
+          ./patches/osk-swipe-typing.patch # swipe typing: letter-key glide → symbolic trace → PUA-framed emission to engine decoder (MUST stay after osk-spacebar-cursor-slide + osk-autocaps)
+          ./patches/osk-strip-longpress-forget.patch # strip long-press → forget word: 600 ms hold on suggestion pill → candidate_clicked CONTROL_MASK → remove_candidate_from_user_database + flash
         ];
         prePatch = ''
           cp -r ${libshew} subprojects/libshew

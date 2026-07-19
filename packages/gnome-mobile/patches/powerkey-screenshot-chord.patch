@@ -1,15 +1,26 @@
 --- a/js/misc/powerManager.js
 +++ b/js/misc/powerManager.js
-@@ -10,6 +10,8 @@
+@@ -10,6 +10,7 @@
  import * as GnomeSession from './gnomeSession.js';
  import * as LoginManager from './loginManager.js';
  import * as Lightbox from '../ui/lightbox.js';
 +import * as Screenshot from '../ui/screenshot.js';
-+import * as Volume from '../ui/status/volume.js';
  import {loadInterfaceXML} from './fileUtils.js';
  import * as Main from '../ui/main.js';
  
-@@ -179,6 +181,8 @@
+@@ -43,6 +44,11 @@
+ 
+ const DEFAULT_SCREEN_FADE_OUT_TIME_MS = 250;
+ 
++// fajita: how long a standalone Vol-Up forward to gsd is deferred while we wait
++// to see if Power joins it (screenshot chord). If Power doesn't arrive within
++// this window, the Vol-Up is forwarded normally (volume moves ~this late).
++const VOL_CHORD_WINDOW_MS = 90;
++
+ Gio._promisify(Shell, 'util_start_systemd_unit');
+ Gio._promisify(Shell, 'util_stop_systemd_unit');
+ 
+@@ -179,6 +185,8 @@
          this._updateScreensaverIdleWatch();
          this._updatePowersaveIdleWatch();
  
@@ -18,7 +29,7 @@
          const setupLoginSession = async () => {
              this._loginSession = await this._loginManager.getCurrentSessionProxy();
              this._loginSession.connect('g-properties-changed',
-@@ -1154,9 +1158,43 @@
+@@ -1154,9 +1162,41 @@
  
  //log("POWERMANAGER: power key release (flags " + event.get_flags() + " " + (event.get_flags() & Clutter.EventFlags.FLAG_INPUT_METHOD) + "), executing action: " + action);
  
@@ -39,220 +50,71 @@
 +                }
              }
          } else {
-+            // fajita: double-press power → camera. A deferred blank pending
-+            // means the previous press just released within the double-press
-+            // window; a fresh press (not part of a vol-up chord) is the 2nd tap.
-+            if (this._pendingBlankId && !this._volumeUpHeld) {
++            // fajita: vol-up-first chord — a deferred Vol-Up forward is pending, and
++            // Power just went down. Drop the forward (gsd never gets it → no volume
++            // change / OSD) and screenshot. Return before arming _powerPressHappened
++            // so the release does nothing (no blank).
++            if (this._pendingVolUp) {
++                GLib.source_remove(this._pendingVolUp.timerId);
++                this._pendingVolUp = null;
++                this._fireScreenshotChord();
++                return;
++            }
++
++            // fajita: double-press power → camera (deferred blank pending = 2nd tap).
++            if (this._pendingBlankId) {
 +                GLib.source_remove(this._pendingBlankId);
 +                this._pendingBlankId = 0;
 +                this._launchCamera();
 +                return;
 +            }
 +
-+            // fajita: Volume-Up + Power = full-screen screenshot (iOS/Android
-+            // style). Volup-first order: if vol-up is already held when power
-+            // goes down, capture + flash and swallow the press entirely — we
-+            // return before arming _powerPressHappened, so the release does
-+            // nothing and the screen never blanks. (Power-first order is
-+            // handled from _onVolumeUpPressed.)
-+            if (this._volumeUpHeld && screenIsOn) {
-+                this._fireScreenshotChord();
-+                return;
-+            }
-+
   //   log("POWERMANAGER: power key press, flags " +  event.get_flags() + " " + (event.get_flags() & Clutter.EventFlags.FLAG_INPUT_METHOD));
  
              // Snapshot the screen state at press time - the release handler
-@@ -1190,6 +1228,246 @@
+@@ -1190,6 +1230,98 @@
          }
      }
  
 +    // ── Volume-Up + Power screenshot chord ──────────────────────────────────
-+    // gsd grabs the volume keys, so the shell never sees them through Clutter.
-+    // We open the volume-keys evdev node read-only (kernel fans events out to
-+    // every reader, so this doesn't disturb the volume OSD) and track vol-up
-+    // hold state. The power key is already handled here in powerButtonEvent(),
-+    // so keeping both in one place lets us capture + flash and suppress the
-+    // blank cleanly, without a separate daemon or the D-Bus caller allowlist.
++    // gsd grabs Vol-Up via the shell's D-Bus GrabAccelerators, so it (not the
++    // shell) raises the volume + shows the OSD. shellDBus routes the Vol-Up
++    // accelerator through handleVolumeUpAccelerator() below: we either forward
++    // it to gsd (normal volume) or, when Power joins it, withhold the forward
++    // entirely (gsd never acts → no volume change, no OSD) and take a shot.
 +    _initScreenshotChord() {
-+        this._volumeUpHeld = false;
-+
-+        // Track the output sink so the chord can undo the bump gsd applies for
-+        // the vol-up press (see _undoVolumeBump). We keep a live reference to
-+        // the default sink but deliberately do NOT derive the pre-bump level
-+        // from a rolling notify::volume delta chain — that latches onto a bad
-+        // value (e.g. 0) and can never self-correct. Instead we snapshot the
-+        // sink's ground-truth volume synchronously at vol-up-press time.
-+        this._mixer = Volume.getMixerControl();
-+        this._trackVolumeSink();
-+        this._mixer.connectObject(
-+            'default-sink-changed', () => this._trackVolumeSink(),
-+            'state-changed', () => this._trackVolumeSink(),
-+            this);
-+
-+        const path = this._findVolumeInputDevice();
-+        if (!path) {
-+            console.warn('POWERMANAGER: screenshot chord disabled (no volume input device found)');
-+            return;
-+        }
-+
-+        try {
-+            this._volStream = Gio.File.new_for_path(path).read(null);
-+        } catch (e) {
-+            console.warn(`POWERMANAGER: screenshot chord disabled (${e.message})`);
-+            return;
-+        }
-+
-+        this._volCancellable = new Gio.Cancellable();
-+        this._readVolumeEvent();
++        this._pendingVolUp = null;
 +    }
 +
-+    _findVolumeInputDevice() {
-+        // Resolve by device name — evdev event numbers aren't stable across boots.
-+        let contents;
-+        try {
-+            [, contents] = GLib.file_get_contents('/proc/bus/input/devices');
-+        } catch (e) {
-+            return null;
-+        }
-+
-+        for (const block of new TextDecoder().decode(contents).split('\n\n')) {
-+            if (!/N: Name="[^"]*[Vv]olume/.test(block))
-+                continue;
-+            const m = block.match(/H: Handlers=[^\n]*\b(event\d+)\b/);
-+            if (m)
-+                return `/dev/input/${m[1]}`;
-+        }
-+        return null;
-+    }
-+
-+    _readVolumeEvent() {
-+        // struct input_event (64-bit): 16-byte timeval + u16 type + u16 code +
-+        // s32 value = 24 bytes. Only EV_KEY / KEY_VOLUMEUP matters here.
-+        this._volStream.read_bytes_async(24 * 32, GLib.PRIORITY_DEFAULT,
-+            this._volCancellable, (stream, res) => {
-+                let bytes;
-+                try {
-+                    bytes = stream.read_bytes_finish(res);
-+                } catch (e) {
-+                    if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
-+                        console.error(e, 'POWERMANAGER: volume evdev read failed');
-+                    return;
-+                }
-+                if (bytes.get_size() === 0)
-+                    return;
-+
-+                const data = bytes.get_data();
-+                const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-+                const EV_KEY = 1, KEY_VOLUMEUP = 115;
-+                for (let off = 0; off + 24 <= data.byteLength; off += 24) {
-+                    if (view.getUint16(off + 16, true) !== EV_KEY ||
-+                        view.getUint16(off + 18, true) !== KEY_VOLUMEUP)
-+                        continue;
-+                    const value = view.getInt32(off + 20, true);
-+                    if (value === 1) {
-+                        this._volumeUpHeld = true;
-+                        // Snapshot the sink's pre-raise level NOW, synchronously,
-+                        // before gsd's async PipeWire round-trip lands — this is
-+                        // the ground truth the chord restores to. Captured for
-+                        // every vol-up press (cheap) so both chord orderings
-+                        // (vol-up-first and power-first) have a fresh reading.
-+                        this._snapshotVolume();
-+                        this._onVolumeUpPressed();
-+                    } else if (value === 0) {
-+                        this._volumeUpHeld = false;
-+                    }
-+                }
-+
-+                this._readVolumeEvent();
-+            });
-+    }
-+
-+    _onVolumeUpPressed() {
-+        // Power-first order: power is already held and armed to blank on
-+        // release. Complete the chord — cancel the pending power action (so the
-+        // release neither opens the hold menu nor blanks) and capture.
-+        if (!this._powerPressHappened || !this._powerPressScreenWasOn)
-+            return;
-+
-+        if (this._powerHoldId) {
-+            GLib.source_remove(this._powerHoldId);
-+            delete this._powerHoldId;
-+        }
-+        delete this._powerPressHappened;
-+        this._fireScreenshotChord();
-+    }
-+
-+    _trackVolumeSink() {
-+        // Just hold a live reference to the current default sink. No signal
-+        // bookkeeping: the pre-bump level is snapshotted on demand at press
-+        // time (_snapshotVolume), so there is no derived state to poison.
-+        this._volSink = this._mixer?.get_default_sink() ?? null;
-+    }
-+
-+    _snapshotVolume() {
-+        // Capture the sink's ground-truth level the instant the vol-up press is
-+        // read from evdev. The kernel fans the evdev event out to every reader
-+        // at once, and our JS callback runs synchronously in-process — whereas
-+        // gsd's raise is an async round-trip out to PipeWire and back, so the
-+        // Gvc sink in *our* process still holds the PRE-raise value here. We
-+        // record volume + mute together (gsd un-mutes on vol-up) so the restore
-+        // can put both back exactly. Each snapshot is independent ground truth,
-+        // so a bad reading can never poison a later one.
-+        if (!this._volSink) {
-+            this._volPreBump = null;
-+            return;
-+        }
-+        this._volPreBump = {
-+            volume: this._volSink.volume,
-+            muted: this._volSink.is_muted,
-+        };
-+    }
-+
-+    _undoVolumeBump() {
-+        // Vol-Up also reaches gsd-media-keys (we only read the evdev node — GJS
-+        // can't grab it), so the chord bumps the output volume up one step (and
-+        // un-mutes a muted sink). Restore the level snapshotted at press time,
-+        // but only after confirming gsd actually raised it — so this can neither
-+        // fight a genuine user change nor get stuck at a bad value.
-+        //
-+        // We wait past gsd's async PipeWire round-trip (400ms) so the sink now
-+        // reflects the post-raise level, then compare against the pre-bump
-+        // snapshot:
-+        //   * no snapshot / no sink            → do nothing (nothing to undo)
-+        //   * current <= snapshot (not raised) → do nothing (guards against
-+        //                                        restoring a stale/zero value)
-+        //   * current  >  snapshot (raised)    → restore volume + mute exactly
-+        const pre = this._volPreBump;
-+        this._volPreBump = null;
-+
-+        if (this._volRestoreId)
-+            GLib.source_remove(this._volRestoreId);
-+        this._volRestoreId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 400, () => {
-+            this._volRestoreId = 0;
-+
-+            if (!this._volSink || !pre) {
-+                log(`POWERMANAGER: chord volume NOT restored (sink=${!!this._volSink} pre=${JSON.stringify(pre)})`);
-+                return GLib.SOURCE_REMOVE;
++    handleVolumeUpAccelerator(forwardToGsd) {
++        // Power-first chord: power is already held → screenshot, and DON'T forward
++        // (gsd never raises the volume / shows the OSD). Cancel the pending power
++        // action so the release doesn't blank.
++        if (this._powerPressHappened && this._powerPressScreenWasOn) {
++            if (this._powerHoldId) {
++                GLib.source_remove(this._powerHoldId);
++                delete this._powerHoldId;
 +            }
++            delete this._powerPressHappened;
++            this._fireScreenshotChord();
++            return;
++        }
 +
-+            const now = this._volSink.volume;
-+            // Only undo an actual upward bump. If the sink was un-muted, gsd
-+            // raised it even when the numeric level looks unchanged, so treat an
-+            // un-mute as a raise too.
-+            const wasRaised = now > pre.volume || (pre.muted && !this._volSink.is_muted);
-+            if (!wasRaised) {
-+                log(`POWERMANAGER: chord volume left as-is (now ${now} <= pre ${pre.volume}, no gsd raise detected)`);
-+                return GLib.SOURCE_REMOVE;
-+            }
-+
-+            log(`POWERMANAGER: chord volume restore ${now} -> ${pre.volume} (muted ${this._volSink.is_muted} -> ${pre.muted})`);
-+            this._volSink.volume = pre.volume;
-+            this._volSink.push_volume();
-+            if (this._volSink.is_muted !== pre.muted)
-+                this._volSink.change_is_muted(pre.muted);
++        // Otherwise DEFER forwarding briefly. If Power is pressed within the
++        // window it's a chord (we drop the forward → no volume change); else the
++        // timer forwards it to gsd (normal volume, ~VOL_CHORD_WINDOW_MS late).
++        if (this._pendingVolUp) {
++            // rapid vol-up repeat (volume ramp): flush the previous one now.
++            GLib.source_remove(this._pendingVolUp.timerId);
++            this._pendingVolUp.forward();
++        }
++        const pending = {forward: forwardToGsd};
++        pending.timerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, VOL_CHORD_WINDOW_MS, () => {
++            this._pendingVolUp = null;
++            pending.forward();
 +            return GLib.SOURCE_REMOVE;
 +        });
++        this._pendingVolUp = pending;
 +    }
 +
 +    async _fireScreenshotChord() {
@@ -262,7 +124,6 @@
 +            GLib.source_remove(this._pendingBlankId);
 +            this._pendingBlankId = 0;
 +        }
-+        this._undoVolumeBump();
 +        try {
 +            const shooter = new Shell.Screenshot();
 +            const [content] = await shooter.screenshot_stage_to_content();
