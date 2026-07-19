@@ -35,74 +35,12 @@ let
     extraCss = ''
       #panel { background-color: black; }
 
-      /* Inset the top-bar content from the screen edges — the OnePlus 6T's
-         rounded corners clip elements sitting flush to the edge. NOTE: the
-         panel lays out #panelLeft/#panelCenter/#panelRight in its own
-         vfunc_allocate using the FULL width and IGNORES #panel padding — so the
-         only lever that actually moves the clock + battery inward is padding on
-         the boxes themselves. Tune these two px values. */
-      #panelLeft  { padding-left: 24px; }
-      #panelRight { padding-right: 24px; }
-
-      /* iOS-style battery: a solid monochrome pill with the % number inside, a
-         terminal nub, and a charging bolt. On the black bar it's a white pill /
-         black number. In the home/overview the panel is transparent over a
-         light wallpaper, so the whole bar goes a soft near-black (iOS/Android
-         use a softened dark, not harsh #000) and the battery becomes a dark
-         pill with a light number. */
-      .fajita-battery { spacing: 0px; }
-      .fajita-battery-body {
-        background-color: white;
-        border-radius: 4px;
-        min-width: 16px;
-        min-height: 12px;
-        padding: 0px 2px;
-      }
-      .fajita-battery-nub {
-        background-color: white;
-        min-width: 2px;
-        min-height: 5px;
-        border-radius: 0px 3px 3px 0px;
-        margin-left: 1px;
-      }
-      .fajita-battery-num { color: black; font-size: 9px; font-weight: bold; }
-      .fajita-battery-bolt { color: black; min-width: 7px; min-height: 10px; margin-left: 1px; }
-
-      /* Home/overview: bare text + symbolic icons go soft-dark on the light
-         wallpaper; the battery pill flips to soft-dark with a light number.
-         (Battery number/bolt rules come LAST so they win the light colour over
-         the .panel-button cascade. If you move to a DARK wallpaper, drop this
-         whole block so the bar stays white here.) */
-      #panel:overview .panel-button,
-      #panelArea:overview .panel-button,
-      #panel:overview .clock,
-      #panelArea:overview .clock,
-      #panel:overview .system-status-icon,
-      #panelArea:overview .system-status-icon { color: rgba(0, 0, 0, 0.82); }
-      #panel:overview .fajita-battery-body,
-      #panelArea:overview .fajita-battery-body,
-      #panel:overview .fajita-battery-nub,
-      #panelArea:overview .fajita-battery-nub { background-color: rgba(0, 0, 0, 0.82); }
-      #panel:overview .fajita-battery-num,
-      #panelArea:overview .fajita-battery-num,
-      #panel:overview .fajita-battery-bolt,
-      #panelArea:overview .fajita-battery-bolt { color: white; }
-
-      /* Charging (iOS-style): green pill + white number/bolt, in both the black
-         bar and the overview (the #panel:overview variants keep it green there,
-         overriding the dark-invert above). */
-      .fajita-battery.charging .fajita-battery-body,
-      .fajita-battery.charging .fajita-battery-nub,
-      #panel:overview .fajita-battery.charging .fajita-battery-body,
-      #panelArea:overview .fajita-battery.charging .fajita-battery-body,
-      #panel:overview .fajita-battery.charging .fajita-battery-nub,
-      #panelArea:overview .fajita-battery.charging .fajita-battery-nub { background-color: #34c759; }
-      .fajita-battery.charging .fajita-battery-num,
-      .fajita-battery.charging .fajita-battery-bolt,
-      #panel:overview .fajita-battery.charging .fajita-battery-num,
-      #panelArea:overview .fajita-battery.charging .fajita-battery-num,
-      #panel:overview .fajita-battery.charging .fajita-battery-bolt,
-      #panelArea:overview .fajita-battery.charging .fajita-battery-bolt { color: white; }
+      /* The iOS-style top bar (inset, battery pill, overview invert, charging,
+         lock-screen shadows, clock shadow) now lives in the BASE gnome-shell
+         theme — see packages/gnome-mobile/patches/topbar-base-css.patch. It has
+         to be in the base theme because the User Themes extension (this Marble
+         theme) is disabled on the lock/login screens, so anything here never
+         reaches them. */
 
       /* On-screen keyboard: the non-letter/function keys (.default-key — Shift,
          Backspace, ?123, Enter, punctuation) inherit BUTTON-COLOR = the bright
