@@ -612,6 +612,7 @@
     # restart to fall back to stock engine behavior.
     IBUS_TYPING_BOOSTER_OSK_NO_PREEDIT = "1"; # commit chars directly, no underlined preedit
     IBUS_TYPING_BOOSTER_OSK_AUTOCORRECT = "1"; # auto-fix OOV words on space/punct, learn on re-type
+    IBUS_TYPING_BOOSTER_OSK_GESTURE = "1";    # swipe-typing decoder (rev 10 engine half)
   };
   # NB: do NOT set GTK_IM_MODULE here. GNOME Shell speaks to IBus over its own
   # D-Bus API; setting GTK_IM_MODULE/QT_IM_MODULE/XMODIFIERS breaks the built-in
