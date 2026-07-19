@@ -1,0 +1,92 @@
+--- a/js/ui/keyboard.js
++++ b/js/ui/keyboard.js
+@@ -214,7 +214,7 @@
+         this.add_child(thirdButton);
+     }
+ 
+-    add(word, callback) {
++    add(word, callback, forgetCallback = null) {
+         if (this._curButton === 3)
+             throw new Error("Tried to add more than 3 buttons");
+ 
+@@ -227,6 +227,25 @@
+         button._clickedId = button.connect('clicked', () => {
+             callback();
+         });
++
++        // fajita: long-press on a strip suggestion → forget word from user DB
++        if (forgetCallback) {
++            const longPressGesture = new Clutter.LongPressGesture({
++                name: 'suggestion-forget',
++                long_press_duration_ms: 600,
++            });
++            longPressGesture.connect('notify::state', () => {
++                if (longPressGesture.state === Clutter.GestureState.RECOGNIZING) {
++                    forgetCallback();
++                    // Brief visual flash: dim + restore to signal removal
++                    button.ease({opacity: 100, duration: 80, onComplete: () => {
++                        button.ease({opacity: 255, duration: 120});
++                    }});
++                }
++            });
++            button.add_action(longPressGesture);
++            button._forgetGesture = longPressGesture;
++        }
+     }
+ 
+     clear() {
+@@ -241,6 +260,10 @@
+                 button.disconnect(button._clickedId);
+                 delete button._clickedId;
+             }
++            if (button._forgetGesture) {
++                button.remove_action(button._forgetGesture);
++                delete button._forgetGesture;
++            }
+         }
+ 
+         this._curButton = 0;
+@@ -1538,9 +1561,9 @@
+             this._keyboard.close();
+     }
+ 
+-    addSuggestion(text, callback) {
++    addSuggestion(text, callback, forgetCallback = null) {
+         if (this._keyboard)
+-            this._keyboard.addSuggestion(text, callback);
++            this._keyboard.addSuggestion(text, callback, forgetCallback);
+     }
+ 
+     resetSuggestions() {
+@@ -2578,10 +2601,10 @@
+         this._suggestions.visible = this._suggestionsVisible;
+     }
+ 
+-    addSuggestion(text, callback) {
++    addSuggestion(text, callback, forgetCallback = null) {
+         if (!this._suggestions)
+             return;
+-        this._suggestions.add(text, callback);
++        this._suggestions.add(text, callback, forgetCallback);
+         this._suggestions.show();
+     }
+ 
+--- a/js/ui/ibusCandidatePopup.js
++++ b/js/ui/ibusCandidatePopup.js
+@@ -297,10 +297,14 @@
+             for (let i = startIndex; i < endIndex; ++i) {
+                 candidates.push(lookupTable.get_candidate(i).get_text());
+ 
++                // fajita: capture the loop index so both callbacks close over the right value
++                const index = i;
++                // fajita: long-press forget — CONTROL_MASK routes to remove_candidate_from_user_database
++                const forgetCb = () => this._panelService.candidate_clicked(
++                    index, 1, IBus.ModifierType.CONTROL_MASK);
+                 Main.keyboard.addSuggestion(lookupTable.get_candidate(i).get_text(), () => {
+-                    let index = i;
+                     this._panelService.candidate_clicked(index, 1, 0);
+-                });
++                }, forgetCb);
+             }
+ 
+             this._candidateArea.setCandidates(indexes,
