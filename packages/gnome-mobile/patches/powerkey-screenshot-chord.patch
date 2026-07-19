@@ -18,10 +18,37 @@
          const setupLoginSession = async () => {
              this._loginSession = await this._loginManager.getCurrentSessionProxy();
              this._loginSession.connect('g-properties-changed',
-@@ -1157,6 +1161,17 @@
-                 this._doSystemAction(action, 'power key released', false).catch(e => console.error(e));
+@@ -1154,9 +1158,43 @@
+ 
+ //log("POWERMANAGER: power key release (flags " + event.get_flags() + " " + (event.get_flags() & Clutter.EventFlags.FLAG_INPUT_METHOD) + "), executing action: " + action);
+ 
+-                this._doSystemAction(action, 'power key released', false).catch(e => console.error(e));
++                // fajita: when unlocked, defer the blank ~300ms so a quick second
++                // press becomes a double-press → camera instead of blanking. When
++                // locked, blank immediately (no camera-from-lock, no added delay).
++                if (action === 'blank' && !Main.sessionMode.isLocked) {
++                    if (this._pendingBlankId)
++                        GLib.source_remove(this._pendingBlankId);
++                    this._pendingBlankId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 300, () => {
++                        this._pendingBlankId = 0;
++                        this._doSystemAction('blank', 'power key released', false).catch(e => console.error(e));
++                        return GLib.SOURCE_REMOVE;
++                    });
++                } else {
++                    this._doSystemAction(action, 'power key released', false).catch(e => console.error(e));
++                }
              }
          } else {
++            // fajita: double-press power → camera. A deferred blank pending
++            // means the previous press just released within the double-press
++            // window; a fresh press (not part of a vol-up chord) is the 2nd tap.
++            if (this._pendingBlankId && !this._volumeUpHeld) {
++                GLib.source_remove(this._pendingBlankId);
++                this._pendingBlankId = 0;
++                this._launchCamera();
++                return;
++            }
++
 +            // fajita: Volume-Up + Power = full-screen screenshot (iOS/Android
 +            // style). Volup-first order: if vol-up is already held when power
 +            // goes down, capture + flash and swallow the press entirely — we
@@ -36,7 +63,7 @@
   //   log("POWERMANAGER: power key press, flags " +  event.get_flags() + " " + (event.get_flags() & Clutter.EventFlags.FLAG_INPUT_METHOD));
  
              // Snapshot the screen state at press time - the release handler
-@@ -1190,6 +1205,146 @@
+@@ -1190,6 +1228,203 @@
          }
      }
  
@@ -49,6 +76,15 @@
 +    // blank cleanly, without a separate daemon or the D-Bus caller allowlist.
 +    _initScreenshotChord() {
 +        this._volumeUpHeld = false;
++
++        // Track the output volume so the chord can undo the bump gsd applies for
++        // the vol-up press (see _undoVolumeBump).
++        this._mixer = Volume.getMixerControl();
++        this._trackVolumeSink();
++        this._mixer.connectObject(
++            'default-sink-changed', () => this._trackVolumeSink(),
++            'state-changed', () => this._trackVolumeSink(),
++            this);
 +
 +        const path = this._findVolumeInputDevice();
 +        if (!path) {
@@ -112,10 +148,6 @@
 +                    const value = view.getInt32(off + 20, true);
 +                    if (value === 1) {
 +                        this._volumeUpHeld = true;
-+                        // Snapshot the level BEFORE gsd's async raise lands, so a
-+                        // screenshot chord can undo the accidental volume bump.
-+                        const sink = Volume.getMixerControl().get_default_sink();
-+                        this._preChordVolume = sink ? sink.volume : null;
 +                        this._onVolumeUpPressed();
 +                    } else if (value === 0) {
 +                        this._volumeUpHeld = false;
@@ -141,29 +173,52 @@
 +        this._fireScreenshotChord();
 +    }
 +
++    _trackVolumeSink() {
++        this._volSink?.disconnectObject(this);
++        this._volSink = this._mixer?.get_default_sink() ?? null;
++        if (!this._volSink)
++            return;
++        this._lastVolume = this._volSink.volume;
++        this._volSink.connectObject('notify::volume', () => {
++            const v = this._volSink.volume;
++            // Ignore no-op notifies — Gvc can emit ::volume without a real
++            // change, which would otherwise clobber _prevVolume (the pre-bump
++            // level the chord restores to).
++            if (v === this._lastVolume)
++                return;
++            this._prevVolume = this._lastVolume;
++            this._lastVolume = v;
++        }, this);
++    }
++
 +    _undoVolumeBump() {
 +        // Vol-Up also reaches gsd-media-keys (we only read the evdev node — GJS
-+        // can't grab it), so the chord bumps the volume up by one step. Restore
-+        // the pre-chord level once gsd's async change has settled.
-+        if (this._preChordVolume == null)
-+            return;
-+        const target = this._preChordVolume;
-+        this._preChordVolume = null;
-+
++        // can't grab it), so the chord bumps the volume up one step. Restore the
++        // level from BEFORE gsd's raise. _prevVolume is captured from the mixer's
++        // own notify::volume (reliable, unlike reading it on the racy evdev
++        // callback); we wait past gsd's async raise so _prevVolume is pre-bump.
 +        if (this._volRestoreId)
 +            GLib.source_remove(this._volRestoreId);
-+        this._volRestoreId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 250, () => {
-+            const sink = Volume.getMixerControl().get_default_sink();
-+            if (sink) {
-+                sink.volume = target;
-+                sink.push_volume();
++        this._volRestoreId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 400, () => {
++            this._volRestoreId = 0;
++            if (this._volSink && this._prevVolume != null) {
++                log(`POWERMANAGER: chord volume restore ${this._volSink.volume} -> ${this._prevVolume}`);
++                this._volSink.volume = this._prevVolume;
++                this._volSink.push_volume();
++            } else {
++                log(`POWERMANAGER: chord volume NOT restored (sink=${!!this._volSink} prev=${this._prevVolume})`);
 +            }
-+            delete this._volRestoreId;
 +            return GLib.SOURCE_REMOVE;
 +        });
 +    }
 +
 +    async _fireScreenshotChord() {
++        // A chord isn't a double-press — drop any deferred blank so it can't
++        // blank the screen right after the shot.
++        if (this._pendingBlankId) {
++            GLib.source_remove(this._pendingBlankId);
++            this._pendingBlankId = 0;
++        }
 +        this._undoVolumeBump();
 +        try {
 +            const shooter = new Shell.Screenshot();
@@ -178,6 +233,35 @@
 +        } catch (e) {
 +            console.error(e, 'POWERMANAGER: screenshot chord failed');
 +        }
++    }
++
++    _launchCamera() {
++        const app = Shell.AppSystem.get_default().lookup_app('org.gnome.Snapshot.desktop');
++        if (!app) {
++            console.warn('POWERMANAGER: camera app (org.gnome.Snapshot) not found for double-press');
++            return;
++        }
++
++        // Bring it to the front. app.activate() alone can leave a
++        // just-launched window in the background under the power-key context, so
++        // explicitly activate the window (raising an existing one, or the new
++        // one once it appears).
++        const raise = () => {
++            const win = app.get_windows()[0];
++            if (!win)
++                return false;
++            Main.activateWindow(win);
++            return true;
++        };
++
++        if (raise())
++            return;
++
++        app.activate();
++        const id = app.connect('windows-changed', () => {
++            if (raise())
++                app.disconnect(id);
++        });
 +    }
 +
      suspend() {
