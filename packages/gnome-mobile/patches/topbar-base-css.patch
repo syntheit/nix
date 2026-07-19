@@ -1,8 +1,8 @@
 diff --git a/data/theme/gnome-shell-sass/widgets/_panel.scss b/data/theme/gnome-shell-sass/widgets/_panel.scss
-index 6e611c5c7..13cde1653 100644
+index 6e611c5c7..bfc67a547 100644
 --- a/data/theme/gnome-shell-sass/widgets/_panel.scss
 +++ b/data/theme/gnome-shell-sass/widgets/_panel.scss
-@@ -216,3 +216,63 @@ $panel_transition_duration: 250ms; // same as the overview transition duration
+@@ -216,3 +216,72 @@ $panel_transition_duration: 250ms; // same as the overview transition duration
      }
    }
  }
@@ -45,7 +45,16 @@ index 6e611c5c7..13cde1653 100644
 +
 +// Home/overview: transparent panel over a light wallpaper → whole bar goes a
 +// soft near-black; battery becomes a dark pill with a light number.
++//
++// The clock is the St.Label with .clock. The base overview theme sets a light
++// $system_panel_fg_color on the .clock-display *button* (parent) AND, via the
++// panel_button() $highlighted_child mixin, emits an equal-specificity
++// `#panel:overview .panel-button.clock-display .clock` child rule. To beat that
++// on the label itself we set the color directly on .clock via the same short,
++// single-descendant selector shape that works for the icons/battery below —
++// `#panel:overview .clock` — so the dark color reliably lands on the label.
 +#panel:overview .panel-button,
++#panel:overview .clock,
 +#panel:overview .panel-button.clock-display .clock,
 +#panel:overview .system-status-icon { color: rgba(0, 0, 0, 0.82); }
 +#panel:overview .fajita-battery-body,
