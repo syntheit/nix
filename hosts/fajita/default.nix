@@ -845,6 +845,15 @@
   # See: Mozilla bug 1614167, 1672591, 1881086.
   programs.firefox = {
     enable = true;
+    # fx-autoconfig program tier — the content of program/config.js is placed
+    # into the firefox wrapper's mozilla.cfg (via NixOS wrapFirefox extraPrefsFiles).
+    # The wrapper writes "// First line must be a comment" as mozilla.cfg line 1
+    # (which Firefox skips), so config.js's own "// skip 1st line" comment lands
+    # safely on a subsequent line and is NOT the skipped line.  The JS in
+    # config.js registers chrome.manifest from the current profile's chrome/utils/
+    # and then imports boot.sys.mjs — both are placed by home.file entries in
+    # home.nix.
+    autoConfig = builtins.readFile "${pkgs.fx-autoconfig}/program/config.js";
     preferences = {
       "widget.wayland.fractional-scale.enabled" = true;
       # Required for userChrome.css to take effect on the mobile chrome tweaks
@@ -855,6 +864,26 @@
       "browser.uidensity" = 2;            # touch density (pmOS value)
       "dom.w3c.touch_events.enabled" = 1; # let pages know about touch
       "apz.allow_zooming" = true;         # pinch-zoom
+      # urlbar: mobile suggestions — kill desktop-only sections, compact tray
+      "browser.urlbar.trending.featureGate" = false;
+      "browser.urlbar.suggest.trending" = false;
+      "browser.urlbar.recentsearches.featureGate" = false;
+      "browser.urlbar.suggest.recentsearches" = false;
+      "browser.urlbar.suggest.topsites" = false;
+      "browser.urlbar.weather.featureGate" = false;
+      "browser.urlbar.suggest.weather" = false;
+      "browser.urlbar.quicksuggest.enabled" = false;
+      "browser.urlbar.suggest.quicksuggest.sponsored" = false;
+      "browser.urlbar.sponsoredTopSites" = false;
+      "browser.urlbar.groupLabels.enabled" = false;
+      "browser.urlbar.suggest.mdn" = false;
+      "browser.urlbar.suggest.addons" = false;
+      "browser.urlbar.suggest.pocket" = false;
+      "browser.urlbar.suggest.clipboard" = false;
+      "browser.urlbar.maxRichResults" = 5;
+      "browser.urlbar.showSearchSuggestionsFirst" = false;
+      # tab-count badge on the All Tabs button (mobile-config-firefox feature)
+      "mcf.tabcounter.enabled" = true;
     };
     preferencesStatus = "default"; # let user override per-session
   };
