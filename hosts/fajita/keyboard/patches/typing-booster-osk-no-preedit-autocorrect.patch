@@ -1,5 +1,5 @@
 diff --git a/engine/hunspell_table.py b/engine/hunspell_table.py
-index fb229b4..614f378 100644
+index fb229b4..7f7945e 100644
 --- a/engine/hunspell_table.py
 +++ b/engine/hunspell_table.py
 @@ -25,12 +25,14 @@ This file implements the ibus engine for ibus-typing-booster
@@ -1738,7 +1738,7 @@ index fb229b4..614f378 100644
          event should be passed to the application.
          '''
          if self._debug_level > 0:
-@@ -9140,14 +9215,919 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9140,14 +9215,933 @@ class TypingBoosterEngine(IBus.Engine):
          self._trigger_surrounding_text_update()
          return True
  
@@ -1757,7 +1757,7 @@ index fb229b4..614f378 100644
 +
 +    _OSK_NP_WORD_JOINERS = ("'", '\u2019', '-')
 +    _OSK_NP_AUTOCORRECT_SEPARATORS = ' .,!?;:'
-+    _OSK_NP_RECENT_CORRECTION_SECONDS = 180.0
++    _OSK_NP_RECENT_CORRECTION_SECONDS = 60.0
 +    # A reset arriving within this window of our own commit is treated as
 +    # the client-side echo of that commit, not as a genuine cursor move:
 +    _OSK_NP_RESET_ECHO_SECONDS = 1.0
@@ -1983,27 +1983,40 @@ index fb229b4..614f378 100644
 +            # anti-force window: a re-typed word means the user wants it.
 +            low = stripped.lower()
 +            now = time.monotonic()
-+            for old in [w for w, t in self._osk_np_recent_corrections.items()
-+                        if now - t > self._OSK_NP_RECENT_CORRECTION_SECONDS]:
++            for old in [w for w, entry in self._osk_np_recent_corrections.items()
++                        if now - entry[0] > self._OSK_NP_RECENT_CORRECTION_SECONDS]:
 +                del self._osk_np_recent_corrections[old]
 +            if low in self._osk_np_recent_corrections:
-+                self._osk_np_learn(stripped)
-+                del self._osk_np_recent_corrections[low]
-+                return None
++                _corrected_at, context_then = (
++                    self._osk_np_recent_corrections[low])
++                if self.get_p_phrase() == context_then:
++                    # Re-typed at the SAME position we just corrected:
++                    # a genuine revert. Learn it, never correct again.
++                    self._osk_np_learn(stripped)
++                    del self._osk_np_recent_corrections[low]
++                    return None
++                # same typo, NEW position: not a revert — fix it again
 +            return stripped[0] + stripped[1].lower() + stripped[2:]
 +        if any(char.isupper() for char in stripped[1:]):
 +            return None  # iPhone, McD..., ALLCAPS: intentional
 +        low = stripped.lower()
 +        now = time.monotonic()
-+        for old in [w for w, t in self._osk_np_recent_corrections.items()
-+                    if now - t > self._OSK_NP_RECENT_CORRECTION_SECONDS]:
++        for old in [w for w, entry in self._osk_np_recent_corrections.items()
++                    if now - entry[0] > self._OSK_NP_RECENT_CORRECTION_SECONDS]:
 +            del self._osk_np_recent_corrections[old]
 +        if low in self._osk_np_recent_corrections:
-+            # We corrected this word moments ago and the user typed it
-+            # again: they mean it. Learn it, never correct it again.
-+            self._osk_np_learn(stripped)
-+            del self._osk_np_recent_corrections[low]
-+            return None
++            _corrected_at, context_then = self._osk_np_recent_corrections[low]
++            if self.get_p_phrase() == context_then:
++                # Re-typed at the SAME text position we just corrected
++                # (preceding word matches): a genuine delete-and-retype
++                # revert. Learn the word, never correct it again.
++                self._osk_np_learn(stripped)
++                del self._osk_np_recent_corrections[low]
++                return None
++            # Same typo again at a NEW position within the window: NOT a
++            # revert — the user just made the same typo twice. Fall through
++            # and correct it again; learn nothing (typos must never enter
++            # the user db by repetition).
 +        if self.database.hunspell_obj.spellcheck(stripped):
 +            # Dictionary-valid word: never distance-correct it, but allow
 +            # PURE ACCENT RECOVERY (mas -> más) when the accented variant
@@ -2115,7 +2128,8 @@ index fb229b4..614f378 100644
 +                self.delete_surrounding_text(-len(typed), len(typed))
 +                super().commit_text(
 +                    IBus.Text.new_from_string(corrected + sep))
-+                self._osk_np_recent_corrections[typed.lower()] = time.monotonic()
++                self._osk_np_recent_corrections[typed.lower()] = (
++                    time.monotonic(), self.get_p_phrase())
 +                self._record_in_database_and_push_context(
 +                    commit_phrase=corrected, input_phrase=typed)
 +            else:
@@ -2662,7 +2676,7 @@ index fb229b4..614f378 100644
  
          1) It doesn’t work well when trying to do the unit
          tests. The MockEngine class in the unit tests cannot get that
-@@ -9157,11 +10137,11 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9157,11 +10151,11 @@ class TypingBoosterEngine(IBus.Engine):
  
          2) It does *not* work when using XIM, i.e. *not* when using Qt
          with the XIM module and *not* in X11 applications like xterm.
@@ -2677,7 +2691,7 @@ index fb229b4..614f378 100644
          this. See: https://bugzilla.redhat.com/show_bug.cgi?id=1291238
          This has been fixed though at least when triggering a commit
          with space by inserting the space into the application by
-@@ -9169,13 +10149,13 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9169,13 +10163,13 @@ class TypingBoosterEngine(IBus.Engine):
          I.e. when a space triggers a commit, neither `return False`
          nor `forward_key_event()` is used.
  
@@ -2694,7 +2708,7 @@ index fb229b4..614f378 100644
          sometimes use self.forward_key_event(key.val, key.code,
          key.state) instead to pass the key to the application.  This
          works fine with the unit tests because a forward_key_event()
-@@ -9184,8 +10164,8 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9184,8 +10178,8 @@ class TypingBoosterEngine(IBus.Engine):
          concerned, it does not matter whether the key.code is correct
          or incorrectly key.code == 0.
  
@@ -2705,7 +2719,7 @@ index fb229b4..614f378 100644
          that it does nothing at all when key.code is 0, which is often
          the case when the on-screen-keyboard OSK is
          used. ibus-typing-booster can fix that in many or even most
-@@ -9193,7 +10173,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9193,7 +10187,7 @@ class TypingBoosterEngine(IBus.Engine):
          current keyboard layout, but there are circumstances when this
          is also not possible.
  
@@ -2714,7 +2728,7 @@ index fb229b4..614f378 100644
          some environments even if OSK is not involved:
  
          - Qt4 when using the input module and not XIM
-@@ -9201,15 +10181,15 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9201,15 +10195,15 @@ class TypingBoosterEngine(IBus.Engine):
          - older versions of Wayland
          - Gtk4
  
@@ -2734,7 +2748,7 @@ index fb229b4..614f378 100644
          case and no problems when the key.code is incorrectly 0.
  
          But committing is also not always possible, for example
-@@ -9232,7 +10212,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9232,7 +10226,7 @@ class TypingBoosterEngine(IBus.Engine):
            unit testing, then the key.code does not matter)
          - if committing is not possible and forward_key_event()
            is is not possible either, fall back to the worst option
@@ -2743,7 +2757,7 @@ index fb229b4..614f378 100644
          '''
          if self._debug_level > 0:
              LOGGER.info('key=%s', key)
-@@ -9245,7 +10225,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9245,7 +10239,7 @@ class TypingBoosterEngine(IBus.Engine):
              LOGGER.warning(
                  'key.code=0 is not a valid keycode. Probably caused by OSK.')
          # If it is possible to commit instead of forwarding a key event
@@ -2752,7 +2766,7 @@ index fb229b4..614f378 100644
          if (self._prefer_commit
              and key.unicode
              and unicodedata.category(key.unicode) not in ('Cc',)
-@@ -9255,14 +10235,14 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9255,14 +10249,14 @@ class TypingBoosterEngine(IBus.Engine):
              and not key.state & IBus.ModifierType.RELEASE_MASK
              and not key.state & itb_util_core.KEYBINDING_STATE_MASK):
              if self._debug_level > 0:
@@ -2769,7 +2783,7 @@ index fb229b4..614f378 100644
          # MockEngine class cannot get that return value.
          # The keycode does not matter here, we do not care whether it is correct
          # or not when doing unit testing.
-@@ -9485,7 +10465,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9485,7 +10479,7 @@ class TypingBoosterEngine(IBus.Engine):
                          self._m17n_trans_parts.cursor_pos:])
              if self._debug_level > 1:
                  LOGGER.debug(
@@ -2778,7 +2792,7 @@ index fb229b4..614f378 100644
                      m17n_preedit_replacement,repr(self._m17n_trans_parts))
                  LOGGER.debug(
                      'OLD: self._typed_string=%s, self._typed_string_cursor=%s',
-@@ -9877,7 +10857,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9877,7 +10871,7 @@ class TypingBoosterEngine(IBus.Engine):
              self._update_lookup_table_and_aux()
              # Select the first candidate automatically because most
              # Japanese and Chinese input methods behave like this and because
@@ -2787,7 +2801,7 @@ index fb229b4..614f378 100644
              # candidate which is the first one which makes a difference
              # to just continuing with the preedit:
              self._lookup_table.set_cursor_visible(True)
-@@ -9894,8 +10874,8 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9894,8 +10888,8 @@ class TypingBoosterEngine(IBus.Engine):
              return True
          # Standard lookup table works fine here for vi-tcvn, vi-telex,
          # vi-viqr, vi-vni, ... It does probably work well for **all**
@@ -2798,7 +2812,7 @@ index fb229b4..614f378 100644
          # make this work for ja-anthy, but it might not even make any
          # sense for ja-anthy.
          if self._debug_level > 1:
-@@ -10321,6 +11301,21 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10321,6 +11315,21 @@ class TypingBoosterEngine(IBus.Engine):
  
          if disabled:
              return self._return_false(key)
@@ -2820,7 +2834,7 @@ index fb229b4..614f378 100644
  
          if self._handle_m17n_candidates(key):
              return self._return_true(key)
-@@ -10377,10 +11372,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10377,10 +11386,10 @@ class TypingBoosterEngine(IBus.Engine):
                  and not key.shift
                  and not self._has_transliteration([key.msymbol])):
                  # if the first character is a space, just pass it
@@ -2834,7 +2848,7 @@ index fb229b4..614f378 100644
                  # some input methods transliterate the msymbol 'S- '
                  # (See:
                  # https://github.com/mike-fabian/ibus-typing-booster/issues/524)):
-@@ -10432,7 +11427,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10432,7 +11441,7 @@ class TypingBoosterEngine(IBus.Engine):
                      # If a digit has been typed and we use
                      # transliteration, we may want to convert it to
                      # native digits. For example, with mr-inscript we
@@ -2843,7 +2857,7 @@ index fb229b4..614f378 100644
                      # to transliterate and commit the result:
                      transliterated_digit = self._transliterators[
                          self.get_current_imes()[0]
-@@ -10462,7 +11457,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10462,7 +11471,7 @@ class TypingBoosterEngine(IBus.Engine):
                  # If the user types a modifier key combination, it
                  # might have a transliteration in some input methods.
                  # For example, AltGr-4 (key.msymbol = 'G-4')
@@ -2852,7 +2866,7 @@ index fb229b4..614f378 100644
                  # method is used.  But trying to handle all modifier
                  # key combinations as input is not nice because it
                  # prevents the use of such key combinations for other
-@@ -10646,7 +11641,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10646,7 +11655,7 @@ class TypingBoosterEngine(IBus.Engine):
              # We need to transliterate
              # the preëdit again here, because adding the commit key to
              # the input might influence the transliteration. For example
@@ -2861,7 +2875,7 @@ index fb229b4..614f378 100644
              # (See: https://bugzilla.redhat.com/show_bug.cgi?id=1353672)
              #
              # Also, even if the cursor is not at the end of the input when
-@@ -10729,7 +11724,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10729,7 +11738,7 @@ class TypingBoosterEngine(IBus.Engine):
                          # instead of committing:
                          if self._debug_level > 1:
                              LOGGER.debug(
@@ -2870,7 +2884,7 @@ index fb229b4..614f378 100644
                                  key.msymbol)
                          self._insert_string_at_cursor([key.msymbol])
                          self._update_ui()
-@@ -10747,12 +11742,12 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10747,12 +11756,12 @@ class TypingBoosterEngine(IBus.Engine):
                             or key.hyper
                             or key.meta)
                    and self._typed_string_cursor == 0):
@@ -2885,7 +2899,7 @@ index fb229b4..614f378 100644
                  # by default!)
                  #
                  # As the cursor is still at the beginning of the
-@@ -10776,7 +11771,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10776,7 +11785,7 @@ class TypingBoosterEngine(IBus.Engine):
                             or key.meta)
                    and (self._typed_string_cursor
                         < len(self._typed_string))):
@@ -2894,7 +2908,7 @@ index fb229b4..614f378 100644
                  # commit the preëdit while the cursor is not at the
                  # end of the preëdit.  That means the parts of the
                  # preëdit to the left of and to the right of the
-@@ -10941,9 +11936,9 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10941,9 +11950,9 @@ class TypingBoosterEngine(IBus.Engine):
              # If the character typed could end a sentence, we can
              # *maybe* commit immediately.  However, if transliteration
              # is used, we may need to handle a punctuation or symbol
@@ -2907,7 +2921,7 @@ index fb229b4..614f378 100644
              # what comes next.
              input_phrase = (
                  self._transliterated_strings[
-@@ -11014,7 +12009,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11014,7 +12023,7 @@ class TypingBoosterEngine(IBus.Engine):
          # string.  And apparently it was not handled as a select key
          # or other special key either.  So whatever this was, we
          # cannot handle it, just pass it through to the application by
@@ -2916,7 +2930,7 @@ index fb229b4..614f378 100644
          if self.is_empty():
              self._update_ui_empty_input()
          return False
-@@ -11060,7 +12055,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11060,7 +12069,7 @@ class TypingBoosterEngine(IBus.Engine):
                         'SDL2_Application': SDL2 input module
  
                         In case of the Gtk input modules, the name of the
@@ -2925,7 +2939,7 @@ index fb229b4..614f378 100644
                         like 'gtk3-im:firefox', 'gtk4-im:gnome-text-editor', …
          '''
          if self._debug_level > 1:
-@@ -11074,7 +12069,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11074,7 +12083,7 @@ class TypingBoosterEngine(IBus.Engine):
           window_title) = itb_active_window.get_active_window()
          if self._debug_level > 1:
              LOGGER.debug(
@@ -2934,7 +2948,7 @@ index fb229b4..614f378 100644
                  program_name, window_title)
          client_info_str = client
          if ':' not in client_info_str:
-@@ -11152,7 +12147,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11152,7 +12161,7 @@ class TypingBoosterEngine(IBus.Engine):
              else:
                  continue
              LOGGER.info(
@@ -2943,7 +2957,7 @@ index fb229b4..614f378 100644
                  regexp, self._client_info.client, setting, value)
              autosettings_apply[setting] = new_value
              self._autosettings_revert[setting] = current_value
-@@ -11279,6 +12274,16 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11279,6 +12288,16 @@ class TypingBoosterEngine(IBus.Engine):
          # if the input purpose is set correctly on focus in, then it
          # should not be necessary to reset it here.
          self._client_info.client = ''
@@ -2960,7 +2974,7 @@ index fb229b4..614f378 100644
          # The preëdit, if there was any, has already been committed
          # automatically because
          # update_preedit_text_with_mode(,,,IBus.PreeditFocusMode.COMMIT)
-@@ -11331,6 +12336,32 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11331,6 +12350,32 @@ class TypingBoosterEngine(IBus.Engine):
          if self._ollama_chat_query_thread:
              self._ollama_chat_query_cancel(commit_selection=False)
              return
@@ -2993,7 +3007,7 @@ index fb229b4..614f378 100644
          # The press events of arrow keys like `Left` and `BackSpace`
          # cause a call to `do_reset()`. If that clears
          # self._surrounding_text_old() the comparison of
-@@ -11395,7 +12426,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11395,7 +12440,7 @@ class TypingBoosterEngine(IBus.Engine):
                  # On Wayland this causes problems, as the surrounding text
                  # behaves differently. Do this workaround only if the im client
                  # uses gtk3-im, if not it will cause more problems then help.
