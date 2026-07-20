@@ -28,14 +28,60 @@
   programs.firefox = {
     enable = true;
     # We let the NixOS module own the firefox package (policies + autoconfig
-    # are set there). Home-manager just needs to deploy the profile + chrome
-    # CSS — point at the system's firefox to avoid duplicate installs.
-    package = pkgs.firefox;
+    # are set there). Setting package = null keeps HM from installing a bare
+    # pkgs.firefox into ~/.nix-profile/bin, which would shadow the NixOS-wrapped
+    # firefox (the one with autoConfig / mozilla.cfg) in /run/current-system/sw/.
+    # Without this, the user PATH resolves to the unwrapped binary and
+    # fx-autoconfig never loads.
+    package = null;
     profiles.default = {
       id = 0;
-      userChrome = builtins.readFile "${pkgs.mobile-config-firefox}/userChrome.css";
+      userChrome = builtins.readFile "${pkgs.mobile-config-firefox}/userChrome.css"
+        + "\n" + builtins.readFile ../../packages/orion-chrome/urlbar-view-mobile.css;
       userContent = builtins.readFile "${pkgs.mobile-config-firefox}/userContent.css";
     };
+  };
+
+  # fx-autoconfig profile tier — place the loader files into the default
+  # profile's chrome/utils/ directory so boot.sys.mjs is found at the path
+  # that config.js (program tier, in programs.firefox.autoConfig) registers.
+  # chrome.manifest is the critical file: without it the chrome:// protocol
+  # mapping is never registered and the whole loader silently no-ops.
+  # Target: ~/.config/mozilla/firefox/default/chrome/utils/
+  # (home-manager already owns ~/.config/mozilla/firefox/default/chrome/ via
+  # the userChrome entry above; these home.file entries coexist with it.)
+  home.file = let
+    utils = "${pkgs.fx-autoconfig}/profile/chrome/utils";
+  in {
+    ".config/mozilla/firefox/default/chrome/utils/chrome.manifest".source =
+      "${utils}/chrome.manifest";
+    ".config/mozilla/firefox/default/chrome/utils/boot.sys.mjs".source =
+      "${utils}/boot.sys.mjs";
+    ".config/mozilla/firefox/default/chrome/utils/fs.sys.mjs".source =
+      "${utils}/fs.sys.mjs";
+    ".config/mozilla/firefox/default/chrome/utils/utils.sys.mjs".source =
+      "${utils}/utils.sys.mjs";
+    ".config/mozilla/firefox/default/chrome/utils/uc_api.sys.mjs".source =
+      "${utils}/uc_api.sys.mjs";
+    ".config/mozilla/firefox/default/chrome/utils/module_loader.mjs".source =
+      "${utils}/module_loader.mjs";
+
+    # touch-spike: log touch events on the nav bar + tab strip to
+    # /tmp/ff-touch-spike.log so we can verify the loader is active and
+    # measure real touch coordinates on the phone screen.
+    ".config/mozilla/firefox/default/chrome/JS/touch-spike.uc.mjs".source =
+      ../../packages/orion-chrome/js/touch-spike.uc.mjs;
+
+    # loader-proof: bare import-time write to /tmp/ff-loader-proof.log so we can
+    # distinguish "loader runs scripts" from "window hook is wrong".
+    ".config/mozilla/firefox/default/chrome/JS/loader-proof.uc.mjs".source =
+      ../../packages/orion-chrome/js/loader-proof.uc.mjs;
+
+    # urlbar-inspect: DOM geometry inspector for the suggestions panel.
+    # Polls for urlbar open state and dumps BoundingClientRect + computed styles
+    # for every relevant element to /tmp/ff-urlbar-dump.json.
+    ".config/mozilla/firefox/default/chrome/JS/urlbar-inspect.uc.mjs".source =
+      ../../packages/orion-chrome/js/urlbar-inspect.uc.mjs;
   };
 
   # foot is the tmux terminal on fajita. VTE-based terminals (Ptyxis/Console)

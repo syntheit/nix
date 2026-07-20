@@ -1,36 +1,170 @@
 /* orion-chrome: mobile urlbar suggestions panel — layered on top of mobile-config-firefox 5.1.0 */
-/* MCF already makes .urlbarView full-bleed (position:fixed, inset 0 0 84px 0, width:100%).      */
-/* This layer fixes the row layout: two-line touch rows, larger favicon, hidden em-dash title sep.*/
+/*                                                                                                */
+/* MCF 5.1.0 urlbarView rules we override:                                                       */
+/*   .urlbarView { position:fixed !important; inset:84px 0 0 0; width:100% … }         (line 466) */
+/*   @media not (mcf.addressbarontop) { .urlbarView { inset:0 0 84px 0 } }             (line 480) */
+/* We change the panel from full-viewport-fill to a bottom-anchored tray that           */
+/* is only as tall as its content (max 65vh), sitting just above the 84px nav bar.      */
+/*                                                                                                */
+/* Row-type attributes (Firefox 150 UrlbarView.sys.mjs):                                         */
+/*   [type="search"]  — search-suggestion rows (search-glass favicon, no URL)                    */
+/*   [has-url]        — history / bookmark / URL rows (site favicon, URL second line)            */
+/*                                                                                                */
+/* Stray floating button: #urlbar-go-button (.urlbar-go-button, forward.svg) leaks out           */
+/* of the 80vw breakout-extend container at its right edge. MCF only hides it when               */
+/* #urlbar[focused], but on touch the urlbar can be [open]+[usertyping] without [focused],       */
+/* leaving the go-button visible mid-screen. We hide it whenever the view is open.              */
 
 @media (max-width: 700px) {
 
-  /* ── Panel surface ──────────────────────────────────────────────────────── */
-  /* MCF sets background:var(--arrowpanel-background); keep it, just harden    */
-  /* the edges so it reads as a full-screen surface, not a floating dropdown.  */
+  /* ── 0. Break the fixed-position containing block on .urlbar ────────────── */
+  /* Firefox's own urlbar-searchbar.css sets:                                   */
+  /*   .urlbar { will-change: translate; }                                      */
+  /* `will-change: translate` creates a containing block for fixed-position     */
+  /* descendants (same as transform/perspective/filter in Gecko). Because MCF   */
+  /* then sets #urlbar[breakout][breakout-extend] { left: 11vw; width: 80vw }, */
+  /* .urlbarView { position:fixed; left:0; right:0 } is resolved relative to   */
+  /* that 80vw container (x≈42.5px, w=345.6px) instead of the viewport.        */
+  /* Neutralising will-change on #urlbar[breakout-extend] is safe: it is a     */
+  /* rendering hint only; the breakout input's layout uses absolute+explicit    */
+  /* width/left, not fixed positioning, so it is unaffected.                   */
+  #urlbar[breakout-extend] {
+    will-change: auto !important;
+  }
+
+  /* ── FIX A. Kill the tall gray backdrop (.urlbar-background) ────────────── */
+  /* FF urlbar-searchbar.css declares:                                          */
+  /*   .urlbar-background { display:block; position:absolute; inset:0;         */
+  /*     background-color: var(--toolbar-field-background-color) }             */
+  /* When #urlbar[breakout-extend] spans the full viewport height (h=592px),   */
+  /* this element fills that entire column with the dark field background,      */
+  /* producing the tall gray backdrop above the input row.                     */
+  /* We suppress it in breakout-extend and give #urlbar-input-container its    */
+  /* own pill background so the resting bar appearance is preserved.           */
+  #urlbar[breakout][breakout-extend] > .urlbar-background {
+    display: none !important;
+  }
+
+  /* Restore pill background on the input row itself (the actual edit field).  */
+  /* --toolbar-field-focus-background-color is what .urlbar-background painted */
+  /* when [open]; we apply the same token directly to the input container.     */
+  #urlbar[breakout][breakout-extend] > #urlbar-input-container {
+    background-color: var(--toolbar-field-focus-background-color) !important;
+    border: var(--urlbar-container-border-width, 1px) solid
+            var(--arrowpanel-border-color, transparent) !important;
+    border-radius: calc(var(--toolbarbutton-border-radius, 4px) + 2px) !important;
+  }
+
+  /* ── FIX B. Wider edit field — nearly full-viewport in breakout-extend ──── */
+  /* MCF sets #urlbar[breakout][breakout-extend] { left:11vw; width:80vw }.    */
+  /* We push it to 1vw / 98vw so the text field spans edge-to-edge Orion-style */
+  /* and hide the nav buttons (back, hamburger) that would otherwise collide.  */
+  #urlbar[breakout][breakout-extend] {
+    left: 1vw !important;
+    width: 98vw !important;
+  }
+
+  /* Hide the back button and hamburger while the urlbar is in breakout-extend. */
+  /* MCF already hides forward/home/library/sidebar/fxa (see urlbar.css), but  */
+  /* leaves #back-button and #PanelUI-menu-button visible. They would collide   */
+  /* with a 98vw input, so suppress them only during active breakout.          */
+  #urlbar[breakout][breakout-extend]
+    ~ #nav-bar-toolbarbutton-container #back-button,
+  #urlbar[breakout][breakout-extend]
+    ~ #nav-bar-toolbarbutton-container #PanelUI-menu-button,
+  /* Also try direct ancestors in case the selector chain is different */
+  #nav-bar:has(#urlbar[breakout][breakout-extend]) #back-button,
+  #nav-bar:has(#urlbar[breakout][breakout-extend]) #PanelUI-menu-button {
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+
+  /* ── 1. Panel: bottom-anchored tray, not full-height fill ──────────────── */
+  /* Override MCF's inset:0 0 84px 0 (which stretches from top to bar).       */
+  /* We want: sit just above the 84px bar, grow from bottom up, auto height.  */
+  /* Both the base rule and the @media-not-addressbarontop rule set inset;     */
+  /* we must beat both with !important + higher specificity (double class).    */
+  /*                                                                            */
+  /* KEY: .urlbarView background is transparent — the opaque surface is on     */
+  /* .urlbarView-results so the painted area exactly tracks the rows.           */
+  /* FF's own base rule adds margin-inline:7px (side gaps) — we zero that out. */
   .urlbarView {
+    /* Kill the MCF inset that pins top to 0 */
+    inset: unset !important;
+    /* Anchor just above the 84px nav bar */
+    position: fixed !important;
+    bottom: 84px !important;
+    top: auto !important;
+    left: 0 !important;
+    right: 0 !important;
+    /* Width: override FF base rule's calc(100% - 2*7px) that causes side gaps */
+    width: 100% !important;
+    margin: 0 !important;
+    margin-inline: 0 !important;
+    /* Height: only as tall as the rows, capped at 65vh */
+    height: auto !important;
+    max-height: 65vh !important;
+    min-height: unset !important;
+    /* Background TRANSPARENT — painted on .urlbarView-results instead */
+    background: transparent !important;
+    /* No radius, no border on the wrapper — all on .urlbarView-results */
     border-radius: 0 !important;
-    border-top: none !important;
+    border: 0 !important;
     box-shadow: none !important;
     padding-block: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    scrollbar-width: none !important;
   }
 
-  /* Body inner: no extra inset padding — let rows go edge-to-edge vertically. */
+  /* ── 2. Inner containers: let height be auto, don't force stretching ────── */
+  .urlbarView-body-outer,
   .urlbarView-body-inner {
+    height: auto !important;
+    max-height: none !important;
+    min-height: unset !important;
+    padding-block: 0 !important;
+    background: transparent !important;
+  }
+
+  /* .urlbarView-results is the innermost rows wrapper — it carries the visible */
+  /* opaque surface, separator, and shadow so the backdrop exactly hugs rows.   */
+  .urlbarView-results {
+    height: auto !important;
+    max-height: none !important;
+    min-height: unset !important;
+    overflow-y: auto !important;
+    /* Opaque surface lives here — collapses to exactly the rows' height */
+    background: var(--arrowpanel-background) !important;
+    border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent) !important;
+    box-shadow: 0 -2px 12px color-mix(in srgb, black 30%, transparent) !important;
+    border-radius: 0 !important;
+    /* FF adds padding-block:7px on this element — zero it for compact rows */
     padding-block: 0 !important;
   }
 
-  /* ── Rows: touch-sized ──────────────────────────────────────────────────── */
+  /* ── 3. Section headers — kill them ─────────────────────────────────────── */
+  .urlbarView-group-label,
+  .urlbarView-row[type="group"] {
+    display: none !important;
+  }
+
+  /* ── 4. Type icon — suppress always ─────────────────────────────────────── */
+  .urlbarView-type-icon {
+    display: none !important;
+  }
+
+  /* ── 5. Base row reset ───────────────────────────────────────────────────── */
   .urlbarView-row {
-    min-height: 44px !important;
     padding-inline: 16px !important;
     padding-block: 0 !important;
     align-items: center !important;
-    /* Shrink MCF/FF default row gutter so rows pack tightly */
     --urlbarView-row-gutter: 0px !important;
+    /* No rounded selection corners — full-bleed */
+    border-radius: 0 !important;
   }
 
-  /* row-inner switches from baseline inline-flex to a column so title/url   */
-  /* stack on two separate lines instead of sitting side-by-side.            */
+  /* row-inner: column layout for two-line rows (default) */
   .urlbarView-row-inner {
     display: flex !important;
     flex-direction: column !important;
@@ -39,21 +173,41 @@
     flex-wrap: nowrap !important;
     gap: 0 !important;
     overflow: hidden !important;
-    padding-block: 6px !important;
   }
 
-  /* ── Favicon ────────────────────────────────────────────────────────────── */
-  .urlbarView-favicon {
-    width: 24px !important;
-    height: 24px !important;
-    min-width: 24px !important;
-    margin-inline-end: 12px !important;
-    margin-inline-start: 0 !important;
-    flex-shrink: 0 !important;
+  .urlbarView-no-wrap {
+    max-width: 100% !important;
+    width: 100% !important;
+    flex-grow: 1 !important;
   }
 
-  /* ── Title — first line ──────────────────────────────────────────────────  */
-  .urlbarView-title {
+  /* ── 6. Search-suggestion rows [type="search"] ───────────────────────────  */
+  /* Single line, compact, NO icon (Orion style: plain text only)              */
+  .urlbarView-row[type="search"] {
+    min-height: 40px !important;
+  }
+
+  .urlbarView-row[type="search"] .urlbarView-row-inner {
+    padding-block: 4px !important;
+    flex-direction: row !important;
+    align-items: center !important;
+  }
+
+  /* Hide search-glass favicon on search suggestions — Orion shows plain text  */
+  .urlbarView-row[type="search"] .urlbarView-favicon {
+    display: none !important;
+  }
+
+  /* The .urlbarView-url / .urlbarView-action are empty on search rows;        */
+  /* hiding them prevents a ghost empty second line                            */
+  .urlbarView-row[type="search"] .urlbarView-url,
+  .urlbarView-row[type="search"] .urlbarView-action,
+  .urlbarView-row[type="search"] .urlbarView-title-separator {
+    display: none !important;
+  }
+
+  /* Search suggestion title: full-line single text */
+  .urlbarView-row[type="search"] .urlbarView-title {
     font-size: 15px !important;
     line-height: 1.3 !important;
     white-space: nowrap !important;
@@ -63,14 +217,45 @@
     display: block !important;
   }
 
-  /* ── Em-dash separator — hide it; url goes on its own line below ─────────  */
-  .urlbarView-title-separator {
+  /* ── 7. History / URL / bookmark rows [has-url] ─────────────────────────── */
+  /* Two-line: title + dim URL below, small favicon                            */
+  .urlbarView-row[has-url] {
+    min-height: 48px !important;
+  }
+
+  .urlbarView-row[has-url] .urlbarView-row-inner {
+    padding-block: 6px !important;
+  }
+
+  .urlbarView-row[has-url] .urlbarView-favicon {
+    width: 20px !important;
+    height: 20px !important;
+    min-width: 20px !important;
+    margin-inline-end: 12px !important;
+    margin-inline-start: 0 !important;
+    flex-shrink: 0 !important;
+    display: revert !important;
+  }
+
+  /* Title line */
+  .urlbarView-row[has-url] .urlbarView-title {
+    font-size: 15px !important;
+    line-height: 1.3 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    width: 100% !important;
+    display: block !important;
+  }
+
+  /* Em-dash separator: hide — url goes on its own line */
+  .urlbarView-row[has-url] .urlbarView-title-separator {
     display: none !important;
   }
 
-  /* ── URL / action — second line ──────────────────────────────────────────  */
-  .urlbarView-url,
-  .urlbarView-action {
+  /* URL second line */
+  .urlbarView-row[has-url] .urlbarView-url,
+  .urlbarView-row[has-url] .urlbarView-action {
     font-size: 12px !important;
     line-height: 1.2 !important;
     white-space: nowrap !important;
@@ -79,27 +264,88 @@
     width: 100% !important;
     display: block !important;
     opacity: 0.65 !important;
-    /* Use FF's own secondary-text variable where available; fall through to   */
-    /* a color-mix dim of the foreground so dark/light themes are both covered.*/
     color: var(--urlbarView-secondary-text-color,
              color-mix(in srgb, currentColor 65%, transparent)) !important;
   }
 
-  /* ── Section headers ("Recent Searches", etc.) ───────────────────────────  */
-  .urlbarView-row[type="group"] .urlbarView-row-inner,
-  .urlbarView-group-label,
-  /* FF may render section labels as plain divs with this class: */
-  [class*="urlbarView"][class*="label"] {
-    font-size: 11px !important;
-    font-variant: small-caps !important;
-    opacity: 0.55 !important;
-    padding-block-start: 14px !important;
-    padding-block-end: 4px !important;
-    letter-spacing: 0.04em !important;
+  /* ── 8. Rows that are neither [type="search"] nor [has-url] ─────────────── */
+  /* (tabtosearch, tip, dynamic, etc.) — sensible defaults                     */
+  .urlbarView-row:not([type="search"]):not([has-url]) {
+    min-height: 44px !important;
   }
 
-  /* ── Type icon (redundant with favicon) — suppress ───────────────────────  */
-  .urlbarView-type-icon {
+  .urlbarView-row:not([type="search"]):not([has-url]) .urlbarView-row-inner {
+    padding-block: 5px !important;
+  }
+
+  .urlbarView-row:not([type="search"]):not([has-url]) .urlbarView-favicon {
+    width: 20px !important;
+    height: 20px !important;
+    min-width: 20px !important;
+    margin-inline-end: 12px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .urlbarView-row:not([type="search"]):not([has-url]) .urlbarView-title {
+    font-size: 15px !important;
+    line-height: 1.3 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    width: 100% !important;
+    display: block !important;
+  }
+
+  .urlbarView-row:not([type="search"]):not([has-url]) .urlbarView-title-separator {
+    display: none !important;
+  }
+
+  .urlbarView-row:not([type="search"]):not([has-url]) .urlbarView-url,
+  .urlbarView-row:not([type="search"]):not([has-url]) .urlbarView-action {
+    font-size: 12px !important;
+    line-height: 1.2 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    width: 100% !important;
+    display: block !important;
+    opacity: 0.65 !important;
+    color: var(--urlbarView-secondary-text-color,
+             color-mix(in srgb, currentColor 65%, transparent)) !important;
+  }
+
+  /* ── 9. Selected row: subtle accent, not a full-blue hero bar ────────────── */
+  /* The default [selected] gets a full-saturation accent background.           */
+  /* Override to a 25%-alpha tint so it reads as hover, not a giant button.     */
+  .urlbarView-row[selected],
+  .urlbarView-row[selected]:hover {
+    background-color: color-mix(in srgb,
+      var(--urlbar-box-hover-bgcolor, var(--toolbar-field-focus-color, AccentColor)) 20%,
+      transparent) !important;
+    color: inherit !important;
+    /* Keep text at normal weight — MCF/FF may bold selected rows */
+    font-weight: normal !important;
+  }
+
+  /* The inner highlight element some FF versions use for selection */
+  .urlbarView-row[selected] > .urlbarView-row-inner {
+    background-color: transparent !important;
+  }
+
+  /* ── 10. Stray #urlbar-go-button ─────────────────────────────────────────── */
+  /* MCF hides it only when #urlbar[focused], but on touch the urlbar can be    */
+  /* [open]+[usertyping] without [focused], leaving the go-button floating at   */
+  /* the right edge of the 80vw breakout container (mid-screen). Hide always.   */
+  #urlbar[open] .urlbar-go-button,
+  #urlbar[breakout-extend] .urlbar-go-button,
+  #urlbar[open] #urlbar-go-button,
+  #urlbar[breakout-extend] #urlbar-go-button {
+    display: none !important;
+  }
+
+  /* Also hide the revert button container if persistsearchterms triggers it    */
+  #urlbar[open] #urlbar-revert-button-container,
+  #urlbar[breakout-extend] #urlbar-revert-button-container {
     display: none !important;
   }
 

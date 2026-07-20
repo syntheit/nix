@@ -1,11 +1,14 @@
 // ==UserScript==
 // @name           urlbar-inspect
 // @namespace      orion-chrome/urlbar-inspect
-// @version        0.1.0
+// @version        0.2.0
 // @description    DOM geometry inspector for the urlbar suggestions panel.
 //                 Polls every 2 s; when the urlbar popup is open, dumps
 //                 BoundingClientRect + computed styles for each relevant
 //                 element to /tmp/ff-urlbar-dump.json, then backs off 30 s.
+//                 v0.2: also dumps #urlbar and #urlbar-input-container with
+//                 the containing-block properties (transform/willChange/
+//                 contain/filter/backdropFilter) to verify the will-change fix.
 // ==/UserScript==
 
 // Runs in the browser window (default @include = browser.xhtml).
@@ -24,13 +27,24 @@
     "overflow",
   ];
 
-  function getElementData(el, label) {
+  // Extra properties that can create a containing block for fixed descendants.
+  const CONTAINING_BLOCK_PROPS = [
+    "transform", "willChange", "contain", "filter",
+    "backdropFilter", "perspective",
+  ];
+
+  function getElementData(el, label, extraProps) {
     try {
       const r = el.getBoundingClientRect();
       const cs = window.getComputedStyle(el);
       const styles = {};
       for (const prop of STYLE_PROPS) {
         try { styles[prop] = cs[prop]; } catch (_) {}
+      }
+      if (extraProps) {
+        for (const prop of extraProps) {
+          try { styles[prop] = cs[prop]; } catch (_) {}
+        }
       }
       return {
         label,
@@ -50,6 +64,23 @@
         innerHeight: window.innerHeight,
         elements: [],
       };
+
+      // Ancestor elements: dump with containing-block props to verify the fix.
+      const ancestorSelectors = [
+        { sel: "#urlbar",                   label: "#urlbar" },
+        { sel: "#urlbar-input-container",   label: "#urlbar-input-container" },
+      ];
+
+      for (const { sel, label } of ancestorSelectors) {
+        const el = document.getElementById
+          ? (sel.startsWith("#") ? document.getElementById(sel.slice(1)) : document.querySelector(sel))
+          : document.querySelector(sel);
+        if (el) {
+          data.elements.push(getElementData(el, label, CONTAINING_BLOCK_PROPS));
+        } else {
+          data.elements.push({ label, error: "not found" });
+        }
+      }
 
       const selectors = [
         { sel: ".urlbarView",             label: ".urlbarView" },

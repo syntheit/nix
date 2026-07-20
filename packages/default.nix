@@ -24,6 +24,7 @@
   hexagonrpc = pkgs.callPackage ./hexagonrpc { };
   alsa-ucm-fajita = pkgs.callPackage ./alsa-ucm-fajita { };
   mobile-config-firefox = pkgs.callPackage ./mobile-config-firefox { };
+  fx-autoconfig = pkgs.callPackage ./fx-autoconfig { };
   mimick = pkgs.callPackage ./mimick { }; # GTK4/libadwaita Immich client
   gnome-mobile-torch = pkgs.callPackage ./gnome-mobile-torch { }; # flashlight QS toggle
 }
