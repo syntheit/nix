@@ -1,79 +1,35 @@
---- a/js/ui/keyboard.js
-+++ b/js/ui/keyboard.js
-@@ -214,7 +214,7 @@
-         this.add_child(thirdButton);
-     }
- 
--    add(word, callback) {
-+    add(word, callback, forgetCallback = null) {
-         if (this._curButton === 3)
-             throw new Error("Tried to add more than 3 buttons");
- 
-@@ -227,6 +227,25 @@
-         button._clickedId = button.connect('clicked', () => {
-             callback();
-         });
-+
-+        // fajita: long-press on a strip suggestion → forget word from user DB
-+        if (forgetCallback) {
-+            const longPressGesture = new Clutter.LongPressGesture({
-+                name: 'suggestion-forget',
-+                long_press_duration_ms: 600,
-+            });
-+            longPressGesture.connect('notify::state', () => {
-+                if (longPressGesture.state === Clutter.GestureState.RECOGNIZING) {
-+                    forgetCallback();
-+                    // Brief visual flash: dim + restore to signal removal
-+                    button.ease({opacity: 100, duration: 80, onComplete: () => {
-+                        button.ease({opacity: 255, duration: 120});
-+                    }});
-+                }
-+            });
-+            button.add_action(longPressGesture);
-+            button._forgetGesture = longPressGesture;
-+        }
-     }
- 
-     clear() {
-@@ -241,6 +260,10 @@
-                 button.disconnect(button._clickedId);
-                 delete button._clickedId;
-             }
-+            if (button._forgetGesture) {
-+                button.remove_action(button._forgetGesture);
-+                delete button._forgetGesture;
-+            }
-         }
- 
-         this._curButton = 0;
-@@ -1538,9 +1561,9 @@
-             this._keyboard.close();
-     }
- 
--    addSuggestion(text, callback) {
-+    addSuggestion(text, callback, forgetCallback = null) {
-         if (this._keyboard)
--            this._keyboard.addSuggestion(text, callback);
-+            this._keyboard.addSuggestion(text, callback, forgetCallback);
-     }
- 
-     resetSuggestions() {
-@@ -2578,10 +2601,10 @@
-         this._suggestions.visible = this._suggestionsVisible;
-     }
- 
--    addSuggestion(text, callback) {
-+    addSuggestion(text, callback, forgetCallback = null) {
-         if (!this._suggestions)
-             return;
--        this._suggestions.add(text, callback);
-+        this._suggestions.add(text, callback, forgetCallback);
-         this._suggestions.show();
-     }
- 
+diff --git a/js/ui/ibusCandidatePopup.js b/js/ui/ibusCandidatePopup.js
+index 626c73e4e..685da815b 100644
 --- a/js/ui/ibusCandidatePopup.js
 +++ b/js/ui/ibusCandidatePopup.js
-@@ -297,10 +297,14 @@
+@@ -10,6 +10,12 @@ import * as Main from './main.js';
+ 
+ const MAX_CANDIDATES_PER_PAGE = 16;
+ 
++// fajita: journal diagnostics for the OSK suggestion strip — logs every
++// update that yields fewer than 3 pills and every event that clears the
++// strip, to pinpoint on-glass "one pill / blank strip" reports.
++// Flip to false once the strip is verified stable.
++const STRIP_DEBUG = true;
++
+ const DEFAULT_INDEX_LABELS = [
+     '1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
+     'a', 'b', 'c', 'd', 'e', 'f',
+@@ -291,16 +297,28 @@ class IbusCandidatePopup extends BoxPointer.BoxPointer {
+             for (let i = 0; (indexLabel = lookupTable.get_label(i)); ++i)
+                 indexes.push(indexLabel.get_text());
+ 
++            if (STRIP_DEBUG && Main.keyboard.visible &&
++                endIndex - startIndex < 3) {
++                console.warn(`OSK-strip: update -> ` +
++                    `${Math.max(0, endIndex - startIndex)} pills ` +
++                    `(nCandidates=${nCandidates} cursorPos=${cursorPos} ` +
++                    `pageSize=${pageSize} visible=${visible})`);
++            }
++
+             Main.keyboard.resetSuggestions();
+ 
+             let candidates = [];
              for (let i = startIndex; i < endIndex; ++i) {
                  candidates.push(lookupTable.get_candidate(i).get_text());
  
@@ -90,3 +46,102 @@
              }
  
              this._candidateArea.setCandidates(indexes,
+@@ -321,6 +339,8 @@ class IbusCandidatePopup extends BoxPointer.BoxPointer {
+         });
+         panelService.connect('hide-lookup-table', () => {
+             this._hideTimeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 200, () => {
++                if (STRIP_DEBUG && Main.keyboard.visible)
++                    console.warn('OSK-strip: hide-lookup-table -> strip cleared');
+                 Main.keyboard.resetSuggestions();
+ 
+                 this._candidateArea.hide();
+@@ -331,6 +351,8 @@ class IbusCandidatePopup extends BoxPointer.BoxPointer {
+             });
+         });
+         panelService.connect('focus-out', () => {
++            if (STRIP_DEBUG && Main.keyboard.visible)
++                console.warn('OSK-strip: panel focus-out -> strip reset');
+             this.close(BoxPointer.PopupAnimation.NONE);
+             Main.keyboard.resetSuggestions();
+         });
+diff --git a/js/ui/keyboard.js b/js/ui/keyboard.js
+index df6ba9588..6287076ed 100644
+--- a/js/ui/keyboard.js
++++ b/js/ui/keyboard.js
+@@ -221,9 +221,34 @@ class Suggestions extends St.BoxLayout {
+         this.add_child(secondButton);
+         this.add_child(firstButton);
+         this.add_child(thirdButton);
++
++        // fajita: long-press on a strip suggestion → forget word from user
++        // DB. ONE persistent gesture per pill, attached here for the
++        // button's whole life: the first version created and removed a
++        // LongPressGesture on EVERY strip update (i.e. every keystroke),
++        // churning the compositor's global gesture negotiation while a
++        // finger was on the keyboard. add()/clear() only swap the callback.
++        for (const button of this._buttons) {
++            const longPressGesture = new Clutter.LongPressGesture({
++                name: 'suggestion-forget',
++                long_press_duration_ms: 600,
++            });
++            longPressGesture.connect('notify::state', () => {
++                if (longPressGesture.state !== Clutter.GestureState.RECOGNIZING)
++                    return;
++                if (!button._forgetCallback)
++                    return;
++                button._forgetCallback();
++                // Brief visual flash: dim + restore to signal removal
++                button.ease({opacity: 100, duration: 80, onComplete: () => {
++                    button.ease({opacity: 255, duration: 120});
++                }});
++            });
++            button.add_action(longPressGesture);
++        }
+     }
+ 
+-    add(word, callback) {
++    add(word, callback, forgetCallback = null) {
+         if (this._curButton === 3)
+             throw new Error("Tried to add more than 3 buttons");
+ 
+@@ -236,6 +261,7 @@ class Suggestions extends St.BoxLayout {
+         button._clickedId = button.connect('clicked', () => {
+             callback();
+         });
++        button._forgetCallback = forgetCallback;
+     }
+ 
+     clear() {
+@@ -250,6 +276,7 @@ class Suggestions extends St.BoxLayout {
+                 button.disconnect(button._clickedId);
+                 delete button._clickedId;
+             }
++            button._forgetCallback = null;
+         }
+ 
+         this._curButton = 0;
+@@ -1755,9 +1782,9 @@ export class KeyboardManager extends Signals.EventEmitter {
+             this._keyboard.close();
+     }
+ 
+-    addSuggestion(text, callback) {
++    addSuggestion(text, callback, forgetCallback = null) {
+         if (this._keyboard)
+-            this._keyboard.addSuggestion(text, callback);
++            this._keyboard.addSuggestion(text, callback, forgetCallback);
+     }
+ 
+     resetSuggestions() {
+@@ -2953,10 +2980,10 @@ export const Keyboard = GObject.registerClass({
+         this._suggestions.visible = this._suggestionsVisible;
+     }
+ 
+-    addSuggestion(text, callback) {
++    addSuggestion(text, callback, forgetCallback = null) {
+         if (!this._suggestions)
+             return;
+-        this._suggestions.add(text, callback);
++        this._suggestions.add(text, callback, forgetCallback);
+         this._suggestions.show();
+     }
+ 

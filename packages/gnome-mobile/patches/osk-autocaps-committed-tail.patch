@@ -55,10 +55,19 @@ index 64bcb8e09..53ef903b4 100644
              this.update();
              this._context.focus_in();
 diff --git a/js/ui/keyboard.js b/js/ui/keyboard.js
-index 4f70a8bd7..edcba458c 100644
+index 08d0a8e36..ad8480315 100644
 --- a/js/ui/keyboard.js
 +++ b/js/ui/keyboard.js
-@@ -1864,36 +1864,27 @@ export const Keyboard = GObject.registerClass({
+@@ -1895,7 +1895,7 @@ export const Keyboard = GObject.registerClass({
+         this._updateLevelFromHints(false);
+     }
+ 
+-    _updateLevelFromHints(userInputHappened) {
++    _updateLevelFromHints(userInputHappened, pendingCommit = '') {
+         // If the latch is enabled, avoid level changes
+         if (this._latched)
+             return;
+@@ -1916,36 +1916,33 @@ export const Keyboard = GObject.registerClass({
          if ((this._contentHint &
               (Clutter.InputContentHintFlags.AUTO_CAPITALIZATION |
                Clutter.InputContentHintFlags.TITLECASE)) !== 0) {
@@ -95,8 +104,14 @@ index 4f70a8bd7..edcba458c 100644
 +            // fajita: surrounding text never arrives on this stack
 +            // (GTK4→mutter→shell delivers nothing — Task-1 context).
 +            // Decide synchronously from the committed-text tail tracked in
-+            // inputMethod.js _onCommitText instead.
-+            const tail = Main.inputMethod.committedTail;
++            // inputMethod.js _onCommitText instead. pendingCommit is text
++            // the OSK is about to commit locally (key release): folding it
++            // in drops the shift level in the SAME tick as the keypress
++            // instead of after the engine D-Bus round trip (which takes
++            // hundreds of ms under load — fast typing produced "WHat").
++            let tail = Main.inputMethod.committedTail;
++            if (pendingCommit)
++                tail = (tail ?? '') + pendingCommit;
 +
 +            if ((this._contentHint & Clutter.InputContentHintFlags.TITLECASE) !== 0) {
 +                // TITLECASE: shift after any space (start of each word)
@@ -116,7 +131,7 @@ index 4f70a8bd7..edcba458c 100644
              return;
          }
  
-@@ -2094,6 +2085,9 @@ export const Keyboard = GObject.registerClass({
+@@ -2164,6 +2161,9 @@ export const Keyboard = GObject.registerClass({
                      } else if (key.action === 'delete') {
                          const alien = this._focusWindow?.is_alien();
  
@@ -126,7 +141,7 @@ index 4f70a8bd7..edcba458c 100644
                          this._keyboardController.toggleDelete(true, alien);
                          this._keyboardController.toggleDelete(false, alien);
                          this._updateLevelFromHints(true);
-@@ -2126,6 +2120,9 @@ export const Keyboard = GObject.registerClass({
+@@ -2196,6 +2196,9 @@ export const Keyboard = GObject.registerClass({
  
                      this._keyboardController.keyvalPress(key.keyval);
                      this._keyboardController.keyvalRelease(key.keyval);
@@ -136,3 +151,17 @@ index 4f70a8bd7..edcba458c 100644
                      this._updateLevelFromHints(true);
                  });
                  button.connect('cancelled', (_actor) => {
+@@ -2206,6 +2209,13 @@ export const Keyboard = GObject.registerClass({
+                 });
+             } else {
+                 button.connect('commit', (_actor, str) => {
++                    // fajita: re-evaluate the shift level in the SAME tick
++                    // as the local commit (Android drops shift on the key
++                    // tap itself); the .then() below re-evaluates again
++                    // with authoritative data once the engine round trip
++                    // lands. Without this the level lagged ~0.5 s and fast
++                    // typing produced "WHat".
++                    this._updateLevelFromHints(true, str);
+                     this._keyboardController.commit(str, this._modifiers).then(() => {
+                         this._disableAllModifiers();
+                         this._updateLevelFromHints(true);
