@@ -1,5 +1,5 @@
 diff --git a/engine/hunspell_table.py b/engine/hunspell_table.py
-index fb229b4..7f7945e 100644
+index fb229b4..993a9b1 100644
 --- a/engine/hunspell_table.py
 +++ b/engine/hunspell_table.py
 @@ -25,12 +25,14 @@ This file implements the ibus engine for ibus-typing-booster
@@ -411,7 +411,19 @@ index fb229b4..7f7945e 100644
              and
              (not self._surrounding_text.event.is_set()
               or not self._is_context_from_surrounding_text)):
-@@ -3833,7 +3903,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -3750,6 +3820,11 @@ class TypingBoosterEngine(IBus.Engine):
+         delay = self._candidates_delay_milliseconds
+         if self.has_osk:
+             delay = 0
++        if self._osk_no_preedit:
++            # fajita fork: debounce so fast bursts coalesce (see
++            # _OSK_NP_CANDIDATES_DEBOUNCE_MS) — kills the short-prefix
++            # select_words() stutter without changing the final strip.
++            delay = self._OSK_NP_CANDIDATES_DEBOUNCE_MS
+         self._timeout_source_id = GLib.timeout_add(
+             delay, self._update_candidates_and_lookup_table_and_aux)
+ 
+@@ -3833,7 +3908,7 @@ class TypingBoosterEngine(IBus.Engine):
          if not IMPORT_ITB_NLTK_SUCCESSFUL:
              LOGGER.info('nltk is not available')
          else:
@@ -420,7 +432,7 @@ index fb229b4..7f7945e 100644
              try:
                  for synonym in itb_nltk.synonyms(phrase, keep_original=False):
                      related_candidates.append(itb_util_core.PredictionCandidate(
-@@ -3850,7 +3920,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -3850,7 +3925,7 @@ class TypingBoosterEngine(IBus.Engine):
                       error.__class__.__name__, error)
          if self._debug_level > 1:
              LOGGER.debug(
@@ -429,7 +441,7 @@ index fb229b4..7f7945e 100644
                  phrase, related_candidates)
          if not related_candidates:
              # Nothing related found, show the original lookup table
-@@ -3961,7 +4031,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -3961,7 +4036,7 @@ class TypingBoosterEngine(IBus.Engine):
  
      def _remove_candidate(self, index: int) -> bool:
          '''
@@ -438,7 +450,7 @@ index fb229b4..7f7945e 100644
          user database.
  
          :return: True if a candidate could be removed, False if not
-@@ -3985,7 +4055,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -3985,7 +4060,7 @@ class TypingBoosterEngine(IBus.Engine):
              index: int,
              extra_text: str = '') -> bool:
          '''
@@ -447,7 +459,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if a candidate could be committed, False if not.
          :param index: The index of the candidate to commit in the lookup table
-@@ -4028,7 +4098,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4028,7 +4103,7 @@ class TypingBoosterEngine(IBus.Engine):
              return True
          if self._lookup_table.state == LookupTableState.M17N_CANDIDATES:
              if self._debug_level > 1:
@@ -456,7 +468,7 @@ index fb229b4..7f7945e 100644
              self._lookup_table.state = LookupTableState.NORMAL
              self._candidates = []
              self._lookup_table.clear()
-@@ -4051,7 +4121,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4051,7 +4126,7 @@ class TypingBoosterEngine(IBus.Engine):
                          self._m17n_trans_parts.cursor_pos:])
              if self._debug_level > 1:
                  LOGGER.debug(
@@ -465,7 +477,7 @@ index fb229b4..7f7945e 100644
                      m17n_preedit_replacement, repr(self._m17n_trans_parts))
                  LOGGER.debug(
                      'OLD: self._typed_string=%s, self._typed_string_cursor=%s',
-@@ -4107,7 +4177,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4107,7 +4182,7 @@ class TypingBoosterEngine(IBus.Engine):
                               The context should only be pushed if the
                               cursor will end up to the right of commit_phrase.
          :param fix_sentence_end: Whether to try fixing whitespace before
@@ -474,7 +486,7 @@ index fb229b4..7f7945e 100644
                                   Better set this to False when calling
                                   this function several times before
                                   there was a chance that surrounding text
-@@ -4122,7 +4192,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4122,7 +4197,7 @@ class TypingBoosterEngine(IBus.Engine):
          the committed string ended a sentence.
          '''
          if self._debug_level > 1:
@@ -483,7 +495,7 @@ index fb229b4..7f7945e 100644
                           repr(commit_phrase), repr(input_phrase))
          if not commit_phrase:
              return
-@@ -4168,7 +4238,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4168,7 +4243,7 @@ class TypingBoosterEngine(IBus.Engine):
          #
          #     Works (+) or doesn’t work (-) for:
          #     + gnome-shell: + gnome-text-editor
@@ -492,7 +504,7 @@ index fb229b4..7f7945e 100644
          #                        + firefox, google-chrome
          #                            + google-docs
          #                            + gmail compose editor
-@@ -4187,11 +4257,11 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4187,11 +4262,11 @@ class TypingBoosterEngine(IBus.Engine):
          #     +/- gtk3-im: + gedit
          #                  + gnome-terminal
          #                  + xfce4-terminal
@@ -506,7 +518,7 @@ index fb229b4..7f7945e 100644
          #                      - firefox, google-chrome
          #                          - google-docs
          #                          - gmail mail compose editor
-@@ -4200,20 +4270,20 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4200,20 +4275,20 @@ class TypingBoosterEngine(IBus.Engine):
          #                 - thunderbird
          #
          # commit_mode == 'multi-forward-shift-return':
@@ -534,7 +546,7 @@ index fb229b4..7f7945e 100644
          #                    + firefox, google-chrome
          #                        + google-docs
          #                        + gmail compose editor
-@@ -4234,11 +4304,11 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4234,11 +4309,11 @@ class TypingBoosterEngine(IBus.Engine):
          #     +/- gtk3-im: + gedit
          #                  + xfce4-terminal
          #                  + gnome-terminal
@@ -548,7 +560,7 @@ index fb229b4..7f7945e 100644
          #                      - firefox, google-chrome
          #                          - google-docs
          #                          - gmail mail compose editor
-@@ -4292,7 +4362,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4292,7 +4367,7 @@ class TypingBoosterEngine(IBus.Engine):
          if len(commit_lines) >= 2:
              if self._debug_level > 0:
                  LOGGER.debug(
@@ -557,7 +569,7 @@ index fb229b4..7f7945e 100644
              for pattern, mode in commit_mode_patterns:
                  if re.search(pattern, self._client_info.client):
                      if self._debug_level > 0:
-@@ -4381,9 +4451,9 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4381,9 +4456,9 @@ class TypingBoosterEngine(IBus.Engine):
              # Commit the current commit phrase and the previous
              # phrase as a single unit as well for better
              # completions. For example, if the current commit
@@ -570,7 +582,7 @@ index fb229b4..7f7945e 100644
              if (self._record_mode == 1
                  and not self.database.phrase_exists(self.get_p_phrase())
                  and not
-@@ -4425,10 +4495,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4425,10 +4500,10 @@ class TypingBoosterEngine(IBus.Engine):
  
          If a single character ending a sentence is committed (possibly
          followed by whitespace) remove trailing white space before the
@@ -585,7 +597,7 @@ index fb229b4..7f7945e 100644
  
          '''
          if (not self.has_surrounding_text
-@@ -4557,16 +4627,16 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4557,16 +4632,16 @@ class TypingBoosterEngine(IBus.Engine):
              or key.super
              or key.hyper
              or key.meta):
@@ -608,7 +620,7 @@ index fb229b4..7f7945e 100644
              # a region in gedit.
              #
              # Maybe better don’t try to reopen the preëdit at all if
-@@ -4699,11 +4769,11 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4699,11 +4774,11 @@ class TypingBoosterEngine(IBus.Engine):
                  if cursor_pos <= cursor_pos_old:
                      # Movement to the right might be more than one
                      # column, for example when Right is pressed and
@@ -624,7 +636,7 @@ index fb229b4..7f7945e 100644
                      # already at the end of the buffer).
                      LOGGER.debug(
                          'Cursor has not moved right, cannot reopen preedit.')
-@@ -4779,8 +4849,8 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4779,8 +4854,8 @@ class TypingBoosterEngine(IBus.Engine):
          return False
  
      def get_context(self) -> None:
@@ -635,7 +647,7 @@ index fb229b4..7f7945e 100644
          than just using the last two words which were
          committed. Because the cursor position could have changed
          since the last two words were committed, one might have moved
-@@ -4824,7 +4894,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4824,7 +4899,7 @@ class TypingBoosterEngine(IBus.Engine):
              self._ppp_phrase = tokens[-3]
          if self._debug_level > 1:
              LOGGER.debug(
@@ -644,7 +656,7 @@ index fb229b4..7f7945e 100644
                  self._ppp_phrase, self._pp_phrase, self._p_phrase)
          self._is_context_from_surrounding_text = True
  
-@@ -5412,7 +5482,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5412,7 +5487,7 @@ class TypingBoosterEngine(IBus.Engine):
              self,
              mode: Union[bool, Any],
              update_gsettings: bool = True) -> None:
@@ -653,7 +665,7 @@ index fb229b4..7f7945e 100644
  
          :param mode: Whether to prevent saving input to the
                       user database or not
-@@ -5450,7 +5520,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5450,7 +5525,7 @@ class TypingBoosterEngine(IBus.Engine):
              not self._off_the_record, update_gsettings)
  
      def get_off_the_record_mode(self) -> bool:
@@ -662,7 +674,7 @@ index fb229b4..7f7945e 100644
          return self._off_the_record
  
      def set_emoji_trigger_characters(
-@@ -5518,7 +5588,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5518,7 +5593,7 @@ class TypingBoosterEngine(IBus.Engine):
              self._lookup_related_candidates(
                  self._lookup_table.related_candidates_phrase)
          elif self._lookup_table.state == LookupTableState.NORMAL:
@@ -671,7 +683,7 @@ index fb229b4..7f7945e 100644
              # it to display the Emoji in the new style:
              self._update_ui()
          if update_gsettings:
-@@ -5604,7 +5674,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5604,7 +5679,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_color_preedit_spellcheck(self) -> bool:
@@ -680,7 +692,7 @@ index fb229b4..7f7945e 100644
          return self._color_preedit_spellcheck
  
      def set_color_preedit_spellcheck_string(
-@@ -5616,10 +5686,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5616,10 +5691,10 @@ class TypingBoosterEngine(IBus.Engine):
          :param color_string: The color for preedit spellchecking
                              It is a string in one of the following formats:
                              - Standard name from the X11 rgb.txt
@@ -695,7 +707,7 @@ index fb229b4..7f7945e 100644
          :param update_gsettings: Whether to write the change to Gsettings.
                                   Set this to False if this method is
                                   called because the Gsettings key changed
-@@ -5640,7 +5710,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5640,7 +5715,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_string(color_string))
  
      def get_color_preedit_spellcheck_string(self) -> str:
@@ -704,7 +716,7 @@ index fb229b4..7f7945e 100644
          '''
          return self._color_preedit_spellcheck_string
  
-@@ -5669,7 +5739,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5669,7 +5744,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_color_inline_completion(self) -> bool:
@@ -713,7 +725,7 @@ index fb229b4..7f7945e 100644
          return self._color_inline_completion
  
      def set_color_inline_completion_string(
-@@ -5681,10 +5751,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5681,10 +5756,10 @@ class TypingBoosterEngine(IBus.Engine):
          :param color_string: The color for inline completion
                              It is a string in one of the following formats:
                              - Standard name from the X11 rgb.txt
@@ -728,7 +740,7 @@ index fb229b4..7f7945e 100644
          :param update_gsettings: Whether to write the change to Gsettings.
                                   Set this to False if this method is
                                   called because the Gsettings key changed
-@@ -5705,7 +5775,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5705,7 +5780,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_string(color_string))
  
      def get_color_inline_completion_string(self) -> str:
@@ -737,7 +749,7 @@ index fb229b4..7f7945e 100644
          return self._color_inline_completion_string
  
      def set_color_compose_preview(
-@@ -5733,7 +5803,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5733,7 +5808,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_color_compose_preview(self) -> bool:
@@ -746,7 +758,7 @@ index fb229b4..7f7945e 100644
          return self._color_compose_preview
  
      def set_color_compose_preview_string(
-@@ -5745,10 +5815,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5745,10 +5820,10 @@ class TypingBoosterEngine(IBus.Engine):
          :param color_string: The color for the compose preview
                              It is a string in one of the following formats:
                              - Standard name from the X11 rgb.txt
@@ -761,7 +773,7 @@ index fb229b4..7f7945e 100644
          :param update_gsettings: Whether to write the change to Gsettings.
                                   Set this to False if this method is
                                   called because the Gsettings key changed
-@@ -5769,7 +5839,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5769,7 +5844,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_string(color_string))
  
      def get_color_compose_preview_string(self) -> str:
@@ -770,7 +782,7 @@ index fb229b4..7f7945e 100644
          return self._color_compose_preview_string
  
      def set_color_m17n_preedit(
-@@ -5797,7 +5867,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5797,7 +5872,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_color_m17n_preedit(self) -> bool:
@@ -779,7 +791,7 @@ index fb229b4..7f7945e 100644
          return self._color_m17n_preedit
  
      def set_color_m17n_preedit_string(
-@@ -5809,10 +5879,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5809,10 +5884,10 @@ class TypingBoosterEngine(IBus.Engine):
          :param color_string: The color for the m17n preedit
                               It is a string in one of the following formats:
                               - Standard name from the X11 rgb.txt
@@ -794,7 +806,7 @@ index fb229b4..7f7945e 100644
          :param update_gsettings: Whether to write the change to Gsettings.
                                   Set this to False if this method is
                                   called because the Gsettings key changed
-@@ -5833,7 +5903,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5833,7 +5908,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_string(color_string))
  
      def get_color_m17n_preedit_string(self) -> str:
@@ -803,7 +815,7 @@ index fb229b4..7f7945e 100644
          return self._color_m17n_preedit_string
  
      def set_color_userdb(
-@@ -5861,7 +5931,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5861,7 +5936,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_color_userdb(self) -> bool:
@@ -812,7 +824,7 @@ index fb229b4..7f7945e 100644
          return self._color_userdb
  
      def set_color_userdb_string(
-@@ -5873,10 +5943,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5873,10 +5948,10 @@ class TypingBoosterEngine(IBus.Engine):
          :param color_string: The color for user database suggestions
                              It is a string in one of the following formats:
                              - Standard name from the X11 rgb.txt
@@ -827,7 +839,7 @@ index fb229b4..7f7945e 100644
          :param update_gsettings: Whether to write the change to Gsettings.
                                   Set this to False if this method is
                                   called because the Gsettings key changed
-@@ -5897,7 +5967,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5897,7 +5972,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_string(color_string))
  
      def get_color_userdb_string(self) -> str:
@@ -836,7 +848,7 @@ index fb229b4..7f7945e 100644
          return self._color_userdb_string
  
      def set_color_spellcheck(
-@@ -5925,7 +5995,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5925,7 +6000,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_color_spellcheck(self) -> bool:
@@ -845,7 +857,7 @@ index fb229b4..7f7945e 100644
          return self._color_spellcheck
  
      def set_color_spellcheck_string(
-@@ -5937,10 +6007,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5937,10 +6012,10 @@ class TypingBoosterEngine(IBus.Engine):
          :param color_string: The color for spellchecking suggestions
                              It is a string in one of the following formats:
                              - Standard name from the X11 rgb.txt
@@ -860,7 +872,7 @@ index fb229b4..7f7945e 100644
          :param update_gsettings: Whether to write the change to Gsettings.
                                   Set this to False if this method is
                                   called because the Gsettings key changed
-@@ -5961,7 +6031,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5961,7 +6036,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_string(color_string))
  
      def get_color_spellcheck_string(self) -> str:
@@ -869,7 +881,7 @@ index fb229b4..7f7945e 100644
          return self._color_spellcheck_string
  
      def set_color_dictionary(
-@@ -5989,7 +6059,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5989,7 +6064,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_color_dictionary(self) -> bool:
@@ -878,7 +890,7 @@ index fb229b4..7f7945e 100644
          return self._color_dictionary
  
      def set_color_dictionary_string(
-@@ -6001,10 +6071,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6001,10 +6076,10 @@ class TypingBoosterEngine(IBus.Engine):
          :param color_string: The color for dictionary suggestions
                              It is a string in one of the following formats:
                              - Standard name from the X11 rgb.txt
@@ -893,7 +905,7 @@ index fb229b4..7f7945e 100644
          :param update_gsettings: Whether to write the change to Gsettings.
                                   Set this to False if this method is
                                   called because the Gsettings key changed
-@@ -6025,7 +6095,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6025,7 +6100,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_string(color_string))
  
      def get_color_dictionary_string(self) -> str:
@@ -902,7 +914,7 @@ index fb229b4..7f7945e 100644
          return self._color_dictionary_string
  
      def set_label_userdb(
-@@ -6053,7 +6123,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6053,7 +6128,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_label_userdb(self) -> bool:
@@ -911,7 +923,7 @@ index fb229b4..7f7945e 100644
          return self._label_userdb
  
      def set_label_userdb_string(
-@@ -6081,7 +6151,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6081,7 +6156,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_string(label_string))
  
      def get_label_userdb_string(self) -> str:
@@ -920,7 +932,7 @@ index fb229b4..7f7945e 100644
          return self._label_userdb_string
  
      def set_label_spellcheck(
-@@ -6109,7 +6179,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6109,7 +6184,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_label_spellcheck(self) -> bool:
@@ -929,7 +941,7 @@ index fb229b4..7f7945e 100644
          return self._label_spellcheck
  
      def set_label_spellcheck_string(
-@@ -6137,7 +6207,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6137,7 +6212,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_string(label_string))
  
      def get_label_spellcheck_string(self) -> str:
@@ -938,7 +950,7 @@ index fb229b4..7f7945e 100644
          return self._label_spellcheck_string
  
      def set_label_dictionary(
-@@ -6165,7 +6235,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6165,7 +6240,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_label_dictionary(self) -> bool:
@@ -947,7 +959,7 @@ index fb229b4..7f7945e 100644
          return self._label_dictionary
  
      def set_label_dictionary_string(
-@@ -6206,7 +6276,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6206,7 +6281,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_string(label_string))
  
      def get_label_dictionary_string(self) -> str:
@@ -956,7 +968,7 @@ index fb229b4..7f7945e 100644
          return self._label_dictionary_string
  
      def set_flag_dictionary(
-@@ -6235,7 +6305,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6235,7 +6310,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_flag_dictionary(self) -> bool:
@@ -965,7 +977,7 @@ index fb229b4..7f7945e 100644
          return self._flag_dictionary
  
      def set_label_busy(
-@@ -6263,7 +6333,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6263,7 +6338,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_label_busy(self) -> bool:
@@ -974,7 +986,7 @@ index fb229b4..7f7945e 100644
          return self._label_busy
  
      def set_label_busy_string(
-@@ -6291,7 +6361,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6291,7 +6366,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_string(label_string))
  
      def get_label_busy_string(self) -> str:
@@ -983,7 +995,7 @@ index fb229b4..7f7945e 100644
          return self._label_busy_string
  
      def set_ai_chat_enable(
-@@ -6443,7 +6513,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6443,7 +6518,7 @@ class TypingBoosterEngine(IBus.Engine):
              self,
              mode: Union[bool, Any],
              update_gsettings: bool = True) -> None:
@@ -992,7 +1004,7 @@ index fb229b4..7f7945e 100644
  
          :param mode: Whether to show a candidate list only when typing Tab
          :param update_gsettings: Whether to write the change to Gsettings.
-@@ -6464,14 +6534,14 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6464,14 +6539,14 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_tab_enable(self) -> bool:
@@ -1009,7 +1021,7 @@ index fb229b4..7f7945e 100644
  
          :param mode: Whether to disable Typing Booster in terminals
          :param update_gsettings: Whether to write the change to Gsettings.
-@@ -6492,7 +6562,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6492,7 +6567,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_disable_in_terminals(self) -> bool:
@@ -1018,7 +1030,7 @@ index fb229b4..7f7945e 100644
          return self._disable_in_terminals
  
      def set_ascii_digits(
-@@ -6521,7 +6591,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6521,7 +6596,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_ascii_digits(self) -> bool:
@@ -1027,7 +1039,7 @@ index fb229b4..7f7945e 100644
          return self._ascii_digits
  
      def toggle_ascii_digits(self, update_gsettings: bool = True) -> None:
-@@ -6561,7 +6631,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6561,7 +6636,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_show_final_form(self) -> bool:
@@ -1036,7 +1048,7 @@ index fb229b4..7f7945e 100644
          return self._show_final_form
  
      def toggle_show_final_form(self, update_gsettings: bool = True) -> None:
-@@ -6580,7 +6650,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6580,7 +6655,7 @@ class TypingBoosterEngine(IBus.Engine):
              self,
              mode: Union[bool, Any],
              update_gsettings: bool = True) -> None:
@@ -1045,7 +1057,7 @@ index fb229b4..7f7945e 100644
  
          :param mode: Whether to remember the input method used last for
                       the preëdit
-@@ -6603,7 +6673,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6603,7 +6678,7 @@ class TypingBoosterEngine(IBus.Engine):
  
      def get_remember_last_used_preedit_ime(self) -> bool:
          '''Returns the current value of the
@@ -1054,7 +1066,7 @@ index fb229b4..7f7945e 100644
          '''
          return self._remember_last_used_preedit_ime
  
-@@ -6611,7 +6681,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6611,7 +6686,7 @@ class TypingBoosterEngine(IBus.Engine):
              self,
              mode: Union[bool, Any],
              update_gsettings: bool = True) -> None:
@@ -1063,7 +1075,7 @@ index fb229b4..7f7945e 100644
  
          :param mode: Whether to remember the input mode (on/off)
          :param update_gsettings: Whether to write the change to Gsettings.
-@@ -6632,7 +6702,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6632,7 +6707,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_remember_input_mode(self) -> bool:
@@ -1072,7 +1084,7 @@ index fb229b4..7f7945e 100644
          return self._remember_input_mode
  
      def set_page_size(
-@@ -6743,7 +6813,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6743,7 +6818,7 @@ class TypingBoosterEngine(IBus.Engine):
              self,
              mode: Union[bool, Any],
              update_gsettings: bool = True) -> None:
@@ -1081,7 +1093,7 @@ index fb229b4..7f7945e 100644
  
          :param mode: Whether preedit styling like underlining should
                       be enabled only when lookup is enabled.
-@@ -6765,7 +6835,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6765,7 +6840,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_preedit_style_only_when_lookup(self) -> bool:
@@ -1090,7 +1102,7 @@ index fb229b4..7f7945e 100644
          return self._preedit_style_only_when_lookup
  
      def set_min_char_complete(
-@@ -7062,7 +7132,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7062,7 +7137,7 @@ class TypingBoosterEngine(IBus.Engine):
              self,
              mode: Union[bool, Any],
              update_gsettings: bool = True) -> None:
@@ -1099,7 +1111,7 @@ index fb229b4..7f7945e 100644
  
          :param mode: Whether to show the number of candidates
                       in the auxiliary text
-@@ -7085,7 +7155,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7085,7 +7160,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_show_number_of_candidates(self) -> bool:
@@ -1108,7 +1120,7 @@ index fb229b4..7f7945e 100644
          '''
          return self._show_number_of_candidates
  
-@@ -7093,7 +7163,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7093,7 +7168,7 @@ class TypingBoosterEngine(IBus.Engine):
              self,
              mode: Union[bool, Any],
              update_gsettings: bool = True) -> None:
@@ -1117,7 +1129,7 @@ index fb229b4..7f7945e 100644
  
          :param mode: Whether to show status information in the
                       auxiliary text.
-@@ -7122,7 +7192,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7122,7 +7197,7 @@ class TypingBoosterEngine(IBus.Engine):
  
      def get_show_status_info_in_auxiliary_text(self) -> bool:
          '''Returns the current value of the
@@ -1126,7 +1138,7 @@ index fb229b4..7f7945e 100644
          '''
          return self._show_status_info_in_auxiliary_text
  
-@@ -7130,7 +7200,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7130,7 +7205,7 @@ class TypingBoosterEngine(IBus.Engine):
              self,
              mode: Union[int, Any],
              update_gsettings: bool = True) -> None:
@@ -1135,7 +1147,7 @@ index fb229b4..7f7945e 100644
  
          :param mode: Whether to show the raw input in the auxiliary text.
                       0: Never
-@@ -7155,14 +7225,14 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7155,14 +7230,14 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_int32(mode))
  
      def get_show_raw_input(self) -> int:
@@ -1152,7 +1164,7 @@ index fb229b4..7f7945e 100644
  
          :param mode: Whether to automatically select the best candidate
          :param update_gsettings: Whether to write the change to Gsettings.
-@@ -7186,7 +7256,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7186,7 +7261,7 @@ class TypingBoosterEngine(IBus.Engine):
  
      def get_auto_select_candidate(self) -> int:
          '''Returns the current value of the
@@ -1161,7 +1173,7 @@ index fb229b4..7f7945e 100644
          '''
          return self._auto_select_candidate
  
-@@ -7227,6 +7297,11 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7227,6 +7302,11 @@ class TypingBoosterEngine(IBus.Engine):
              self.remove_candidate_from_user_database(index)
              self._update_ui()
              return
@@ -1173,7 +1185,7 @@ index fb229b4..7f7945e 100644
          if button == 1:
              phrase = self.get_string_from_lookup_table_cursor_pos()
              if phrase:
-@@ -7301,7 +7376,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7301,7 +7381,7 @@ class TypingBoosterEngine(IBus.Engine):
              return
          if not os.path.isfile(self._google_application_credentials):
              self._speech_recognition_error(
@@ -1182,7 +1194,7 @@ index fb229b4..7f7945e 100644
                  % self._google_application_credentials)
              return
  
-@@ -7346,25 +7421,25 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7346,25 +7426,25 @@ class TypingBoosterEngine(IBus.Engine):
              #
              # But I don’t know any way to find out via the API whether
              # a language is supported or not. When trying to set a
@@ -1217,7 +1229,7 @@ index fb229b4..7f7945e 100644
              # for speech recognition just because it is not on the
              # list of officially supported languages. Therefore, I allow
              # *all* languages to be used for speech recognition. But when
-@@ -7452,7 +7527,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7452,7 +7532,7 @@ class TypingBoosterEngine(IBus.Engine):
          return
  
      def _command_toggle_input_mode_on_off(self) -> bool:
@@ -1226,7 +1238,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -7460,7 +7535,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7460,7 +7540,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_speech_recognition(self) -> bool:
@@ -1235,7 +1247,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -7468,7 +7543,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7468,7 +7548,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_next_case_mode(self) -> bool:
@@ -1244,7 +1256,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -7483,7 +7558,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7483,7 +7563,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_previous_case_mode(self) -> bool:
@@ -1253,7 +1265,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -7498,7 +7573,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7498,7 +7578,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_cancel(self) -> bool:
@@ -1262,7 +1274,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -7631,7 +7706,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7631,7 +7711,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_enable_lookup(self) -> bool:
@@ -1271,7 +1283,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -7707,7 +7782,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7707,7 +7787,7 @@ class TypingBoosterEngine(IBus.Engine):
              self._update_lookup_table_and_aux()
              # Select the first candidate automatically because most
              # Japanese and Chinese input methods behave like this and because
@@ -1280,7 +1292,7 @@ index fb229b4..7f7945e 100644
              # candidate which is the first one which makes a difference
              # to just continuing with the preedit:
              self._lookup_table.set_cursor_visible(True)
-@@ -8034,7 +8109,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8034,7 +8114,7 @@ class TypingBoosterEngine(IBus.Engine):
          '''
          if IMPORT_ITB_OLLAMA_ERROR:
              LOGGER.error(
@@ -1289,7 +1301,7 @@ index fb229b4..7f7945e 100644
              return
          if self._ollama_model == '':
              LOGGER.error('ollama model is not set.')
-@@ -8398,7 +8473,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8398,7 +8478,7 @@ class TypingBoosterEngine(IBus.Engine):
          return False
  
      def _command_next_input_method(self) -> bool:
@@ -1298,7 +1310,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8423,7 +8498,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8423,7 +8503,7 @@ class TypingBoosterEngine(IBus.Engine):
          return False
  
      def _command_previous_input_method(self) -> bool:
@@ -1307,7 +1319,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8448,7 +8523,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8448,7 +8528,7 @@ class TypingBoosterEngine(IBus.Engine):
          return False
  
      def _command_next_dictionary(self) -> bool:
@@ -1316,7 +1328,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8466,7 +8541,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8466,7 +8546,7 @@ class TypingBoosterEngine(IBus.Engine):
          return False
  
      def _command_previous_dictionary(self) -> bool:
@@ -1325,7 +1337,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8483,7 +8558,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8483,7 +8563,7 @@ class TypingBoosterEngine(IBus.Engine):
          return False
  
      def _command_select_next_candidate(self) -> bool:
@@ -1334,7 +1346,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8497,7 +8572,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8497,7 +8577,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_select_previous_candidate(self) -> bool:
@@ -1343,7 +1355,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8511,7 +8586,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8511,7 +8591,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_lookup_table_page_down(self) -> bool:
@@ -1352,7 +1364,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8525,7 +8600,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8525,7 +8605,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_lookup_table_page_up(self) -> bool:
@@ -1361,7 +1373,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8539,7 +8614,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8539,7 +8619,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_toggle_emoji_prediction(self) -> bool:
@@ -1370,7 +1382,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8547,7 +8622,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8547,7 +8627,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_toggle_emoji_style(self) -> bool:
@@ -1379,7 +1391,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8555,7 +8630,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8555,7 +8635,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_trigger_emoji_predictions(self) -> bool:
@@ -1388,7 +1400,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8563,7 +8638,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8563,7 +8643,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_trigger_word_predictions(self) -> bool:
@@ -1397,7 +1409,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8571,7 +8646,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8571,7 +8651,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_toggle_off_the_record(self) -> bool:
@@ -1406,7 +1418,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8579,7 +8654,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8579,7 +8659,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_toggle_ascii_digits(self) -> bool:
@@ -1415,7 +1427,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8587,7 +8662,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8587,7 +8667,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_lookup_related(self) -> bool:
@@ -1424,7 +1436,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8596,7 +8671,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8596,7 +8676,7 @@ class TypingBoosterEngine(IBus.Engine):
          return False
  
      def _command_toggle_hide_input(self) -> bool:
@@ -1433,7 +1445,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8605,7 +8680,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8605,7 +8685,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_setup(self) -> bool:
@@ -1442,7 +1454,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8705,7 +8780,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8705,7 +8785,7 @@ class TypingBoosterEngine(IBus.Engine):
          self.delete_surrounding_text(
              -cursor_pos_in_current_line, len(current_line))
          cursor_correction_chars_logical = current_line[cursor_pos_in_current_line:]
@@ -1451,7 +1463,7 @@ index fb229b4..7f7945e 100644
          markers = ['_\ufffd_', # U+FFFD REPLACEMENT CHARACTER
                      '_\ufffc_', # U+FFFC OBJECT REPLACEMENT CHARACTER
                      '_☺_☺_☺_',  # some emoji
-@@ -8756,7 +8831,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8756,7 +8836,7 @@ class TypingBoosterEngine(IBus.Engine):
              im_module = self._client_info.im_module
              LOGGER.debug('%r detected, trying to correct cursor.', im_module)
              if im_module == 'gtk4-im':
@@ -1460,7 +1472,7 @@ index fb229b4..7f7945e 100644
                               'cursor correction cannot not work.')
                  return
              if im_module == 'gnome-shell':
-@@ -8819,7 +8894,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8819,7 +8899,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_commit_raw_input(self) -> bool:
@@ -1469,7 +1481,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8829,7 +8904,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8829,7 +8909,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_commit_raw_input_and_forward_key(self) -> bool:
@@ -1478,7 +1490,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8839,7 +8914,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8839,7 +8919,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_commit(self) -> bool:
@@ -1487,7 +1499,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8849,7 +8924,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8849,7 +8929,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_commit_and_forward_key(self) -> bool:
@@ -1496,7 +1508,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8859,189 +8934,189 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8859,189 +8939,189 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_commit_candidate_1(self) -> bool:
@@ -1713,7 +1725,7 @@ index fb229b4..7f7945e 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -9054,8 +9129,8 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9054,8 +9134,8 @@ class TypingBoosterEngine(IBus.Engine):
          '''Handle hotkey commands
  
          :return: A tuple of too boolean values (match, return_value)
@@ -1724,7 +1736,7 @@ index fb229b4..7f7945e 100644
                   from do_process_key_event().
          :param key: The typed key. If this is a hotkey,
                      execute the command for this hotkey.
-@@ -9125,10 +9200,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9125,10 +9205,10 @@ class TypingBoosterEngine(IBus.Engine):
          return (False, False)
  
      def _return_true(self, key: itb_util_core.KeyEvent) -> bool:
@@ -1738,7 +1750,7 @@ index fb229b4..7f7945e 100644
          event should be passed to the application.
          '''
          if self._debug_level > 0:
-@@ -9140,14 +9215,933 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9140,14 +9220,946 @@ class TypingBoosterEngine(IBus.Engine):
          self._trigger_surrounding_text_update()
          return True
  
@@ -1761,6 +1773,20 @@ index fb229b4..7f7945e 100644
 +    # A reset arriving within this window of our own commit is treated as
 +    # the client-side echo of that commit, not as a genuine cursor move:
 +    _OSK_NP_RESET_ECHO_SECONDS = 1.0
++    # Debounce the per-keystroke candidate recompute in no-preedit mode.
++    # select_words() is dominated by a LIKE 'prefix%' scan over the user db
++    # whose cost is proportional to the number of matching rows: a 1-2 char
++    # word start matches thousands of rows (~5-23 ms on the SDM845 main
++    # loop) while 3+ char prefixes are sub-millisecond. Fast typing lands a
++    # short-prefix recompute at every word start, and because IBus runs the
++    # engine on a single main loop these serialize and stutter. The recompute
++    # is already scheduled via a cancellable timeout (see _update_ui), so a
++    # small non-zero delay makes consecutive fast keystrokes coalesce: only
++    # the last keystroke of a burst computes candidates (by then the prefix is
++    # long and cheap), and the final strip content is identical. At normal
++    # typing speed (>~150 ms between keys) the timer always fires before the
++    # next key, so the strip still updates every keystroke \u2014 no visible change.
++    _OSK_NP_CANDIDATES_DEBOUNCE_MS = 40
 +
 +    # fajita fork: swipe-typing gesture decoder (rev 10) ----
 +    # PUA framing keysyms (IBus press-only, emitted by shell injectGestureTrace)
@@ -1954,6 +1980,30 @@ index fb229b4..7f7945e 100644
 +            pp_phrase=self.get_pp_phrase(),
 +            user_freq_increment=3)  # jump straight past the protection bar
 +
++    def _osk_np_expire_recent_corrections(self) -> None:
++        """Drop recent-correction entries older than the anti-force window."""
++        now = time.monotonic()
++        for old in [w for w, entry in self._osk_np_recent_corrections.items()
++                    if now - entry[0] > self._OSK_NP_RECENT_CORRECTION_SECONDS]:
++            del self._osk_np_recent_corrections[old]
++
++    def _osk_np_is_revert(self, low: str, stripped: str) -> bool:
++        """A word re-typed at the SAME position we just corrected it is a
++        genuine delete-and-retype revert: learn it (never correct again) and
++        forget the correction. Returns True if this was such a revert.
++        Same typo at a NEW position is not a revert (returns False)."""
++        if low not in self._osk_np_recent_corrections:
++            return False
++        _corrected_at, context_then = self._osk_np_recent_corrections[low]
++        if self.get_p_phrase() != context_then:
++            # Same typo at a NEW position: the user just made the same typo
++            # twice, not a revert. Correct it again; learn nothing (typos
++            # must never enter the user db by repetition).
++            return False
++        self._osk_np_learn(stripped)
++        del self._osk_np_recent_corrections[low]
++        return True
++
 +    def _osk_np_autocorrect_candidate(self, typed: str) -> Optional[str]:
 +        """Android-style autocorrect decision at a word boundary.
 +
@@ -1982,41 +2032,16 @@ index fb229b4..7f7945e 100644
 +            # safe; must run BEFORE that guard, and still honors the
 +            # anti-force window: a re-typed word means the user wants it.
 +            low = stripped.lower()
-+            now = time.monotonic()
-+            for old in [w for w, entry in self._osk_np_recent_corrections.items()
-+                        if now - entry[0] > self._OSK_NP_RECENT_CORRECTION_SECONDS]:
-+                del self._osk_np_recent_corrections[old]
-+            if low in self._osk_np_recent_corrections:
-+                _corrected_at, context_then = (
-+                    self._osk_np_recent_corrections[low])
-+                if self.get_p_phrase() == context_then:
-+                    # Re-typed at the SAME position we just corrected:
-+                    # a genuine revert. Learn it, never correct again.
-+                    self._osk_np_learn(stripped)
-+                    del self._osk_np_recent_corrections[low]
-+                    return None
-+                # same typo, NEW position: not a revert — fix it again
++            self._osk_np_expire_recent_corrections()
++            if self._osk_np_is_revert(low, stripped):
++                return None
 +            return stripped[0] + stripped[1].lower() + stripped[2:]
 +        if any(char.isupper() for char in stripped[1:]):
 +            return None  # iPhone, McD..., ALLCAPS: intentional
 +        low = stripped.lower()
-+        now = time.monotonic()
-+        for old in [w for w, entry in self._osk_np_recent_corrections.items()
-+                    if now - entry[0] > self._OSK_NP_RECENT_CORRECTION_SECONDS]:
-+            del self._osk_np_recent_corrections[old]
-+        if low in self._osk_np_recent_corrections:
-+            _corrected_at, context_then = self._osk_np_recent_corrections[low]
-+            if self.get_p_phrase() == context_then:
-+                # Re-typed at the SAME text position we just corrected
-+                # (preceding word matches): a genuine delete-and-retype
-+                # revert. Learn the word, never correct it again.
-+                self._osk_np_learn(stripped)
-+                del self._osk_np_recent_corrections[low]
-+                return None
-+            # Same typo again at a NEW position within the window: NOT a
-+            # revert — the user just made the same typo twice. Fall through
-+            # and correct it again; learn nothing (typos must never enter
-+            # the user db by repetition).
++        self._osk_np_expire_recent_corrections()
++        if self._osk_np_is_revert(low, stripped):
++            return None
 +        if self.database.hunspell_obj.spellcheck(stripped):
 +            # Dictionary-valid word: never distance-correct it, but allow
 +            # PURE ACCENT RECOVERY (mas -> más) when the accented variant
@@ -2676,7 +2701,7 @@ index fb229b4..7f7945e 100644
  
          1) It doesn’t work well when trying to do the unit
          tests. The MockEngine class in the unit tests cannot get that
-@@ -9157,11 +10151,11 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9157,11 +10169,11 @@ class TypingBoosterEngine(IBus.Engine):
  
          2) It does *not* work when using XIM, i.e. *not* when using Qt
          with the XIM module and *not* in X11 applications like xterm.
@@ -2691,7 +2716,7 @@ index fb229b4..7f7945e 100644
          this. See: https://bugzilla.redhat.com/show_bug.cgi?id=1291238
          This has been fixed though at least when triggering a commit
          with space by inserting the space into the application by
-@@ -9169,13 +10163,13 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9169,13 +10181,13 @@ class TypingBoosterEngine(IBus.Engine):
          I.e. when a space triggers a commit, neither `return False`
          nor `forward_key_event()` is used.
  
@@ -2708,7 +2733,7 @@ index fb229b4..7f7945e 100644
          sometimes use self.forward_key_event(key.val, key.code,
          key.state) instead to pass the key to the application.  This
          works fine with the unit tests because a forward_key_event()
-@@ -9184,8 +10178,8 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9184,8 +10196,8 @@ class TypingBoosterEngine(IBus.Engine):
          concerned, it does not matter whether the key.code is correct
          or incorrectly key.code == 0.
  
@@ -2719,7 +2744,7 @@ index fb229b4..7f7945e 100644
          that it does nothing at all when key.code is 0, which is often
          the case when the on-screen-keyboard OSK is
          used. ibus-typing-booster can fix that in many or even most
-@@ -9193,7 +10187,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9193,7 +10205,7 @@ class TypingBoosterEngine(IBus.Engine):
          current keyboard layout, but there are circumstances when this
          is also not possible.
  
@@ -2728,7 +2753,7 @@ index fb229b4..7f7945e 100644
          some environments even if OSK is not involved:
  
          - Qt4 when using the input module and not XIM
-@@ -9201,15 +10195,15 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9201,15 +10213,15 @@ class TypingBoosterEngine(IBus.Engine):
          - older versions of Wayland
          - Gtk4
  
@@ -2748,7 +2773,7 @@ index fb229b4..7f7945e 100644
          case and no problems when the key.code is incorrectly 0.
  
          But committing is also not always possible, for example
-@@ -9232,7 +10226,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9232,7 +10244,7 @@ class TypingBoosterEngine(IBus.Engine):
            unit testing, then the key.code does not matter)
          - if committing is not possible and forward_key_event()
            is is not possible either, fall back to the worst option
@@ -2757,7 +2782,7 @@ index fb229b4..7f7945e 100644
          '''
          if self._debug_level > 0:
              LOGGER.info('key=%s', key)
-@@ -9245,7 +10239,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9245,7 +10257,7 @@ class TypingBoosterEngine(IBus.Engine):
              LOGGER.warning(
                  'key.code=0 is not a valid keycode. Probably caused by OSK.')
          # If it is possible to commit instead of forwarding a key event
@@ -2766,7 +2791,7 @@ index fb229b4..7f7945e 100644
          if (self._prefer_commit
              and key.unicode
              and unicodedata.category(key.unicode) not in ('Cc',)
-@@ -9255,14 +10249,14 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9255,14 +10267,14 @@ class TypingBoosterEngine(IBus.Engine):
              and not key.state & IBus.ModifierType.RELEASE_MASK
              and not key.state & itb_util_core.KEYBINDING_STATE_MASK):
              if self._debug_level > 0:
@@ -2783,7 +2808,7 @@ index fb229b4..7f7945e 100644
          # MockEngine class cannot get that return value.
          # The keycode does not matter here, we do not care whether it is correct
          # or not when doing unit testing.
-@@ -9485,7 +10479,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9485,7 +10497,7 @@ class TypingBoosterEngine(IBus.Engine):
                          self._m17n_trans_parts.cursor_pos:])
              if self._debug_level > 1:
                  LOGGER.debug(
@@ -2792,7 +2817,7 @@ index fb229b4..7f7945e 100644
                      m17n_preedit_replacement,repr(self._m17n_trans_parts))
                  LOGGER.debug(
                      'OLD: self._typed_string=%s, self._typed_string_cursor=%s',
-@@ -9877,7 +10871,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9877,7 +10889,7 @@ class TypingBoosterEngine(IBus.Engine):
              self._update_lookup_table_and_aux()
              # Select the first candidate automatically because most
              # Japanese and Chinese input methods behave like this and because
@@ -2801,7 +2826,7 @@ index fb229b4..7f7945e 100644
              # candidate which is the first one which makes a difference
              # to just continuing with the preedit:
              self._lookup_table.set_cursor_visible(True)
-@@ -9894,8 +10888,8 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9894,8 +10906,8 @@ class TypingBoosterEngine(IBus.Engine):
              return True
          # Standard lookup table works fine here for vi-tcvn, vi-telex,
          # vi-viqr, vi-vni, ... It does probably work well for **all**
@@ -2812,7 +2837,7 @@ index fb229b4..7f7945e 100644
          # make this work for ja-anthy, but it might not even make any
          # sense for ja-anthy.
          if self._debug_level > 1:
-@@ -10321,6 +11315,21 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10321,6 +11333,21 @@ class TypingBoosterEngine(IBus.Engine):
  
          if disabled:
              return self._return_false(key)
@@ -2834,7 +2859,7 @@ index fb229b4..7f7945e 100644
  
          if self._handle_m17n_candidates(key):
              return self._return_true(key)
-@@ -10377,10 +11386,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10377,10 +11404,10 @@ class TypingBoosterEngine(IBus.Engine):
                  and not key.shift
                  and not self._has_transliteration([key.msymbol])):
                  # if the first character is a space, just pass it
@@ -2848,7 +2873,7 @@ index fb229b4..7f7945e 100644
                  # some input methods transliterate the msymbol 'S- '
                  # (See:
                  # https://github.com/mike-fabian/ibus-typing-booster/issues/524)):
-@@ -10432,7 +11441,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10432,7 +11459,7 @@ class TypingBoosterEngine(IBus.Engine):
                      # If a digit has been typed and we use
                      # transliteration, we may want to convert it to
                      # native digits. For example, with mr-inscript we
@@ -2857,7 +2882,7 @@ index fb229b4..7f7945e 100644
                      # to transliterate and commit the result:
                      transliterated_digit = self._transliterators[
                          self.get_current_imes()[0]
-@@ -10462,7 +11471,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10462,7 +11489,7 @@ class TypingBoosterEngine(IBus.Engine):
                  # If the user types a modifier key combination, it
                  # might have a transliteration in some input methods.
                  # For example, AltGr-4 (key.msymbol = 'G-4')
@@ -2866,7 +2891,7 @@ index fb229b4..7f7945e 100644
                  # method is used.  But trying to handle all modifier
                  # key combinations as input is not nice because it
                  # prevents the use of such key combinations for other
-@@ -10646,7 +11655,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10646,7 +11673,7 @@ class TypingBoosterEngine(IBus.Engine):
              # We need to transliterate
              # the preëdit again here, because adding the commit key to
              # the input might influence the transliteration. For example
@@ -2875,7 +2900,7 @@ index fb229b4..7f7945e 100644
              # (See: https://bugzilla.redhat.com/show_bug.cgi?id=1353672)
              #
              # Also, even if the cursor is not at the end of the input when
-@@ -10729,7 +11738,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10729,7 +11756,7 @@ class TypingBoosterEngine(IBus.Engine):
                          # instead of committing:
                          if self._debug_level > 1:
                              LOGGER.debug(
@@ -2884,7 +2909,7 @@ index fb229b4..7f7945e 100644
                                  key.msymbol)
                          self._insert_string_at_cursor([key.msymbol])
                          self._update_ui()
-@@ -10747,12 +11756,12 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10747,12 +11774,12 @@ class TypingBoosterEngine(IBus.Engine):
                             or key.hyper
                             or key.meta)
                    and self._typed_string_cursor == 0):
@@ -2899,7 +2924,7 @@ index fb229b4..7f7945e 100644
                  # by default!)
                  #
                  # As the cursor is still at the beginning of the
-@@ -10776,7 +11785,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10776,7 +11803,7 @@ class TypingBoosterEngine(IBus.Engine):
                             or key.meta)
                    and (self._typed_string_cursor
                         < len(self._typed_string))):
@@ -2908,7 +2933,7 @@ index fb229b4..7f7945e 100644
                  # commit the preëdit while the cursor is not at the
                  # end of the preëdit.  That means the parts of the
                  # preëdit to the left of and to the right of the
-@@ -10941,9 +11950,9 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10941,9 +11968,9 @@ class TypingBoosterEngine(IBus.Engine):
              # If the character typed could end a sentence, we can
              # *maybe* commit immediately.  However, if transliteration
              # is used, we may need to handle a punctuation or symbol
@@ -2921,7 +2946,7 @@ index fb229b4..7f7945e 100644
              # what comes next.
              input_phrase = (
                  self._transliterated_strings[
-@@ -11014,7 +12023,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11014,7 +12041,7 @@ class TypingBoosterEngine(IBus.Engine):
          # string.  And apparently it was not handled as a select key
          # or other special key either.  So whatever this was, we
          # cannot handle it, just pass it through to the application by
@@ -2930,7 +2955,7 @@ index fb229b4..7f7945e 100644
          if self.is_empty():
              self._update_ui_empty_input()
          return False
-@@ -11060,7 +12069,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11060,7 +12087,7 @@ class TypingBoosterEngine(IBus.Engine):
                         'SDL2_Application': SDL2 input module
  
                         In case of the Gtk input modules, the name of the
@@ -2939,7 +2964,7 @@ index fb229b4..7f7945e 100644
                         like 'gtk3-im:firefox', 'gtk4-im:gnome-text-editor', …
          '''
          if self._debug_level > 1:
-@@ -11074,7 +12083,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11074,7 +12101,7 @@ class TypingBoosterEngine(IBus.Engine):
           window_title) = itb_active_window.get_active_window()
          if self._debug_level > 1:
              LOGGER.debug(
@@ -2948,7 +2973,7 @@ index fb229b4..7f7945e 100644
                  program_name, window_title)
          client_info_str = client
          if ':' not in client_info_str:
-@@ -11152,7 +12161,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11152,7 +12179,7 @@ class TypingBoosterEngine(IBus.Engine):
              else:
                  continue
              LOGGER.info(
@@ -2957,7 +2982,7 @@ index fb229b4..7f7945e 100644
                  regexp, self._client_info.client, setting, value)
              autosettings_apply[setting] = new_value
              self._autosettings_revert[setting] = current_value
-@@ -11279,6 +12288,16 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11279,6 +12306,16 @@ class TypingBoosterEngine(IBus.Engine):
          # if the input purpose is set correctly on focus in, then it
          # should not be necessary to reset it here.
          self._client_info.client = ''
@@ -2974,7 +2999,7 @@ index fb229b4..7f7945e 100644
          # The preëdit, if there was any, has already been committed
          # automatically because
          # update_preedit_text_with_mode(,,,IBus.PreeditFocusMode.COMMIT)
-@@ -11331,6 +12350,32 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11331,6 +12368,32 @@ class TypingBoosterEngine(IBus.Engine):
          if self._ollama_chat_query_thread:
              self._ollama_chat_query_cancel(commit_selection=False)
              return
@@ -3007,7 +3032,7 @@ index fb229b4..7f7945e 100644
          # The press events of arrow keys like `Left` and `BackSpace`
          # cause a call to `do_reset()`. If that clears
          # self._surrounding_text_old() the comparison of
-@@ -11395,7 +12440,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11395,7 +12458,7 @@ class TypingBoosterEngine(IBus.Engine):
                  # On Wayland this causes problems, as the surrounding text
                  # behaves differently. Do this workaround only if the im client
                  # uses gtk3-im, if not it will cause more problems then help.
