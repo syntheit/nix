@@ -58,8 +58,8 @@ index ad8480315..df6ba9588 100644
 +const GESTURE_ANCHOR_ANGLE_DEG = 60; // corner angle threshold for anchoring
 +// fajita: journal diagnostics for the swipe/strip pipeline (entry decisions,
 +// end emission, trace hand-off). Compact: per-gesture, not per-move.
-+// Flip to false once swipe typing is verified on-glass.
-+const GESTURE_DEBUG = true;
++// Off now that swipe typing is verified on-glass; flip to true to re-debug.
++const GESTURE_DEBUG = false;
  
  const A11Y_APPLICATIONS_SCHEMA = 'org.gnome.desktop.a11y.applications';
  const SHOW_KEYBOARD = 'screen-keyboard-enabled';

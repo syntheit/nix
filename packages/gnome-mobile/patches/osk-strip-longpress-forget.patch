@@ -9,8 +9,8 @@ index 626c73e4e..685da815b 100644
 +// fajita: journal diagnostics for the OSK suggestion strip — logs every
 +// update that yields fewer than 3 pills and every event that clears the
 +// strip, to pinpoint on-glass "one pill / blank strip" reports.
-+// Flip to false once the strip is verified stable.
-+const STRIP_DEBUG = true;
++// Off now that the strip is verified stable; flip to true to re-debug.
++const STRIP_DEBUG = false;
 +
  const DEFAULT_INDEX_LABELS = [
      '1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
