@@ -13,8 +13,10 @@
   const LOG = "/tmp/ff-touch-spike.log";
 
   // Startup confirmation — proves the loader fired even before any touch.
+  // NOTE: overwrite (no mode option) is proven to work; { mode: "append" }
+  // silently fails to CREATE a non-existent file in Firefox 150.
   try {
-    await IOUtils.writeUTF8(LOG, "touch-spike loaded " + new Date().toISOString() + "\n", { mode: "append" });
+    await IOUtils.writeUTF8(LOG, "touch-spike loaded " + new Date().toISOString() + "\n");
   } catch (_) {}
 
   async function logTouch(evt) {

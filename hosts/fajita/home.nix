@@ -82,6 +82,12 @@
     # for every relevant element to /tmp/ff-urlbar-dump.json.
     ".config/mozilla/firefox/default/chrome/JS/urlbar-inspect.uc.mjs".source =
       ../../packages/orion-chrome/js/urlbar-inspect.uc.mjs;
+
+    # tab-grid: Orion-iOS-style full-screen tab grid overlay.
+    # Intercepts #alltabs-button click; renders 2-column card grid with
+    # PageThumbs thumbnails; touch+click events logged to /tmp/ff-grid-touch.log.
+    ".config/mozilla/firefox/default/chrome/JS/tab-grid.uc.mjs".source =
+      ../../packages/orion-chrome/js/tab-grid.uc.mjs;
   };
 
   # foot is the tmux terminal on fajita. VTE-based terminals (Ptyxis/Console)
