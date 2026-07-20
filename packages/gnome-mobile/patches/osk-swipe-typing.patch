@@ -1,6 +1,53 @@
+diff --git a/js/misc/inputMethod.js b/js/misc/inputMethod.js
+index 53ef903b4..3746a8d1e 100644
+--- a/js/misc/inputMethod.js
++++ b/js/misc/inputMethod.js
+@@ -415,6 +415,40 @@ export const InputMethod = GObject.registerClass({
+         }
+     }
+ 
++    // fajita: emit a swipe-typing trace to the engine as press-only PUA key events.
++    // Format: U+F8D0 start … [U+F8D4 shift] … [U+F8D2 anchor] letters … U+F8D1 end.
++    // Same-connection ordering guarantees letters arrive before F8D1; the engine
++    // decodes on F8D1 and emits commit-text synchronously on the D-Bus connection,
++    // so committedTail is updated by the time the returned promise resolves.
++    async injectGestureTrace(letters, anchors, shift) {
++        if (!this._context)
++            return;
++        const pua = cp => 0x01000000 | cp;
++        const anchorSet = new Set(anchors);
++        const seq = [pua(0xF8D0)]; // gesture start
++        if (shift)
++            seq.push(pua(0xF8D4));  // shift marker
++        [...letters].forEach((c, i) => {
++            if (anchorSet.has(i))
++                seq.push(pua(0xF8D2)); // anchor marker before this letter
++            const cp = c.codePointAt(0);
++            // For a–z, use the ASCII keyval directly (matches IBus key event convention)
++            seq.push(cp >= 0x61 && cp <= 0x7a ? cp : pua(cp));
++        });
++        seq.push(pua(0xF8D1)); // gesture end → decode
++        // Fire all but the last without awaiting (same connection = ordered
++        // delivery). NOTE: process_key_event_async is Gio._promisify'd with
++        // a 5-argument call shape — the extra trailing null made gjs invoke
++        // the C function with 7 args ("Too many arguments" warning per
++        // event). Keep exactly 5 args and detach the returned promises.
++        for (let i = 0; i < seq.length - 1; i++) {
++            this._context.process_key_event_async(seq[i], 0, 0, -1, null)
++                .catch(() => {});
++        }
++        // Await the last so callers know the decode + commit happened
++        await this._context.process_key_event_async(seq.at(-1), 0, 0, -1, null);
++    }
++
+     _fullReset() {
+         this._context.set_content_type(0, 0);
+         this._context.set_cursor_location(0, 0, 0, 0);
+diff --git a/js/ui/keyboard.js b/js/ui/keyboard.js
+index ad8480315..df6ba9588 100644
 --- a/js/ui/keyboard.js
 +++ b/js/ui/keyboard.js
-@@ -21,6 +21,11 @@
+@@ -21,6 +21,15 @@ const KEYBOARD_ANIMATION_TIME = 150;
  const KEY_LONG_PRESS_TIME = 250;
  // fajita: spacebar long-press cursor slide — logical px of drag per cursor step
  const SPACE_CURSOR_SLIDE_PX = 12;
@@ -9,10 +56,14 @@
 +const GESTURE_TRAIL_DOT_PX = 10;  // min px between trail dots
 +const GESTURE_DWELL_US = 120000; // 120 ms dwell = anchor on previous key
 +const GESTURE_ANCHOR_ANGLE_DEG = 60; // corner angle threshold for anchoring
++// fajita: journal diagnostics for the swipe/strip pipeline (entry decisions,
++// end emission, trace hand-off). Compact: per-gesture, not per-move.
++// Flip to false once swipe typing is verified on-glass.
++const GESTURE_DEBUG = true;
  
  const A11Y_APPLICATIONS_SCHEMA = 'org.gnome.desktop.a11y.applications';
  const SHOW_KEYBOARD = 'screen-keyboard-enabled';
-@@ -324,6 +329,11 @@
+@@ -324,6 +333,11 @@ const KeyContainerGesture = GObject.registerClass({
          'cursor-slide-begin': {},
          'cursor-slide-step': {param_types: [GObject.TYPE_INT]},
          'cursor-slide-end': {},
@@ -24,7 +75,7 @@
      },
  }, class KeyContainerGesture extends Clutter.Gesture {
      _init() {
-@@ -338,6 +348,19 @@
+@@ -338,6 +352,21 @@ const KeyContainerGesture = GObject.registerClass({
          // fajita: spacebar cursor-slide state
          this._inCursorSlide = false;
          this._cursorSlideLastX = 0;
@@ -33,18 +84,20 @@
 +        this._gestureTrace = [];
 +        this._gestureAnchors = new Set();
 +        this._gestureLastKey = null;
-+        this._gesturePrevKey = null;
 +        this._gestureKeyEnterTime = 0;
++        this._gestureKeyEnterCoords = null;
++        this._gesturePrevKeyEnterCoords = null;
 +        this._gestureLastCoords = null;
 +        this._gesturePathLen = 0;
 +        this._gestureCancelled = false;
 +        this._gestureShiftAtStart = false;
++        this._gestureRejectLogged = false;
 +        // Set by Keyboard: () => bool, gates gesture entry
 +        this._gestureTypingAllowed = null;
      }
  
      _findNearestRowOrCol(array, index) {
-@@ -448,6 +471,14 @@
+@@ -448,6 +477,14 @@ const KeyContainerGesture = GObject.registerClass({
                  this._pressedKey.cancel();
                  this._inCursorSlide = false;
                  this.emit('cursor-slide-end');
@@ -59,7 +112,15 @@
              } else {
                  this._pressedKey.release();
              }
-@@ -504,6 +535,12 @@
+@@ -490,6 +527,7 @@ const KeyContainerGesture = GObject.registerClass({
+ 
+         this._currentPoint = point;
+         this._pressedKey = key;
++        this._gestureRejectLogged = false;
+         this._pressedKey.press();
+     }
+ 
+@@ -504,6 +542,12 @@ const KeyContainerGesture = GObject.registerClass({
          if (this._inLongPressDrag)
              return;
  
@@ -72,28 +133,48 @@
          // fajita: cursor slide — emit a step for each SPACE_CURSOR_SLIDE_PX
          // of horizontal movement; consume the event without hitting the
          // key-switched-under-finger cancel path below.
-@@ -519,8 +556,33 @@
+@@ -519,8 +563,64 @@ const KeyContainerGesture = GObject.registerClass({
  
          const coords = this.get_point_coords(point);
          const key = this._getKeyForCoords(coords);
 -        if (!key || !key.enabled || key !== this._pressedKey)
 -            this.set_state(Clutter.GestureState.CANCELLED);
 +        if (!key || !key.enabled || key !== this._pressedKey) {
-+            // fajita: moving to a different letter key before 250 ms → swipe entry
++            // fajita: crossing into another letter key while pressed → swipe
++            // entry. NO time limit: requiring the 250 ms long-press timeout
++            // to still be pending killed every slow, deliberate swipe (the
++            // timeout fires, longPressBegin() returns false for popup-less
++            // letters, and entry became impossible). Subkey popups are safe
++            // without it: once a popup opens, _inLongPressDrag routes moves
++            // away long before this code runs.
 +            if (key && key.enabled && key !== this._pressedKey &&
 +                this._pressedKey.gestureKey && key.gestureKey &&
-+                this._keyLongPressTimeout !== 0 &&
 +                this._gestureTypingAllowed?.()) {
-+                GLib.source_remove(this._keyLongPressTimeout);
-+                this._keyLongPressTimeout = 0;
++                if (this._keyLongPressTimeout) {
++                    GLib.source_remove(this._keyLongPressTimeout);
++                    this._keyLongPressTimeout = 0;
++                }
 +                this._pressedKey.cancel();
 +                this._inGestureTyping = true;
 +                this.set_state(Clutter.GestureState.RECOGNIZING);
++                if (GESTURE_DEBUG) {
++                    console.warn(`OSK-gesture: entry ` +
++                        `'${this._pressedKey?.gestureLetter}'->` +
++                        `'${key.gestureLetter}' state=${this.state}`);
++                }
++                if (this.state !== Clutter.GestureState.RECOGNIZING &&
++                    this.state !== Clutter.GestureState.RECOGNIZE_PENDING) {
++                    // Gesture negotiation refused (set_state converted the
++                    // request to CANCELLED) — vfunc_state_changed already
++                    // cleaned everything up, do not touch state here.
++                    return;
++                }
 +                this._gestureTrace = [this._pressedKey.gestureLetter];
 +                this._gestureAnchors = new Set([0]);
 +                this._gestureLastKey = this._pressedKey;
-+                this._gesturePrevKey = null;
 +                this._gestureKeyEnterTime = GLib.get_monotonic_time();
++                this._gestureKeyEnterCoords = coords;
++                this._gesturePrevKeyEnterCoords = null;
 +                this._gestureLastCoords = coords;
 +                this._gesturePathLen = 0;
 +                this._gestureCancelled = false;
@@ -102,13 +183,24 @@
 +                this._gestureAppendKey(key, coords);
 +                this.emit('gesture-typing-point', coords.x, coords.y);
 +            } else {
++                if (GESTURE_DEBUG && key && key !== this._pressedKey &&
++                    !this._gestureRejectLogged) {
++                    // Once per press: why this crossing did NOT become a swipe
++                    this._gestureRejectLogged = true;
++                    const allowed = this._gestureTypingAllowed
++                        ? this._gestureTypingAllowed() : 'unset';
++                    console.warn(`OSK-gesture: entry rejected: ` +
++                        `pressed(g=${!!this._pressedKey.gestureKey}) ` +
++                        `key(g=${!!key.gestureKey} en=${!!key.enabled}) ` +
++                        `allowed=${allowed}`);
++                }
 +                this.set_state(Clutter.GestureState.CANCELLED);
 +            }
 +        }
      }
  
      vfunc_point_ended(point) {
-@@ -546,10 +608,10 @@
+@@ -546,10 +646,10 @@ const KeyContainerGesture = GObject.registerClass({
              this._pressedKey.cancel();
  
          if (newState === Clutter.GestureState.COMPLETED) {
@@ -122,17 +214,27 @@
              else
                  this._pressedKey.release();
          }
-@@ -567,6 +629,25 @@
+@@ -567,6 +667,35 @@ const KeyContainerGesture = GObject.registerClass({
                  this.emit('cursor-slide-end');
              }
  
 +            // fajita: end swipe typing
 +            if (this._inGestureTyping) {
 +                this._inGestureTyping = false;
-+                const traceLen = this._gestureTrace.length;
 +                const distinctKeys = new Set(this._gestureTrace).size;
-+                if (!this._gestureCancelled && newState === Clutter.GestureState.COMPLETED &&
-+                    (distinctKeys >= 3 || this._gesturePathLen >= this._keyWidthPx() * 2)) {
++                const emitEnd = !this._gestureCancelled &&
++                    newState === Clutter.GestureState.COMPLETED &&
++                    (distinctKeys >= 3 ||
++                     this._gesturePathLen >= this._keyWidthPx() * 2);
++                if (GESTURE_DEBUG) {
++                    console.warn(`OSK-gesture: finish state=${newState} ` +
++                        `cancelled=${this._gestureCancelled} ` +
++                        `trace='${this._gestureTrace.join('')}' ` +
++                        `distinct=${distinctKeys} ` +
++                        `pathLen=${Math.round(this._gesturePathLen)} -> ` +
++                        `${emitEnd ? 'EMIT' : 'cancel'}`);
++                }
++                if (emitEnd) {
 +                    this.emit('gesture-typing-end', JSON.stringify({
 +                        letters: this._gestureTrace.join(''),
 +                        anchors: [...this._gestureAnchors].sort((a, b) => a - b),
@@ -148,7 +250,7 @@
              this._pressedKey = null;
              this._currentPoint = null;
              this._inLongPressDrag = false;
-@@ -582,6 +663,90 @@
+@@ -582,6 +711,94 @@ const KeyContainerGesture = GObject.registerClass({
          return [cancel, false];
      }
  
@@ -202,14 +304,17 @@
 +            this._gestureAnchors.add(prevIdx);
 +        }
 +
-+        // Corner-anchor: large direction change between (prevPrev→prev) and (prev→current)
-+        if (this._gesturePrevKey && prevKey && this._gestureLastCoords && coords) {
-+            const prevPrevCoords = this._gestureLastCoords; // approximate center of prevPrev key
-+            // Direction vectors
-+            const dx1 = (this._gestureLastCoords.x) - (prevPrevCoords.x);
-+            const dy1 = (this._gestureLastCoords.y) - (prevPrevCoords.y);
-+            const dx2 = coords.x - (this._gestureLastCoords.x);
-+            const dy2 = coords.y - (this._gestureLastCoords.y);
++        // Corner-anchor: large direction change between the key-entry points
++        // (prevPrev→prev) and (prev→current). Uses the coordinates captured
++        // when each key was ENTERED (the old code compared _gestureLastCoords
++        // with itself, so len1 was always 0 and corners never anchored).
++        const prevEnter = this._gestureKeyEnterCoords;
++        const prevPrevEnter = this._gesturePrevKeyEnterCoords;
++        if (prevPrevEnter && prevEnter && coords) {
++            const dx1 = prevEnter.x - prevPrevEnter.x;
++            const dy1 = prevEnter.y - prevPrevEnter.y;
++            const dx2 = coords.x - prevEnter.x;
++            const dy2 = coords.y - prevEnter.y;
 +            const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
 +            const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
 +            if (len1 > 1 && len2 > 1) {
@@ -222,9 +327,10 @@
 +            }
 +        }
 +
-+        this._gesturePrevKey = prevKey;
 +        this._gestureLastKey = key;
 +        this._gestureKeyEnterTime = now;
++        this._gesturePrevKeyEnterCoords = this._gestureKeyEnterCoords;
++        this._gestureKeyEnterCoords = coords;
 +        this._gestureLastCoords = coords;
 +
 +        // Only append if not a consecutive duplicate (SHARK²-style)
@@ -239,7 +345,7 @@
      addKey(key, colIndex, rowIndex, width, height) {
          const levelData = this._levels.get(this._currentLevel);
  
-@@ -1570,6 +1735,62 @@
+@@ -1570,6 +1787,63 @@ export class KeyboardManager extends Signals.EventEmitter {
      }
  }
  
@@ -270,6 +376,7 @@
 +        dot.height = 14;
 +        dot.x = x - 7;
 +        dot.y = y - 7;
++        dot.set_pivot_point(0.5, 0.5); // shrink toward the dot center
 +        this._container.add_child(dot);
 +
 +        dot.ease({
@@ -302,12 +409,11 @@
  export const Keyboard = GObject.registerClass({
      Signals: {
          'visibility-changed': {},
-@@ -2051,6 +2272,33 @@
+@@ -2057,6 +2331,41 @@ export const Keyboard = GObject.registerClass({
              }
          });
  
 +        // fajita: wire swipe-typing signals for this layout's gesture
-+        this._gestureTrail = GESTURE_TRAIL ? new GestureTrail(this._aspectContainer) : null;
 +        this._keyContainerGesture.connect('gesture-typing-begin', () => {
 +            this._keyContainerGesture._gestureShiftAtStart =
 +                this._currentPage === this._layers['shift'] || this._latched;
@@ -322,21 +428,45 @@
 +        this._keyContainerGesture.connect('gesture-typing-end', (_g, json) => {
 +            this._gestureTrail?.fadeOut();
 +            const {letters, anchors, shift} = JSON.parse(json);
++            if (GESTURE_DEBUG) {
++                console.warn(`OSK-gesture: inject letters='${letters}' ` +
++                    `anchors=[${anchors}] shift=${shift}`);
++            }
++            // Drop the shift level in the same tick as the gesture ends
++            // (the decoded word commits from the engine moments later).
++            this._updateLevelFromHints(true, letters);
 +            Main.inputMethod.injectGestureTrace(letters, anchors, shift)
 +                .then(() => this._updateLevelFromHints(true))
 +                .catch(console.error);
 +        });
++        // NOTE: this._purpose does not exist on Keyboard — the purpose
++        // lives on the KeyboardController (its `purpose` getter).
 +        this._keyContainerGesture._gestureTypingAllowed = () =>
 +            this._keyboardController._oskCompletionEnabled &&
-+            this._purpose !== Clutter.InputContentPurpose.PASSWORD &&
-+            this._purpose !== Clutter.InputContentPurpose.PIN &&
++            this._keyboardController.purpose !== Clutter.InputContentPurpose.PASSWORD &&
++            this._keyboardController.purpose !== Clutter.InputContentPurpose.PIN &&
 +            (this._currentPage === this._layers['default'] ||
 +             this._currentPage === this._layers['shift']);
 +
          keyboardModel.getLevels().forEach(currentLevel => {
              let levelLayout = new KeyContainer(this._keyContainerGesture);
              levelLayout.shiftKeys = [];
-@@ -2116,6 +2364,12 @@
+@@ -2080,6 +2389,14 @@ export const Keyboard = GObject.registerClass({
+         this._currentLayout?.destroy();
+         this._currentLayout = layout;
+         this._layers = layers;
++
++        // fajita: (re)create the swipe trail overlay AFTER the key layout is
++        // added so the dots paint ABOVE the keys (creating it earlier left
++        // the trail underneath the key grid — invisible), and destroy the
++        // previous overlay so layout rebuilds don't leak containers.
++        this._gestureTrail?.destroy();
++        this._gestureTrail = GESTURE_TRAIL
++            ? new GestureTrail(this._aspectContainer) : null;
+     }
+ 
+     _addRowKeys(keys, layout, emojiVisible) {
+@@ -2122,6 +2439,12 @@ export const Keyboard = GObject.registerClass({
              if (commitString === ' ')
                  button.cursorSlideKey = true;
  
@@ -349,40 +479,3 @@
              if (commitString && commitString !== ' ') {
                  button.set_pivot_point(1, 1);
  
---- a/js/misc/inputMethod.js
-+++ b/js/misc/inputMethod.js
-@@ -415,6 +415,34 @@
-         }
-     }
- 
-+    // fajita: emit a swipe-typing trace to the engine as press-only PUA key events.
-+    // Format: U+F8D0 start … [U+F8D4 shift] … [U+F8D2 anchor] letters … U+F8D1 end.
-+    // Same-connection ordering guarantees letters arrive before F8D1; the engine
-+    // decodes on F8D1 and emits commit-text synchronously on the D-Bus connection,
-+    // so committedTail is updated by the time the returned promise resolves.
-+    async injectGestureTrace(letters, anchors, shift) {
-+        if (!this._context)
-+            return;
-+        const pua = cp => 0x01000000 | cp;
-+        const anchorSet = new Set(anchors);
-+        const seq = [pua(0xF8D0)]; // gesture start
-+        if (shift)
-+            seq.push(pua(0xF8D4));  // shift marker
-+        [...letters].forEach((c, i) => {
-+            if (anchorSet.has(i))
-+                seq.push(pua(0xF8D2)); // anchor marker before this letter
-+            const cp = c.codePointAt(0);
-+            // For a–z, use the ASCII keyval directly (matches IBus key event convention)
-+            seq.push(cp >= 0x61 && cp <= 0x7a ? cp : pua(cp));
-+        });
-+        seq.push(pua(0xF8D1)); // gesture end → decode
-+        // Fire all but the last without awaiting (same connection = ordered delivery)
-+        for (let i = 0; i < seq.length - 1; i++)
-+            this._context.process_key_event_async(seq[i], 0, 0, -1, null, null);
-+        // Await the last so callers know the decode + commit happened
-+        await this._context.process_key_event_async(seq.at(-1), 0, 0, -1, null);
-+    }
-+
-     _fullReset() {
-         this._context.set_content_type(0, 0);
-         this._context.set_cursor_location(0, 0, 0, 0);
