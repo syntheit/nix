@@ -57,26 +57,14 @@
 
   /* ── FIX B. Wider edit field — nearly full-viewport in breakout-extend ──── */
   /* MCF sets #urlbar[breakout][breakout-extend] { left:11vw; width:80vw }.    */
-  /* We push it to 1vw / 98vw so the text field spans edge-to-edge Orion-style */
-  /* and hide the nav buttons (back, hamburger) that would otherwise collide.  */
+  /* We push it to 1vw / 98vw so the text field spans edge-to-edge Orion-style. */
+  /* C1b: in the two-row bottom bar the breakout input sits on ROW 1 (the pill  */
+  /* line) and the nav buttons live on ROW 2 (below), so a 98vw input no longer */
+  /* collides with #back-button / #PanelUI-menu-button — we keep them visible   */
+  /* during edit (Orion-style: nav row stays usable while typing).             */
   #urlbar[breakout][breakout-extend] {
     left: 1vw !important;
     width: 98vw !important;
-  }
-
-  /* Hide the back button and hamburger while the urlbar is in breakout-extend. */
-  /* MCF already hides forward/home/library/sidebar/fxa (see urlbar.css), but  */
-  /* leaves #back-button and #PanelUI-menu-button visible. They would collide   */
-  /* with a 98vw input, so suppress them only during active breakout.          */
-  #urlbar[breakout][breakout-extend]
-    ~ #nav-bar-toolbarbutton-container #back-button,
-  #urlbar[breakout][breakout-extend]
-    ~ #nav-bar-toolbarbutton-container #PanelUI-menu-button,
-  /* Also try direct ancestors in case the selector chain is different */
-  #nav-bar:has(#urlbar[breakout][breakout-extend]) #back-button,
-  #nav-bar:has(#urlbar[breakout][breakout-extend]) #PanelUI-menu-button {
-    visibility: hidden !important;
-    pointer-events: none !important;
   }
 
   /* ── 1. Panel: bottom-anchored tray, not full-height fill ──────────────── */
@@ -91,9 +79,13 @@
   .urlbarView {
     /* Kill the MCF inset that pins top to 0 */
     inset: unset !important;
-    /* Anchor just above the 84px nav bar */
+    /* Anchor just above the (now two-row) bottom bar. --orion-bar-height is set */
+    /* at runtime by urlbar-pill.uc.mjs from #nav-bar's real height; 88px is the */
+    /* static fallback used before the JS runs / if it fails. C1b: the bar grew  */
+    /* from ~40px (single row) to ~88px (pill row + button row), so the panel    */
+    /* must ride up to sit just above the pill — not overlap the button row.     */
     position: fixed !important;
-    bottom: 84px !important;
+    bottom: var(--orion-bar-height, 88px) !important;
     top: auto !important;
     left: 0 !important;
     right: 0 !important;

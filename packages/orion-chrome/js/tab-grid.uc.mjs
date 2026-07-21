@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           tab-grid
 // @namespace      orion-chrome/tab-grid
-// @version        1.2.0
+// @version        1.4.0
 // @description    Orion-iOS-style tab grid overlay for Firefox on the fajita
 //                 phone (432×936 logical, touch, dark theme).  Intercepts the
 //                 #alltabs-button click, shows a full-screen 2-column card grid
@@ -9,8 +9,11 @@
 //                 bottom bar with [+ New Tab] / [Done].
 //                 All events (click + touchend) logged to /tmp/ff-grid-touch.log.
 //                 All errors appended to /tmp/ff-grid-errors.log.
-//                 Also wires a guaranteed floating ▦ button so the grid opens
-//                 even if #alltabs-button interception fails.
+//                 C1a: injects a toolbar tab button in #nav-bar before ≡.
+//                 C1b: tab button + new-tab button injected as DIRECT children
+//                 of #nav-bar (before #PanelUI-button) so the two-row bottom bar
+//                 can order them onto row 2. Menu button is NOT reparented.
+//                 FAB is gated behind SHOW_FAB = false (code kept, not shown).
 // ==/UserScript==
 
 (async () => {
@@ -130,7 +133,9 @@
         #orion-tab-grid-cards {
           display: grid;
           grid-template-columns: 1fr 1fr;
+          grid-auto-rows: 168px;
           gap: 12px;
+          align-content: start;
         }
 
         .orion-tab-card {
@@ -139,7 +144,7 @@
           border-radius: 8px;
           border: 1px solid rgba(255,255,255,0.1);
           overflow: hidden;
-          aspect-ratio: 3/5;
+          height: 168px;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
           touch-action: manipulation;
@@ -151,7 +156,7 @@
 
         .orion-tab-thumb {
           width: 100%;
-          height: calc(100% - 32px);
+          height: 140px;
           object-fit: cover;
           display: block;
           background: #38383d;
@@ -159,7 +164,7 @@
 
         .orion-tab-thumb-placeholder {
           width: 100%;
-          height: calc(100% - 32px);
+          height: 140px;
           background: #38383d;
           display: flex;
           align-items: center;
@@ -172,7 +177,7 @@
           bottom: 0;
           left: 0;
           right: 0;
-          height: 32px;
+          height: 28px;
           background: rgba(28,27,34,0.85);
           display: flex;
           align-items: center;
@@ -287,6 +292,8 @@
         overlayEl.parentNode.removeChild(overlayEl);
       }
       overlayEl = null;
+      // Remove nav-hide attribute so #nav-bar reappears
+      try { document.documentElement.removeAttribute("orion-tabgrid-open"); } catch (_) {}
       logTouch("overlay closed");
     } catch (err) {
       logError("closeOverlay: " + err);
@@ -427,6 +434,23 @@
       }
 
       logTouch("openOverlay");
+
+      // Dismiss OSK + address bar before building the overlay so the grid gets
+      // full viewport height and the bottom bar is not obscured.
+      try {
+        if (gURLBar.view && gURLBar.view.isOpen) {
+          gURLBar.view.close();
+          logTouch("openOverlay: closed urlbar view");
+        }
+        gURLBar.blur();
+        logTouch("openOverlay: blurred urlbar");
+      } catch (blurErr) {
+        logError("openOverlay: urlbar blur/close failed: " + blurErr);
+      }
+
+      // Hide #nav-bar + #TabsToolbar while grid is open (CSS keyed on attribute)
+      try { document.documentElement.setAttribute("orion-tabgrid-open", ""); } catch (_) {}
+
       ensureStyles();
 
       const overlay = document.createElement("div");
@@ -497,6 +521,322 @@
     }
   }
 
+  // ── C1a: toolbar tab button ────────────────────────────────────────────────
+  // Gate: SHOW_FAB keeps the floating ▦ code but prevents it rendering.
+  const SHOW_FAB = false;
+
+  // Overlapping-squares SVG for the tab button icon (Orion-style).
+  const TAB_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <rect x="2" y="5" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/>
+    <rect x="7" y="2" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.8" fill="none" style="fill:var(--toolbar-bgcolor,#1c1b22)"/>
+  </svg>`;
+
+  // Plus-in-circle SVG for the new-tab button (Orion-style).
+  const NEWTAB_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <path d="M10 4.5v11M4.5 10h11" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+  </svg>`;
+
+  // Build a count-badge label, e.g. "3" or "9+" for many tabs.
+  function tabCountLabel() {
+    try {
+      const n = gBrowser.tabs.length;
+      return n > 9 ? "9+" : String(n);
+    } catch (_) {
+      return "?";
+    }
+  }
+
+  let _toolbarBtn = null;
+  let _newTabBtn  = null;
+
+  // Update the tab count shown on the toolbar button.
+  function updateToolbarCount() {
+    try {
+      if (!_toolbarBtn) return;
+      const badge = _toolbarBtn.querySelector(".orion-tb-count");
+      if (badge) badge.textContent = tabCountLabel();
+    } catch (err) {
+      logError("updateToolbarCount: " + err);
+    }
+  }
+
+  // Shared cssText for the row-2 injected toolbarbuttons — a bare, touch-sized
+  // flex button. Sizing/spacing (order, flex) is applied by toolbar-mobile.css
+  // keyed on the element id; here we only set the intrinsic button chrome.
+  const INJECTED_BTN_CSS = [
+    "min-width:44px",
+    "min-height:44px",
+    "display:flex",
+    "align-items:center",
+    "justify-content:center",
+    "flex-direction:column",
+    "padding:0",
+    "border:none",
+    "background:transparent",
+    "color:var(--toolbarbutton-icon-fill,currentColor)",
+    "cursor:pointer",
+    "-webkit-tap-highlight-color:transparent",
+    "touch-action:manipulation",
+    "position:relative",
+  ].join(";");
+
+  // C1b: inject the tab-grid button AND a new-tab button as DIRECT children of
+  // #nav-bar, immediately before #PanelUI-button (the toolbaritem wrapping the
+  // ≡ menu). They must be direct nav-bar children (not nested inside
+  // #PanelUI-button) so the flex-wrap two-row layout in toolbar-mobile.css can
+  // order them onto row 2. We deliberately do NOT reparent #PanelUI-menu-button
+  // itself: it uses consumeanchor/delegatesanchor="PanelUI-button" for popup
+  // anchoring, so moving it would misplace the app menu.
+  //
+  // Row-2 final order (via CSS `order`): back | forward | new-tab | tabs | menu.
+  function injectToolbarButton() {
+    try {
+      if (_toolbarBtn) return true; // already injected
+
+      // Anchor before the whole #PanelUI-button toolbaritem so we sit as
+      // siblings of it directly under #nav-bar.
+      const panelBtn = document.getElementById("PanelUI-button");
+      const navBar   = document.getElementById("nav-bar");
+      if (!panelBtn || !panelBtn.parentNode || !navBar) return false; // not ready
+
+      // ── new-tab button ──────────────────────────────────────────────────────
+      const nt = document.createElement("toolbarbutton");
+      nt.id = "orion-newtab-toolbar-btn";
+      nt.setAttribute("tooltiptext", "New tab");
+      nt.setAttribute("class", "toolbarbutton-1 chromeclass-toolbar-additional");
+      nt.style.cssText = INJECTED_BTN_CSS;
+      const ntIcon = document.createElement("span");
+      ntIcon.style.cssText = "display:flex;align-items:center;justify-content:center;width:20px;height:20px;pointer-events:none";
+      ntIcon.innerHTML = NEWTAB_ICON_SVG;
+      nt.appendChild(ntIcon);
+
+      function openNewTab() {
+        try {
+          const tab = gBrowser.addTab("about:newtab", {
+            triggeringPrincipal:
+              Services.scriptSecurityManager.getSystemPrincipal(),
+          });
+          gBrowser.selectedTab = tab;
+          // Focus the address bar so the user can type immediately.
+          try { gURLBar.focus(); gURLBar.select(); } catch (_) {}
+        } catch (err) {
+          logError("openNewTab: " + err);
+        }
+      }
+      nt.addEventListener("click", (e) => {
+        logTouch("newtab btn click");
+        e.preventDefault(); e.stopPropagation();
+        openNewTab();
+      }, { capture: true });
+      nt.addEventListener("touchend", (e) => {
+        logTouch("newtab btn touchend");
+        e.preventDefault(); e.stopPropagation();
+        openNewTab();
+      }, { capture: true, passive: false });
+
+      // ── tab-grid button ─────────────────────────────────────────────────────
+      const btn = document.createElement("toolbarbutton");
+      btn.id = "orion-tab-toolbar-btn";
+      btn.setAttribute("tooltiptext", "Tab grid");
+      btn.setAttribute("class", "toolbarbutton-1 chromeclass-toolbar-additional");
+      btn.style.cssText = INJECTED_BTN_CSS;
+
+      // Icon wrapper
+      const iconWrap = document.createElement("span");
+      iconWrap.style.cssText = "display:flex;align-items:center;justify-content:center;width:20px;height:20px;pointer-events:none";
+      iconWrap.innerHTML = TAB_ICON_SVG;
+
+      // Count badge — shown below the icon, overlaid like iOS
+      const badge = document.createElement("span");
+      badge.className = "orion-tb-count";
+      badge.textContent = tabCountLabel();
+      badge.style.cssText = [
+        "position:absolute",
+        "bottom:5px",
+        "right:8px",
+        "font-size:9px",
+        "font-weight:700",
+        "line-height:1",
+        "color:var(--toolbarbutton-icon-fill,currentColor)",
+        "pointer-events:none",
+        "font-family:system-ui,sans-serif",
+      ].join(";");
+
+      btn.appendChild(iconWrap);
+      btn.appendChild(badge);
+
+      // Wire click + touchend (capture)
+      btn.addEventListener("click", (e) => {
+        logTouch("toolbar tab button click → openOverlay");
+        e.preventDefault();
+        e.stopPropagation();
+        openOverlay().catch((err) => logError("openOverlay (toolbar btn click): " + err));
+      }, { capture: true });
+
+      btn.addEventListener("touchend", (e) => {
+        logTouch("toolbar tab button touchend → openOverlay");
+        e.preventDefault();
+        e.stopPropagation();
+        openOverlay().catch((err) => logError("openOverlay (toolbar btn touchend): " + err));
+      }, { capture: true, passive: false });
+
+      // Insert both as direct children of #nav-bar, before #PanelUI-button.
+      panelBtn.parentNode.insertBefore(nt, panelBtn);
+      panelBtn.parentNode.insertBefore(btn, panelBtn);
+      _newTabBtn  = nt;
+      _toolbarBtn = btn;
+
+      logTouch("toolbar tab + newtab buttons injected");
+      logError("toolbar tab + newtab buttons injected " + new Date().toISOString());
+
+      // Keep count up-to-date when tabs are opened/closed/selected.
+      try {
+        gBrowser.tabContainer.addEventListener("TabOpen", updateToolbarCount);
+        gBrowser.tabContainer.addEventListener("TabClose", updateToolbarCount);
+        gBrowser.tabContainer.addEventListener("TabSelect", updateToolbarCount);
+      } catch (err) {
+        logError("toolbar btn tab listeners: " + err);
+      }
+
+      return true;
+    } catch (err) {
+      logError("injectToolbarButton: " + err);
+      return false;
+    }
+  }
+
+  // ── FIX 2: PanelUI menu button toggle — mousedown takeover ───────────────
+  // ROOT CAUSE (confirmed by /tmp/ff-menu.log evidence): taps 2+ reopen the
+  // panel via the button's low-level mousedown/command path, which NEVER reaches
+  // our capture-phase CLICK handler.  The panel oscillates popupshown/popuphidden
+  // 3× with no additional click events, so click-suppression is inert.
+  //
+  // FIX: take over the button at MOUSEDOWN (and touchstart, which fires first on
+  // touch).  Always preventDefault+stopImmediatePropagation so the native
+  // open/toggle machinery never runs.  Then decide manually:
+  //   - if the panel is open/showing → close via PanelUI.hide()
+  //   - if the panel just hid within 350ms (rollup fired on THIS press, so
+  //     isOpen already reads false by the time we run) → close = no-op (don't
+  //     reopen)
+  //   - otherwise → open via PanelUI.show(event)
+  // A shared _lastToggleAt gate prevents double-acting when both touchstart and
+  // mousedown fire for the same physical tap (<100ms apart).
+  //
+  // PanelUI.show(aEvent) / PanelUI.hide() verified in FF150 panelUI.js.
+
+  // Timestamps set by popup event listeners (ms, performance.now()).
+  let _menuHiddenAt = -Infinity;
+  let _menuShownAt  = -Infinity;
+  // Guard: timestamp of last toggle action — prevents double-fire when both
+  // touchstart and mousedown fire for the same physical tap.
+  let _lastToggleAt = -Infinity;
+
+  function wirePanelUIToggle() {
+    try {
+      const menuBtn = document.getElementById("PanelUI-menu-button");
+      if (!menuBtn) {
+        logError("wirePanelUIToggle: #PanelUI-menu-button not found, retrying");
+        return false;
+      }
+
+      // Locate the popup node.  #appMenu-popup is the XUL panel in FF150.
+      // PanelUI.panel is the same node but accessed via the global object.
+      const appMenuPopup = document.getElementById("appMenu-popup") ||
+                           (typeof PanelUI !== "undefined" && PanelUI.panel) ||
+                           null;
+
+      if (!appMenuPopup) {
+        logError("wirePanelUIToggle: #appMenu-popup not found, retrying");
+        return false;
+      }
+
+      logError("wirePanelUIToggle: popup node id=" + appMenuPopup.id +
+               " tagName=" + appMenuPopup.tagName);
+
+      // Track hidden/shown times — critical for the justHidden decision.
+      appMenuPopup.addEventListener("popuphidden", () => {
+        _menuHiddenAt = performance.now();
+        appendLog("/tmp/ff-menu.log",
+          new Date().toISOString() + " popuphidden ts=" + _menuHiddenAt.toFixed(1));
+      });
+      appMenuPopup.addEventListener("popupshown", () => {
+        _menuShownAt = performance.now();
+        appendLog("/tmp/ff-menu.log",
+          new Date().toISOString() + " popupshown ts=" + _menuShownAt.toFixed(1));
+      });
+
+      // Shared handler used by both mousedown and touchstart.
+      function handleTogglePress(e) {
+        try {
+          // Always kill the native open/toggle path.
+          e.preventDefault();
+          e.stopImmediatePropagation();
+
+          const now = performance.now();
+
+          // Double-fire guard: both touchstart and mousedown fire for one tap.
+          if (now - _lastToggleAt < 100) {
+            appendLog("/tmp/ff-menu.log",
+              new Date().toISOString() + " " + e.type + " double-fire guard — skipped");
+            return;
+          }
+          _lastToggleAt = now;
+
+          const isOpen = appMenuPopup.state === "open" ||
+                         appMenuPopup.state === "showing";
+          // justHidden: the native rollup (light-dismiss) fires on mousedown BEFORE
+          // our handler, so the panel may already read "closed" even though THIS
+          // press is what caused it to close.  350ms window catches this.
+          const justHidden = (now - _menuHiddenAt) < 350;
+
+          let action;
+          if (isOpen || justHidden) {
+            action = "close";
+            try {
+              if (typeof PanelUI !== "undefined" && PanelUI.hide) {
+                PanelUI.hide();
+              } else {
+                appMenuPopup.hidePopup();
+              }
+            } catch (hideErr) {
+              logError("wirePanelUIToggle hide: " + hideErr);
+            }
+          } else {
+            action = "open";
+            try {
+              if (typeof PanelUI !== "undefined" && PanelUI.show) {
+                PanelUI.show(e);
+              } else {
+                // Fallback: open the popup directly anchored to the button.
+                appMenuPopup.openPopup(menuBtn, "after_end", 0, 0, false, false, e);
+              }
+            } catch (showErr) {
+              logError("wirePanelUIToggle show: " + showErr);
+            }
+          }
+
+          appendLog("/tmp/ff-menu.log",
+            new Date().toISOString() + " " + e.type +
+            " isOpen=" + isOpen + " justHidden=" + justHidden +
+            " action=" + action);
+        } catch (err) {
+          logError("wirePanelUIToggle handleTogglePress: " + err);
+        }
+      }
+
+      menuBtn.addEventListener("touchstart", handleTogglePress,
+        { capture: true, passive: false });
+      menuBtn.addEventListener("mousedown", handleTogglePress,
+        { capture: true });
+
+      logError("wirePanelUIToggle: wired mousedown+touchstart takeover on #PanelUI-menu-button");
+      return true;
+    } catch (err) {
+      logError("wirePanelUIToggle: " + err);
+      return false;
+    }
+  }
+
   // ── trigger interception ───────────────────────────────────────────────────
 
   function wireAlltabsButton() {
@@ -551,6 +891,9 @@
   // Polls for document.body if not yet available.
 
   function ensureFloatingButton() {
+    // C1a: FAB is retired in favour of the toolbar button. SHOW_FAB=false keeps
+    // this code intact but prevents the button from rendering.
+    if (!SHOW_FAB) return true; // pretend success so the poll loop never starts
     try {
       if (document.getElementById("orion-tab-grid-fab")) return;
       const target = document.body || document.documentElement;
@@ -612,15 +955,45 @@
 
       wireKeyboard();
 
+      // C1a: inject toolbar tab button before ≡ in #nav-bar.
+      // Poll until #PanelUI-menu-button is in the DOM (same pattern as FAB poll).
+      if (!injectToolbarButton()) {
+        const tbPollId = setInterval(() => {
+          try {
+            if (injectToolbarButton()) {
+              clearInterval(tbPollId);
+            }
+          } catch (err) {
+            logError("toolbar btn poll: " + err);
+            clearInterval(tbPollId);
+          }
+        }, 300);
+      }
+
+      // FIX 2: wire PanelUI toggle — retry until #PanelUI-menu-button exists.
+      if (!wirePanelUIToggle()) {
+        const puPollId = setInterval(() => {
+          try {
+            if (wirePanelUIToggle()) {
+              clearInterval(puPollId);
+            }
+          } catch (err) {
+            logError("panelui toggle poll: " + err);
+            clearInterval(puPollId);
+          }
+        }, 300);
+        setTimeout(() => clearInterval(puPollId), 10000);
+      }
+
+      // Keep #alltabs-button interception wired (harmless; button is now hidden
+      // with #TabsToolbar by CSS, but the observer is cheap to keep running).
       if (!wireAlltabsButton()) {
-        // Button not yet in DOM — watch for it via MutationObserver.
         logTouch("start: #alltabs-button not found, starting observer");
         watchForAlltabsButton();
       }
 
-      // Always add the floating ▦ fallback button.
+      // FAB: SHOW_FAB=false — ensureFloatingButton returns true immediately.
       if (!ensureFloatingButton()) {
-        // body not ready — poll via setInterval (same pattern as urlbar-inspect)
         const fabPollId = setInterval(() => {
           try {
             if (ensureFloatingButton()) {

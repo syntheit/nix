@@ -882,8 +882,17 @@
       "browser.urlbar.suggest.clipboard" = false;
       "browser.urlbar.maxRichResults" = 5;
       "browser.urlbar.showSearchSuggestionsFirst" = false;
+      # C1b Orion pill — SHORT url display. Trim scheme + www; show the search
+      # query instead of the SERP URL on a results page. Host-only-when-blurred
+      # is done in urlbar-pill.uc.mjs (no built-in pref for it in FF150).
+      "browser.urlbar.trimURLs" = true;        # trim http:// + trailing /
+      "browser.urlbar.trimHttps" = true;       # also trim https:// (default off)
+      "browser.urlbar.showSearchTerms.featureGate" = true;  # master gate (default off)
+      "browser.urlbar.showSearchTerms.enabled" = true;      # replace SERP url w/ query
       # tab-count badge on the All Tabs button (mobile-config-firefox feature)
       "mcf.tabcounter.enabled" = true;
+      # dev: don't cache chrome so userChrome/fx-autoconfig changes apply on restart
+      "nglayout.debug.disable_xul_cache" = true;
     };
     preferencesStatus = "default"; # let user override per-session
   };
