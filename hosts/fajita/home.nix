@@ -37,7 +37,8 @@
     profiles.default = {
       id = 0;
       userChrome = builtins.readFile "${pkgs.mobile-config-firefox}/userChrome.css"
-        + "\n" + builtins.readFile ../../packages/orion-chrome/urlbar-view-mobile.css;
+        + "\n" + builtins.readFile ../../packages/orion-chrome/urlbar-view-mobile.css
+        + "\n" + builtins.readFile ../../packages/orion-chrome/toolbar-mobile.css;
       userContent = builtins.readFile "${pkgs.mobile-config-firefox}/userContent.css";
     };
   };
@@ -88,6 +89,13 @@
     # PageThumbs thumbnails; touch+click events logged to /tmp/ff-grid-touch.log.
     ".config/mozilla/firefox/default/chrome/JS/tab-grid.uc.mjs".source =
       ../../packages/orion-chrome/js/tab-grid.uc.mjs;
+
+    # urlbar-pill: C1b Orion two-row bottom-bar enhancements — publishes the
+    # measured #nav-bar height as --orion-bar-height (panel re-anchor), injects
+    # the pill favicon, short-domain display when blurred, and the edit-mode
+    # copy-URL button. Logs to /tmp/ff-pill.log.
+    ".config/mozilla/firefox/default/chrome/JS/urlbar-pill.uc.mjs".source =
+      ../../packages/orion-chrome/js/urlbar-pill.uc.mjs;
   };
 
   # foot is the tmux terminal on fajita. VTE-based terminals (Ptyxis/Console)

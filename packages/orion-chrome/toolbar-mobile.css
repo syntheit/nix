@@ -1,0 +1,339 @@
+/* orion-chrome C1b: Orion iOS two-part bottom bar                            */
+/* Applied AFTER mobile-config-firefox 5.1.0 userChrome + urlbar-view-mobile.css */
+/*                                                                            */
+/* TWO stacked rows inside #nav-bar (measured live: innerWidth 428):          */
+/*   ROW 1 — URL PILL: #urlbar-container, full width, rounded, ~40px tall.    */
+/*   ROW 2 — BUTTON TOOLBAR: back | forward | new-tab | tabs | menu,          */
+/*           evenly spaced, each ≥44px touch target.                          */
+/*                                                                            */
+/* MECHANISM — one flex-wrap row context:                                     */
+/*   #nav-bar is the flex container (display:flex from FF). We set            */
+/*   flex-wrap:wrap so children can spill onto a second line.                 */
+/*   #nav-bar-customization-target normally WRAPS back/forward/stop-reload/   */
+/*   #urlbar-container in its own box, which would prevent them from          */
+/*   participating in #nav-bar's flex-wrap. We set it to display:contents so  */
+/*   its children become direct flex items of #nav-bar. Then #urlbar-container*/
+/*   (flex:1 0 100%) forces a full-width row 1 and everything else wraps to   */
+/*   row 2. `order` places items; nav-bar justify-content:space-around evenly */
+/*   distributes the row-2 buttons.                                           */
+/*                                                                            */
+/* MCF TabsToolbar dependency audit (5.1.0):                                  */
+/*   - #TabsToolbar[inFullscreen] { display:none } — fullscreen hide, harmless */
+/*   - #TabsToolbar-customization-target: CSS counter for #alltabs-button badge */
+/*     That badge is inside #TabsToolbar (hidden with it); JS button replaces it */
+/* Verdict: no load-bearing dependency outside TabsToolbar itself. Safe to hide. */
+
+@media (max-width: 700px) {
+
+  /* ── 1. Kill the desktop tab strip ─────────────────────────────────────── */
+  :root #TabsToolbar,
+  :root #TabsToolbar[inFullscreen],
+  :root #TabsToolbar[collapsed],
+  #main-window #TabsToolbar {
+    display: none !important;
+    visibility: collapse !important;
+  }
+
+  /* ── 2. Hide low-value extensions button ───────────────────────────────── */
+  #unified-extensions-button {
+    display: none !important;
+  }
+
+  /* ── 3. Make #nav-bar a two-row wrapping bar ───────────────────────────── */
+  /* Height is now auto (pill row + button row). We expose the measured bar    */
+  /* height as --orion-bar-height (set at runtime by urlbar-pill.uc.mjs from    */
+  /* #nav-bar's real getBoundingClientRect); urlbar-view-mobile.css anchors     */
+  /* the suggestions panel to it. A static fallback (~88px) is provided so the  */
+  /* layout is sane before the JS runs / if it fails.                          */
+  :root {
+    --orion-bar-height: 88px;
+  }
+
+  #nav-bar {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    justify-content: space-around !important;
+    align-content: center !important;
+    height: auto !important;
+    min-height: auto !important;
+    row-gap: 4px !important;
+    padding: 6px 8px 8px 8px !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Flatten the customization-target wrapper so back/forward/stop-reload and    */
+  /* #urlbar-container become direct flex items of #nav-bar and can wrap.        */
+  #nav-bar-customization-target {
+    display: contents !important;
+  }
+
+  /* ── 4. Hide stray #nav-bar direct children ────────────────────────────── */
+  /* With display:contents flattening the customization-target, any other       */
+  /* direct #nav-bar children would become stray flex items on the button row.  */
+  /* These are all desktop / feature-flag surfaces we don't want on the phone.  */
+  #nav-bar > #nav-bar-overflow-button,
+  #nav-bar > #taskbar-tabs-favicon,
+  #nav-bar > #taskbar-tabs-audio,
+  #nav-bar > #smartwindow-ask-button,
+  #nav-bar > #ai-window-toggle,
+  #nav-bar > #document-pip-return-to-opener-button,
+  #nav-bar-customization-target > toolbarspring,
+  #nav-bar-customization-target > toolbarpaletteitem {
+    display: none !important;
+  }
+
+  /* ── 4b. Hide stray customizableui-special children ───────────────────── */
+  /* After display:contents flattens #nav-bar-customization-target, its spring/ */
+  /* spacer children become direct flex items and add phantom gaps to row 2.    */
+  /* The downloads/fxa/unified-extensions buttons are unused on the phone.      */
+  #customizableui-special-spring1,
+  #customizableui-special-spring2,
+  #vertical-spacer,
+  #downloads-button,
+  #fxa-toolbar-menu-button {
+    display: none !important;
+  }
+
+  /* ── 5. ROW 1 — the URL pill ───────────────────────────────────────────── */
+  /* Full width, rounded, ~40px tall. flex:1 0 100% forces it to occupy the     */
+  /* entire top line, pushing every button below it. order:1 keeps it first.    */
+  /* 28px side margins (was 16px) — more compact, clearly-floating Orion pill.  */
+  #urlbar-container {
+    flex: 1 0 calc(100% - 56px) !important;
+    order: 1 !important;
+    width: calc(100% - 56px) !important;
+    max-width: calc(100% - 56px) !important;
+    min-width: 0 !important;
+    margin: 0 28px !important;
+    height: 40px !important;
+    box-sizing: border-box !important;
+  }
+
+  /* The urlbar itself fills the pill. Resting-state pill chrome: rounded,       */
+  /* subtle field background, centered text.                                    */
+  #urlbar-container #urlbar {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 40px !important;
+    margin: 0 !important;
+    border-radius: 10px !important;
+  }
+
+  /* Resting (not-focused) pill background + border. In breakout-extend the      */
+  /* urlbar-view-mobile.css rules take over for the edit field appearance.       */
+  #urlbar:not([breakout-extend]) {
+    background-color: var(--toolbar-field-background-color,
+                       color-mix(in srgb, currentColor 8%, transparent)) !important;
+    border: 1px solid color-mix(in srgb, currentColor 12%, transparent) !important;
+    border-radius: 10px !important;
+  }
+
+  /* Center the resting text (domain-only) between favicon (left) and reload     */
+  /* (right). urlbar-pill.uc.mjs injects .orion-pill-favicon at the container    */
+  /* left; the reload button is moved into the pill's right (see below).         */
+  #urlbar:not([focused]):not([breakout-extend]) .urlbar-input-box {
+    text-align: center !important;
+  }
+  #urlbar:not([focused]):not([breakout-extend]) #urlbar-input {
+    text-align: center !important;
+  }
+
+  /* ── 6. Reload / stop lives INSIDE the pill, right edge ─────────────────── */
+  /* #stop-reload-button is a direct child of the (now display:contents)         */
+  /* customization target, so it would otherwise wrap onto row 2. Instead we     */
+  /* take it out of flex flow (position:absolute) and anchor it over the pill's  */
+  /* right edge (nav-bar is position:relative). top:9px aligns it vertically     */
+  /* inside the 40px pill row. It is hidden entirely in edit mode (rule below)   */
+  /* so it never overlaps the breakout input or the copy button.                */
+  #stop-reload-button {
+    flex: 0 0 auto !important;
+    position: absolute !important;
+    right: 12px !important;
+    top: 9px !important;
+    width: 34px !important;
+    height: 34px !important;
+    min-width: 34px !important;
+    min-height: 34px !important;
+    z-index: 3 !important;
+    background: transparent !important;
+  }
+  #stop-reload-button #reload-button,
+  #stop-reload-button #stop-button {
+    min-width: 34px !important;
+    min-height: 34px !important;
+    width: 34px !important;
+    height: 34px !important;
+  }
+  /* nav-bar needs position:relative so the absolute reload anchors to it. */
+  #nav-bar {
+    position: relative !important;
+  }
+
+  /* In edit mode the urlbar breaks out (98vw) and the copy button takes the     */
+  /* pill's right edge — hide the absolute reload so it doesn't collide.         */
+  #nav-bar:has(#urlbar[breakout-extend]) #stop-reload-button,
+  #nav-bar:has(#urlbar[focused]) #stop-reload-button {
+    display: none !important;
+  }
+
+  /* ── FIX B: neutralise MCF breakout repositioning — keep urlbar in-flow ─── */
+  /* MCF 5.1.0 sets two rounds of breakout rules on #urlbar[breakout][breakout-extend]: */
+  /*  Base rule:  left:11vw; width:80vw; bottom:0; z-index:5                    */
+  /*  @media not (mcf.addressbarontop): top:0 !important; align-content:flex-end */
+  /* Because Firefox UA sets position:fixed on #urlbar[breakout], and MCF fires  */
+  /* top:0, the bar teleports to viewport-top (rect y=0) instead of staying at   */
+  /* the bottom pill row (~490px).                                                */
+  /*                                                                              */
+  /* FIX: override position back to static/relative so the urlbar stays in the   */
+  /* normal flex flow of #urlbar-container → #nav-bar (bottom pill row).         */
+  /* position:static removes it from the fixed stacking context entirely, making  */
+  /* top/bottom/left/right/inset inert; the element flows inline in the pill.    */
+  /* .urlbarView is position:fixed relative to the VIEWPORT (not to #urlbar once  */
+  /* will-change:auto is set in urlbar-view-mobile.css), so it is unaffected.    */
+  /* align-content:auto undoes MCF's flex-end which pushed the input to bottom.  */
+  /* We add :root + #main-window prefixes for +2 specificity over MCF's plain    */
+  /* element selector, ensuring we beat both the base rule and the @media rule.  */
+  :root #urlbar[breakout],
+  #main-window #urlbar[breakout],
+  :root #urlbar[focused],
+  #main-window #urlbar[focused] {
+    /* keep it out of the top-teleport; vertical currently correct */
+    top: auto !important;
+    bottom: auto !important;
+    /* symmetric horizontal inset: left+right pin the box, width:auto fills between → 100vw-56px, no overflow */
+    left: 28px !important;
+    right: 28px !important;
+    width: auto !important;
+    max-width: none !important;
+    margin-inline: 0 !important;
+    align-content: normal !important;
+    z-index: 5 !important;   /* keep above content like mcf intended */
+  }
+
+  /* ── FIX C: edit-mode text contrast (white-on-white bug) ─────────────────── */
+  /* CAUSE: Firefox sets --toolbar-field-focus-background-color to a LIGHT tone  */
+  /* in light themes; urlbar-view-mobile.css FIX A applies it as the input-row   */
+  /* background, leaving white text (#urlbar-input color=rgb(255,255,255))       */
+  /* invisible on a near-white surface.                                           */
+  /* FIX: override --toolbar-field-focus-background-color to the same dark        */
+  /* resting-field token, and explicitly force dark-bg/light-text on all three   */
+  /* levels of the edit-mode input stack.                                         */
+  /* --toolbar-field-background-color is always the dark field bg (verified: used */
+  /* by the resting pill and by urlbar-searchbar.css .urlbar-background).         */
+  /* Fallback #2b2a33 is the Alpenglow/dark-theme dark field value.               */
+  #urlbar[focused],
+  #urlbar[breakout-extend] {
+    --toolbar-field-focus-background-color: var(--toolbar-field-background-color, #2b2a33) !important;
+  }
+  #urlbar[breakout][breakout-extend] > #urlbar-input-container,
+  #urlbar[focused] > #urlbar-input-container {
+    background-color: var(--toolbar-field-background-color, #2b2a33) !important;
+  }
+  #urlbar[breakout-extend] #urlbar-input,
+  #urlbar[focused] #urlbar-input {
+    color: var(--toolbar-field-color, #fbfbfe) !important;
+    background-color: transparent !important;
+  }
+
+  /* Favicon inside the pill: reserve a 18×18 box so it renders once src fills.  */
+  /* Currently 0×0 (no src yet); explicit sizing prevents layout collapse later.  */
+  .orion-pill-favicon {
+    width: 18px !important;
+    height: 18px !important;
+    min-width: 18px !important;
+    min-height: 18px !important;
+    object-fit: contain !important;
+    flex-shrink: 0 !important;
+    display: block !important;
+  }
+
+  #urlbar[breakout-extend] .urlbar-input-container,
+  #urlbar[focused] .urlbar-input-container {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
+  }
+
+  /* The text input takes all remaining space; Copy button is flex-shrink:0. */
+  #urlbar[breakout-extend] .urlbar-input-box,
+  #urlbar[focused] .urlbar-input-box {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+  }
+
+  #urlbar[breakout-extend] #orion-pill-copy,
+  #urlbar[focused] #orion-pill-copy {
+    flex-shrink: 0 !important;
+    margin-inline-end: 4px !important;
+  }
+
+  /* ── 7. ROW 2 — the button toolbar ─────────────────────────────────────── */
+  /* back | forward | new-tab | tabs | menu — each ≥44px, evenly spaced.        */
+  /* All are direct #nav-bar flex items (after display:contents / JS inject).   */
+  #nav-bar #back-button        { order: 2 !important; }
+  #nav-bar #forward-button     { order: 3 !important; }
+  #nav-bar #orion-newtab-toolbar-btn { order: 4 !important; }
+  #nav-bar #orion-tab-toolbar-btn    { order: 5 !important; }
+  #nav-bar #PanelUI-button     { order: 6 !important; }
+
+  /* Unhide forward (MCF hides it) and size back+forward as touch targets.      */
+  #nav-bar #forward-button {
+    display: flex !important;
+    visibility: visible !important;
+  }
+
+  #nav-bar #back-button,
+  #nav-bar #forward-button {
+    min-width: 44px !important;
+    min-height: 44px !important;
+    flex: 0 0 auto !important;
+    -moz-appearance: none !important;
+  }
+
+  /* Disabled back/forward: gray but keep in place (FF sets [disabled]).         */
+  #nav-bar #back-button[disabled],
+  #nav-bar #forward-button[disabled],
+  #nav-bar #back-button[disabled="true"],
+  #nav-bar #forward-button[disabled="true"] {
+    opacity: 0.35 !important;
+    display: flex !important;
+    visibility: visible !important;
+  }
+
+  /* Menu button wrapper + button touch sizing. */
+  #nav-bar #PanelUI-button {
+    flex: 0 0 auto !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+  #nav-bar #PanelUI-menu-button {
+    min-width: 44px !important;
+    min-height: 44px !important;
+  }
+
+  /* Injected row-2 buttons: enforce sizing (belt-and-suspenders with JS). */
+  #orion-tab-toolbar-btn,
+  #orion-newtab-toolbar-btn {
+    min-width: 44px !important;
+    min-height: 44px !important;
+    flex: 0 0 auto !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  /* ── 8. Hide nav-bar + tab strip while tab grid overlay is open ─────────── */
+  :root[orion-tabgrid-open] #nav-bar,
+  :root[orion-tabgrid-open] #TabsToolbar {
+    display: none !important;
+    visibility: collapse !important;
+  }
+
+}
