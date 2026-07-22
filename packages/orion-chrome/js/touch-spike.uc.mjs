@@ -35,13 +35,13 @@
     const navBar = document.getElementById("nav-bar");
 
     if (navBar) {
-      for (const type of ["touchstart", "touchend"]) {
+      for (const type of ["touchstart", "touchmove", "touchend", "touchcancel"]) {
         navBar.addEventListener(type, logTouch, opts);
       }
     }
 
     // Also listen on window for broader coverage
-    for (const type of ["touchstart", "touchend"]) {
+    for (const type of ["touchstart", "touchmove", "touchend", "touchcancel"]) {
       window.addEventListener(type, logTouch, opts);
     }
 

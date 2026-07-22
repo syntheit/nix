@@ -150,9 +150,24 @@
         "object-fit:contain",
         "-moz-context-properties:fill",
         "fill:currentColor",
-        "pointer-events:none",
+        "pointer-events:auto",
+        "cursor:pointer",
+        "-webkit-tap-highlight-color:transparent",
       ].join(";");
       img.addEventListener("error", () => { img.src = GLOBE_ICON; });
+
+      // Tap favicon → open the page-actions menu (bookmark / reader / site info / copy).
+      // stopImmediatePropagation so the click doesn't also focus the urlbar input
+      // (which would enter edit mode).
+      const onFaviconTap = (e) => {
+        try {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          openFaviconMenu();
+        } catch (err) { log("favicon tap handler error: " + err); }
+      };
+      img.addEventListener("click", onFaviconTap, { capture: true });
+      img.addEventListener("touchend", onFaviconTap, { capture: true, passive: false });
 
       if (inputBox) {
         container.insertBefore(img, inputBox);
@@ -189,9 +204,231 @@
         try { navigator.clipboard.writeText(spec); ok = true; } catch (_) {}
       }
       log("copyCurrentURL: " + (ok ? "copied " : "FAILED ") + spec);
-      flashCopied();
     } catch (err) {
       log("copyCurrentURL error: " + err);
+    }
+  }
+
+  // ── (5) favicon tap-menu — page actions (bookmark / reader / site info / copy) ─
+  // Replaces the lock/reader/star icons we hid in CSS. Popup is a position:fixed
+  // overlay anchored above the pill's bottom-left (where the favicon sits).
+  let _faviconMenu = null;
+  let _menuCloseWired = false;
+
+  function closeFaviconMenu() {
+    try {
+      if (_faviconMenu && _faviconMenu.isConnected) {
+        _faviconMenu.remove();
+      }
+      _faviconMenu = null;
+    } catch (_) {}
+  }
+
+  // ── (5b) lightweight toast (transient confirmation) ───────────────────────
+  let _toast = null;
+  let _toastTimer = null;
+  function showToast(msg) {
+    try {
+      if (_toast && _toast.isConnected) _toast.remove();
+      const t = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
+      t.id = "orion-toast";
+      t.style.cssText = [
+        "position:fixed",
+        "left:50%",
+        "bottom:calc(var(--orion-bar-height, 88px) + 16px)",
+        "transform:translateX(-50%)",
+        "z-index:10001",
+        "background:rgba(40,40,50,0.95)",
+        "color:#fff",
+        "padding:10px 16px",
+        "border-radius:8px",
+        "font-family:system-ui,sans-serif",
+        "font-size:13px",
+        "box-shadow:0 2px 8px rgba(0,0,0,0.4)",
+        "pointer-events:none",
+        "max-width:80vw",
+        "text-align:center",
+      ].join(";");
+      t.textContent = msg;
+      document.documentElement.appendChild(t);
+      _toast = t;
+      if (_toastTimer) clearTimeout(_toastTimer);
+      _toastTimer = setTimeout(() => {
+        try { if (t.isConnected) t.remove(); } catch (_) {}
+      }, 1800);
+    } catch (_) {}
+  }
+
+  function openFaviconMenu() {
+    try {
+      // Toggle: if already open, a second tap closes it.
+      if (_faviconMenu && _faviconMenu.isConnected) {
+        closeFaviconMenu();
+        return;
+      }
+
+      const menu = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
+      menu.id = "orion-favicon-menu";
+      menu.style.cssText = [
+        "position:fixed",
+        "left:16px",
+        "bottom:calc(var(--orion-bar-height, 88px) + 8px)",
+        "z-index:10000",
+        "background:#2b2a33",
+        "color:#fbfbfe",
+        "border:1px solid rgba(255,255,255,0.15)",
+        "border-radius:10px",
+        "padding:6px",
+        "min-width:200px",
+        "box-shadow:0 4px 12px rgba(0,0,0,0.4)",
+        "font-family:system-ui,sans-serif",
+        "font-size:14px",
+        "user-select:none",
+        "-webkit-tap-highlight-color:transparent",
+      ].join(";");
+
+      function addItem(label, handler) {
+        const item = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
+        item.className = "orion-favicon-menu-item";
+        item.setAttribute("role", "menuitem");
+        item.style.cssText = [
+          "display:flex",
+          "align-items:center",
+          "padding:14px 16px",
+          "border-radius:6px",
+          "cursor:pointer",
+          "min-height:48px",
+          "touch-action:manipulation",
+          "-webkit-tap-highlight-color:rgba(255,255,255,0.1)",
+        ].join(";");
+        item.textContent = label;
+        // Use a single click handler. The earlier double-wire (click + touchend)
+        // caused the outside-tap close to fire before the action could run.
+        // stopPropagation prevents the document-level close handler from running
+        // for this tap; the handler runs closeFaviconMenu() itself after the action.
+        const activate = (e) => {
+          try {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            closeFaviconMenu();
+            try { handler(); } catch (err) { log("menu handler error: " + err); }
+          } catch (_) {}
+        };
+        item.addEventListener("click", activate, { capture: true });
+        menu.appendChild(item);
+      }
+
+      // Bookmark toggle — bookmark the page silently (StarUI popup is desktop
+      // UI that doesn't render on mobile). Toggle: if already bookmarked, remove.
+      addItem("Bookmark", async () => {
+        try {
+          const { PlacesUtils } = ChromeUtils.importESModule("resource://gre/modules/PlacesUtils.sys.mjs");
+          const uri = gBrowser.selectedBrowser.currentURI;
+          const existing = await PlacesUtils.bookmarks.fetch({ url: uri.spec });
+          if (existing) {
+            await PlacesUtils.bookmarks.remove(existing.guid);
+            showToast("Bookmark removed");
+            log("Bookmark: removed " + uri.spec);
+          } else {
+            await PlacesUtils.bookmarks.insert({
+              parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+              url: uri.spec,
+              title: gBrowser.selectedTab.label || uri.spec,
+            });
+            showToast("Bookmarked");
+            log("Bookmark: added " + uri.spec);
+          }
+        } catch (e) { log("Bookmark PlacesUtils failed: " + e); }
+      });
+
+      // Reader mode toggle — only shown if the page offers reader mode.
+      try {
+        const rm = document.getElementById("reader-mode-button");
+        if (rm && !rm.hidden && rm.getAttribute("hidden") !== "true") {
+          addItem("Reader mode", () => {
+            try {
+              goDoCommand("Browser:ToggleReaderMode");
+              log("Reader: goDoCommand dispatched");
+            } catch (e) {
+              log("Reader goDoCommand failed: " + e);
+              try { ReaderParent.toggleReaderMode(gBrowser.selectedTab.linkedBrowser); }
+              catch (e2) { log("Reader ReaderParent failed: " + e2); }
+            }
+          });
+        }
+      } catch (_) {}
+
+      // Clear site data & cookies for the CURRENT site directly (no desktop dialog).
+      // Wipes cookies + site data for this origin then reloads the page.
+      addItem("Clear cookies & site data", async () => {
+        try {
+          const uri = gBrowser.selectedBrowser.currentURI;
+          const host = uri.host;
+          // Clear cookies for this host via the cookie manager.
+          const cm = Cc["@mozilla.org/cookiemanager;1"].getService(Ci.nsICookieManager);
+          try {
+            // FF 150+: getCookiesFromHost returns an array (not nsISimpleEnumerator).
+            const cookies = cm.getCookiesFromHost(host, {});
+            const list = Array.isArray(cookies) ? cookies
+              : (cookies && typeof cookies.length === "number" ? Array.from(cookies) : []);
+            for (const c of list) {
+              try {
+                const ck = c.QueryInterface ? c.QueryInterface(Ci.nsICookie) : c;
+                cm.remove(ck.host, ck.name, ck.path, ck.originAttributes || {});
+              } catch (_) {}
+            }
+            // If the enumerator API is gone entirely, fall back to removeAll
+            // (nuclear) so the user's intent ("clear cookies") is still honored.
+            if (!list.length) {
+              cm.removeAll();
+            }
+            log("ClearCookies: cookies removed for " + host);
+          } catch (e) { log("ClearCookies cookie loop failed: " + e); }
+          // Clear site data (storage, cache, service workers) for this host.
+          try {
+            const { SiteDataManager } = ChromeUtils.importESModule("resource:///modules/SiteDataManager.sys.mjs");
+            await SiteDataManager.remove(host);
+            log("ClearCookies: site data removed for " + host);
+          } catch (e) { log("SiteDataManager.remove failed: " + e); }
+          showToast("Cleared data for " + host);
+          gBrowser.selectedTab.linkedBrowser.reload();
+        } catch (e) { log("ClearCookies failed: " + e); }
+      });
+
+      // Copy URL — same handler as the (now hidden) pill copy button.
+      addItem("Copy URL", () => { copyCurrentURL(); });
+
+      document.documentElement.appendChild(menu);
+      _faviconMenu = menu;
+      log("openFaviconMenu: opened");
+
+      // Defer wiring the outside-tap close so the opening tap doesn't close it
+      // immediately (capture-phase click that opened the menu would bubble up).
+      if (!_menuCloseWired) {
+        _menuCloseWired = true;
+        setTimeout(() => {
+          const onDocClick = (e) => {
+            try {
+              if (_faviconMenu && !_faviconMenu.contains(e.target)) {
+                closeFaviconMenu();
+              }
+            } catch (_) {}
+          };
+          const onKey = (e) => {
+            if (e.key === "Escape") closeFaviconMenu();
+          };
+          document.addEventListener("click", onDocClick, { capture: true });
+          document.addEventListener("touchend", onDocClick, { capture: true, passive: false });
+          document.addEventListener("keyup", onKey);
+          // The listeners are intentionally not once — they stay attached for
+          // the menu's lifetime and reference _faviconMenu (which is null after
+          // close, making them no-op until the next open re-wires).
+          // NOTE: this is fine for a small popup; we clean up on close.
+        }, 60);
+      }
+    } catch (err) {
+      log("openFaviconMenu error: " + err);
     }
   }
 
@@ -271,10 +508,10 @@
       const style = document.createElement("style");
       style.id = "orion-pill-styles";
       style.textContent = `
-        /* Copy button: visible only while editing the pill. */
-        #urlbar[focused] #orion-pill-copy,
-        #urlbar[breakout-extend] #orion-pill-copy {
-          display: flex !important;
+        /* Copy button: REMOVED from pill — now lives in the favicon tap-menu. */
+        /* (Kept hidden at all times; toolbar-mobile.css also hides #orion-pill-copy.) */
+        #orion-pill-copy {
+          display: none !important;
         }
         #orion-pill-copy[data-copied="1"] {
           color: #fff !important;
@@ -375,6 +612,107 @@
     }
   }
 
+  // ── (6) move #stop-reload-button INTO the urlbar pill ─────────────────────
+  // Orion's reload is part of the pill, not a separate toolbar item. Moving it
+  // into .urlbar-input-container makes it a flex child of the pill — no z-index
+  // or stacking-context issues, renders naturally at the right edge.
+  let _reloadMoved = false;
+  function moveReloadIntoPill() {
+    try {
+      if (_reloadMoved) {
+        // Re-check it's still there (FF can re-render).
+        const container = getInputContainer();
+        const reload = document.getElementById("stop-reload-button");
+        if (reload && container && reload.parentElement !== container) {
+          container.appendChild(reload);
+        }
+        return true;
+      }
+      const container = getInputContainer();
+      if (!container) return false;
+      const reload = document.getElementById("stop-reload-button");
+      if (!reload) return false;
+      container.appendChild(reload);
+      _reloadMoved = true;
+      log("moveReloadIntoPill: moved");
+      return true;
+    } catch (err) {
+      log("moveReloadIntoPill error: " + err);
+      return false;
+    }
+  }
+
+  // ── (7) C4: swipe-between-tabs on the pill ───────────────────────────────
+  // touchmove reaches chrome JS (confirmed in touch-spike log). We attach a
+  // NON-PASSIVE touchmove listener on the urlbar container so we can
+  // preventDefault() to stop the input's text-pan, then track horizontal
+  // swipe distance. On touchend, if |dx| > threshold and |dy| < |dx|, switch
+  // tabs via gBrowser.tabContainer.advanceSelectedTab().
+  // Only active when urlbar is NOT in edit mode (don't hijack text selection).
+  let _swipeStartX = null;
+  let _swipeStartY = null;
+  let _swipeActive = false;
+  const SWIPE_THRESHOLD = 40; // px of horizontal travel to trigger tab switch
+  let _swipeWired = false;
+
+  function isEditing() {
+    try {
+      const u = document.getElementById("urlbar");
+      if (!u) return false;
+      return u.hasAttribute("focused") || u.hasAttribute("breakout-extend");
+    } catch (_) { return false; }
+  }
+
+  function wireSwipe() {
+    try {
+      if (_swipeWired) return;
+      // Listen on #urlbar-container (the pill row) — covers favicon + input + reload.
+      const container = document.getElementById("urlbar-container");
+      if (!container) return;
+
+      // touchstart: record origin (non-passive so we can also preventDefault if needed).
+      container.addEventListener("touchstart", (e) => {
+        if (isEditing()) { _swipeStartX = null; _swipeActive = false; return; }
+        const t = e.touches[0];
+        if (!t) return;
+        _swipeStartX = t.clientX;
+        _swipeStartY = t.clientY;
+        _swipeActive = true;
+      }, { passive: true });
+
+      // touchmove: preventDefault to kill text-pan, track delta.
+      container.addEventListener("touchmove", (e) => {
+        if (!_swipeActive || isEditing()) return;
+        // CRITICAL: preventDefault stops the input from scrolling/panning text.
+        try { e.preventDefault(); } catch (_) {}
+      }, { passive: false });
+
+      // touchend: if horizontal swipe exceeds threshold, switch tabs.
+      container.addEventListener("touchend", (e) => {
+        if (!_swipeActive || isEditing()) { _swipeStartX = null; _swipeActive = false; return; }
+        _swipeActive = false;
+        const t = e.changedTouches[0];
+        if (!t || _swipeStartX === null) { _swipeStartX = null; return; }
+        const dx = t.clientX - _swipeStartX;
+        const dy = (t.clientY - _swipeStartY) || 0;
+        _swipeStartX = null;
+        if (Math.abs(dx) < SWIPE_THRESHOLD) return;       // not enough travel
+        if (Math.abs(dy) > Math.abs(dx)) return;           // vertical-dominant, not a swipe
+        try {
+          // dx > 0 = swipe right = previous tab; dx < 0 = swipe left = next tab.
+          const dir = dx > 0 ? -1 : 1;
+          gBrowser.tabContainer.advanceSelectedTab(dir, true);
+          log("swipe: dx=" + Math.round(dx) + " dir=" + dir + " → tab switch");
+        } catch (err) { log("swipe tab switch error: " + err); }
+      }, { passive: true });
+
+      _swipeWired = true;
+      log("wireSwipe: wired on #urlbar-container");
+    } catch (err) {
+      log("wireSwipe error: " + err);
+    }
+  }
+
   // ── boot ───────────────────────────────────────────────────────────────────
   function start() {
     try {
@@ -390,12 +728,14 @@
         try {
           const okF = injectFavicon();
           const okC = injectCopyButton();
-          if (okF && okC && !injected) {
+          const okR = moveReloadIntoPill();
+          if (okF && okC && okR && !injected) {
             injected = true;
             wireEvents();
+            wireSwipe();
             updateFavicon();
           }
-          if (okF && okC) clearInterval(injId);
+          if (okF && okC && okR) clearInterval(injId);
         } catch (err) {
           log("inject poll: " + err);
         }

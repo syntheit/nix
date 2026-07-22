@@ -140,23 +140,21 @@
   }
 
   /* ── 6. Reload / stop lives INSIDE the pill, right edge ─────────────────── */
-  /* #stop-reload-button is a direct child of the (now display:contents)         */
-  /* customization target, so it would otherwise wrap onto row 2. Instead we     */
-  /* take it out of flex flow (position:absolute) and anchor it over the pill's  */
-  /* right edge (nav-bar is position:relative). top:9px aligns it vertically     */
-  /* inside the 40px pill row. It is hidden entirely in edit mode (rule below)   */
-  /* so it never overlaps the breakout input or the copy button.                */
-  #stop-reload-button {
+  /* #stop-reload-button is moved INTO .urlbar-input-container by               */
+  /* urlbar-pill.uc.mjs (moveReloadIntoPill), so it becomes a flex child of the  */
+  /* pill and renders naturally at the right edge — no z-index/stacking issues.  */
+  /* Here we just size it as a touch target and keep it transparent.            */
+  #urlbar .urlbar-input-container > #stop-reload-button {
     flex: 0 0 auto !important;
-    position: absolute !important;
-    right: 12px !important;
-    top: 9px !important;
     width: 34px !important;
     height: 34px !important;
     min-width: 34px !important;
     min-height: 34px !important;
-    z-index: 3 !important;
     background: transparent !important;
+    margin-inline-start: 4px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
   }
   #stop-reload-button #reload-button,
   #stop-reload-button #stop-button {
@@ -165,15 +163,37 @@
     width: 34px !important;
     height: 34px !important;
   }
-  /* nav-bar needs position:relative so the absolute reload anchors to it. */
+  /* nav-bar needs position:relative for edit-mode positioning. */
   #nav-bar {
     position: relative !important;
   }
 
-  /* In edit mode the urlbar breaks out (98vw) and the copy button takes the     */
-  /* pill's right edge — hide the absolute reload so it doesn't collide.         */
-  #nav-bar:has(#urlbar[breakout-extend]) #stop-reload-button,
-  #nav-bar:has(#urlbar[focused]) #stop-reload-button {
+  /* ── 6b. Pill content cleanup — Orion pattern (nuclear) ──────────────── */
+  /* Orion's pill is just: favicon (LEFT, tappable for page-actions menu) +    */
+  /* domain (CENTER) + reload (RIGHT, moved inside via JS). Hide EVERYTHING    */
+  /* else in .urlbar-input-container — shield, lock, reader, star, go-button,  */
+  /* search-mode, label-box, revert-button, page-action-buttons — all of it.    */
+  /* (We also keep .urlbar-input-box and our injected .orion-pill-favicon.)     */
+  #urlbar .urlbar-input-container > *:not(.urlbar-input-box):not(.orion-pill-favicon):not(#stop-reload-button):not(#orion-pill-copy) {
+    display: none !important;
+  }
+  /* Belt-and-suspenders: also hide by explicit ID in case the :not() is too broad. */
+  #urlbar #identity-box,
+  #urlbar #tracking-protection-icon-container,
+  #urlbar #reader-mode-button,
+  #urlbar #star-button-box,
+  #urlbar #star-button,
+  #urlbar #urlbar-go-button,
+  #urlbar #page-action-buttons,
+  #urlbar #urlbar-searchmode-switcher,
+  #urlbar #urlbar-label-box,
+  #urlbar #urlbar-search-mode-indicator,
+  #urlbar #urlbar-revert-button-container {
+    display: none !important;
+  }
+
+  /* Copy button removed from pill — now lives in the favicon tap-menu. */
+  #orion-pill-copy {
     display: none !important;
   }
 
