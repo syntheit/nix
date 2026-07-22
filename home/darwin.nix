@@ -17,6 +17,7 @@
     ./modules/git.nix
     ./modules/neovim.nix
     ./modules/ssh.nix
+    ./modules/opencode.nix
     ./shell.nix
 
     # macOS-specific modules
