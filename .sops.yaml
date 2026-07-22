@@ -5,6 +5,8 @@ keys:
   - &swift age1fkczzufr4n996fl7708ekpffqher5nwl6lwkjgpj7p3uzv084c2s4qyvy4
   - &mantle age1fx9mhsusvxzzm2ns8fltj7c9cl89g4c97z7hmxm82qfq78sukdlqvlf5kg
   - &vista age1l975qherqrl44a9tqhr45gwm78pldzw4mkunkqa94rul8as7238slrdlg3
+  - &fajita age1vgp0wd83mhvjej9d4ljlaul78kzu307e8h59tejm4y6wzxk05v0qd83n4n
+  - &mini age1k47kd4m2td96frm7k76crmc54hqkyz6rq3j25x8nzq0nr0umfygsqk5xx7
   - &daniel age179l0hwpm4h40raspjng5hscgfnl4ycng8sragp9kfsyu8ej849mqn4797w
 
 creation_rules:
@@ -53,4 +55,7 @@ creation_rules:
           - *conduit
           - *swift
           - *mantle
+          - *vista
+          - *fajita
+          - *mini
           - *daniel

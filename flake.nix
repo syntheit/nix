@@ -327,6 +327,7 @@
           modules = [
             (import "${inputs.mobile-nixos}/lib/configuration.nix" { device = "oneplus-fajita"; })
             ./hosts/fajita
+            inputs.sops-nix.nixosModules.sops
             inputs.home-manager.nixosModules.home-manager
             {
               # Windscribe doesn't ship aarch64 builds — skip on fajita; on the

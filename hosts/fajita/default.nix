@@ -8,6 +8,7 @@
 {
   imports = [
     ../../modules/gnome-mobile.nix
+    ./secrets.nix
     ./audio.nix
     ./clocks-alarm.nix
     ./pwas.nix
@@ -15,6 +16,7 @@
     ./cursor.nix   # hide the phantom mouse pointer on this touch-only device
     ./camera.nix   # camera bring-up (tools/tuning/AF) — see CAMERA_PLAN.md
     ./theme.nix    # Marble GNOME Shell theme (accent + dark/light defined there)
+    ./waydroid.nix # Waydroid on-demand app layer — see ~/fajita-notes/waydroid-apps.md
   ];
 
   networking.hostName = "fajita";

@@ -45,4 +45,12 @@
     POSTGRES_USER=kemal
     POSTGRES_PASSWORD=${config.sops.placeholder.invidious_db_password}
   '';
+
+  # OpenRouter key for opencode — from the shared secret file (vista's default
+  # sops file is vista.yaml, so override sopsFile just for this one).
+  sops.secrets.openrouter_key = {
+    sopsFile = ../../secrets/shared.yaml;
+    owner = "daniel";
+    mode = "0400";
+  };
 }
