@@ -1,0 +1,7 @@
+{
+  "uuid": "waydroid-watcher@fajita.local",
+  "name": "Waydroid Watcher",
+  "description": "Force-stop Waydroid apps on window close; stop the session when the last Waydroid window closes to release the wakelock and return the phone to baseline idle draw.",
+  "shell-version": ["49"],
+  "version": 1
+}

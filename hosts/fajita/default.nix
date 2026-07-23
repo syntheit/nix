@@ -750,6 +750,9 @@
           "torch@vixalien.com"
           # User Themes — loads the Marble shell theme selected in theme.nix.
           "user-theme@gnome-shell-extensions.gcampax.github.com"
+          # Waydroid Watcher — force-stop apps on close, stop session on last
+          # window close (checkpoint 6, waydroid.nix).
+          "waydroid-watcher@fajita.local"
         ];
       };
       # gsd-power: dim before blanking, but NEVER suspend (broken s2idle on

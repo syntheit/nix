@@ -34,8 +34,8 @@ stdenv.mkDerivation rec {
   src = fetchFromGitHub {
     owner = "syntheit";
     repo = "riff";
-    rev = "3dd4516";
-    hash = "sha256-MxQYJnPqDuJ3Y96llz7LDV2GmAHc/nFDGbzWLofb1Z4=";
+    rev = "7a160d2";
+    hash = "sha256-3ko5i9qsv923Bl4gdA/t95iIVm2PrCFWNF5CsGiho/s=";
   };
 
   cargoDeps = rustPlatform.fetchCargoVendor {
