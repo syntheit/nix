@@ -57,9 +57,9 @@ in
     historySubstringSearch.enable = true;
 
     shellAliases = {
-      ls = "eza --icons";
-      ll = "eza -l --icons";
-      la = "eza -la --icons";
+      ls = "eza --icons=auto";
+      ll = "eza -l --icons=auto";
+      la = "eza -la --icons=auto";
     }
     // lib.optionalAttrs pkgs.stdenv.isLinux {
       locate = "plocate";
