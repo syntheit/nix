@@ -55,6 +55,7 @@
     tldr
     gh
     claude-code
+    codex
     nixfmt-rfc-style
     nix-output-monitor
     nodejs
