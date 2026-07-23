@@ -120,6 +120,7 @@
     bat
     btop
     claude-code
+    codex
     fastfetch
     fd
     jq
