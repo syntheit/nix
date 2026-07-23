@@ -29,18 +29,18 @@
 
 stdenv.mkDerivation rec {
   pname = "riff";
-  version = "25.11";
+  version = "26.07-mobile";
 
   src = fetchFromGitHub {
-    owner = "Diegovsky";
+    owner = "syntheit";
     repo = "riff";
-    tag = "v${version}";
-    sha256 = "1kgpvv05bfvfr5cz4pipkzrz1qc12kjbppvjawvhv748f5fxk4wg";
+    rev = "3dd4516";
+    hash = "sha256-MxQYJnPqDuJ3Y96llz7LDV2GmAHc/nFDGbzWLofb1Z4=";
   };
 
   cargoDeps = rustPlatform.fetchCargoVendor {
     inherit pname version src;
-    hash = "sha256-8gJILK9A97PAb/Q1z+IvW54WuwoZZSKxlJJUt7dwQWE=";
+    hash = "sha256-GVNMB/7pNrC+q2eJtYtyeTmgKBW+MUZxRuxXZplKdeI=";
   };
 
   # Same as spot: with CARGO_BUILD_TARGET set, cargo puts the binary under a
