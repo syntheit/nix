@@ -35,8 +35,8 @@ rustPlatform.buildRustPackage (finalAttrs: {
   src = fetchFromGitHub {
     owner = "syntheit";
     repo = "mimick";
-    rev = "c9540780e9ffd0905864e1327439a5602aad2879";
-    hash = "sha256-Ts9AJPdOolk1L2dCNKiRbqoF9cpDkEXu+5Yl/RceVSE=";
+    rev = "665ad55";
+    hash = "sha256-ywefzGE6NBn+Pe34V93kJ2OXKQRvWB70Kai+q6kyk1w=";
   };
 
   cargoHash = "sha256-nR38JuLnO4e1e0tHUp7qcWtOB+3ty2XLmpqRSY0GO30=";
