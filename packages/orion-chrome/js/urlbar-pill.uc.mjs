@@ -101,6 +101,13 @@
 
   // ── (2) favicon in the pill ────────────────────────────────────────────────
   let _favicon = null;
+  // Retry guard: each update cycle is allowed ONE retry so we never loop.
+  let _faviconRetryTimer = null;
+  let _faviconRetryArmed = false;
+  let _faviconLoadWired = false;
+  // Delayed TabSelect retry timer (kept distinct so it can't stack with the
+  // per-update retry guard).
+  let _locChangeRetryTimer = null;
 
   function currentFaviconURL() {
     try {
@@ -124,7 +131,41 @@
         uriIsWeb = scheme === "http" || scheme === "https";
       } catch (_) {}
       const url = uriIsWeb ? currentFaviconURL() : null;
+      // Arm the retry guard for THIS update cycle. _faviconRetryArmed flips to
+      // false after the single retry fires, so a later (legit) update can re-arm.
+      _faviconRetryArmed = true;
+      if (_faviconRetryTimer) { clearTimeout(_faviconRetryTimer); _faviconRetryTimer = null; }
       _favicon.src = url || GLOBE_ICON;
+
+      // Wire a one-shot load listener that re-checks naturalWidth after the img
+      // actually decodes. Catches "src loaded but rendered 0×0" (race where the
+      // tab image attribute propagated AFTER our getIcon call).
+      if (!_faviconLoadWired) {
+        _faviconLoadWired = true;
+        _favicon.addEventListener("load", () => {
+          try {
+            if (_favicon.naturalWidth === 0 && _faviconRetryArmed) {
+              _faviconRetryArmed = false;
+              log("updateFavicon: load fired with naturalWidth=0 → retry");
+              updateFavicon();
+            }
+          } catch (_) {}
+        });
+      }
+
+      // Defensive 200ms check: if the img hasn't decoded yet (naturalWidth 0),
+      // retry once. Common on TabSelect where the tab's image attribute hasn't
+      // propagated to gBrowser.getIcon() at call time.
+      _faviconRetryTimer = setTimeout(() => {
+        try {
+          _faviconRetryTimer = null;
+          if (!_favicon || _favicon.naturalWidth !== 0) return;
+          if (!_faviconRetryArmed) return;
+          _faviconRetryArmed = false;
+          log("updateFavicon: 200ms check naturalWidth=0 → retry");
+          updateFavicon();
+        } catch (_) {}
+      }, 200);
     } catch (err) {
       log("updateFavicon error: " + err);
     }
@@ -213,7 +254,71 @@
   // Replaces the lock/reader/star icons we hid in CSS. Popup is a position:fixed
   // overlay anchored above the pill's bottom-left (where the favicon sits).
   let _faviconMenu = null;
-  let _menuCloseWired = false;
+  let _menuOpenTime = 0;
+
+  // ── (5c) Share — open the GNOME app-chooser sheet via xdg-desktop-portal. ──
+  // Uses Subprocess.sys.mjs to exec `gdbus call ... OpenURI` so the user can
+  // hand the current URL off to another app (messaging, email, bluetooth, etc.).
+  // Lazy-imported here (NOT at top level) per the .uc.mjs boot convention.
+  async function shareCurrentPage() {
+    let spec = "";
+    try {
+      spec = gBrowser.selectedBrowser.currentURI.spec;
+    } catch (e) {
+      log("shareCurrentPage: no currentURI: " + e);
+      showToast("Share failed");
+      return;
+    }
+    if (!spec) {
+      showToast("Share failed");
+      return;
+    }
+    try {
+      const { Subprocess } = ChromeUtils.importESModule(
+        "resource://gre/modules/Subprocess.sys.mjs"
+      );
+      const gdbus = await Subprocess.pathSearch("gdbus");
+      log("shareCurrentPage: gdbus=" + gdbus + " url=" + spec);
+      const proc = await Subprocess.call({
+        command: gdbus,
+        arguments: [
+          "call", "--session",
+          "--dest", "org.freedesktop.portal.Desktop",
+          "--object-path", "/org/freedesktop/portal/desktop",
+          "--method", "org.freedesktop.portal.OpenURI.OpenURI",
+          "", spec, "{'ask': <true>}",
+        ],
+      });
+      // Drain stdout/stderr so the pipes don't fill and block the child.
+      (async () => {
+        try {
+          let buf = "";
+          while (true) {
+            const chunk = await proc.stdout.readString();
+            if (!chunk) break;
+            buf += chunk;
+          }
+          if (buf) log("shareCurrentPage stdout: " + buf.trim());
+        } catch (_) {}
+      })();
+      (async () => {
+        try {
+          let buf = "";
+          while (true) {
+            const chunk = await proc.stderr.readString();
+            if (!chunk) break;
+            buf += chunk;
+          }
+          if (buf) log("shareCurrentPage stderr: " + buf.trim());
+        } catch (_) {}
+      })();
+      showToast("Sharing...");
+      log("shareCurrentPage: launched gdbus portal");
+    } catch (e) {
+      log("shareCurrentPage FAILED: " + e);
+      showToast("Share failed");
+    }
+  }
 
   function closeFaviconMenu() {
     try {
@@ -319,6 +424,10 @@
         menu.appendChild(item);
       }
 
+      // Share — open the GNOME app-chooser sheet via xdg-desktop-portal.
+      // Fire-and-forget: addItem's handler is sync, shareCurrentPage is async.
+      addItem("Share", () => { shareCurrentPage(); });
+
       // Bookmark toggle — bookmark the page silently (StarUI popup is desktop
       // UI that doesn't render on mobile). Toggle: if already bookmarked, remove.
       addItem("Bookmark", async () => {
@@ -358,6 +467,71 @@
           });
         }
       } catch (_) {}
+
+      // Site settings — open Firefox's NATIVE identity popup (the panel the
+      // lock/shield icon normally triggers). In FF 150 the API is
+      // gIdentityHandler._openPopup() — but it anchors to #identity-icon-box
+      // which is 0×0 (hidden inside our zero-sized #identity-box), so the popup
+      // opens at (0,0) — top-left, invisible. Fix: call the internal steps
+      // (_initializePopup + refreshIdentityPopup) ourselves, then open it
+      // anchored to our VISIBLE favicon img via PanelMultiView.openPopup.
+      addItem("Site settings", () => {
+        try {
+          if (!gIdentityHandler) { log("SiteSettings: no gIdentityHandler"); return; }
+          if (typeof gIdentityHandler._initializePopup === "function") {
+            gIdentityHandler._initializePopup();
+          }
+          if (typeof gIdentityHandler.refreshIdentityPopup === "function") {
+            gIdentityHandler.refreshIdentityPopup();
+          }
+          const popup = gIdentityHandler._identityPopup;
+          if (!popup) { log("SiteSettings: no _identityPopup after init"); return; }
+          // Anchor to our visible favicon img (bottom-left → top-left, so the
+          // popup appears ABOVE the pill). Fallback to #urlbar if favicon missing.
+          let anchor = (_favicon && _favicon.isConnected) ? _favicon : document.getElementById("urlbar");
+          if (!anchor) { log("SiteSettings: no anchor"); return; }
+          PanelMultiView.openPopup(popup, anchor, {
+            position: "bottomleft topleft",
+            triggerEvent: undefined,
+          });
+          log("SiteSettings: opened anchored to " + (anchor.className || anchor.id));
+        } catch (e) { log("SiteSettings FAILED: " + e + " stack: " + (e.stack||"")); }
+      });
+
+      // Site permissions — opens the Page Info dialog on the Permissions tab,
+      // which shows ALL permission toggles (camera, microphone, location,
+      // notifications, popups, autoplay, etc.) with Allow/Block/Always Ask.
+      // The native gPermissionPanel popup only shows permissions the site has
+      // already REQUESTED — useless for proactively granting camera access.
+      // Page Info is the full-featured desktop dialog; on mobile it renders as
+      // a floating window but is functional.
+      addItem("Site permissions", () => {
+        try {
+          // FF 150: BrowserCommands.pageInfo(reversedEntryPoint, pane)
+          let opened = false;
+          try {
+            if (typeof BrowserCommands !== "undefined" && BrowserCommands.pageInfo) {
+              BrowserCommands.pageInfo(null, "permTab");
+              opened = true;
+              log("SitePermissions: BrowserCommands.pageInfo(permTab) called");
+            }
+          } catch (e) { log("SitePermissions BrowserCommands failed: " + e); }
+          if (!opened) {
+            try {
+              if (typeof BrowserPageInfo === "function") {
+                BrowserPageInfo(gBrowser.selectedBrowser, "permTab");
+                opened = true;
+                log("SitePermissions: BrowserPageInfo(permTab) called");
+              }
+            } catch (e) { log("SitePermissions BrowserPageInfo failed: " + e); }
+          }
+          if (!opened) {
+            // Last resort: open Page Info via command (opens default tab).
+            try { goDoCommand("View:PageInfo"); opened = true; log("SitePermissions: View:PageInfo dispatched"); }
+            catch (e) { log("SitePermissions View:PageInfo failed: " + e); }
+          }
+        } catch (e) { log("SitePermissions FAILED: " + e); }
+      });
 
       // Clear site data & cookies for the CURRENT site directly (no desktop dialog).
       // Wipes cookies + site data for this origin then reloads the page.
@@ -401,32 +575,25 @@
 
       document.documentElement.appendChild(menu);
       _faviconMenu = menu;
+      _menuOpenTime = Date.now();
       log("openFaviconMenu: opened");
 
-      // Defer wiring the outside-tap close so the opening tap doesn't close it
-      // immediately (capture-phase click that opened the menu would bubble up).
-      if (!_menuCloseWired) {
-        _menuCloseWired = true;
-        setTimeout(() => {
-          const onDocClick = (e) => {
-            try {
-              if (_faviconMenu && !_faviconMenu.contains(e.target)) {
-                closeFaviconMenu();
-              }
-            } catch (_) {}
-          };
-          const onKey = (e) => {
-            if (e.key === "Escape") closeFaviconMenu();
-          };
-          document.addEventListener("click", onDocClick, { capture: true });
-          document.addEventListener("touchend", onDocClick, { capture: true, passive: false });
-          document.addEventListener("keyup", onKey);
-          // The listeners are intentionally not once — they stay attached for
-          // the menu's lifetime and reference _faviconMenu (which is null after
-          // close, making them no-op until the next open re-wires).
-          // NOTE: this is fine for a small popup; we clean up on close.
-        }, 60);
-      }
+      // Wire outside-tap close. The opening tap (favicon) bubbles up to document
+      // and would immediately close the menu, so we gate on _menuOpenTime (ignore
+      // any tap within 350ms of opening). Escape key also dismisses.
+      const onDocClick = (e) => {
+        try {
+          if (!_faviconMenu) return;                     // no menu open
+          if (Date.now() - _menuOpenTime < 350) return;  // opening tap still bubbling
+          if (_faviconMenu.contains(e.target)) return;   // tap inside the menu
+          closeFaviconMenu();
+        } catch (_) {}
+      };
+      const onKey = (e) => {
+        if (e.key === "Escape") closeFaviconMenu();
+      };
+      document.addEventListener("click", onDocClick, { capture: true });
+      document.addEventListener("keyup", onKey);
     } catch (err) {
       log("openFaviconMenu error: " + err);
     }
@@ -566,7 +733,19 @@
   // ── wiring: keep favicon in sync with tab/location changes ────────────────
   function onLocationChangeLike() {
     try {
+      // Immediate update (may render the globe if the tab image attribute hasn't
+      // propagated yet — that's fine, the retry logic below will correct it).
       updateFavicon();
+      // Delayed retry: the tab's image attribute often arrives ~100–300ms after
+      // TabSelect / onLocationChange fires. Re-call once, guarded so rapid tab
+      // switches don't stack timers.
+      if (_locChangeRetryTimer) clearTimeout(_locChangeRetryTimer);
+      _locChangeRetryTimer = setTimeout(() => {
+        try {
+          _locChangeRetryTimer = null;
+          updateFavicon();
+        } catch (_) {}
+      }, 300);
     } catch (_) {}
   }
 

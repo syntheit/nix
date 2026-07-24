@@ -120,56 +120,65 @@
           overflow: hidden;
           font-family: system-ui, sans-serif;
           color: #fff;
+          /* Open/close animation: starts hidden, openOverlay() flips to visible
+             via requestAnimationFrame so the transition actually runs. */
+          opacity: 0;
+          transform: translateY(20px);
+          transition: opacity 0.2s ease, transform 0.2s ease;
+          will-change: opacity, transform;
         }
 
         #orion-tab-grid-scroll {
           flex: 1;
           overflow-y: auto;
           overflow-x: hidden;
-          padding: 12px;
+          padding: 16px 12px 12px;
           -webkit-overflow-scrolling: touch;
         }
 
         #orion-tab-grid-cards {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          grid-auto-rows: 168px;
+          grid-auto-rows: 220px;
           gap: 12px;
           align-content: start;
         }
 
         .orion-tab-card {
           position: relative;
-          background: #2b2a33;
+          background: #1c1b22;
           border-radius: 8px;
-          border: 1px solid rgba(255,255,255,0.1);
+          border: 2px solid transparent;
           overflow: hidden;
-          height: 168px;
+          height: 220px;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
           touch-action: manipulation;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.3);
         }
 
         .orion-tab-card.active {
-          border: 2px solid #00b3f4;
+          box-shadow: 0 0 0 2px #00b3f4, 0 2px 8px rgba(0,179,244,0.3);
         }
 
         .orion-tab-thumb {
           width: 100%;
-          height: 140px;
+          height: 192px;
           object-fit: cover;
           display: block;
           background: #38383d;
+          border-radius: 8px 8px 0 0;
         }
 
         .orion-tab-thumb-placeholder {
           width: 100%;
-          height: 140px;
+          height: 192px;
           background: #38383d;
           display: flex;
           align-items: center;
           justify-content: center;
           font-size: 28px;
+          border-radius: 8px 8px 0 0;
         }
 
         .orion-tab-title-strip {
@@ -178,12 +187,13 @@
           left: 0;
           right: 0;
           height: 28px;
-          background: rgba(28,27,34,0.85);
+          background: linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0.6));
           display: flex;
           align-items: center;
           padding: 0 6px;
           gap: 4px;
           overflow: hidden;
+          border-radius: 0 0 8px 8px;
         }
 
         .orion-tab-favicon {
@@ -194,7 +204,7 @@
         }
 
         .orion-tab-label {
-          font-size: 13px;
+          font-size: 14px;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -206,9 +216,11 @@
           position: absolute;
           top: 4px;
           right: 4px;
-          width: 28px;
-          height: 28px;
-          background: rgba(28,27,34,0.75);
+          width: 32px;
+          height: 32px;
+          background: rgba(0,0,0,0.6);
+          backdrop-filter: blur(4px);
+          -webkit-backdrop-filter: blur(4px);
           border-radius: 50%;
           border: none;
           color: #fff;
@@ -221,6 +233,10 @@
           line-height: 1;
           -webkit-tap-highlight-color: transparent;
           touch-action: manipulation;
+        }
+
+        .orion-tab-close:active {
+          background: rgba(255,255,255,0.2);
         }
 
         #orion-tab-grid-bottom {
@@ -288,15 +304,41 @@
 
   function closeOverlay() {
     try {
-      if (overlayEl && overlayEl.parentNode) {
-        overlayEl.parentNode.removeChild(overlayEl);
-      }
-      overlayEl = null;
-      // Remove nav-hide attribute so #nav-bar reappears
-      try { document.documentElement.removeAttribute("orion-tabgrid-open"); } catch (_) {}
-      logTouch("overlay closed");
+      if (!overlayEl) return; // already closed / never opened — no-op
+      // Guard against double-close: mark as closing so a second call during
+      // the 200ms fade-out window is a no-op.
+      if (overlayEl._orionClosing) return;
+      overlayEl._orionClosing = true;
+
+      const el = overlayEl;
+      // Trigger the fade-out transition.  CSS on #orion-tab-grid-overlay already
+      // declares transition: opacity 0.2s ease, transform 0.2s ease.
+      el.style.opacity = "0";
+      el.style.transform = "translateY(20px)";
+
+      // Remove from DOM after the transition completes.  200ms matches the CSS
+      // duration; a tiny extra slack avoids a frame-edge miss.
+      setTimeout(() => {
+        try {
+          if (el.parentNode) el.parentNode.removeChild(el);
+        } catch (_) {}
+        // Only clear the module-global if it still points at us (openOverlay may
+        // have already replaced it).
+        if (overlayEl === el) overlayEl = null;
+        // Remove nav-hide attribute so #nav-bar reappears
+        try { document.documentElement.removeAttribute("orion-tabgrid-open"); } catch (_) {}
+        logTouch("overlay closed");
+      }, 200);
     } catch (err) {
       logError("closeOverlay: " + err);
+      // Best-effort cleanup on error so we never strand the overlay.
+      try {
+        if (overlayEl && overlayEl.parentNode) {
+          overlayEl.parentNode.removeChild(overlayEl);
+        }
+      } catch (_) {}
+      overlayEl = null;
+      try { document.documentElement.removeAttribute("orion-tabgrid-open"); } catch (_) {}
     }
   }
 
@@ -513,6 +555,18 @@
 
       // Attach to document
       (document.body || document.documentElement).appendChild(overlay);
+
+      // Trigger the open transition: the overlay starts at opacity:0 /
+      // translateY(20px) from CSS; flip to visible on the next frame so the
+      // browser actually runs the 0.2s transition instead of snapping.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          try {
+            overlay.style.opacity = "1";
+            overlay.style.transform = "translateY(0)";
+          } catch (_) {}
+        });
+      });
 
       // Populate cards after DOM is live
       await rerenderGrid();
