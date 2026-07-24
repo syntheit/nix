@@ -174,11 +174,10 @@
   /* else in .urlbar-input-container — shield, lock, reader, star, go-button,  */
   /* search-mode, label-box, revert-button, page-action-buttons — all of it.    */
   /* (We also keep .urlbar-input-box and our injected .orion-pill-favicon.)     */
-  #urlbar .urlbar-input-container > *:not(.urlbar-input-box):not(.orion-pill-favicon):not(#stop-reload-button):not(#orion-pill-copy) {
+  #urlbar .urlbar-input-container > *:not(.urlbar-input-box):not(.orion-pill-favicon):not(#stop-reload-button):not(#orion-pill-copy):not(#identity-box) {
     display: none !important;
   }
   /* Belt-and-suspenders: also hide by explicit ID in case the :not() is too broad. */
-  #urlbar #identity-box,
   #urlbar #tracking-protection-icon-container,
   #urlbar #reader-mode-button,
   #urlbar #star-button-box,
@@ -190,6 +189,23 @@
   #urlbar #urlbar-search-mode-indicator,
   #urlbar #urlbar-revert-button-container {
     display: none !important;
+  }
+
+  /* #identity-box MUST stay in the DOM so the native #identity-popup panel can   */
+  /* anchor to it (gIdentityHandler.handleIdentityButton / #identity-box.click()). */
+  /* display:none / visibility:hidden break panel anchoring, so we shrink it to   */
+  /* zero size + fully transparent instead. It occupies no space but is a valid     */
+  /* XUL anchor for the site-settings popup (camera/mic/cookies/permissions).      */
+  #urlbar #identity-box {
+    width: 0 !important;
+    height: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
   }
 
   /* Copy button removed from pill — now lives in the favicon tap-menu. */
@@ -354,6 +370,27 @@
   :root[orion-tabgrid-open] #TabsToolbar {
     display: none !important;
     visibility: collapse !important;
+  }
+
+  /* ── C2: hide ROW 2 button toolbar while editing the URL ─────────────────── */
+  /* Orion shows ONLY the URL field + suggestions during edit mode; the back /   */
+  /* forward / new-tab / tabs / menu button row collapses out of view until the   */
+  /* urlbar loses focus. Uses :has() on #nav-bar so the rule is scoped to the     */
+  /* pill context. The pill row (#urlbar-container) and #stop-reload-button stay   */
+  /* visible — they belong to ROW 1.                                              */
+  #nav-bar:has(#urlbar[focused]) #back-button,
+  #nav-bar:has(#urlbar[focused]) #forward-button,
+  #nav-bar:has(#urlbar[focused]) #orion-newtab-toolbar-btn,
+  #nav-bar:has(#urlbar[focused]) #orion-tab-toolbar-btn,
+  #nav-bar:has(#urlbar[focused]) #PanelUI-button,
+  #nav-bar:has(#urlbar[focused]) #PanelUI-menu-button,
+  #nav-bar:has(#urlbar[breakout-extend]) #back-button,
+  #nav-bar:has(#urlbar[breakout-extend]) #forward-button,
+  #nav-bar:has(#urlbar[breakout-extend]) #orion-newtab-toolbar-btn,
+  #nav-bar:has(#urlbar[breakout-extend]) #orion-tab-toolbar-btn,
+  #nav-bar:has(#urlbar[breakout-extend]) #PanelUI-button,
+  #nav-bar:has(#urlbar[breakout-extend]) #PanelUI-menu-button {
+    display: none !important;
   }
 
 }
