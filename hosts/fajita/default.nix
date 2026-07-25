@@ -869,6 +869,11 @@
       "browser.uidensity" = 2;            # touch density (pmOS value)
       "dom.w3c.touch_events.enabled" = 1; # let pages know about touch
       "apz.allow_zooming" = true;         # pinch-zoom
+      # Mobile browser behavior: reopening Firefox after a normal full quit
+      # resumes the previous non-private window and its tabs.  Firefox keeps
+      # private windows out of sessionstore, and crash recovery remains under
+      # Firefox's own resume_from_crash policy (so do not override it here).
+      "browser.startup.page" = 3;
       # urlbar: mobile suggestions — kill desktop-only sections, compact tray
       "browser.urlbar.trending.featureGate" = false;
       "browser.urlbar.suggest.trending" = false;
