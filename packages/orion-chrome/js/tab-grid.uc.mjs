@@ -1,12 +1,15 @@
 // ==UserScript==
 // @name           tab-grid
 // @namespace      orion-chrome/tab-grid
-// @version        1.4.0
+// @version        1.5.0
 // @description    Orion-iOS-style tab grid overlay for Firefox on the fajita
 //                 phone (432×936 logical, touch, dark theme).  Intercepts the
 //                 #alltabs-button click, shows a full-screen 2-column card grid
 //                 with live PageThumbs thumbnails, close ✕ per card, and a
-//                 bottom bar with [+ New Tab] / [Done].
+//                 bottom bar with a native tab-groups picker, [+ New Tab], and
+//                 [Done]. The picker filters this overview; it does not invent
+//                 a parallel group model, so Firefox session restore remains
+//                 the authority for groups.
 //                 All events (click + touchend) logged to /tmp/ff-grid-touch.log.
 //                 All errors appended to /tmp/ff-grid-errors.log.
 //                 C1a: injects a toolbar tab button in #nav-bar before ≡.
@@ -242,12 +245,13 @@
         #orion-tab-grid-bottom {
           flex-shrink: 0;
           display: flex;
-          gap: 12px;
+          gap: 8px;
           padding: 12px 16px;
           background: rgba(28,27,34,0.95);
           border-top: 1px solid rgba(255,255,255,0.1);
         }
 
+        #orion-tab-grid-groups,
         #orion-tab-grid-new,
         #orion-tab-grid-done {
           flex: 1;
@@ -261,6 +265,14 @@
           touch-action: manipulation;
         }
 
+        #orion-tab-grid-groups {
+          background: #38383d;
+          color: #fff;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
         #orion-tab-grid-new {
           background: #00b3f4;
           color: #fff;
@@ -269,6 +281,89 @@
         #orion-tab-grid-done {
           background: #38383d;
           color: #fff;
+        }
+
+        /* This sheet belongs to the overview, rather than a Firefox panel, so
+           it stays in the touch-sized fullscreen layer and cannot be anchored
+           to the hidden desktop tab strip. */
+        #orion-tab-groups-backdrop {
+          position: absolute;
+          inset: 0;
+          z-index: 1;
+          background: rgba(0,0,0,0.38);
+          opacity: 0;
+          transition: opacity 0.16s ease;
+        }
+
+        #orion-tab-groups-sheet {
+          position: absolute;
+          z-index: 2;
+          left: 8px;
+          right: 8px;
+          bottom: 76px;
+          max-height: min(58vh, 480px);
+          overflow-y: auto;
+          padding: 8px;
+          border: 1px solid rgba(255,255,255,0.14);
+          border-radius: 14px;
+          background: rgba(43,42,51,0.98);
+          box-shadow: 0 12px 36px rgba(0,0,0,0.5);
+          transform: translateY(16px);
+          opacity: 0;
+          transition: transform 0.18s ease, opacity 0.18s ease;
+          -webkit-overflow-scrolling: touch;
+        }
+
+        #orion-tab-groups-sheet[open] {
+          transform: translateY(0);
+          opacity: 1;
+        }
+
+        .orion-tab-group-option {
+          box-sizing: border-box;
+          display: flex;
+          align-items: center;
+          width: 100%;
+          min-height: 52px;
+          gap: 10px;
+          padding: 8px 10px;
+          border: 0;
+          border-radius: 9px;
+          background: transparent;
+          color: #fff;
+          font: 600 15px system-ui, sans-serif;
+          text-align: left;
+          cursor: pointer;
+          touch-action: manipulation;
+          -webkit-tap-highlight-color: transparent;
+        }
+
+        .orion-tab-group-option.active,
+        .orion-tab-group-option:active {
+          background: rgba(0,179,244,0.22);
+        }
+
+        .orion-tab-group-color {
+          width: 12px;
+          height: 12px;
+          flex: 0 0 12px;
+          border-radius: 50%;
+          background: var(--orion-group-color, #00b3f4);
+          box-shadow: 0 0 0 2px rgba(255,255,255,0.14);
+        }
+
+        .orion-tab-group-name {
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .orion-tab-group-count {
+          margin-left: auto;
+          color: #c5c5cc;
+          font-size: 13px;
+          font-weight: 500;
         }
 
         #orion-tab-grid-fab {
@@ -301,6 +396,166 @@
   // ── grid state ─────────────────────────────────────────────────────────────
 
   let overlayEl = null;
+  // null means the normal all-tabs overview.  A group id is deliberately used
+  // instead of retaining a group node: Firefox can remove/recreate group DOM
+  // during tab close, session restore, and cross-window adoption.
+  let activeGroupId = null;
+  let _gridRenderGeneration = 0;
+
+  const GROUP_COLOR_FALLBACKS = {
+    blue: "#00b3f4", purple: "#a371f7", cyan: "#22d3ee", orange: "#fb923c",
+    yellow: "#facc15", pink: "#f472b6", green: "#4ade80", gray: "#a1a1aa",
+    red: "#fb7185",
+  };
+
+  function getOpenTabGroups() {
+    try {
+      return Array.from(gBrowser.tabGroups || []).filter(group =>
+        group && group.isConnected !== false && Array.isArray(group.tabs) && group.tabs.length
+      );
+    } catch (err) {
+      logError("getOpenTabGroups: " + err);
+      return [];
+    }
+  }
+
+  function getActiveGroup() {
+    if (!activeGroupId) return null;
+    const group = getOpenTabGroups().find(candidate => candidate.id === activeGroupId) || null;
+    // A group can vanish while the overlay is open (for example, its final tab
+    // is closed). Fall back gracefully instead of rendering a blank grid.
+    if (!group) activeGroupId = null;
+    return group;
+  }
+
+  function groupName(group) {
+    try {
+      return group.label || group.defaultGroupName || "Untitled group";
+    } catch (_) {
+      return "Untitled group";
+    }
+  }
+
+  function filteredTabs() {
+    try {
+      const activeGroup = getActiveGroup();
+      return Array.from(activeGroup ? activeGroup.tabs : gBrowser.tabs).filter(tab =>
+        tab && !tab.closing && (!activeGroup || tab.group === activeGroup)
+      );
+    } catch (err) {
+      logError("filteredTabs: " + err);
+      return [];
+    }
+  }
+
+  function updateGroupsButton() {
+    try {
+      const button = overlayEl?.querySelector("#orion-tab-grid-groups");
+      if (!button) return;
+      const activeGroup = getActiveGroup();
+      button.textContent = activeGroup ? groupName(activeGroup) : "Groups";
+      button.setAttribute("aria-label", activeGroup ?
+        "Tab groups, showing " + groupName(activeGroup) : "Tab groups, showing all tabs");
+    } catch (err) {
+      logError("updateGroupsButton: " + err);
+    }
+  }
+
+  function closeGroupsPicker() {
+    try {
+      const sheet = overlayEl?.querySelector("#orion-tab-groups-sheet");
+      const backdrop = overlayEl?.querySelector("#orion-tab-groups-backdrop");
+      if (!sheet || !backdrop || !sheet._orionPickerOpen) return;
+      sheet._orionPickerOpen = false;
+      sheet.removeAttribute("open");
+      backdrop.style.opacity = "0";
+      setTimeout(() => {
+        try {
+          if (!sheet._orionPickerOpen) {
+            sheet.remove();
+            backdrop.remove();
+          }
+        } catch (_) {}
+      }, 180);
+    } catch (err) {
+      logError("closeGroupsPicker: " + err);
+    }
+  }
+
+  function openGroupsPicker() {
+    try {
+      if (!overlayEl) return;
+      const existing = overlayEl.querySelector("#orion-tab-groups-sheet");
+      if (existing) {
+        closeGroupsPicker();
+        return;
+      }
+
+      const backdrop = document.createElement("div");
+      backdrop.id = "orion-tab-groups-backdrop";
+      backdrop.setAttribute("aria-hidden", "true");
+      const sheet = document.createElement("div");
+      sheet.id = "orion-tab-groups-sheet";
+      sheet.setAttribute("role", "dialog");
+      sheet.setAttribute("aria-label", "Tab groups");
+      sheet._orionPickerOpen = true;
+
+      const addOption = (label, count, group = null) => {
+        const option = document.createElement("button");
+        option.className = "orion-tab-group-option" +
+          ((!group && !activeGroupId) || (group && group.id === activeGroupId) ? " active" : "");
+        option.type = "button";
+        const swatch = document.createElement("span");
+        swatch.className = "orion-tab-group-color";
+        if (group) {
+          const color = GROUP_COLOR_FALLBACKS[group.color] || "#00b3f4";
+          swatch.style.setProperty("--orion-group-color", color);
+        } else {
+          swatch.style.setProperty("--orion-group-color", "#c5c5cc");
+        }
+        const name = document.createElement("span");
+        name.className = "orion-tab-group-name";
+        name.textContent = label;
+        const countLabel = document.createElement("span");
+        countLabel.className = "orion-tab-group-count";
+        countLabel.textContent = String(count);
+        option.append(swatch, name, countLabel);
+        addTapHandler(option, event => {
+          event.preventDefault();
+          event.stopPropagation();
+          activeGroupId = group?.id || null;
+          logTouch("groups picker selected " + (group ? group.id : "all-tabs"));
+          updateGroupsButton();
+          closeGroupsPicker();
+          rerenderGrid();
+        });
+        sheet.appendChild(option);
+      };
+
+      addOption("All Tabs", Array.from(gBrowser.tabs).filter(tab => !tab.closing).length);
+      for (const group of getOpenTabGroups()) {
+        addOption(groupName(group), group.tabs.filter(tab => !tab.closing).length, group);
+      }
+
+      addTapHandler(backdrop, event => {
+        event.preventDefault();
+        event.stopPropagation();
+        closeGroupsPicker();
+      });
+      overlayEl.appendChild(backdrop);
+      overlayEl.appendChild(sheet);
+      requestAnimationFrame(() => {
+        try {
+          if (!sheet._orionPickerOpen) return;
+          sheet.setAttribute("open", "");
+          backdrop.style.opacity = "1";
+        } catch (_) {}
+      });
+      logTouch("groups picker opened " + getOpenTabGroups().length + " groups");
+    } catch (err) {
+      logError("openGroupsPicker: " + err);
+    }
+  }
 
   function closeOverlay() {
     try {
@@ -309,6 +564,8 @@
       // the 200ms fade-out window is a no-op.
       if (overlayEl._orionClosing) return;
       overlayEl._orionClosing = true;
+      _gridRenderGeneration++;
+      closeGroupsPicker();
 
       const el = overlayEl;
       // Trigger the fade-out transition.  CSS on #orion-tab-grid-overlay already
@@ -444,20 +701,29 @@
       if (!overlayEl) return;
       const grid = overlayEl.querySelector("#orion-tab-grid-cards");
       if (!grid) return;
+      const generation = ++_gridRenderGeneration;
 
       // Clear existing cards
       while (grid.firstChild) {
         grid.removeChild(grid.firstChild);
       }
 
-      const tabs = gBrowser.tabs;
-      logTouch("rerenderGrid: " + tabs.length + " tabs");
+      const tabs = filteredTabs();
+      updateGroupsButton();
+      logTouch("rerenderGrid: " + tabs.length + " tabs" +
+        (activeGroupId ? " in group " + activeGroupId : " (all tabs)"));
 
       // Build cards in order (await each thumbnail sequentially to avoid
       // hammering the compositor; for v1 this is fine at <10 tabs)
       for (const tab of tabs) {
         try {
           const card = await buildCardForTab(tab);
+          // A picker choice or a close can start a later render while a
+          // PageThumbs capture is awaiting the compositor. Never append stale
+          // cards into the newly selected group's grid.
+          if (generation !== _gridRenderGeneration || !overlayEl || !grid.isConnected) {
+            return;
+          }
           grid.appendChild(card);
         } catch (err) {
           logError("card build loop: " + err);
@@ -513,6 +779,16 @@
       const bottomBar = document.createElement("div");
       bottomBar.id = "orion-tab-grid-bottom";
 
+      const groupsBtn = document.createElement("button");
+      groupsBtn.id = "orion-tab-grid-groups";
+      groupsBtn.type = "button";
+      groupsBtn.textContent = "Groups";
+      addTapHandler(groupsBtn, event => {
+        event.preventDefault();
+        event.stopPropagation();
+        openGroupsPicker();
+      });
+
       const newTabBtn = document.createElement("button");
       newTabBtn.id = "orion-tab-grid-new";
       newTabBtn.textContent = "+ New Tab";
@@ -534,6 +810,7 @@
       doneBtn.textContent = "Done";
       addTapHandler(doneBtn, () => closeOverlay());
 
+      bottomBar.appendChild(groupsBtn);
       bottomBar.appendChild(newTabBtn);
       bottomBar.appendChild(doneBtn);
       overlay.appendChild(bottomBar);
