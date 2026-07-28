@@ -48,11 +48,26 @@ in
           mkdir -p "$profile/chrome"
           ln -sf "$CSS_FILE" "$profile/chrome/userChrome.css"
 
-          # Ensure toolkit.legacyUserProfileCustomizations.stylesheets is true in user.js
+          # DNS is handled at the resolver layer (system/default.nix), not
+          # per-app: systemd-resolved sends public queries to NextDNS over DoT
+          # (encrypted), while Tailscale's split-DNS routes tailnet names to
+          # 100.100.100.100 (MagicDNS). So the browser just needs to use the
+          # system resolver and it gets both. trr.mode=5 turns Zen's own DoH off
+          # (and blocks the DoH rollout re-enabling it) -- that's what lets
+          # tailnet names like harbor:4321 resolve. Encryption isn't lost; it's
+          # at the systemd-resolved -> NextDNS hop.
           USER_JS="$profile/user.js"
           if [ ! -f "$USER_JS" ]; then
-            echo 'user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);' > "$USER_JS"
+            cat > "$USER_JS" <<'EOF'
+user_pref("network.trr.mode", 5);
+user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
+EOF
           else
+            if grep -q "network.trr.mode" "$USER_JS"; then
+              sed -i 's/^user_pref("network.trr.mode".*$/user_pref("network.trr.mode", 5);/' "$USER_JS"
+            else
+              echo 'user_pref("network.trr.mode", 5);' >> "$USER_JS"
+            fi
             if ! grep -q "toolkit.legacyUserProfileCustomizations.stylesheets" "$USER_JS"; then
               echo 'user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);' >> "$USER_JS"
             fi
