@@ -62,25 +62,7 @@ let
     };
 
   pwas = [
-    # ─── Chromium-required ───────────────────────────────────────────────────
-    (mkPwa {
-      id = "gmaps";
-      name = "Google Maps";
-      url = "https://maps.google.com/";
-      comment = "Google Maps (needs Chromium for vector maps)";
-      profile = "google"; # shared Google login with gvoice
-    })
-
     # ─── Chat / comms ────────────────────────────────────────────────────────
-    # Slack & WhatsApp have no mobile web layout — force a desktop-width viewport
-    # (scaled down, pinch-zoomable) instead of a cramped/broken narrow one. Tune
-    # dsf lower for more desktop / higher toward mobile once tested on the phone.
-    (mkPwa {
-      id = "slack";
-      name = "Slack";
-      url = "https://app.slack.com/client";
-      dsf = "1.3";
-    })
     (mkPwa {
       id = "telegram";
       name = "Telegram";
@@ -90,15 +72,7 @@ let
       id = "gvoice";
       name = "Google Voice";
       url = "https://voice.google.com/u/0/messages";
-      profile = "google"; # shared Google login with gmaps
-    })
-    # Stopgap for WhatsApp — the better long-term answer is a mautrix-whatsapp
-    # bridge on your server surfaced through Fractal. Web logs out periodically.
-    (mkPwa {
-      id = "whatsapp";
-      name = "WhatsApp";
-      url = "https://web.whatsapp.com/";
-      dsf = "1.3";
+      profile = "google";
     })
 
     # ─── Finance (low priority — "deal with it / web") ───────────────────────
@@ -145,20 +119,8 @@ let
       url = "https://vault.matv.io/";
       comment = "Self-hosted Vaultwarden";
     })
-    (mkPwa {
-      id = "claude";
-      name = "Claude";
-      url = "https://claude.ai/new";
-    })
 
     # ─── Self-hosted / hosted PWAs ───────────────────────────────────────────
-    # Immich viewer; auto-backup is a separate CLI-on-a-timer job (medium task).
-    (mkPwa {
-      id = "immich";
-      name = "Immich";
-      url = "https://photos.matv.io/";
-      comment = "Photos (viewer — backup via immich CLI, tracked separately)";
-    })
     # Linkding + Memos PWAs dropped — replaced by the native anchorage (Linkding)
     # and jotter (Memos) GTK apps in systemPackages.
     (mkPwa {
@@ -166,19 +128,6 @@ let
       name = "Retrospend";
       url = "https://retrospend.app/dashboard";
       comment = "Expense tracker";
-    })
-
-    # ─── Media ───────────────────────────────────────────────────────────────
-    # YouTube via self-hosted Invidious on vista, reached over Tailscale. Uses
-    # the node's stable 100.x IP (MagicDNS `vista:3000` also works if resolvable).
-    # Invidious streams are DRM-free, so unlike Spotify web this plays fine in a
-    # Chromium wrapper, and its web UI is genuinely responsive on a phone screen.
-    (mkPwa {
-      id = "invidious";
-      name = "Invidious";
-      url = "http://100.96.21.56:3000/";
-      comment = "YouTube (self-hosted Invidious on vista, via Tailscale)";
-      categories = [ "AudioVideo" ];
     })
   ];
 in

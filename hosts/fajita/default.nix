@@ -920,8 +920,6 @@
     # ─── Communication (mobile-adaptive picks) ───────────────────────────────
     chatty                                # SMS + Matrix; lightweight, Phosh-native
     fractal                               # Matrix; GTK4/libadwaita, designed mobile-first
-    signal-desktop                        # link to the Pixel as primary
-    vesktop                               # Discord with proper wayland + screen-share
     # telegram-desktop dropped — desktop-only, painful on touch. Use the PWA at
     # https://web.telegram.org via Epiphany ("Install Site as Web Application"
     # in the Phosh menu) until paper-plane is revived upstream.
