@@ -161,6 +161,19 @@
       url = "git+ssh://git@github.com/syntheit/warden.git";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Courier — native GTK4/libadwaita mobile email client (IMAP/SMTP, offline SQLite, privacy-first HTML).
+    # Pinned to a committed rev because the local worktree carries WIP; drop ?rev= to track HEAD once clean.
+    courier = {
+      url = "git+file:///home/matv/Projects/courier?rev=2587fac0bd646a6622efc66185cbcb1ab3a2a7cd";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    # Paloma — native GTK4/libadwaita Telegram client (over TDLib). Built from the
+    # local committed repo; api_id/api_hash are injected at RUNTIME from sops, not
+    # baked at build time (see overlays/default.nix paloma-wrapped + hosts' secrets).
+    paloma = {
+      url = "git+file:///home/matv/Projects/paloma?rev=8def2f7e14ff82ee8d97f14a4391ce825a2de12d";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
