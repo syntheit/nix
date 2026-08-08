@@ -120,7 +120,6 @@
     inputs.zen-browser.packages.${pkgs.stdenv.hostPlatform.system}.default
     signal-desktop
     telegram-desktop
-    paloma-wrapped                        # native GTK4/libadwaita Telegram client (TDLib); api creds injected at runtime from sops — inputs.paloma (local ~/Projects/paloma)
     slack
     virt-manager
     papirus-icon-theme
