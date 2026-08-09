@@ -1,7 +1,16 @@
 diff --git a/js/ui/appDisplay.js b/js/ui/appDisplay.js
-index 00b3addee..da289b67c 100644
+index 00b3addee..1efef3c4f 100644
 --- a/js/ui/appDisplay.js
 +++ b/js/ui/appDisplay.js
+@@ -649,7 +649,7 @@ var BaseAppView = GObject.registerClass({
+ 
+ const phoneGridModes = [
+     {
+-        rows: 4,
++        rows: 5,
+         columns: 4,
+     },
+     {
 @@ -3153,6 +3153,11 @@ export const AppIcon = GObject.registerClass({
          longPressGesture.connect('cancel', () => this._menu.close(true));
          this.add_action(longPressGesture);
