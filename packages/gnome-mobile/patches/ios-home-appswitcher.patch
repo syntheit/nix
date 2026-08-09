@@ -1,0 +1,270 @@
+diff --git a/data/theme/gnome-shell-sass/widgets/_window-picker.scss b/data/theme/gnome-shell-sass/widgets/_window-picker.scss
+index 614e8128d..8e81555a4 100644
+--- a/data/theme/gnome-shell-sass/widgets/_window-picker.scss
++++ b/data/theme/gnome-shell-sass/widgets/_window-picker.scss
+@@ -55,7 +55,8 @@ $window_close_button_color: transparentize(lighten($system_bg_color, 7%), .02);
+ 
+ .workspace-background {
+   background-color: $invisible_occluded_bg_color;
+-//  box-shadow: 0 4px 16px 4px $shadow_color;
+-  box-shadow: 0 1px 5px 0px transparentize(darken($osd_bg_color, 30%), 0.7);
++  // Deeper, softer card shadow so previews read as iOS/Android app cards.
++  // Corner radius is applied inline by JS (workspace.js _updateBorderRadius).
++  box-shadow: 0 4px 16px 4px transparentize(darken($osd_bg_color, 30%), 0.55);
+   &.empty { box-shadow: 0 0 0 0 none; }
+ }
+diff --git a/js/ui/overview.js b/js/ui/overview.js
+index e7db089e5..4f8678231 100644
+--- a/js/ui/overview.js
++++ b/js/ui/overview.js
+@@ -279,11 +279,44 @@ export class Overview extends Signals.EventEmitter {
+ 
+         Main.wm.workspaceTracker.connect('notify::zero-open-windows', () => {
+             this._threeFingerOverviewGesture.enabled = !Main.wm.workspaceTracker.zeroOpenWindows;
+-            this._singleFingerOverviewGesture.enabled = !Main.wm.workspaceTracker.zeroOpenWindows;
++            this._syncSingleFingerOverviewEnabled();
+         });
+ 
+         this._threeFingerOverviewGesture.enabled = !Main.wm.workspaceTracker.zeroOpenWindows;
+-        this._singleFingerOverviewGesture.enabled = !Main.wm.workspaceTracker.zeroOpenWindows;
++
++        // GESTURE 1 (phone): while resting on the home screen (overview SHOWN at
++        // APP_GRID), reuse the bottom edge-drag to finger-track the overview from
++        // APP_GRID(2) toward WINDOW_PICKER(1), revealing the app switcher on an
++        // up-swipe. When not resting at phone home, the edge-drag keeps its normal
++        // job (unlocking the vertical pan tracker to enter the overview from an app).
++        this._edgeToSwitcherActive = false;
++        this._singleFingerOverviewEdgeDrag.connect('recognize', () => {
++            if (!this._canEdgeToSwitcher())
++                return;
++            this._edgeToSwitcherActive = true;
++            const adjustment = this._overview.controls._stateAdjustment;
++            adjustment.remove_transition('value');
++            adjustment.gestureInProgress = true;
++            this._edgeToSwitcherDistance = this._overview.controls.getSwitcherEdgeDragDistance();
++        });
++        this._singleFingerOverviewEdgeDrag.connect('progress', (_g, px) => {
++            if (!this._edgeToSwitcherActive)
++                return;
++            const adjustment = this._overview.controls._stateAdjustment;
++            // Finger up (px > 0) drives value from APP_GRID(2) down toward
++            // WINDOW_PICKER(1). Reaching the commit distance lands at WINDOW_PICKER.
++            const frac = Math.clamp(px / this._edgeToSwitcherDistance, 0, 1);
++            adjustment.value = Math.clamp(
++                OverviewControls.ControlsState.APP_GRID - frac,
++                OverviewControls.ControlsState.WINDOW_PICKER,
++                OverviewControls.ControlsState.APP_GRID);
++        });
++        this._singleFingerOverviewEdgeDrag.connect('end',
++            () => this._endEdgeToSwitcherDrag());
++        this._singleFingerOverviewEdgeDrag.connect('cancel',
++            () => this._endEdgeToSwitcherDrag());
++
++        this._syncSingleFingerOverviewEnabled();
+ 
+         const singleFingerWorkspacesGesture = new SwipeTracker.SwipeTracker(global.stage,
+             Clutter.Orientation.HORIZONTAL,
+@@ -315,6 +348,68 @@ export class Overview extends Signals.EventEmitter {
+             workspaceManager.layoutRows !== -1;
+         this._singleFingerWorkspacesGesture.enabled =
+             workspaceManager.layoutRows !== -1;
++
++        // Re-evaluate the vertical overview tracker's enabled state whenever the
++        // overview state changes, so it is disabled while resting at phone home
++        // (GESTURE 2) and re-enabled once we leave APP_GRID (so a down-swipe can
++        // still dismiss the switcher).
++        this._overview.controls._stateAdjustment.connectObject('notify::value',
++            () => this._syncSingleFingerOverviewEnabled(), this);
++    }
++
++    // Ends GESTURE 1's edge-drag, snapping the overview to the nearer of
++    // WINDOW_PICKER(1) / APP_GRID(2). Connected to BOTH the gesture's 'end'
++    // (fired on a committed drag) and 'cancel' (fired when the finger lifts
++    // before the commit) signals — otherwise an aborted up-swipe would leave
++    // _edgeToSwitcherActive true, gestureInProgress true, and the vertical
++    // tracker permanently disabled. The guard makes a double 'end'+'cancel'
++    // fire a no-op. overviewGestureEnd clears gestureInProgress and eases the
++    // adjustment, whose notify::value re-runs _syncSingleFingerOverviewEnabled
++    // to re-enable the vertical tracker.
++    _endEdgeToSwitcherDrag() {
++        if (!this._edgeToSwitcherActive)
++            return;
++        this._edgeToSwitcherActive = false;
++        const adjustment = this._overview.controls._stateAdjustment;
++        // Snap to the nearer of WINDOW_PICKER(1) / APP_GRID(2) by position.
++        const target = adjustment.value < 1.5
++            ? OverviewControls.ControlsState.WINDOW_PICKER
++            : OverviewControls.ControlsState.APP_GRID;
++        this._overview.controls.overviewGestureEnd(
++            target, OverviewControls.SIDE_CONTROLS_ANIMATION_TIME, () => {});
++    }
++
++    // True when the phone home screen is at rest: overview SHOWN and settled at
++    // APP_GRID with no transition running.
++    _isPhoneHomeRest() {
++        if (!Main.layoutManager.is_phone)
++            return false;
++        if (this._shownState !== OverviewShownState.SHOWN)
++            return false;
++        const adjustment = this._overview.controls._stateAdjustment;
++        if (adjustment.get_transition('value'))
++            return false;
++        return Math.abs(adjustment.value - OverviewControls.ControlsState.APP_GRID) < 0.01;
++    }
++
++    // GESTURE 1 may hijack the edge-drag only while resting at phone home.
++    _canEdgeToSwitcher() {
++        return this._isPhoneHomeRest() &&
++            !Main.wm.workspaceTracker.zeroOpenWindows;
++    }
++
++    // GESTURE 2: disable the vertical overview tracker while resting at phone
++    // home so a down-swipe there no longer pulls the switcher (letting the top-bar
++    // QS pulldown handle it); keep it enabled otherwise (and never when there are
++    // zero open windows, matching upstream).
++    _syncSingleFingerOverviewEnabled() {
++        this._singleFingerOverviewGesture.enabled =
++            !Main.wm.workspaceTracker.zeroOpenWindows &&
++            !this._isPhoneHomeRest() &&
++            // While GESTURE 1's edge-drag is finger-tracking APP_GRID->WINDOW_PICKER,
++            // keep the vertical pan tracker off so it can't also enroll the same
++            // touch and double-drive the state; it re-enables when the drag ends.
++            !this._edgeToSwitcherActive;
+     }
+ 
+     _changeShownState(state) {
+@@ -326,7 +421,7 @@ export class Overview extends Signals.EventEmitter {
+                 `${this._shownState} to ${state}`);
+         }
+ 
+-        if (state === OverviewShownState.SHOWN)
++        if (state === OverviewShownState.SHOWN && !Main.layoutManager.is_phone)
+             this._singleFingerOverviewEdgeDrag.enabled = false;
+ 
+         if (state === OverviewShownState.HIDING)
+@@ -684,7 +779,9 @@ export class Overview extends Signals.EventEmitter {
+     // show:
+     //
+     // Animates the overview visible and grabs mouse and keyboard input
+-    show(state = OverviewControls.ControlsState.WINDOW_PICKER) {
++    show(state = Main.layoutManager.is_phone
++        ? OverviewControls.ControlsState.APP_GRID
++        : OverviewControls.ControlsState.WINDOW_PICKER) {
+         if (state === OverviewControls.ControlsState.HIDDEN)
+             throw new Error('Invalid state, use hide() to hide');
+ 
+@@ -731,6 +828,9 @@ export class Overview extends Signals.EventEmitter {
+ 
+         this._threeFingerWorkspacesGesture.allowLongSwipes = true;
+         this._singleFingerWorkspacesGesture.allowLongSwipes = true;
++
++        // Resting state may have changed (e.g. now SHOWN at APP_GRID on phone).
++        this._syncSingleFingerOverviewEnabled();
+     }
+ 
+     // hide:
+diff --git a/js/ui/overviewControls.js b/js/ui/overviewControls.js
+index 4535f1dcb..7dc62b9bb 100644
+--- a/js/ui/overviewControls.js
++++ b/js/ui/overviewControls.js
+@@ -21,6 +21,7 @@ import * as Layout from './layout.js';
+ import {STARTUP_ANIMATION_TIME} from './layout.js';
+ 
+ export const SMALL_WORKSPACE_RATIO = 0.25;
++const WINDOW_PICKER_WORKSPACE_RATIO = 0.72; // phone: card height at the app-switcher state
+ const DASH_MAX_HEIGHT_RATIO = 0.16;
+ const VERTICAL_SPACING_RATIO = 0.02;
+ const THUMBNAILS_SPACING_ADJUSTMENT_TOP = 0.6;
+@@ -90,21 +91,25 @@ class ControlsManagerLayout extends Clutter.LayoutManager {
+ 
+         if (Main.layoutManager.is_phone) {
+             const hiddenStateBox = new Clutter.ActorBox();
++            const windowPickerStateBox = new Clutter.ActorBox();
+             const appGridStateBox = new Clutter.ActorBox();
+ 
+             hiddenStateBox.set_origin(...this._workAreaBox.get_origin());
+             hiddenStateBox.set_size(this._workAreaBox.get_width(), this._workAreaBox.get_height() + Main.layoutManager.bottomPanelBox.height);
+ 
+-            appGridStateBox.set_origin(0, startY + searchHeight + spacing);
+-            appGridStateBox.set_size(
++            windowPickerStateBox.set_origin(0, startY + searchHeight + spacing);
++            windowPickerStateBox.set_size(
+                 width,
+-                Math.round(height * SMALL_WORKSPACE_RATIO));
++                Math.round(height * WINDOW_PICKER_WORKSPACE_RATIO));
++
++            appGridStateBox.set_origin(0, startY + searchHeight + spacing);
++            appGridStateBox.set_size(width, 0);
+ 
+             switch (state) {
+             case ControlsState.HIDDEN:
+                 return hiddenStateBox;
+             case ControlsState.WINDOW_PICKER:
+-                return hiddenStateBox.interpolate(appGridStateBox, 0.5);
++                return windowPickerStateBox;
+             case ControlsState.APP_GRID:
+                 return appGridStateBox;
+             }
+@@ -721,7 +726,7 @@ class ControlsManager extends St.Widget {
+         const state = Math.max(initialState, finalState);
+ 
+         this._appDisplay.visible =
+-            (Main.layoutManager.is_phone || state > ControlsState.WINDOW_PICKER) &&
++            state > ControlsState.WINDOW_PICKER &&
+             !this._searchController.searchActive;
+     }
+ 
+@@ -738,6 +743,14 @@ class ControlsManager extends St.Widget {
+ 
+         this._updateThumbnailsBox();
+         this._updateAppDisplayVisibility(params);
++
++        if (Main.layoutManager.is_phone && !this._searchController.searchActive) {
++            const v = this._stateAdjustment.value;
++            this._workspacesDisplay.opacity = Math.round(
++                255 * (1 - Math.clamp(v - ControlsState.WINDOW_PICKER, 0, 1)));
++            this._appDisplay.opacity = Math.round(
++                255 * Math.clamp(v - ControlsState.WINDOW_PICKER, 0, 1));
++        }
+     }
+ 
+     _onSearchChanged() {
+@@ -750,6 +763,9 @@ class ControlsManager extends St.Widget {
+             this._updateAppDisplayVisibility();
+             this._workspacesDisplay.reactive = true;
+             this._workspacesDisplay.setPrimaryWorkspaceVisible(true);
++            // Recompute phone opacities from the current state so clearing
++            // search doesn't leave previews at full opacity over the grid.
++            this._update();
+         } else {
+             this.add_style_class_name('search-active');
+             this._searchController.show();
+@@ -898,10 +914,8 @@ class ControlsManager extends St.Widget {
+ 
+     overviewGestureBegin(tracker) {
+         const progress = this._stateAdjustment.value;
+-        const points = Main.layoutManager.is_phone ? [
+-            ControlsState.HIDDEN,
+-            ControlsState.APP_GRID,
+-        ] : [
++        // Snap points across all three states (phone and desktop are identical).
++        const points = [
+             ControlsState.HIDDEN,
+             ControlsState.WINDOW_PICKER,
+             ControlsState.APP_GRID,
+@@ -968,6 +982,15 @@ class ControlsManager extends St.Widget {
+         this._stateAdjustment.gestureInProgress = false;
+     }
+ 
++    // GESTURE 1 (phone): pixel travel that maps one full unit of the overview
++    // state adjustment (APP_GRID -> WINDOW_PICKER) for the bottom edge-drag that
++    // reveals the app switcher from the home screen. The Shell.EdgeDragGesture
++    // force-commits at ~DRAG_DISTANCE (80px) of inward travel, so we scale the
++    // drag so that reaching the commit distance lands on WINDOW_PICKER.
++    getSwitcherEdgeDragDistance() {
++        return 80;
++    }
++
+     workspacesGestureBegin(tracker, monitor) {
+         this._workspacesDisplay.show();
+ 
