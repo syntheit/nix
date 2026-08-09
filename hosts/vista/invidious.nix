@@ -73,7 +73,20 @@ in
     };
 
     invidious = {
-      image = "quay.io/invidious/invidious:latest";
+      # PINNED to a release — do NOT use :latest. On quay, invidious's :latest
+      # tag tracks an old stable release (as of 2026-08 it points at the
+      # 2026-06-26 build, HEAD detached at v2.20260626.0), which predates the
+      # 2026-07-23 YouTube hotfix (#5818). That old build still sends the
+      # blacklisted WEB clientVersion 2.20250222.10.00, so every video 400s
+      # ("Youtube API returned status code 400") even though playback via the
+      # companion works. 2.20260804.1 contains #5818 (clientVersion
+      # 2.20260722.01.00) and is verified 200 against YouTube.
+      #
+      # YouTube periodically re-blacklists the client version; when watch pages
+      # start 400ing again, bump this to the newest quay release tag
+      # (https://quay.io/repository/invidious/invidious?tab=tags) and redeploy —
+      # `docker run --pull missing` fetches the new tag automatically.
+      image = "quay.io/invidious/invidious:2.20260804.1";
       # 0.0.0.0:3000 — reachable over tailscale0/wg0 (both firewall-trusted),
       # while LAN/WAN stay closed. Only tailscale is actually used.
       ports = [ "3000:3000" ];
