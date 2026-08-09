@@ -167,6 +167,11 @@
       url = "git+file:///home/matv/Projects/courier?rev=2587fac0bd646a6622efc66185cbcb1ab3a2a7cd";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Calculator — native GTK4/libadwaita Google-Calculator-style app (mobile-first).
+    calculator = {
+      url = "git+file:///home/matv/Projects/calculator?rev=5162e7edda9bff546e619aeebcccbf9eeef970ea";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     # Paloma — native GTK4/libadwaita Telegram client (over TDLib). Built from the
     # local committed repo; api_id/api_hash are injected at RUNTIME from sops, not
     # baked at build time (see overlays/default.nix paloma-wrapped + hosts' secrets).
