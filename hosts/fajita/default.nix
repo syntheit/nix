@@ -615,6 +615,14 @@
     IBUS_TYPING_BOOSTER_OSK_NO_PREEDIT = "1"; # commit chars directly, no underlined preedit
     IBUS_TYPING_BOOSTER_OSK_AUTOCORRECT = "1"; # auto-fix OOV words on space/punct, learn on re-type
     IBUS_TYPING_BOOSTER_OSK_GESTURE = "1";    # swipe-typing decoder (rev 10 engine half)
+    # Spatial autocorrect (rev 11 engine half — tap-coordinate rescoring against the
+    # AOSP frequency DBs). Kill switch: set to "0"/unset + restart ibus to fall back
+    # to the string-only legacy autocorrect. See packages/aosp-freq-dict.
+    IBUS_TYPING_BOOSTER_OSK_SPATIAL = "1";
+    # Colon-separated read-only AOSP freq DBs (en_US + es-with-voseo) the spatial
+    # rescorer reads as a frequency prior. Unset = spatial-only / legacy fallback.
+    IBUS_TYPING_BOOSTER_REFERENCE_DB =
+      "${pkgs.callPackage ../../packages/aosp-freq-dict { }}/share/aosp-freq-dict/en_US.db:${pkgs.callPackage ../../packages/aosp-freq-dict { }}/share/aosp-freq-dict/es.db";
   };
   # NB: do NOT set GTK_IM_MODULE here. GNOME Shell speaks to IBus over its own
   # D-Bus API; setting GTK_IM_MODULE/QT_IM_MODULE/XMODIFIERS breaks the built-in
