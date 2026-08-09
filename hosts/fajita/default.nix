@@ -975,6 +975,9 @@
     anchorage                             # Linkding bookmark client (GTK4/libadwaita) — inputs.anchorage (github)
     jotter                                # Memos notes client (GTK4/libadwaita) — inputs.jotter (github)
     warden                                # Bitwarden/Vaultwarden client (GTK4/libadwaita, over rbw) — inputs.warden (github)
+    courier                               # Email client (GTK4/libadwaita, IMAP/SMTP, privacy-first) — inputs.courier (local ~/Projects/courier)
+    calculator                            # Calculator (GTK4/libadwaita, Google-Calculator-style, mobile-first) — inputs.calculator (local ~/Projects/calculator)
+    # paloma-wrapped                      # Telegram client (GTK4/libadwaita, TDLib); api creds injected at runtime from sops — inputs.paloma (local ~/Projects/paloma). Secret is DECLARED (secrets.nix); uncomment to install once validated on mantle (heavy aarch64 build).
     # YouTube → self-hosted Invidious as a PWA (see pwas.nix). Dropped `pipeline`
     # because it speaks Piped, not Invidious. Clapper below still handles
     # paste-a-link one-off playback.

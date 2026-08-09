@@ -81,7 +81,6 @@ in
           ./patches/osk-autocaps-committed-tail.patch # auto-cap: replace dead surrounding-text dance with synchronous committedTail from _onCommitText (inputMethod.js); backspace/Enter handled
           ./patches/osk-swipe-typing.patch # swipe typing: letter-key glide → symbolic trace → PUA-framed emission to engine decoder (MUST stay after osk-spacebar-cursor-slide + osk-autocaps)
           ./patches/osk-strip-longpress-forget.patch # strip long-press → forget word: 600 ms hold on suggestion pill → candidate_clicked CONTROL_MASK → remove_candidate_from_user_database + flash
-          ./patches/osk-tap-coords.patch # per-tap (col,row) coords → engine via press-only PUA markers (mirrors swipe channel; feeds spatial autocorrect). MUST stay after osk-swipe-typing + osk-autocaps (same files)
         ];
         prePatch = ''
           cp -r ${libshew} subprojects/libshew
