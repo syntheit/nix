@@ -1,0 +1,139 @@
+diff --git a/js/misc/inputMethod.js b/js/misc/inputMethod.js
+index 3746a8d1e..f18557fb5 100644
+--- a/js/misc/inputMethod.js
++++ b/js/misc/inputMethod.js
+@@ -449,6 +449,24 @@ export const InputMethod = GObject.registerClass({
+         await this._context.process_key_event_async(seq.at(-1), 0, 0, -1, null);
+     }
+ 
++    // fajita: emit a tapped key's quantized grid coords to the engine as
++    // press-only PUA key events. Tap-coordinate protocol: ROW marker
++    // U+F820+qrow first, then COL marker U+F860+qcol. Same-connection
++    // ordering guarantees ROW arrives before COL.
++    injectTapCoords(qcol, qrow) {
++        if (!this._context)
++            return;
++        const pua = cp => 0x01000000 | cp;
++        const row = pua(0xF820 + (qrow | 0)); // ROW marker
++        const col = pua(0xF860 + (qcol | 0)); // COL marker
++        // Fire press-only, detach the returned promises so a failed marker
++        // never disturbs typing (same connection = ordered delivery).
++        this._context.process_key_event_async(row, 0, 0, -1, null)
++            .catch(() => {});
++        this._context.process_key_event_async(col, 0, 0, -1, null)
++            .catch(() => {});
++    }
++
+     _fullReset() {
+         this._context.set_content_type(0, 0);
+         this._context.set_cursor_location(0, 0, 0, 0);
+diff --git a/js/ui/keyboard.js b/js/ui/keyboard.js
+index 9527d9c91..2034fc24c 100644
+--- a/js/ui/keyboard.js
++++ b/js/ui/keyboard.js
+@@ -376,6 +376,10 @@ const KeyContainerGesture = GObject.registerClass({
+         this._currentPoint = null;
+         this._inLongPressDrag = false;
+         this._keyLongPressTimeout = 0;
++        // fajita: tap-coord capture — normalized logical (col,row) of the last
++        // key PRESS, in the engine's 10-wide/4-tall frame. Consumed once by the
++        // plain-tap commit handler. See TAP_COORD_PROTOCOL.md.
++        this._pressColRow = null;
+         // fajita: spacebar cursor-slide state
+         this._inCursorSlide = false;
+         this._cursorSlideLastX = 0;
+@@ -488,6 +492,23 @@ const KeyContainerGesture = GObject.registerClass({
+         return levelData.rows[rowIndex][colIndex];
+     }
+ 
++    // fajita: normalize a raw tap into the engine's logical grid (see
++    // TAP_COORD_PROTOCOL.md). _getKeyForCoords walks a grid scaled by
++    // KEY_SIZE × per-layout LCM (nCols≈1320, nRows=48 for us-mobile), so raw
++    // col/row quantization saturates. The engine's _KEY_CENTERS table lives in
++    // a 10-wide / 4-tall logical frame (q=(0.5,0.5), a=(1.0,1.5), m=(8.0,2.5)),
++    // so we renormalize into that frame: cols → ×10, rows → ×(nRows/KEY_SIZE)
++    // (= rowRatio×4 for us-mobile). Returns null if we can't resolve the level.
++    _logicalColRowForCoords(coords) {
++        const levelData = this._levels.get(this._currentLevel);
++        if (!levelData || levelData.nRows === 0)
++            return null;
++
++        const col = (coords.x / this.actor.width) * 10;
++        const row = (coords.y / this.actor.height) * (levelData.nRows / KEY_SIZE);
++        return {col, row};
++    }
++
+     vfunc_point_began(point) {
+         const coords = this.get_point_coords(point);
+         const key = this._getKeyForCoords(coords);
+@@ -496,6 +517,11 @@ const KeyContainerGesture = GObject.registerClass({
+             return;
+         }
+ 
++        // fajita: stash the normalized logical (col,row) of this press so a
++        // plain letter tap can attach tap-coord markers at commit time (same
++        // way the swipe path stashes per-key enter coords). Consumed once.
++        this._pressColRow = this._logicalColRowForCoords(coords);
++
+         // If a key is already pressed down by another finger, release it
+         if (this._pressedKey) {
+             // fajita: during cursor slide a second finger must not type a space;
+@@ -2251,6 +2277,42 @@ export const Keyboard = GObject.registerClass({
+             this._setActiveLevel('default');
+     }
+ 
++    // fajita: emit tap-coord PUA markers for a plain letter tap, immediately
++    // before the letter's own key event. See TAP_COORD_PROTOCOL.md.
++    //   - ONLY on a plain single-letter tap: skip swipe (_inGestureTyping),
++    //     cursor-slide (_inCursorSlide) and accent long-press drags
++    //     (_inLongPressDrag); skip space/punct/backspace/shift/enter (they
++    //     aren't single \p{L} letters, and only letter commits carry coords).
++    //   - Quantize the stashed logical press coords (COORD_SCALE = 8):
++    //       qcol = clamp(round(col*8), 0, 80)  → codepoint 0xF860 + qcol
++    //       qrow = clamp(round(row*8), 0, 32)  → codepoint 0xF820 + qrow
++    //   - Delivered ROW then COL as press-only PUA key events over the SAME
++    //     channel the swipe patch uses (Main.inputMethod.injectTapCoords,
++    //     the tap-coord sibling of injectGestureTrace). Fire-and-forget.
++    // _pressColRow is consumed once here so a stale press can't re-mark a key.
++    _maybeEmitTapCoords(str) {
++        const g = this._keyContainerGesture;
++        const colRow = g?._pressColRow ?? null;
++        if (g)
++            g._pressColRow = null;
++
++        // Plain-tap guard: mirror the protocol's !_inGestureTyping &&
++        // !_inCursorSlide, and additionally exclude accent long-press drags.
++        if (!colRow || !g ||
++            g._inGestureTyping || g._inCursorSlide || g._inLongPressDrag)
++            return;
++
++        // Letters only (same \p{L} test used to tag gestureKey letters).
++        if (str?.length !== 1 || !/\p{L}/u.test(str))
++            return;
++
++        const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
++        const qcol = clamp(Math.round(colRow.col * 8), 0, 80);
++        const qrow = clamp(Math.round(colRow.row * 8), 0, 32);
++
++        Main.inputMethod.injectTapCoords?.(qcol, qrow);
++    }
++
+     _onKeyFocusChanged() {
+         let focus = global.stage.key_focus;
+ 
+@@ -2566,6 +2628,15 @@ export const Keyboard = GObject.registerClass({
+                     // lands. Without this the level lagged ~0.5 s and fast
+                     // typing produced "WHat".
+                     this._updateLevelFromHints(true, str);
++                    // fajita: tap-coord markers (TAP_COORD_PROTOCOL.md). On a
++                    // PLAIN single-letter tap — not swipe, not cursor-slide,
++                    // not an accent long-press drag — emit the two press-only
++                    // PUA markers (ROW then COL) via the same press-only PUA
++                    // channel the swipe path uses (injectGestureTrace), so the
++                    // engine's spatial autocorrect learns where the finger
++                    // landed. They go out just BEFORE the letter's own key
++                    // event (inside commit() below) and never block it.
++                    this._maybeEmitTapCoords(str);
+                     this._keyboardController.commit(str, this._modifiers).then(() => {
+                         this._disableAllModifiers();
+                         this._updateLevelFromHints(true);

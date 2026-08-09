@@ -1,5 +1,17 @@
+diff --git a/engine/Makefile.am b/engine/Makefile.am
+index 25be8a8..a0188cd 100644
+--- a/engine/Makefile.am
++++ b/engine/Makefile.am
+@@ -39,6 +39,7 @@ engine_table_PYTHON = \
+ 	factory.py \
+ 	main.py \
+ 	hunspell_table.py \
++	osk_spatial.py \
+ 	hunspell_suggest.py \
+ 	tabsqlitedb.py \
+ 	itb_gtk.py \
 diff --git a/engine/hunspell_table.py b/engine/hunspell_table.py
-index fb229b4..993a9b1 100644
+index fb229b4..d9537da 100644
 --- a/engine/hunspell_table.py
 +++ b/engine/hunspell_table.py
 @@ -25,12 +25,14 @@ This file implements the ibus engine for ibus-typing-booster
@@ -25,7 +37,15 @@ index fb229b4..993a9b1 100644
  import os
  import fnmatch
  import ast
-@@ -84,7 +87,7 @@ try:
+@@ -66,6 +69,7 @@ import itb_active_window
+ import itb_sound
+ import itb_emoji
+ import itb_version
++import osk_spatial
+ 
+ IMPORT_ITB_OLLAMA_ERROR = None
+ try:
+@@ -84,7 +88,7 @@ try:
      re = regex
      USING_REGEX = True
  except ImportError:
@@ -34,7 +54,7 @@ index fb229b4..993a9b1 100644
      import re
      USING_REGEX = False
  
-@@ -113,6 +116,16 @@ except (ImportError,):
+@@ -113,6 +117,16 @@ except (ImportError,):
  
  LOGGER = logging.getLogger('ibus-typing-booster')
  
@@ -51,7 +71,7 @@ index fb229b4..993a9b1 100644
  __all__ = (
      "TypingBoosterEngine",
  )
-@@ -351,7 +364,7 @@ class TypingBoosterLookupTable:
+@@ -351,7 +365,7 @@ class TypingBoosterLookupTable:
      # But although this looks elegant and reduces boilerplate code,
      # mypy cannot help me anymore to find mistyped attributes.
      # mypy would then assume that all attributes exist:
@@ -60,7 +80,7 @@ index fb229b4..993a9b1 100644
      #
      # Better explicitly define all the IBus delegate methods which
      # are really used:
-@@ -775,6 +788,27 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -775,6 +789,56 @@ class TypingBoosterEngine(IBus.Engine):
  
          self._avoid_forward_key_event: bool = self._settings_dict[
              'avoidforwardkeyevent']['user']
@@ -73,8 +93,37 @@ index fb229b4..993a9b1 100644
 +        self._osk_np_consumed_vals: Set[int] = set()
 +        self._osk_np_last_finished = ('', 0.0)
 +        self._osk_np_recent_corrections = {}
++        # fajita fork: tappable "undo autocorrect" affordance (iOS/Android
++        # style). Set the instant an autocorrect commits at a boundary to
++        # {'original': typed, 'committed': corrected + sep}; the original word
++        # is then offered as strip candidate 0 and, if tapped, restores what
++        # the user typed. Cleared as soon as the next word starts, on the tap
++        # itself, and on focus-out/reset. None = no revert currently offered.
++        self._osk_np_revert_pending: Optional[Dict[str, str]] = None
 +        self._osk_np_last_commit_time = 0.0
 +        self._osk_np_lang_votes = []  # 'en'/'es' votes from recent words
++        # fajita fork: spatial (touch-geometry) autocorrect, env-gated. When on,
++        # a word whose every letter carries tap coords is rescored by
++        # osk_spatial.SpatialCorrector against the AOSP freq DBs listed in
++        # IBUS_TYPING_BOOSTER_REFERENCE_DB (colon-separated, read-only); the
++        # legacy _osk_np_autocorrect_candidate stays the fallback. Kill switch.
++        self._osk_spatial_enabled = os.getenv(
++            'IBUS_TYPING_BOOSTER_OSK_SPATIAL', '') not in ('', '0')
++        self._osk_spatial_db_paths = [
++            p for p in os.getenv(
++                'IBUS_TYPING_BOOSTER_REFERENCE_DB', '').split(':') if p]
++        # Instantiated lazily on the first boundary so a construction failure
++        # can disable spatial without ever breaking typing. None = not yet
++        # built; False = tried and failed (never retry, fall back to legacy).
++        self._osk_spatial_corrector: Any = None
++        # Parallel to _osk_np_word: one (col,row) tap coord per letter (or None
++        # if a letter arrived without a fresh coord pair). Consumed at the
++        # boundary by the spatial rescorer; cleared wherever _osk_np_word is.
++        self._osk_np_tap_coords: List[Optional[Tuple[float, float]]] = []
++        # Staged qrow/qcol from the most recent ROW/COL PUA markers, applied to
++        # the NEXT real letter appended to _osk_np_word then reset to None.
++        self._osk_np_pending_qrow: Optional[int] = None
++        self._osk_np_pending_qcol: Optional[int] = None
 +        # fajita fork: swipe/gesture decoder (rev 10), env-gated:
 +        self._osk_gesture_enabled = os.getenv(
 +            'IBUS_TYPING_BOOSTER_OSK_GESTURE', '') not in ('', '0')
@@ -88,7 +137,7 @@ index fb229b4..993a9b1 100644
  
          self._prefer_commit: bool = self._settings_dict[
              'prefercommit']['user']
-@@ -1050,16 +1084,16 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -1050,16 +1114,16 @@ class TypingBoosterEngine(IBus.Engine):
                  'label': _('On'),
              }
          }
@@ -111,7 +160,7 @@ index fb229b4..993a9b1 100644
          # only the rocket emoji is shown in that case and the ballot
          # boxes are not visible. In KDE these look so small that they
          # are very hard to distinguish. Using a single emoji for each
-@@ -1147,6 +1181,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -1147,6 +1211,10 @@ class TypingBoosterEngine(IBus.Engine):
          cleanup_database_thread = threading.Thread(
              target=self.database.cleanup_database)
          cleanup_database_thread.start()
@@ -122,7 +171,7 @@ index fb229b4..993a9b1 100644
  
      def show_lookup_table(self) -> None: # pylint: disable=arguments-differ
          super().show_lookup_table()
-@@ -1211,7 +1249,11 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -1211,7 +1279,11 @@ class TypingBoosterEngine(IBus.Engine):
      @property
      def has_osk(self) -> bool:
          '''Return True if OSK capability flag is set.'''
@@ -135,7 +184,7 @@ index fb229b4..993a9b1 100644
  
      @property
      def has_surrounding_text(self) -> bool:
-@@ -1552,7 +1594,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -1552,7 +1624,7 @@ class TypingBoosterEngine(IBus.Engine):
                      'Error initializing Transliterator %s '
                      'Maybe /usr/share/m17n/%s.mim is not installed?',
                      ime, ime)
@@ -144,7 +193,7 @@ index fb229b4..993a9b1 100644
                  self._transliterators[ime] = m17n_translit.Transliterator(
                      'NoIME')
          self._update_transliterated_strings()
-@@ -1561,7 +1603,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -1561,7 +1633,7 @@ class TypingBoosterEngine(IBus.Engine):
          '''Checks whether prediction candidate lists are wanted
  
          If neither emoji predictions are possible nor word predictions
@@ -153,7 +202,7 @@ index fb229b4..993a9b1 100644
          lookup table can be skipped completely.
  
          But m17n candidates lookup tables and Compose lookup tables
-@@ -1672,28 +1714,28 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -1672,28 +1744,28 @@ class TypingBoosterEngine(IBus.Engine):
          position can only be approximated from the cursor position in
          the typed string.
  
@@ -199,7 +248,7 @@ index fb229b4..993a9b1 100644
          is at least consistent and better then nothing at the moment.
  
          This problem is certainly worse in languages like Marathi where
-@@ -1756,14 +1798,14 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -1756,14 +1828,14 @@ class TypingBoosterEngine(IBus.Engine):
              and not self._typed_compose_sequence):
              dictionary_matches = (
                  self.database.hunspell_obj.spellcheck_match_list(phrase))
@@ -218,7 +267,7 @@ index fb229b4..993a9b1 100644
          # have different bidi directions.
          #
          # For example, the currency symbol ﷼ U+FDFC RIAL SIGN is a
-@@ -1779,8 +1821,8 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -1779,8 +1851,8 @@ class TypingBoosterEngine(IBus.Engine):
          #
          #     1.  rial sign ['sc'] ﷼
          #
@@ -229,7 +278,7 @@ index fb229b4..993a9b1 100644
          phrase = itb_util_core.bidi_embed(phrase)
          # If a candidate is extremely long, it will make the lookup
          # table too wide maybe wider than the available screen space
-@@ -2188,7 +2230,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -2188,7 +2260,7 @@ class TypingBoosterEngine(IBus.Engine):
          Returns True if successful, False if not.
  
          :param index: The index in the current page of the lookup table.
@@ -238,7 +287,7 @@ index fb229b4..993a9b1 100644
          '''
          page_size = self._lookup_table.get_page_size()
          if index < 0 or index >= page_size:
-@@ -2216,9 +2258,9 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -2216,9 +2288,9 @@ class TypingBoosterEngine(IBus.Engine):
  
      def get_string_from_lookup_table_current_page(self, index: int) -> str:
          '''
@@ -250,7 +299,7 @@ index fb229b4..993a9b1 100644
          '''
          if not self._set_lookup_table_cursor_pos_in_current_page(index):
              return ''
-@@ -2231,7 +2273,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -2231,7 +2303,7 @@ class TypingBoosterEngine(IBus.Engine):
          Returns True if successful, False if not.
  
          :param index: The index in the current page of the lookup table.
@@ -259,7 +308,7 @@ index fb229b4..993a9b1 100644
          :return: True if successful, False if not.
  
          The removal is done independent of the input phrase, all
-@@ -2267,7 +2309,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -2267,7 +2339,7 @@ class TypingBoosterEngine(IBus.Engine):
              case_mode_orig_phrase = self._candidates_case_mode_orig[
                  index].phrase
              if self._debug_level > 1:
@@ -268,7 +317,7 @@ index fb229b4..993a9b1 100644
                               case_mode_orig_phrase)
                  self.database.remove_phrase(
                      phrase=case_mode_orig_phrase)
-@@ -2277,13 +2319,13 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -2277,13 +2349,13 @@ class TypingBoosterEngine(IBus.Engine):
              # If the candidate to be removed from the user database starts
              # with characters which are stripped from tokens, we probably
              # want to delete the stripped candidate.  I.e. if the
@@ -287,7 +336,7 @@ index fb229b4..993a9b1 100644
              # is one of the prefixes stripped from tokens.  Trying to
              # delete the complete candidate from the user database won’t
              # achieve anything, only the stripped token is in the
-@@ -2291,7 +2333,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -2291,7 +2363,7 @@ class TypingBoosterEngine(IBus.Engine):
              stripped_phrase = itb_util_core.lstrip_token(phrase)
              if stripped_phrase:
                  if self._debug_level > 1:
@@ -296,7 +345,7 @@ index fb229b4..993a9b1 100644
                  self.database.remove_phrase(phrase=stripped_phrase)
              # Try to remove the whole candidate as well from the database.
              # Probably this won’t do anything, just to make sure that it
-@@ -2300,7 +2342,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -2300,7 +2372,7 @@ class TypingBoosterEngine(IBus.Engine):
              # of prefixes to strip from tokens has changed compared to a
              # an older release of ibus-typing-booster).
              if self._debug_level > 1:
@@ -305,7 +354,7 @@ index fb229b4..993a9b1 100644
              self.database.remove_phrase(phrase=phrase)
          return True
  
-@@ -2330,7 +2372,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -2330,7 +2402,7 @@ class TypingBoosterEngine(IBus.Engine):
          '''
          if self._debug_level > 1:
              LOGGER.debug(
@@ -314,7 +363,7 @@ index fb229b4..993a9b1 100644
                  self._ppp_phrase, self._pp_phrase, self._p_phrase, phrase)
          self._is_context_from_surrounding_text = False
          self._ppp_phrase = self._pp_phrase
-@@ -2342,7 +2384,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -2342,7 +2414,7 @@ class TypingBoosterEngine(IBus.Engine):
          '''
          if self._debug_level > 1:
              LOGGER.debug(
@@ -323,7 +372,7 @@ index fb229b4..993a9b1 100644
                  self._ppp_phrase, self._pp_phrase, self._p_phrase)
          self._ppp_phrase = ''
          self._pp_phrase = ''
-@@ -3270,9 +3312,9 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -3270,9 +3342,9 @@ class TypingBoosterEngine(IBus.Engine):
  
      def _get_preedit_string_with_case_mode_applied(self) -> str:
          '''Apply the current case mode and normalization only to the
@@ -335,7 +384,7 @@ index fb229b4..993a9b1 100644
          candidate list, or an unfinished m17n transliteration.
          '''
          ime = self.get_current_imes()[0]
-@@ -3306,6 +3348,15 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -3306,6 +3378,15 @@ class TypingBoosterEngine(IBus.Engine):
          '''Update Preedit String in UI'''
          if self._debug_level > 1:
              LOGGER.debug('entering function')
@@ -351,7 +400,7 @@ index fb229b4..993a9b1 100644
          if (self._show_raw_input >= 2  # Show *always*
              and self._typed_string
              and (self._lookup_table.hidden
-@@ -3319,7 +3370,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -3319,7 +3400,7 @@ class TypingBoosterEngine(IBus.Engine):
              self.update_lookup_table(self.get_lookup_table(), False)
          _str = self._get_preedit_string_with_case_mode_applied()
          if self._debug_level > 2:
@@ -360,7 +409,7 @@ index fb229b4..993a9b1 100644
          if self._hide_input:
              _str = '*' * len(_str)
          if _str == '':
-@@ -3344,7 +3395,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -3344,7 +3425,7 @@ class TypingBoosterEngine(IBus.Engine):
              if not (compose_colored or m17n_colored):
                  self._add_color_to_attrs_for_spellcheck(attrs, _str)
          else:
@@ -369,7 +418,7 @@ index fb229b4..993a9b1 100644
              # requested and lookup is *not* enabled.  Therefore,
              # make the preedit appear as if it were completely
              # normal text:
-@@ -3385,7 +3436,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -3385,7 +3466,7 @@ class TypingBoosterEngine(IBus.Engine):
              elif self._lookup_table.state == LookupTableState.M17N_CANDIDATES:
                  aux_string += f'🦜 {self._m17n_trans_parts.status} '
              else:
@@ -378,7 +427,7 @@ index fb229b4..993a9b1 100644
                  if self._emoji_predictions:
                      aux_string += (
                          f'{MODE_ON_SYMBOL}{EMOJI_PREDICTION_MODE_SYMBOL} ')
-@@ -3578,6 +3629,24 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -3578,6 +3659,24 @@ class TypingBoosterEngine(IBus.Engine):
                      and user_freq > 0.2):
                      self._lookup_table.set_cursor_visible(True)
                      self._is_candidate_auto_selected = True
@@ -403,7 +452,7 @@ index fb229b4..993a9b1 100644
          self._update_lookup_table()
          self._timeout_source_id = 0
  
-@@ -3635,6 +3704,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -3635,6 +3734,7 @@ class TypingBoosterEngine(IBus.Engine):
              return
          self.get_context()
          if (not self._unit_test
@@ -411,7 +460,89 @@ index fb229b4..993a9b1 100644
              and
              (not self._surrounding_text.event.is_set()
               or not self._is_context_from_surrounding_text)):
-@@ -3750,6 +3820,11 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -3663,8 +3763,68 @@ class TypingBoosterEngine(IBus.Engine):
+         if self._debug_level > 2:
+             LOGGER.debug('phrase_candidates=%s', phrase_candidates)
+         if not phrase_candidates:
+-            self._update_ui_empty_input()
+-            return
++            # Desktop path untouched: keep the existing empty-strip behavior.
++            if not (self.has_osk or self._osk_no_preedit):
++                self._update_ui_empty_input()
++                return
++            # fajita fork: on the OSK/no-preedit path, don't leave the
++            # suggestion strip blank. Fall back to the most-frequent bigram
++            # continuations of the previous word, and if none exist to the
++            # most-frequent unigrams overall. A query hiccup or schema
++            # surprise must NEVER break the strip or typing, so the whole
++            # fallback is wrapped and degrades to the empty-strip behavior.
++            try:
++                p_norm = itb_util_core.remove_accents(
++                    self.get_p_phrase().lower())
++                strip_size = 3
++                fallback_phrases: List[str] = []
++                if p_norm:
++                    bigram_sqlstr = (
++                        'SELECT phrase, SUM(user_freq) AS f '
++                        'FROM user_db.phrases '
++                        'WHERE p_phrase = :p '
++                        'GROUP BY phrase ORDER BY f DESC LIMIT :n')
++                    bigram_binds = {'p': p_norm, 'n': strip_size}
++                    for row in self.database.database.execute(
++                            bigram_sqlstr, bigram_binds).fetchall():
++                        ph = row[0]
++                        if ph and ph not in fallback_phrases:
++                            fallback_phrases.append(ph)
++                if not fallback_phrases:
++                    unigram_sqlstr = (
++                        'SELECT phrase, SUM(user_freq) AS f '
++                        'FROM user_db.phrases '
++                        'GROUP BY phrase ORDER BY f DESC LIMIT :n')
++                    unigram_binds = {'n': strip_size}
++                    for row in self.database.database.execute(
++                            unigram_sqlstr, unigram_binds).fetchall():
++                        ph = row[0]
++                        if ph and ph not in fallback_phrases:
++                            fallback_phrases.append(ph)
++                fallback_phrases = fallback_phrases[:strip_size]
++                if self._debug_level > 2:
++                    LOGGER.debug(
++                        'empty-input fallback phrases=%s', fallback_phrases)
++                if not fallback_phrases:
++                    self._update_ui_empty_input()
++                    return
++                # Reuse the existing builder below by assigning our fallback
++                # list back into phrase_candidates and NOT returning: the code
++                # that follows builds self._candidates, syncs the lookup table,
++                # applies case mode, and injects the revert pill.
++                phrase_candidates = [
++                    itb_util_core.PredictionCandidate(
++                        phrase=ph,
++                        user_freq=0.0,
++                        comment='',
++                        from_user_db=True,
++                        spell_checking=False)
++                    for ph in fallback_phrases]
++            except Exception:  # pylint: disable=broad-except
++                LOGGER.exception(
++                    'empty-input OSK fallback failed; showing empty strip')
++                self._update_ui_empty_input()
++                return
+         self._lookup_table.clear()
+         self._lookup_table.set_cursor_visible(False)
+         self.hide_lookup_table()
+@@ -3696,6 +3856,10 @@ class TypingBoosterEngine(IBus.Engine):
+         self._candidates_case_mode_orig = self._candidates.copy()
+         if self._current_case_mode != 'orig':
+             self._case_mode_change(mode=self._current_case_mode)
++        # fajita fork: after an autocorrect, force the original typed word to
++        # the front of the strip (rebuilds the lookup table to stay in sync).
++        # Done last so case-mode can't fold it away.
++        self._osk_np_inject_revert_candidate()
+         self._update_preedit()
+         if self._timeout_source_id:
+             GLib.source_remove(self._timeout_source_id)
+@@ -3750,6 +3914,11 @@ class TypingBoosterEngine(IBus.Engine):
          delay = self._candidates_delay_milliseconds
          if self.has_osk:
              delay = 0
@@ -423,7 +554,7 @@ index fb229b4..993a9b1 100644
          self._timeout_source_id = GLib.timeout_add(
              delay, self._update_candidates_and_lookup_table_and_aux)
  
-@@ -3833,7 +3908,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -3833,7 +4002,7 @@ class TypingBoosterEngine(IBus.Engine):
          if not IMPORT_ITB_NLTK_SUCCESSFUL:
              LOGGER.info('nltk is not available')
          else:
@@ -432,7 +563,7 @@ index fb229b4..993a9b1 100644
              try:
                  for synonym in itb_nltk.synonyms(phrase, keep_original=False):
                      related_candidates.append(itb_util_core.PredictionCandidate(
-@@ -3850,7 +3925,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -3850,7 +4019,7 @@ class TypingBoosterEngine(IBus.Engine):
                       error.__class__.__name__, error)
          if self._debug_level > 1:
              LOGGER.debug(
@@ -441,7 +572,7 @@ index fb229b4..993a9b1 100644
                  phrase, related_candidates)
          if not related_candidates:
              # Nothing related found, show the original lookup table
-@@ -3961,7 +4036,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -3961,7 +4130,7 @@ class TypingBoosterEngine(IBus.Engine):
  
      def _remove_candidate(self, index: int) -> bool:
          '''
@@ -450,7 +581,7 @@ index fb229b4..993a9b1 100644
          user database.
  
          :return: True if a candidate could be removed, False if not
-@@ -3985,7 +4060,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -3985,7 +4154,7 @@ class TypingBoosterEngine(IBus.Engine):
              index: int,
              extra_text: str = '') -> bool:
          '''
@@ -459,7 +590,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if a candidate could be committed, False if not.
          :param index: The index of the candidate to commit in the lookup table
-@@ -4028,7 +4103,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4028,7 +4197,7 @@ class TypingBoosterEngine(IBus.Engine):
              return True
          if self._lookup_table.state == LookupTableState.M17N_CANDIDATES:
              if self._debug_level > 1:
@@ -468,7 +599,7 @@ index fb229b4..993a9b1 100644
              self._lookup_table.state = LookupTableState.NORMAL
              self._candidates = []
              self._lookup_table.clear()
-@@ -4051,7 +4126,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4051,7 +4220,7 @@ class TypingBoosterEngine(IBus.Engine):
                          self._m17n_trans_parts.cursor_pos:])
              if self._debug_level > 1:
                  LOGGER.debug(
@@ -477,7 +608,7 @@ index fb229b4..993a9b1 100644
                      m17n_preedit_replacement, repr(self._m17n_trans_parts))
                  LOGGER.debug(
                      'OLD: self._typed_string=%s, self._typed_string_cursor=%s',
-@@ -4107,7 +4182,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4107,7 +4276,7 @@ class TypingBoosterEngine(IBus.Engine):
                               The context should only be pushed if the
                               cursor will end up to the right of commit_phrase.
          :param fix_sentence_end: Whether to try fixing whitespace before
@@ -486,7 +617,7 @@ index fb229b4..993a9b1 100644
                                   Better set this to False when calling
                                   this function several times before
                                   there was a chance that surrounding text
-@@ -4122,7 +4197,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4122,7 +4291,7 @@ class TypingBoosterEngine(IBus.Engine):
          the committed string ended a sentence.
          '''
          if self._debug_level > 1:
@@ -495,7 +626,7 @@ index fb229b4..993a9b1 100644
                           repr(commit_phrase), repr(input_phrase))
          if not commit_phrase:
              return
-@@ -4168,7 +4243,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4168,7 +4337,7 @@ class TypingBoosterEngine(IBus.Engine):
          #
          #     Works (+) or doesn’t work (-) for:
          #     + gnome-shell: + gnome-text-editor
@@ -504,7 +635,7 @@ index fb229b4..993a9b1 100644
          #                        + firefox, google-chrome
          #                            + google-docs
          #                            + gmail compose editor
-@@ -4187,11 +4262,11 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4187,11 +4356,11 @@ class TypingBoosterEngine(IBus.Engine):
          #     +/- gtk3-im: + gedit
          #                  + gnome-terminal
          #                  + xfce4-terminal
@@ -518,7 +649,7 @@ index fb229b4..993a9b1 100644
          #                      - firefox, google-chrome
          #                          - google-docs
          #                          - gmail mail compose editor
-@@ -4200,20 +4275,20 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4200,20 +4369,20 @@ class TypingBoosterEngine(IBus.Engine):
          #                 - thunderbird
          #
          # commit_mode == 'multi-forward-shift-return':
@@ -546,7 +677,7 @@ index fb229b4..993a9b1 100644
          #                    + firefox, google-chrome
          #                        + google-docs
          #                        + gmail compose editor
-@@ -4234,11 +4309,11 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4234,11 +4403,11 @@ class TypingBoosterEngine(IBus.Engine):
          #     +/- gtk3-im: + gedit
          #                  + xfce4-terminal
          #                  + gnome-terminal
@@ -560,7 +691,7 @@ index fb229b4..993a9b1 100644
          #                      - firefox, google-chrome
          #                          - google-docs
          #                          - gmail mail compose editor
-@@ -4292,7 +4367,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4292,7 +4461,7 @@ class TypingBoosterEngine(IBus.Engine):
          if len(commit_lines) >= 2:
              if self._debug_level > 0:
                  LOGGER.debug(
@@ -569,7 +700,7 @@ index fb229b4..993a9b1 100644
              for pattern, mode in commit_mode_patterns:
                  if re.search(pattern, self._client_info.client):
                      if self._debug_level > 0:
-@@ -4381,9 +4456,9 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4381,9 +4550,9 @@ class TypingBoosterEngine(IBus.Engine):
              # Commit the current commit phrase and the previous
              # phrase as a single unit as well for better
              # completions. For example, if the current commit
@@ -582,7 +713,7 @@ index fb229b4..993a9b1 100644
              if (self._record_mode == 1
                  and not self.database.phrase_exists(self.get_p_phrase())
                  and not
-@@ -4425,10 +4500,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4425,10 +4594,10 @@ class TypingBoosterEngine(IBus.Engine):
  
          If a single character ending a sentence is committed (possibly
          followed by whitespace) remove trailing white space before the
@@ -597,7 +728,7 @@ index fb229b4..993a9b1 100644
  
          '''
          if (not self.has_surrounding_text
-@@ -4557,16 +4632,16 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4557,16 +4726,16 @@ class TypingBoosterEngine(IBus.Engine):
              or key.super
              or key.hyper
              or key.meta):
@@ -620,7 +751,7 @@ index fb229b4..993a9b1 100644
              # a region in gedit.
              #
              # Maybe better don’t try to reopen the preëdit at all if
-@@ -4699,11 +4774,11 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4699,11 +4868,11 @@ class TypingBoosterEngine(IBus.Engine):
                  if cursor_pos <= cursor_pos_old:
                      # Movement to the right might be more than one
                      # column, for example when Right is pressed and
@@ -636,7 +767,7 @@ index fb229b4..993a9b1 100644
                      # already at the end of the buffer).
                      LOGGER.debug(
                          'Cursor has not moved right, cannot reopen preedit.')
-@@ -4779,8 +4854,8 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4779,8 +4948,8 @@ class TypingBoosterEngine(IBus.Engine):
          return False
  
      def get_context(self) -> None:
@@ -647,7 +778,7 @@ index fb229b4..993a9b1 100644
          than just using the last two words which were
          committed. Because the cursor position could have changed
          since the last two words were committed, one might have moved
-@@ -4824,7 +4899,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -4824,7 +4993,7 @@ class TypingBoosterEngine(IBus.Engine):
              self._ppp_phrase = tokens[-3]
          if self._debug_level > 1:
              LOGGER.debug(
@@ -656,7 +787,7 @@ index fb229b4..993a9b1 100644
                  self._ppp_phrase, self._pp_phrase, self._p_phrase)
          self._is_context_from_surrounding_text = True
  
-@@ -5412,7 +5487,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5412,7 +5581,7 @@ class TypingBoosterEngine(IBus.Engine):
              self,
              mode: Union[bool, Any],
              update_gsettings: bool = True) -> None:
@@ -665,7 +796,7 @@ index fb229b4..993a9b1 100644
  
          :param mode: Whether to prevent saving input to the
                       user database or not
-@@ -5450,7 +5525,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5450,7 +5619,7 @@ class TypingBoosterEngine(IBus.Engine):
              not self._off_the_record, update_gsettings)
  
      def get_off_the_record_mode(self) -> bool:
@@ -674,7 +805,7 @@ index fb229b4..993a9b1 100644
          return self._off_the_record
  
      def set_emoji_trigger_characters(
-@@ -5518,7 +5593,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5518,7 +5687,7 @@ class TypingBoosterEngine(IBus.Engine):
              self._lookup_related_candidates(
                  self._lookup_table.related_candidates_phrase)
          elif self._lookup_table.state == LookupTableState.NORMAL:
@@ -683,7 +814,7 @@ index fb229b4..993a9b1 100644
              # it to display the Emoji in the new style:
              self._update_ui()
          if update_gsettings:
-@@ -5604,7 +5679,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5604,7 +5773,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_color_preedit_spellcheck(self) -> bool:
@@ -692,7 +823,7 @@ index fb229b4..993a9b1 100644
          return self._color_preedit_spellcheck
  
      def set_color_preedit_spellcheck_string(
-@@ -5616,10 +5691,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5616,10 +5785,10 @@ class TypingBoosterEngine(IBus.Engine):
          :param color_string: The color for preedit spellchecking
                              It is a string in one of the following formats:
                              - Standard name from the X11 rgb.txt
@@ -707,7 +838,7 @@ index fb229b4..993a9b1 100644
          :param update_gsettings: Whether to write the change to Gsettings.
                                   Set this to False if this method is
                                   called because the Gsettings key changed
-@@ -5640,7 +5715,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5640,7 +5809,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_string(color_string))
  
      def get_color_preedit_spellcheck_string(self) -> str:
@@ -716,7 +847,7 @@ index fb229b4..993a9b1 100644
          '''
          return self._color_preedit_spellcheck_string
  
-@@ -5669,7 +5744,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5669,7 +5838,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_color_inline_completion(self) -> bool:
@@ -725,7 +856,7 @@ index fb229b4..993a9b1 100644
          return self._color_inline_completion
  
      def set_color_inline_completion_string(
-@@ -5681,10 +5756,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5681,10 +5850,10 @@ class TypingBoosterEngine(IBus.Engine):
          :param color_string: The color for inline completion
                              It is a string in one of the following formats:
                              - Standard name from the X11 rgb.txt
@@ -740,7 +871,7 @@ index fb229b4..993a9b1 100644
          :param update_gsettings: Whether to write the change to Gsettings.
                                   Set this to False if this method is
                                   called because the Gsettings key changed
-@@ -5705,7 +5780,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5705,7 +5874,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_string(color_string))
  
      def get_color_inline_completion_string(self) -> str:
@@ -749,7 +880,7 @@ index fb229b4..993a9b1 100644
          return self._color_inline_completion_string
  
      def set_color_compose_preview(
-@@ -5733,7 +5808,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5733,7 +5902,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_color_compose_preview(self) -> bool:
@@ -758,7 +889,7 @@ index fb229b4..993a9b1 100644
          return self._color_compose_preview
  
      def set_color_compose_preview_string(
-@@ -5745,10 +5820,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5745,10 +5914,10 @@ class TypingBoosterEngine(IBus.Engine):
          :param color_string: The color for the compose preview
                              It is a string in one of the following formats:
                              - Standard name from the X11 rgb.txt
@@ -773,7 +904,7 @@ index fb229b4..993a9b1 100644
          :param update_gsettings: Whether to write the change to Gsettings.
                                   Set this to False if this method is
                                   called because the Gsettings key changed
-@@ -5769,7 +5844,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5769,7 +5938,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_string(color_string))
  
      def get_color_compose_preview_string(self) -> str:
@@ -782,7 +913,7 @@ index fb229b4..993a9b1 100644
          return self._color_compose_preview_string
  
      def set_color_m17n_preedit(
-@@ -5797,7 +5872,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5797,7 +5966,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_color_m17n_preedit(self) -> bool:
@@ -791,7 +922,7 @@ index fb229b4..993a9b1 100644
          return self._color_m17n_preedit
  
      def set_color_m17n_preedit_string(
-@@ -5809,10 +5884,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5809,10 +5978,10 @@ class TypingBoosterEngine(IBus.Engine):
          :param color_string: The color for the m17n preedit
                               It is a string in one of the following formats:
                               - Standard name from the X11 rgb.txt
@@ -806,7 +937,7 @@ index fb229b4..993a9b1 100644
          :param update_gsettings: Whether to write the change to Gsettings.
                                   Set this to False if this method is
                                   called because the Gsettings key changed
-@@ -5833,7 +5908,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5833,7 +6002,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_string(color_string))
  
      def get_color_m17n_preedit_string(self) -> str:
@@ -815,7 +946,7 @@ index fb229b4..993a9b1 100644
          return self._color_m17n_preedit_string
  
      def set_color_userdb(
-@@ -5861,7 +5936,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5861,7 +6030,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_color_userdb(self) -> bool:
@@ -824,7 +955,7 @@ index fb229b4..993a9b1 100644
          return self._color_userdb
  
      def set_color_userdb_string(
-@@ -5873,10 +5948,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5873,10 +6042,10 @@ class TypingBoosterEngine(IBus.Engine):
          :param color_string: The color for user database suggestions
                              It is a string in one of the following formats:
                              - Standard name from the X11 rgb.txt
@@ -839,7 +970,7 @@ index fb229b4..993a9b1 100644
          :param update_gsettings: Whether to write the change to Gsettings.
                                   Set this to False if this method is
                                   called because the Gsettings key changed
-@@ -5897,7 +5972,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5897,7 +6066,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_string(color_string))
  
      def get_color_userdb_string(self) -> str:
@@ -848,7 +979,7 @@ index fb229b4..993a9b1 100644
          return self._color_userdb_string
  
      def set_color_spellcheck(
-@@ -5925,7 +6000,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5925,7 +6094,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_color_spellcheck(self) -> bool:
@@ -857,7 +988,7 @@ index fb229b4..993a9b1 100644
          return self._color_spellcheck
  
      def set_color_spellcheck_string(
-@@ -5937,10 +6012,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5937,10 +6106,10 @@ class TypingBoosterEngine(IBus.Engine):
          :param color_string: The color for spellchecking suggestions
                              It is a string in one of the following formats:
                              - Standard name from the X11 rgb.txt
@@ -872,7 +1003,7 @@ index fb229b4..993a9b1 100644
          :param update_gsettings: Whether to write the change to Gsettings.
                                   Set this to False if this method is
                                   called because the Gsettings key changed
-@@ -5961,7 +6036,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5961,7 +6130,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_string(color_string))
  
      def get_color_spellcheck_string(self) -> str:
@@ -881,7 +1012,7 @@ index fb229b4..993a9b1 100644
          return self._color_spellcheck_string
  
      def set_color_dictionary(
-@@ -5989,7 +6064,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -5989,7 +6158,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_color_dictionary(self) -> bool:
@@ -890,7 +1021,7 @@ index fb229b4..993a9b1 100644
          return self._color_dictionary
  
      def set_color_dictionary_string(
-@@ -6001,10 +6076,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6001,10 +6170,10 @@ class TypingBoosterEngine(IBus.Engine):
          :param color_string: The color for dictionary suggestions
                              It is a string in one of the following formats:
                              - Standard name from the X11 rgb.txt
@@ -905,7 +1036,7 @@ index fb229b4..993a9b1 100644
          :param update_gsettings: Whether to write the change to Gsettings.
                                   Set this to False if this method is
                                   called because the Gsettings key changed
-@@ -6025,7 +6100,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6025,7 +6194,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_string(color_string))
  
      def get_color_dictionary_string(self) -> str:
@@ -914,7 +1045,7 @@ index fb229b4..993a9b1 100644
          return self._color_dictionary_string
  
      def set_label_userdb(
-@@ -6053,7 +6128,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6053,7 +6222,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_label_userdb(self) -> bool:
@@ -923,7 +1054,7 @@ index fb229b4..993a9b1 100644
          return self._label_userdb
  
      def set_label_userdb_string(
-@@ -6081,7 +6156,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6081,7 +6250,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_string(label_string))
  
      def get_label_userdb_string(self) -> str:
@@ -932,7 +1063,7 @@ index fb229b4..993a9b1 100644
          return self._label_userdb_string
  
      def set_label_spellcheck(
-@@ -6109,7 +6184,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6109,7 +6278,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_label_spellcheck(self) -> bool:
@@ -941,7 +1072,7 @@ index fb229b4..993a9b1 100644
          return self._label_spellcheck
  
      def set_label_spellcheck_string(
-@@ -6137,7 +6212,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6137,7 +6306,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_string(label_string))
  
      def get_label_spellcheck_string(self) -> str:
@@ -950,7 +1081,7 @@ index fb229b4..993a9b1 100644
          return self._label_spellcheck_string
  
      def set_label_dictionary(
-@@ -6165,7 +6240,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6165,7 +6334,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_label_dictionary(self) -> bool:
@@ -959,7 +1090,7 @@ index fb229b4..993a9b1 100644
          return self._label_dictionary
  
      def set_label_dictionary_string(
-@@ -6206,7 +6281,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6206,7 +6375,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_string(label_string))
  
      def get_label_dictionary_string(self) -> str:
@@ -968,7 +1099,7 @@ index fb229b4..993a9b1 100644
          return self._label_dictionary_string
  
      def set_flag_dictionary(
-@@ -6235,7 +6310,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6235,7 +6404,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_flag_dictionary(self) -> bool:
@@ -977,7 +1108,7 @@ index fb229b4..993a9b1 100644
          return self._flag_dictionary
  
      def set_label_busy(
-@@ -6263,7 +6338,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6263,7 +6432,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_label_busy(self) -> bool:
@@ -986,7 +1117,7 @@ index fb229b4..993a9b1 100644
          return self._label_busy
  
      def set_label_busy_string(
-@@ -6291,7 +6366,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6291,7 +6460,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_string(label_string))
  
      def get_label_busy_string(self) -> str:
@@ -995,7 +1126,7 @@ index fb229b4..993a9b1 100644
          return self._label_busy_string
  
      def set_ai_chat_enable(
-@@ -6443,7 +6518,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6443,7 +6612,7 @@ class TypingBoosterEngine(IBus.Engine):
              self,
              mode: Union[bool, Any],
              update_gsettings: bool = True) -> None:
@@ -1004,7 +1135,7 @@ index fb229b4..993a9b1 100644
  
          :param mode: Whether to show a candidate list only when typing Tab
          :param update_gsettings: Whether to write the change to Gsettings.
-@@ -6464,14 +6539,14 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6464,14 +6633,14 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_tab_enable(self) -> bool:
@@ -1021,7 +1152,7 @@ index fb229b4..993a9b1 100644
  
          :param mode: Whether to disable Typing Booster in terminals
          :param update_gsettings: Whether to write the change to Gsettings.
-@@ -6492,7 +6567,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6492,7 +6661,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_disable_in_terminals(self) -> bool:
@@ -1030,7 +1161,7 @@ index fb229b4..993a9b1 100644
          return self._disable_in_terminals
  
      def set_ascii_digits(
-@@ -6521,7 +6596,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6521,7 +6690,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_ascii_digits(self) -> bool:
@@ -1039,7 +1170,7 @@ index fb229b4..993a9b1 100644
          return self._ascii_digits
  
      def toggle_ascii_digits(self, update_gsettings: bool = True) -> None:
-@@ -6561,7 +6636,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6561,7 +6730,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_show_final_form(self) -> bool:
@@ -1048,7 +1179,7 @@ index fb229b4..993a9b1 100644
          return self._show_final_form
  
      def toggle_show_final_form(self, update_gsettings: bool = True) -> None:
-@@ -6580,7 +6655,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6580,7 +6749,7 @@ class TypingBoosterEngine(IBus.Engine):
              self,
              mode: Union[bool, Any],
              update_gsettings: bool = True) -> None:
@@ -1057,7 +1188,7 @@ index fb229b4..993a9b1 100644
  
          :param mode: Whether to remember the input method used last for
                       the preëdit
-@@ -6603,7 +6678,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6603,7 +6772,7 @@ class TypingBoosterEngine(IBus.Engine):
  
      def get_remember_last_used_preedit_ime(self) -> bool:
          '''Returns the current value of the
@@ -1066,7 +1197,7 @@ index fb229b4..993a9b1 100644
          '''
          return self._remember_last_used_preedit_ime
  
-@@ -6611,7 +6686,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6611,7 +6780,7 @@ class TypingBoosterEngine(IBus.Engine):
              self,
              mode: Union[bool, Any],
              update_gsettings: bool = True) -> None:
@@ -1075,7 +1206,7 @@ index fb229b4..993a9b1 100644
  
          :param mode: Whether to remember the input mode (on/off)
          :param update_gsettings: Whether to write the change to Gsettings.
-@@ -6632,7 +6707,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6632,7 +6801,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_remember_input_mode(self) -> bool:
@@ -1084,7 +1215,7 @@ index fb229b4..993a9b1 100644
          return self._remember_input_mode
  
      def set_page_size(
-@@ -6743,7 +6818,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6743,7 +6912,7 @@ class TypingBoosterEngine(IBus.Engine):
              self,
              mode: Union[bool, Any],
              update_gsettings: bool = True) -> None:
@@ -1093,7 +1224,7 @@ index fb229b4..993a9b1 100644
  
          :param mode: Whether preedit styling like underlining should
                       be enabled only when lookup is enabled.
-@@ -6765,7 +6840,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -6765,7 +6934,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_preedit_style_only_when_lookup(self) -> bool:
@@ -1102,7 +1233,7 @@ index fb229b4..993a9b1 100644
          return self._preedit_style_only_when_lookup
  
      def set_min_char_complete(
-@@ -7062,7 +7137,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7062,7 +7231,7 @@ class TypingBoosterEngine(IBus.Engine):
              self,
              mode: Union[bool, Any],
              update_gsettings: bool = True) -> None:
@@ -1111,7 +1242,7 @@ index fb229b4..993a9b1 100644
  
          :param mode: Whether to show the number of candidates
                       in the auxiliary text
-@@ -7085,7 +7160,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7085,7 +7254,7 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_boolean(mode))
  
      def get_show_number_of_candidates(self) -> bool:
@@ -1120,7 +1251,7 @@ index fb229b4..993a9b1 100644
          '''
          return self._show_number_of_candidates
  
-@@ -7093,7 +7168,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7093,7 +7262,7 @@ class TypingBoosterEngine(IBus.Engine):
              self,
              mode: Union[bool, Any],
              update_gsettings: bool = True) -> None:
@@ -1129,7 +1260,7 @@ index fb229b4..993a9b1 100644
  
          :param mode: Whether to show status information in the
                       auxiliary text.
-@@ -7122,7 +7197,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7122,7 +7291,7 @@ class TypingBoosterEngine(IBus.Engine):
  
      def get_show_status_info_in_auxiliary_text(self) -> bool:
          '''Returns the current value of the
@@ -1138,7 +1269,7 @@ index fb229b4..993a9b1 100644
          '''
          return self._show_status_info_in_auxiliary_text
  
-@@ -7130,7 +7205,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7130,7 +7299,7 @@ class TypingBoosterEngine(IBus.Engine):
              self,
              mode: Union[int, Any],
              update_gsettings: bool = True) -> None:
@@ -1147,7 +1278,7 @@ index fb229b4..993a9b1 100644
  
          :param mode: Whether to show the raw input in the auxiliary text.
                       0: Never
-@@ -7155,14 +7230,14 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7155,14 +7324,14 @@ class TypingBoosterEngine(IBus.Engine):
                  GLib.Variant.new_int32(mode))
  
      def get_show_raw_input(self) -> int:
@@ -1164,7 +1295,7 @@ index fb229b4..993a9b1 100644
  
          :param mode: Whether to automatically select the best candidate
          :param update_gsettings: Whether to write the change to Gsettings.
-@@ -7186,7 +7261,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7186,7 +7355,7 @@ class TypingBoosterEngine(IBus.Engine):
  
      def get_auto_select_candidate(self) -> int:
          '''Returns the current value of the
@@ -1173,7 +1304,7 @@ index fb229b4..993a9b1 100644
          '''
          return self._auto_select_candidate
  
-@@ -7227,6 +7302,11 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7227,6 +7396,11 @@ class TypingBoosterEngine(IBus.Engine):
              self.remove_candidate_from_user_database(index)
              self._update_ui()
              return
@@ -1185,7 +1316,7 @@ index fb229b4..993a9b1 100644
          if button == 1:
              phrase = self.get_string_from_lookup_table_cursor_pos()
              if phrase:
-@@ -7301,7 +7381,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7301,7 +7475,7 @@ class TypingBoosterEngine(IBus.Engine):
              return
          if not os.path.isfile(self._google_application_credentials):
              self._speech_recognition_error(
@@ -1194,7 +1325,7 @@ index fb229b4..993a9b1 100644
                  % self._google_application_credentials)
              return
  
-@@ -7346,25 +7426,25 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7346,25 +7520,25 @@ class TypingBoosterEngine(IBus.Engine):
              #
              # But I don’t know any way to find out via the API whether
              # a language is supported or not. When trying to set a
@@ -1229,7 +1360,7 @@ index fb229b4..993a9b1 100644
              # for speech recognition just because it is not on the
              # list of officially supported languages. Therefore, I allow
              # *all* languages to be used for speech recognition. But when
-@@ -7452,7 +7532,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7452,7 +7626,7 @@ class TypingBoosterEngine(IBus.Engine):
          return
  
      def _command_toggle_input_mode_on_off(self) -> bool:
@@ -1238,7 +1369,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -7460,7 +7540,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7460,7 +7634,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_speech_recognition(self) -> bool:
@@ -1247,7 +1378,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -7468,7 +7548,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7468,7 +7642,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_next_case_mode(self) -> bool:
@@ -1256,7 +1387,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -7483,7 +7563,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7483,7 +7657,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_previous_case_mode(self) -> bool:
@@ -1265,7 +1396,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -7498,7 +7578,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7498,7 +7672,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_cancel(self) -> bool:
@@ -1274,7 +1405,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -7631,7 +7711,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7631,7 +7805,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_enable_lookup(self) -> bool:
@@ -1283,7 +1414,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -7707,7 +7787,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -7707,7 +7881,7 @@ class TypingBoosterEngine(IBus.Engine):
              self._update_lookup_table_and_aux()
              # Select the first candidate automatically because most
              # Japanese and Chinese input methods behave like this and because
@@ -1292,7 +1423,7 @@ index fb229b4..993a9b1 100644
              # candidate which is the first one which makes a difference
              # to just continuing with the preedit:
              self._lookup_table.set_cursor_visible(True)
-@@ -8034,7 +8114,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8034,7 +8208,7 @@ class TypingBoosterEngine(IBus.Engine):
          '''
          if IMPORT_ITB_OLLAMA_ERROR:
              LOGGER.error(
@@ -1301,7 +1432,7 @@ index fb229b4..993a9b1 100644
              return
          if self._ollama_model == '':
              LOGGER.error('ollama model is not set.')
-@@ -8398,7 +8478,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8398,7 +8572,7 @@ class TypingBoosterEngine(IBus.Engine):
          return False
  
      def _command_next_input_method(self) -> bool:
@@ -1310,7 +1441,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8423,7 +8503,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8423,7 +8597,7 @@ class TypingBoosterEngine(IBus.Engine):
          return False
  
      def _command_previous_input_method(self) -> bool:
@@ -1319,7 +1450,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8448,7 +8528,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8448,7 +8622,7 @@ class TypingBoosterEngine(IBus.Engine):
          return False
  
      def _command_next_dictionary(self) -> bool:
@@ -1328,7 +1459,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8466,7 +8546,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8466,7 +8640,7 @@ class TypingBoosterEngine(IBus.Engine):
          return False
  
      def _command_previous_dictionary(self) -> bool:
@@ -1337,7 +1468,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8483,7 +8563,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8483,7 +8657,7 @@ class TypingBoosterEngine(IBus.Engine):
          return False
  
      def _command_select_next_candidate(self) -> bool:
@@ -1346,7 +1477,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8497,7 +8577,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8497,7 +8671,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_select_previous_candidate(self) -> bool:
@@ -1355,7 +1486,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8511,7 +8591,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8511,7 +8685,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_lookup_table_page_down(self) -> bool:
@@ -1364,7 +1495,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8525,7 +8605,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8525,7 +8699,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_lookup_table_page_up(self) -> bool:
@@ -1373,7 +1504,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8539,7 +8619,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8539,7 +8713,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_toggle_emoji_prediction(self) -> bool:
@@ -1382,7 +1513,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8547,7 +8627,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8547,7 +8721,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_toggle_emoji_style(self) -> bool:
@@ -1391,7 +1522,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8555,7 +8635,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8555,7 +8729,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_trigger_emoji_predictions(self) -> bool:
@@ -1400,7 +1531,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8563,7 +8643,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8563,7 +8737,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_trigger_word_predictions(self) -> bool:
@@ -1409,7 +1540,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8571,7 +8651,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8571,7 +8745,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_toggle_off_the_record(self) -> bool:
@@ -1418,7 +1549,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8579,7 +8659,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8579,7 +8753,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_toggle_ascii_digits(self) -> bool:
@@ -1427,7 +1558,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8587,7 +8667,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8587,7 +8761,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_lookup_related(self) -> bool:
@@ -1436,7 +1567,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8596,7 +8676,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8596,7 +8770,7 @@ class TypingBoosterEngine(IBus.Engine):
          return False
  
      def _command_toggle_hide_input(self) -> bool:
@@ -1445,7 +1576,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8605,7 +8685,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8605,7 +8779,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_setup(self) -> bool:
@@ -1454,7 +1585,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8705,7 +8785,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8705,7 +8879,7 @@ class TypingBoosterEngine(IBus.Engine):
          self.delete_surrounding_text(
              -cursor_pos_in_current_line, len(current_line))
          cursor_correction_chars_logical = current_line[cursor_pos_in_current_line:]
@@ -1463,7 +1594,7 @@ index fb229b4..993a9b1 100644
          markers = ['_\ufffd_', # U+FFFD REPLACEMENT CHARACTER
                      '_\ufffc_', # U+FFFC OBJECT REPLACEMENT CHARACTER
                      '_☺_☺_☺_',  # some emoji
-@@ -8756,7 +8836,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8756,7 +8930,7 @@ class TypingBoosterEngine(IBus.Engine):
              im_module = self._client_info.im_module
              LOGGER.debug('%r detected, trying to correct cursor.', im_module)
              if im_module == 'gtk4-im':
@@ -1472,7 +1603,7 @@ index fb229b4..993a9b1 100644
                               'cursor correction cannot not work.')
                  return
              if im_module == 'gnome-shell':
-@@ -8819,7 +8899,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8819,7 +8993,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_commit_raw_input(self) -> bool:
@@ -1481,7 +1612,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8829,7 +8909,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8829,7 +9003,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_commit_raw_input_and_forward_key(self) -> bool:
@@ -1490,7 +1621,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8839,7 +8919,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8839,7 +9013,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_commit(self) -> bool:
@@ -1499,7 +1630,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8849,7 +8929,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8849,7 +9023,7 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_commit_and_forward_key(self) -> bool:
@@ -1508,7 +1639,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -8859,189 +8939,189 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -8859,189 +9033,189 @@ class TypingBoosterEngine(IBus.Engine):
          return True
  
      def _command_commit_candidate_1(self) -> bool:
@@ -1725,7 +1856,7 @@ index fb229b4..993a9b1 100644
  
          :return: True if the key was completely handled, False if not.
          '''
-@@ -9054,8 +9134,8 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9054,8 +9228,8 @@ class TypingBoosterEngine(IBus.Engine):
          '''Handle hotkey commands
  
          :return: A tuple of too boolean values (match, return_value)
@@ -1736,7 +1867,7 @@ index fb229b4..993a9b1 100644
                   from do_process_key_event().
          :param key: The typed key. If this is a hotkey,
                      execute the command for this hotkey.
-@@ -9125,10 +9205,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9125,10 +9299,10 @@ class TypingBoosterEngine(IBus.Engine):
          return (False, False)
  
      def _return_true(self, key: itb_util_core.KeyEvent) -> bool:
@@ -1750,7 +1881,7 @@ index fb229b4..993a9b1 100644
          event should be passed to the application.
          '''
          if self._debug_level > 0:
-@@ -9140,14 +9220,946 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9140,14 +9314,1155 @@ class TypingBoosterEngine(IBus.Engine):
          self._trigger_surrounding_text_update()
          return True
  
@@ -1795,6 +1926,19 @@ index fb229b4..993a9b1 100644
 +    _OSK_G_ANCHOR = '\uf8d2'   # next letter is an anchor (corner/dwell)
 +    _OSK_G_SHIFT  = '\uf8d4'   # gesture began on the shift level
 +    _OSK_G_MAX_TRACE = 48      # max letters the decoder will process
++
++    # fajita fork: tap-coordinate wire protocol v1 (OSK -> engine). Two
++    # press-only PUA markers precede each plain-tap letter, carrying the tap's
++    # 1/8-key-quantized grid position so the spatial autocorrect knows WHERE in
++    # the key the finger landed. Ranges are clear of the swipe markers above.
++    #   ROW marker: U+F820 + qrow, qrow in [0,32]  -> U+F820 .. U+F840
++    #   COL marker: U+F860 + qcol, qcol in [0,80]  -> U+F860 .. U+F8B0
++    # Per-tap emission order: ROW marker, COL marker, then the letter key event.
++    _OSK_TAP_ROW_BASE = 0xF820
++    _OSK_TAP_ROW_MAX = 0xF840
++    _OSK_TAP_COL_BASE = 0xF860
++    _OSK_TAP_COL_MAX = 0xF8B0
++    _OSK_TAP_COORD_SCALE = 8
 +
 +    # us-mobile QWERTY key centres: (col_centre, row_centre) in key-width units.
 +    # Row offsets: row0 x=0, row1 x=0.5, row2 x=1.5.
@@ -1963,6 +2107,41 @@ index fb229b4..993a9b1 100644
 +        head.sort(key=penalty)
 +        self._candidates = head + list(self._candidates[10:])
 +
++    def _osk_np_inject_revert_candidate(self) -> None:
++        """fajita fork: when an autocorrect just fired, surface the ORIGINAL
++        typed word as strip candidate 0 so it can be tapped to undo the
++        correction (iOS/Android style). Keeps self._candidates and the IBus
++        lookup table in sync (BUG9 hazard: reordering one without the other
++        makes a strip tap commit the wrong word) by rebuilding the table from
++        self._candidates, exactly like the rerank fix does. Idempotent: safe
++        to call on every stage of the two-stage (5ms/350ms) strip refill."""
++        if self._osk_np_revert_pending is None:
++            return
++        original = self._osk_np_revert_pending['original']
++        if not original:
++            return
++        # Drop any pre-existing copy so we neither duplicate it nor leave a
++        # non-revert copy ahead of ours, then put the original first verbatim
++        # (never case-folded — it must restore what the user actually typed).
++        self._candidates = [
++            itb_util_core.PredictionCandidate(
++                phrase=original,
++                user_freq=0.0,
++                comment='',
++                from_user_db=False,
++                spell_checking=False)
++        ] + [cand for cand in self._candidates if cand.phrase != original]
++        osk_np_cursor = self._lookup_table.is_cursor_visible()
++        self._lookup_table.clear()
++        self._lookup_table.set_cursor_visible(osk_np_cursor)
++        for cand in self._candidates:
++            self._append_candidate_to_lookup_table(
++                phrase=cand.phrase,
++                user_freq=cand.user_freq,
++                comment=cand.comment,
++                from_user_db=cand.from_user_db,
++                spell_checking=cand.spell_checking)
++
 +    def _osk_np_learn(self, word: str) -> None:
 +        """Record a word the user insisted on (bypasses record-mode: an
 +        explicitly re-typed word after an unwanted autocorrect must stick)."""
@@ -2125,15 +2304,77 @@ index fb229b4..993a9b1 100644
 +                    deaccented_typed, deaccented_phrase, cap)
 +                if distance > cap:
 +                    continue
-+            scored.append((distance, lang_penalty, phrase))
++            freq = self.database.phrase_exists(phrase.lower())
++            scored.append((distance, lang_penalty, -freq, phrase))
 +        if not scored:
 +            return None
-+        # stable: same distance+language keeps hunspell's own ranking
-+        scored.sort(key=lambda entry: (entry[0], entry[1]))
-+        phrase = scored[0][2]
++        # fajita fork: break distance+language ties by learned frequency
++        # (higher first, via -freq), so equidistant same-language candidates
++        # prefer the more-used word (holq -> hola, not hole). Sort is stable,
++        # so with no tie the pre-existing hunspell ordering is preserved.
++        scored.sort(key=lambda entry: (entry[0], entry[1], entry[2]))
++        phrase = scored[0][3]
 +        if stripped[0].isupper() and not phrase[0].isupper():
 +            phrase = phrase[0].upper() + phrase[1:]
 +        return phrase
++
++    def _osk_np_clear_tap_coords(self) -> None:
++        """Clear the per-letter tap-coord buffer and any staged ROW/COL pair.
++        Call wherever _osk_np_word is cleared/sealed/reset."""
++        self._osk_np_tap_coords = []
++        self._osk_np_pending_qrow = None
++        self._osk_np_pending_qcol = None
++
++    def _osk_np_spatial_corrector(self) -> Any:
++        """Lazily build the spatial corrector; None if unavailable/disabled.
++        Any construction failure disables spatial for the session (logged once)
++        and falls back to the legacy corrector — never breaks typing."""
++        if self._osk_spatial_corrector is False:
++            return None
++        if self._osk_spatial_corrector is not None:
++            return self._osk_spatial_corrector
++        try:
++            self._osk_spatial_corrector = osk_spatial.SpatialCorrector(
++                self._osk_spatial_db_paths)
++        except Exception as error:  # pylint: disable=broad-except
++            LOGGER.exception(
++                'osk-spatial: corrector init failed (%s) — disabling spatial, '
++                'falling back to legacy autocorrect', error)
++            self._osk_spatial_corrector = False
++            return None
++        return self._osk_spatial_corrector
++
++    def _osk_np_boundary_correction(self, typed: str) -> Optional[str]:
++        """Choose the boundary correction for `typed`. Prefers the spatial
++        (touch-geometry) corrector when it is enabled, available, and EVERY
++        letter of the word carries a tap coord; otherwise falls back to the
++        legacy _osk_np_autocorrect_candidate. Returns the replacement word or
++        None. Never raises: any spatial failure degrades to the legacy path."""
++        if (self._osk_spatial_enabled
++                and self._osk_np_tap_coords
++                and len(self._osk_np_tap_coords) == len(typed)
++                and all(coord is not None
++                        for coord in self._osk_np_tap_coords)):
++            corrector = self._osk_np_spatial_corrector()
++            if corrector is not None:
++                try:
++                    prev_word = self.get_p_phrase() or None
++                    lang = self._osk_np_active_language() or 'en'
++                    best, _confidence, should = corrector.decide(
++                        typed, list(self._osk_np_tap_coords), prev_word, lang)
++                    if should and best and best != typed:
++                        return best
++                    # Spatial ran but declined (conservative): honor that and
++                    # do NOT fall through to the legacy corrector for this word
++                    # — the whole point of spatial is to be the decider when it
++                    # has coords. Returning None leaves the word untouched.
++                    return None
++                except Exception as error:  # pylint: disable=broad-except
++                    LOGGER.exception(
++                        'osk-spatial: decide() failed for %r (%s) — falling '
++                        'back to legacy autocorrect', typed, error)
++                    # fall through to legacy on error
++        return self._osk_np_autocorrect_candidate(typed)
 +
 +    def _osk_np_boundary(self, key: itb_util_core.KeyEvent, sep: str) -> bool:
 +        """Handle a word-boundary character (space/punctuation)."""
@@ -2143,7 +2384,7 @@ index fb229b4..993a9b1 100644
 +        if (self._osk_autocorrect
 +            and typed
 +            and sep in self._OSK_NP_AUTOCORRECT_SEPARATORS):
-+            corrected = self._osk_np_autocorrect_candidate(typed)
++            corrected = self._osk_np_boundary_correction(typed)
 +        if corrected:
 +            before = self._osk_np_before_cursor()
 +            lag_ok = (before is not None
@@ -2157,6 +2398,13 @@ index fb229b4..993a9b1 100644
 +                    time.monotonic(), self.get_p_phrase())
 +                self._record_in_database_and_push_context(
 +                    commit_phrase=corrected, input_phrase=typed)
++                # fajita fork: arm the tappable "undo autocorrect" affordance.
++                # Remember exactly what we put in the app (corrected + sep) so
++                # the undo can delete precisely that and restore the original
++                # the user typed. Only on the branch that actually committed a
++                # correction — never on the safe-fallback below.
++                self._osk_np_revert_pending = {
++                    'original': typed, 'committed': corrected + sep}
 +            else:
 +                # surrounding text disagrees (lag or external edit): play safe
 +                corrected = None
@@ -2165,12 +2413,15 @@ index fb229b4..993a9b1 100644
 +            if typed:
 +                self._record_in_database_and_push_context(
 +                    commit_phrase=typed, input_phrase=typed)
++            # no correction happened: nothing to undo
++            self._osk_np_revert_pending = None
 +        self._commit_happened_after_focus_in = True
 +        if typed:
 +            self._osk_np_vote_language(corrected or typed)
 +        self._osk_np_last_commit_time = time.monotonic()
 +        self._osk_np_last_finished = (corrected or typed, time.monotonic())
 +        self._osk_np_word = ''
++        self._osk_np_clear_tap_coords()
 +        self._clear_input()
 +        self._trigger_surrounding_text_update()
 +        GLib.timeout_add(5, self._update_ui_empty_input_try_completion)
@@ -2184,6 +2435,18 @@ index fb229b4..993a9b1 100644
 +        phrase = self.get_string_from_lookup_table_cursor_pos()
 +        if not phrase:
 +            return True
++        # fajita fork: tappable "undo autocorrect". If an autocorrect just
++        # fired we parked the ORIGINAL typed word at strip slot 0 (see
++        # _osk_np_inject_revert_candidate). A tap on that exact slot means
++        # "no, keep what I typed": restore it and teach the keyboard.
++        if (self._osk_autocorrect
++            and self._osk_np_revert_pending is not None
++            and self._lookup_table.get_cursor_pos() == 0
++            and phrase == self._osk_np_revert_pending['original']):
++            if self._osk_np_do_revert():
++                return True
++            # revert bailed (surrounding text disagreed): fall through and
++            # treat the tap as an ordinary candidate commit of the original.
 +        typed = self._osk_np_word
 +        if typed:
 +            before = self._osk_np_before_cursor()
@@ -2205,11 +2468,62 @@ index fb229b4..993a9b1 100644
 +        self._osk_np_vote_language(phrase)
 +        self._osk_np_last_finished = (phrase, time.monotonic())
 +        self._osk_np_word = ''
++        self._osk_np_clear_tap_coords()
 +        self._clear_input()
 +        self._trigger_surrounding_text_update()
 +        GLib.timeout_add(5, self._update_ui_empty_input_try_completion)
 +        GLib.timeout_add(350, self._update_ui_empty_input_try_completion)
 +        self._osk_gesture_alternates = []  # alternate picked or confirmed
++        return True
++
++    def _osk_np_do_revert(self) -> bool:
++        """fajita fork: undo the autocorrect recorded in
++        self._osk_np_revert_pending — restore the ORIGINAL typed word and
++        teach the keyboard never to correct it again (iOS/Android style).
++
++        Returns True when the undo was performed (or safely aborted, i.e.
++        handled), False only if the caller should instead treat the tap as an
++        ordinary candidate commit. Always clears the pending state."""
++        pending = self._osk_np_revert_pending
++        self._osk_np_revert_pending = None
++        if not pending:
++            return False
++        original = pending['original']
++        committed = pending['committed']
++        # Same surrounding-text safety guard the rest of the code uses: only
++        # touch the client when its view still ends with what we committed
++        # (correction + separator). If it lags or was edited externally, bail
++        # without deleting anything destructive.
++        before = self._osk_np_before_cursor()
++        if before is None or not before.endswith(committed):
++            LOGGER.warning(
++                'osk-np: surrounding text does not end with %r, '
++                'not reverting autocorrect', committed)
++            return True
++        # Restore the original word followed by the SAME separator the
++        # correction carried (the last char of `committed`): the user only
++        # rejected the spelling change, not the space/punctuation they typed.
++        sep = committed[len(committed) - 1:]
++        self.delete_surrounding_text(-len(committed), len(committed))
++        super().commit_text(IBus.Text.new_from_string(original + sep))
++        self._commit_happened_after_focus_in = True
++        self._osk_np_last_commit_time = time.monotonic()
++        # Force-learn the original so it survives future boundaries, and drop
++        # it from recent-corrections so the retype-revert path (_osk_np_is_revert)
++        # does not double-handle the same word.
++        self._osk_np_learn(original)
++        self._osk_np_recent_corrections.pop(original.lower(), None)
++        self._record_in_database_and_push_context(
++            commit_phrase=original, input_phrase=original)
++        self._osk_np_vote_language(original)
++        self._osk_np_last_finished = (original, time.monotonic())
++        self._osk_np_word = ''
++        self._osk_np_clear_tap_coords()
++        self._clear_input()
++        self._trigger_surrounding_text_update()
++        GLib.timeout_add(5, self._update_ui_empty_input_try_completion)
++        GLib.timeout_add(350, self._update_ui_empty_input_try_completion)
++        self._osk_gesture_alternates = []  # word replaced
 +        return True
 +
 +    def _osk_np_process_key(self, key: itb_util_core.KeyEvent) -> Optional[bool]:
@@ -2232,6 +2546,12 @@ index fb229b4..993a9b1 100644
 +        uchar = key.unicode
 +        if not uchar or unicodedata.category(uchar[0]) in ('Cc', 'Cf'):
 +            return None
++        # fajita fork: tap-coordinate markers (protocol v1) that precede a
++        # plain-tap letter are now absorbed at the very top of
++        # do_process_key_event (before compose/keymap), so they stash
++        # _osk_np_pending_qrow / _osk_np_pending_qcol and never reach here. The
++        # staged pair is attached to the next real letter appended to
++        # _osk_np_word below.
 +        # fajita fork rev 10: intercept PUA gesture framing markers (cat=Co)
 +        # and letters arriving mid-trace BEFORE any other handling.
 +        # Also absorbs stray PUA in no-preedit mode regardless of gesture-enabled.
@@ -2255,11 +2575,29 @@ index fb229b4..993a9b1 100644
 +        if self._osk_np_is_word_char(uchar[0]):
 +            if not self._osk_np_word:
 +                self.get_context()
++                # fajita fork: a new word begins — the "undo autocorrect"
++                # affordance is only live for the word we just corrected
++                # (iOS behaviour), so retire it now.
++                self._osk_np_revert_pending = None
 +            self._osk_gesture_alternates = []  # word extended by typing
 +            super().commit_text(IBus.Text.new_from_string(uchar))
 +            self._commit_happened_after_focus_in = True
 +            self._osk_np_last_commit_time = time.monotonic()
 +            self._osk_np_word += uchar
++            # fajita fork: attach this letter's tap coord (protocol v1). If a
++            # fresh ROW+COL pair was staged by the markers that preceded this
++            # key, convert 1/8-key quanta back to fractional (col,row); else
++            # append None (letter arrived without coords -> spatial disabled for
++            # this word). Reset the staging slots either way.
++            if (self._osk_np_pending_qrow is not None
++                    and self._osk_np_pending_qcol is not None):
++                self._osk_np_tap_coords.append(
++                    (self._osk_np_pending_qcol / self._OSK_TAP_COORD_SCALE,
++                     self._osk_np_pending_qrow / self._OSK_TAP_COORD_SCALE))
++            else:
++                self._osk_np_tap_coords.append(None)
++            self._osk_np_pending_qrow = None
++            self._osk_np_pending_qcol = None
 +            self._insert_string_at_cursor(list(uchar))
 +            self._trigger_surrounding_text_update()
 +            self._update_ui()
@@ -2565,6 +2903,7 @@ index fb229b4..993a9b1 100644
 +                            'osk-gesture: auto-space boundary failed at '
 +                            'gesture start — dropping open word')
 +                        self._osk_np_word = ''
++                        self._osk_np_clear_tap_coords()
 +                        self._clear_input()
 +                self._osk_gesture_trace = []
 +                self._osk_gesture_pending_anchor = False
@@ -2652,6 +2991,7 @@ index fb229b4..993a9b1 100644
 +        self._commit_happened_after_focus_in = True
 +        self._osk_np_last_commit_time = time.monotonic()
 +        self._osk_np_word = best
++        self._osk_np_clear_tap_coords()
 +        self._clear_input()
 +        self._insert_string_at_cursor(list(best))
 +        self._trigger_surrounding_text_update()
@@ -2701,7 +3041,7 @@ index fb229b4..993a9b1 100644
  
          1) It doesn’t work well when trying to do the unit
          tests. The MockEngine class in the unit tests cannot get that
-@@ -9157,11 +10169,11 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9157,11 +10472,11 @@ class TypingBoosterEngine(IBus.Engine):
  
          2) It does *not* work when using XIM, i.e. *not* when using Qt
          with the XIM module and *not* in X11 applications like xterm.
@@ -2716,7 +3056,7 @@ index fb229b4..993a9b1 100644
          this. See: https://bugzilla.redhat.com/show_bug.cgi?id=1291238
          This has been fixed though at least when triggering a commit
          with space by inserting the space into the application by
-@@ -9169,13 +10181,13 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9169,13 +10484,13 @@ class TypingBoosterEngine(IBus.Engine):
          I.e. when a space triggers a commit, neither `return False`
          nor `forward_key_event()` is used.
  
@@ -2733,7 +3073,7 @@ index fb229b4..993a9b1 100644
          sometimes use self.forward_key_event(key.val, key.code,
          key.state) instead to pass the key to the application.  This
          works fine with the unit tests because a forward_key_event()
-@@ -9184,8 +10196,8 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9184,8 +10499,8 @@ class TypingBoosterEngine(IBus.Engine):
          concerned, it does not matter whether the key.code is correct
          or incorrectly key.code == 0.
  
@@ -2744,7 +3084,7 @@ index fb229b4..993a9b1 100644
          that it does nothing at all when key.code is 0, which is often
          the case when the on-screen-keyboard OSK is
          used. ibus-typing-booster can fix that in many or even most
-@@ -9193,7 +10205,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9193,7 +10508,7 @@ class TypingBoosterEngine(IBus.Engine):
          current keyboard layout, but there are circumstances when this
          is also not possible.
  
@@ -2753,7 +3093,7 @@ index fb229b4..993a9b1 100644
          some environments even if OSK is not involved:
  
          - Qt4 when using the input module and not XIM
-@@ -9201,15 +10213,15 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9201,15 +10516,15 @@ class TypingBoosterEngine(IBus.Engine):
          - older versions of Wayland
          - Gtk4
  
@@ -2773,7 +3113,7 @@ index fb229b4..993a9b1 100644
          case and no problems when the key.code is incorrectly 0.
  
          But committing is also not always possible, for example
-@@ -9232,7 +10244,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9232,7 +10547,7 @@ class TypingBoosterEngine(IBus.Engine):
            unit testing, then the key.code does not matter)
          - if committing is not possible and forward_key_event()
            is is not possible either, fall back to the worst option
@@ -2782,7 +3122,7 @@ index fb229b4..993a9b1 100644
          '''
          if self._debug_level > 0:
              LOGGER.info('key=%s', key)
-@@ -9245,7 +10257,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9245,24 +10560,24 @@ class TypingBoosterEngine(IBus.Engine):
              LOGGER.warning(
                  'key.code=0 is not a valid keycode. Probably caused by OSK.')
          # If it is possible to commit instead of forwarding a key event
@@ -2790,8 +3130,11 @@ index fb229b4..993a9b1 100644
 +        # or doing a "return False", prefer the commit:
          if (self._prefer_commit
              and key.unicode
-             and unicodedata.category(key.unicode) not in ('Cc',)
-@@ -9255,14 +10267,14 @@ class TypingBoosterEngine(IBus.Engine):
+-            and unicodedata.category(key.unicode) not in ('Cc',)
++            and unicodedata.category(key.unicode) not in ('Cc', 'Cf', 'Co')
+             and (key.val not in (
+                 IBus.KEY_Return, IBus.KEY_KP_Enter, IBus.KEY_ISO_Enter,
+                 IBus.KEY_BackSpace, IBus.KEY_Delete))
              and not key.state & IBus.ModifierType.RELEASE_MASK
              and not key.state & itb_util_core.KEYBINDING_STATE_MASK):
              if self._debug_level > 0:
@@ -2808,7 +3151,7 @@ index fb229b4..993a9b1 100644
          # MockEngine class cannot get that return value.
          # The keycode does not matter here, we do not care whether it is correct
          # or not when doing unit testing.
-@@ -9485,7 +10497,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9485,7 +10800,7 @@ class TypingBoosterEngine(IBus.Engine):
                          self._m17n_trans_parts.cursor_pos:])
              if self._debug_level > 1:
                  LOGGER.debug(
@@ -2817,7 +3160,7 @@ index fb229b4..993a9b1 100644
                      m17n_preedit_replacement,repr(self._m17n_trans_parts))
                  LOGGER.debug(
                      'OLD: self._typed_string=%s, self._typed_string_cursor=%s',
-@@ -9877,7 +10889,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9877,7 +11192,7 @@ class TypingBoosterEngine(IBus.Engine):
              self._update_lookup_table_and_aux()
              # Select the first candidate automatically because most
              # Japanese and Chinese input methods behave like this and because
@@ -2826,7 +3169,7 @@ index fb229b4..993a9b1 100644
              # candidate which is the first one which makes a difference
              # to just continuing with the preedit:
              self._lookup_table.set_cursor_visible(True)
-@@ -9894,8 +10906,8 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -9894,8 +11209,8 @@ class TypingBoosterEngine(IBus.Engine):
              return True
          # Standard lookup table works fine here for vi-tcvn, vi-telex,
          # vi-viqr, vi-vni, ... It does probably work well for **all**
@@ -2837,7 +3180,35 @@ index fb229b4..993a9b1 100644
          # make this work for ja-anthy, but it might not even make any
          # sense for ja-anthy.
          if self._debug_level > 1:
-@@ -10321,6 +11333,21 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10269,6 +11584,27 @@ class TypingBoosterEngine(IBus.Engine):
+                         LOGGER.debug('capability: %s %s',
+                                      str(cap), format(int(cap), '016b'))
+ 
++        # fajita fork: absorb OSK tap-coordinate markers (protocol v1) at the
++        # very top, BEFORE compose/hotkey/keymap handling and the no-preedit
++        # gate below. The OSK sends ROW/COL PUA markers (cat=Co) as keycode=0
++        # press events preceding a plain-tap letter. If we let them reach
++        # _handle_compose (or the `not self._typed_compose_sequence` gate skips
++        # _osk_np_process_key while a compose sequence is active), they fall
++        # through to _return_false, whose _prefer_commit branch commits them as
++        # visible garbage (it only excluded 'Cc', not 'Co'). Staging here — with
++        # the same constants and stash slots the in-_osk_np_process_key decode
++        # used — guarantees the markers are consumed regardless of compose /
++        # hotkey / keymap / gate state. The letter-attach logic in
++        # _osk_np_process_key still reads these stashed quanta unchanged.
++        if self._osk_no_preedit and not key.release and key.unicode:
++            cp = ord(key.unicode[0])
++            if self._OSK_TAP_ROW_BASE <= cp <= self._OSK_TAP_ROW_MAX:
++                self._osk_np_pending_qrow = cp - self._OSK_TAP_ROW_BASE
++                return self._return_true(key)
++            if self._OSK_TAP_COL_BASE <= cp <= self._OSK_TAP_COL_MAX:
++                self._osk_np_pending_qcol = cp - self._OSK_TAP_COL_BASE
++                return self._return_true(key)
++
+         if self._use_ibus_keymap:
+             key = self._translate_to_ibus_keymap(key)
+ 
+@@ -10321,6 +11657,22 @@ class TypingBoosterEngine(IBus.Engine):
  
          if disabled:
              return self._return_false(key)
@@ -2850,6 +3221,7 @@ index fb229b4..993a9b1 100644
 +                    'dropping input state, passing key through',
 +                    key, error.__class__.__name__, error)
 +                self._osk_np_word = ''
++                self._osk_np_clear_tap_coords()
 +                self._clear_input()
 +                osk_np_result = None
 +            if osk_np_result is not None:
@@ -2859,7 +3231,7 @@ index fb229b4..993a9b1 100644
  
          if self._handle_m17n_candidates(key):
              return self._return_true(key)
-@@ -10377,10 +11404,10 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10377,10 +11729,10 @@ class TypingBoosterEngine(IBus.Engine):
                  and not key.shift
                  and not self._has_transliteration([key.msymbol])):
                  # if the first character is a space, just pass it
@@ -2873,7 +3245,7 @@ index fb229b4..993a9b1 100644
                  # some input methods transliterate the msymbol 'S- '
                  # (See:
                  # https://github.com/mike-fabian/ibus-typing-booster/issues/524)):
-@@ -10432,7 +11459,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10432,7 +11784,7 @@ class TypingBoosterEngine(IBus.Engine):
                      # If a digit has been typed and we use
                      # transliteration, we may want to convert it to
                      # native digits. For example, with mr-inscript we
@@ -2882,7 +3254,7 @@ index fb229b4..993a9b1 100644
                      # to transliterate and commit the result:
                      transliterated_digit = self._transliterators[
                          self.get_current_imes()[0]
-@@ -10462,7 +11489,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10462,7 +11814,7 @@ class TypingBoosterEngine(IBus.Engine):
                  # If the user types a modifier key combination, it
                  # might have a transliteration in some input methods.
                  # For example, AltGr-4 (key.msymbol = 'G-4')
@@ -2891,7 +3263,7 @@ index fb229b4..993a9b1 100644
                  # method is used.  But trying to handle all modifier
                  # key combinations as input is not nice because it
                  # prevents the use of such key combinations for other
-@@ -10646,7 +11673,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10646,7 +11998,7 @@ class TypingBoosterEngine(IBus.Engine):
              # We need to transliterate
              # the preëdit again here, because adding the commit key to
              # the input might influence the transliteration. For example
@@ -2900,7 +3272,7 @@ index fb229b4..993a9b1 100644
              # (See: https://bugzilla.redhat.com/show_bug.cgi?id=1353672)
              #
              # Also, even if the cursor is not at the end of the input when
-@@ -10729,7 +11756,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10729,7 +12081,7 @@ class TypingBoosterEngine(IBus.Engine):
                          # instead of committing:
                          if self._debug_level > 1:
                              LOGGER.debug(
@@ -2909,7 +3281,7 @@ index fb229b4..993a9b1 100644
                                  key.msymbol)
                          self._insert_string_at_cursor([key.msymbol])
                          self._update_ui()
-@@ -10747,12 +11774,12 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10747,12 +12099,12 @@ class TypingBoosterEngine(IBus.Engine):
                             or key.hyper
                             or key.meta)
                    and self._typed_string_cursor == 0):
@@ -2924,7 +3296,7 @@ index fb229b4..993a9b1 100644
                  # by default!)
                  #
                  # As the cursor is still at the beginning of the
-@@ -10776,7 +11803,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10776,7 +12128,7 @@ class TypingBoosterEngine(IBus.Engine):
                             or key.meta)
                    and (self._typed_string_cursor
                         < len(self._typed_string))):
@@ -2933,7 +3305,7 @@ index fb229b4..993a9b1 100644
                  # commit the preëdit while the cursor is not at the
                  # end of the preëdit.  That means the parts of the
                  # preëdit to the left of and to the right of the
-@@ -10941,9 +11968,9 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -10941,9 +12293,9 @@ class TypingBoosterEngine(IBus.Engine):
              # If the character typed could end a sentence, we can
              # *maybe* commit immediately.  However, if transliteration
              # is used, we may need to handle a punctuation or symbol
@@ -2946,7 +3318,7 @@ index fb229b4..993a9b1 100644
              # what comes next.
              input_phrase = (
                  self._transliterated_strings[
-@@ -11014,7 +12041,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11014,7 +12366,7 @@ class TypingBoosterEngine(IBus.Engine):
          # string.  And apparently it was not handled as a select key
          # or other special key either.  So whatever this was, we
          # cannot handle it, just pass it through to the application by
@@ -2955,7 +3327,7 @@ index fb229b4..993a9b1 100644
          if self.is_empty():
              self._update_ui_empty_input()
          return False
-@@ -11060,7 +12087,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11060,7 +12412,7 @@ class TypingBoosterEngine(IBus.Engine):
                         'SDL2_Application': SDL2 input module
  
                         In case of the Gtk input modules, the name of the
@@ -2964,7 +3336,7 @@ index fb229b4..993a9b1 100644
                         like 'gtk3-im:firefox', 'gtk4-im:gnome-text-editor', …
          '''
          if self._debug_level > 1:
-@@ -11074,7 +12101,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11074,7 +12426,7 @@ class TypingBoosterEngine(IBus.Engine):
           window_title) = itb_active_window.get_active_window()
          if self._debug_level > 1:
              LOGGER.debug(
@@ -2973,7 +3345,7 @@ index fb229b4..993a9b1 100644
                  program_name, window_title)
          client_info_str = client
          if ':' not in client_info_str:
-@@ -11152,7 +12179,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11152,7 +12504,7 @@ class TypingBoosterEngine(IBus.Engine):
              else:
                  continue
              LOGGER.info(
@@ -2982,7 +3354,7 @@ index fb229b4..993a9b1 100644
                  regexp, self._client_info.client, setting, value)
              autosettings_apply[setting] = new_value
              self._autosettings_revert[setting] = current_value
-@@ -11279,6 +12306,16 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11279,6 +12631,19 @@ class TypingBoosterEngine(IBus.Engine):
          # if the input purpose is set correctly on focus in, then it
          # should not be necessary to reset it here.
          self._client_info.client = ''
@@ -2990,16 +3362,19 @@ index fb229b4..993a9b1 100644
 +            # fajita fork: the word is already committed in the app; make
 +            # sure the stale-preedit recording below does not see it twice.
 +            self._osk_np_word = ''
++            self._osk_np_clear_tap_coords()
 +            self._osk_np_consumed_vals.clear()
 +            self._osk_np_last_commit_time = 0.0
 +            self._osk_np_last_finished = ('', 0.0)
++            # focus change: the undo-autocorrect affordance is stale
++            self._osk_np_revert_pending = None
 +            # a new app is a new conversation: drop the language bias
 +            self._osk_np_lang_votes.clear()
 +            self._osk_gesture_alternates = []  # focus change, word gone
          # The preëdit, if there was any, has already been committed
          # automatically because
          # update_preedit_text_with_mode(,,,IBus.PreeditFocusMode.COMMIT)
-@@ -11331,6 +12368,32 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11331,6 +12696,39 @@ class TypingBoosterEngine(IBus.Engine):
          if self._ollama_chat_query_thread:
              self._ollama_chat_query_cancel(commit_selection=False)
              return
@@ -3020,6 +3395,12 @@ index fb229b4..993a9b1 100644
 +                self._surrounding_text = SurroundingText()
 +                self._trigger_surrounding_text_update()
 +                return
++            # A genuine reset (Backspace press, cursor move — which never
++            # reach the engine) means the user left the just-corrected word:
++            # retire the undo-autocorrect affordance. (The recent_own_commit
++            # branch above returned early, so the echo-reset our own
++            # post-autocorrect commit provokes never reaches here.)
++            self._osk_np_revert_pending = None
 +            if self._osk_np_word:
 +                # A genuine reset (Backspace press, cursor move — which
 +                # never reach the engine): drop the shadow word if the app
@@ -3028,11 +3409,12 @@ index fb229b4..993a9b1 100644
 +                if (osk_np_before is None
 +                    or not osk_np_before.endswith(self._osk_np_word)):
 +                    self._osk_np_word = ''
++                    self._osk_np_clear_tap_coords()
 +                    self._osk_gesture_alternates = []  # word dropped on reset
          # The press events of arrow keys like `Left` and `BackSpace`
          # cause a call to `do_reset()`. If that clears
          # self._surrounding_text_old() the comparison of
-@@ -11395,7 +12458,7 @@ class TypingBoosterEngine(IBus.Engine):
+@@ -11395,7 +12793,7 @@ class TypingBoosterEngine(IBus.Engine):
                  # On Wayland this causes problems, as the surrounding text
                  # behaves differently. Do this workaround only if the im client
                  # uses gtk3-im, if not it will cause more problems then help.
@@ -3041,3 +3423,772 @@ index fb229b4..993a9b1 100644
                               self._current_preedit_text.text_str)
                  LOGGER.debug(
                      'Whatever caused the reset did not commit the preedit. '
+diff --git a/engine/osk_spatial.py b/engine/osk_spatial.py
+new file mode 100644
+index 0000000..0766e09
+--- /dev/null
++++ b/engine/osk_spatial.py
+@@ -0,0 +1,763 @@
++#!/usr/bin/env python3
++"""osk_spatial.py -- engine-embedded port of spatial_corrector.py.
++
++Pure Python, stdlib + sqlite3 ONLY. No gi/IBus/GLib, no third-party libs; this
++module imports cleanly on its own. It is a faithful port of the validated
++standalone scorer at /home/matv/Projects/fajita-spatial/spatial_corrector.py:
++the exact cost model, tunables, geometry, candidate generation, and decision
++gate are preserved. The only structural difference is CONNECTION MANAGEMENT --
++the standalone version hardcoded a module-level DB-path dict + connection cache;
++here the reference DBs and their lazily-opened read-only connections live on the
++SpatialCorrector instance.
++
++Used by hunspell_table.py behind the IBUS_TYPING_BOOSTER_OSK_SPATIAL feature
++flag. The reference dictionaries come from IBUS_TYPING_BOOSTER_REFERENCE_DB
++(a colon-separated list of DB file paths, already split by the caller); each is
++opened strictly READ-ONLY (`mode=ro` + `PRAGMA query_only=ON`) and never
++written. Any failure to open/read a DB degrades gracefully to a conservative
++no-op -- decide() NEVER raises into the engine.
++
++=====================================================================
++FULL COST MODEL
++=====================================================================
++For a literal (what the finger sequence spells) and a candidate word we
++compute a single scalar score; the lowest score wins. Three additive terms:
++
++    score(literal, cand) = spatial_cost
++                         + W_LANG * language_cost
++                         - bigram_bonus
++
++1. SPATIAL COST -- a weighted Damerau/optimal-string-alignment edit distance
++   between the literal and the candidate. Substitutions are proximity-modulated
++   (tap-based when we have real coords, pure-string otherwise); insert/delete/
++   transpose have fixed costs.
++2. LANGUAGE COST -- -log((freq + 1) / 256.0); LANG_COST_OOV for absent words.
++3. BIGRAM BONUS -- BIGRAM_BONUS / rank if prev_word->cand is a known bigram.
++
++=====================================================================
++OFFENSIVE-WORD POLICY
++=====================================================================
++A word is OFFENSIVE if any colon-split flag equals exactly 'offensive' or
++'possibly_offensive'. We NEVER autocorrect TO an offensive word: such a
++candidate can still be scored/returned as the raw best_word, but
++should_autocorrect is forced False for it.
++"""
++
++import functools
++import math
++import sqlite3
++
++# ---------------------------------------------------------------------------
++# GEOMETRY
++# Copied verbatim from /home/matv/nix/hosts/fajita/keyboard/osk-harness.py;
++# must stay BIT-EXACT with that file and should later be shared with it.
++# ---------------------------------------------------------------------------
++_KEY_CENTERS = {
++    'q': (0.5,  0.5), 'w': (1.5,  0.5), 'e': (2.5,  0.5),
++    'r': (3.5,  0.5), 't': (4.5,  0.5), 'y': (5.5,  0.5),
++    'u': (6.5,  0.5), 'i': (7.5,  0.5), 'o': (8.5,  0.5),
++    'p': (9.5,  0.5),
++    'a': (1.0,  1.5), 's': (2.0,  1.5), 'd': (3.0,  1.5),
++    'f': (4.0,  1.5), 'g': (5.0,  1.5), 'h': (6.0,  1.5),
++    'j': (7.0,  1.5), 'k': (8.0,  1.5), 'l': (9.0,  1.5),
++    'z': (2.0,  2.5), 'x': (3.0,  2.5), 'c': (4.0,  2.5),
++    'v': (5.0,  2.5), 'b': (6.0,  2.5), 'n': (7.0,  2.5),
++    'm': (8.0,  2.5),
++}
++
++# ---------------------------------------------------------------------------
++# NAMED TUNABLE CONSTANTS  (no magic numbers below)
++# Values noted "(CHANGED)" differ from the initial spec starting values; see
++# README for the rationale.
++# ---------------------------------------------------------------------------
++SIGMA = 0.6                # Gaussian spread of a tap over the key grid.
++W_LANG = 1.0              # Weight on the language (frequency) term.
++BIGRAM_BONUS = 2.0        # Context reward for a rank-1 known bigram.
++INSERT_COST = 2.2         # Cost to insert a candidate char not in the literal.
++DELETE_COST = 2.2         # Cost to delete a literal char not in the candidate.
++TRANSPOSE_COST = 1.0      # Cost of an adjacent transposition (Damerau/OSA).
++SUB_COST_MAX = 2.5        # Ceiling for any single substitution cost.
++MAX_CANDIDATES = 60       # Hard cap on candidate-set size (keeps latency low).
++AUTOCORRECT_MARGIN = 1.0  # Min score margin (literal - best) to autocorrect.
++SELF_CONFIDENT_FREQ = 90  # If the literal is in-vocab at >= this freq, trust it.
++NEIGHBOR_RADIUS = 1.1     # Euclidean radius for the static _NEIGHBORS table.
++
++# --- extra named tunables ---
++# SUB_SLOPE: pure-string substitution cost per unit key distance.
++#   Chosen so sub_cost('q','w') = SUB_SLOPE * 1.0 stays cheap (~0.95) while
++#   sub_cost('q','p') = SUB_SLOPE * 9.0 saturates to the SUB_COST_MAX ceiling.
++#   Guarantees sub_cost('q','w') < sub_cost('q','p').
++SUB_SLOPE = 0.95
++# LANG_COST_OOV: language cost for an out-of-vocabulary word. Set just above
++#   -log(1/256.0) = 5.545 so any OOV is strictly worse than the rarest real
++#   word (freq 0 -> -log(1/256) = 5.545).
++LANG_COST_OOV = 6.0
++# NORM_RADIUS: neighbourhood radius (in key-widths) used to bound the set of
++#   keys over which a tap distribution is normalized. Larger than NEIGHBOR_RADIUS
++#   so a tap on a border still spreads mass to the correct handful of keys.
++NORM_RADIUS = 1.6
++# TAP_PROB_THRESHOLD: a key is a "plausible" tap target if its normalized tap
++#   probability is >= this. Used to pick plausible first letters for candidate
++#   SQL and plausible substitutions.
++TAP_PROB_THRESHOLD = 0.03
++# SUB_TAP_FLOOR / SUB_TAP_MIN: smallest tap probability allowed before -log
++#   would blow up; exp(-SUB_COST_MAX) makes -log(floor) == SUB_COST_MAX so the
++#   tap-based sub cost saturates at exactly the same ceiling as the pure-string
++#   path.
++SUB_TAP_FLOOR = math.exp(-SUB_COST_MAX)
++SUB_TAP_MIN = SUB_TAP_FLOOR
++# PER_LETTER_LIMIT: SQL LIMIT applied per plausible first letter when pulling
++#   candidate words. Bounds the per-query row count for latency.
++PER_LETTER_LIMIT = 20
++
++_LOG_256 = math.log(256.0)
++
++
++# ---------------------------------------------------------------------------
++# NEIGHBOURS  (built exactly like osk-harness.py)
++# ---------------------------------------------------------------------------
++def _build_neighbors():
++    nb = {}
++    for a, (ax, ay) in _KEY_CENTERS.items():
++        nb[a] = [b for b, (bx, by) in _KEY_CENTERS.items()
++                 if math.sqrt((ax - bx) ** 2 + (ay - by) ** 2) <= NEIGHBOR_RADIUS]
++    return nb
++
++
++_NEIGHBORS = _build_neighbors()
++
++
++# ===========================================================================
++# 1. SPATIAL MODEL
++# ===========================================================================
++def key_center(ch):
++    """Return (col, row) key centre for a single char, or None if not a key.
++
++    Casefolds first so 'H' maps to 'h'.
++    """
++    if not ch:
++        return None
++    c = ch.casefold()
++    return _KEY_CENTERS.get(c)
++
++
++def synth_tap(ch):
++    """Synthesize a *perfect* tap (the key centre) for a char.
++
++    Returns (col, row) for letters, None for non-letters. Used to fabricate
++    idealized taps in tests and as a fallback when real coords are absent.
++    """
++    return key_center(ch)
++
++
++@functools.lru_cache(maxsize=4096)
++def key_distribution(col, row, sigma=SIGMA):
++    """Return {key: prob} tap distribution, normalized to sum 1.
++
++    Unnormalized weight for each key is a Gaussian over Euclidean tap->centre
++    distance: exp(-d^2 / (2*sigma^2)). Normalization is over a BOUNDED
++    neighbourhood: the single nearest key PLUS every key within NORM_RADIUS of
++    the tap. The nearest key is always included even if it lies beyond
++    NORM_RADIUS (guarantees a non-empty distribution for any coordinate).
++
++    A dead-centre tap puts nearly all mass on that key; a tap on the q/w border
++    splits mass between q and w.
++    """
++    two_sigma_sq = 2.0 * sigma * sigma
++    # Find nearest key + all keys within NORM_RADIUS.
++    nearest = None
++    nearest_d = float('inf')
++    in_radius = []
++    for k, (kx, ky) in _KEY_CENTERS.items():
++        d = math.sqrt((col - kx) ** 2 + (row - ky) ** 2)
++        if d < nearest_d:
++            nearest_d = d
++            nearest = k
++        if d <= NORM_RADIUS:
++            in_radius.append((k, d))
++    keys = dict(in_radius)
++    if nearest is not None and nearest not in keys:
++        keys[nearest] = nearest_d
++    # Unnormalized Gaussian weights.
++    weights = {k: math.exp(-(d * d) / two_sigma_sq) for k, d in keys.items()}
++    total = sum(weights.values())
++    if total <= 0.0:
++        # Degenerate: put all mass on the nearest key.
++        return {nearest: 1.0}
++    return {k: w / total for k, w in weights.items()}
++
++
++# ===========================================================================
++# 2. WEIGHTED EDIT DISTANCE
++# ===========================================================================
++@functools.lru_cache(maxsize=8192)
++def _euclid(a, b):
++    ca = _KEY_CENTERS.get(a)
++    cb = _KEY_CENTERS.get(b)
++    if ca is None or cb is None:
++        return None
++    return math.sqrt((ca[0] - cb[0]) ** 2 + (ca[1] - cb[1]) ** 2)
++
++
++@functools.lru_cache(maxsize=8192)
++def sub_cost(a, b):
++    """Pure-string substitution cost between two chars (case-insensitive).
++
++    0 if equal. Else proximity-modulated: min(SUB_COST_MAX, SUB_SLOPE * d)
++    where d is the Euclidean key-centre distance. If either char has no key
++    centre, cost = SUB_COST_MAX. Guarantees sub_cost('q','w') < sub_cost('q','p').
++    """
++    a = a.casefold()
++    b = b.casefold()
++    if a == b:
++        return 0.0
++    d = _euclid(a, b)
++    if d is None:
++        return SUB_COST_MAX
++    return min(SUB_COST_MAX, SUB_SLOPE * d)
++
++
++def _tap_sub_cost(tap_dist, c):
++    """Tap-based substitution cost aligning a tapped position to cand char c.
++
++    Exact formula:
++        p    = tap_dist.get(c, 0.0)
++        p    = min(1.0, max(SUB_TAP_MIN, p))     # clamp into [SUB_TAP_MIN, 1.0]
++        cost = min(SUB_COST_MAX, -log(p))
++    With SUB_TAP_MIN = exp(-SUB_COST_MAX), an absent/zero prob saturates at
++    exactly SUB_COST_MAX. A dead-on tap (p~1) costs ~0.
++    """
++    c = c.casefold()
++    p = tap_dist.get(c, 0.0)
++    if p < SUB_TAP_MIN:
++        p = SUB_TAP_MIN
++    elif p > 1.0:
++        p = 1.0
++    return min(SUB_COST_MAX, -math.log(p))
++
++
++@functools.lru_cache(maxsize=16384)
++def _pure_edit(literal, candidate, cap):
++    """Pure-string weighted OSA edit distance (cached). cap may be None."""
++    return _edit_core(literal, candidate, None, cap)
++
++
++def weighted_edit_distance(literal, candidate, tap_dists=None, cap=None):
++    """Weighted Damerau/OSA edit distance between literal and candidate.
++
++    Substitutions are proximity-modulated. With tap_dists (one key->prob dict
++    per literal position) substitutions use the tap-based cost; otherwise the
++    pure-string cost. Adjacent transpositions allowed (OSA). Insert/delete/
++    transpose use INSERT_COST / DELETE_COST / TRANSPOSE_COST. If cap is not
++    None and a whole DP row's running minimum exceeds cap, return cap + 1.
++    """
++    if tap_dists is None:
++        # Cacheable pure-string path.
++        return _pure_edit(literal, candidate, cap)
++    return _edit_core(literal, candidate, tap_dists, cap)
++
++
++def _edit_core(literal, candidate, tap_dists, cap):
++    n = len(literal)
++    m = len(candidate)
++    if n == 0:
++        return m * INSERT_COST
++    if m == 0:
++        return n * DELETE_COST
++
++    # Standard 1-indexed DP. prev2 holds row i-2 for transposition.
++    prev = [j * INSERT_COST for j in range(m + 1)]
++    prev2 = None
++    for i in range(1, n + 1):
++        cur = [0.0] * (m + 1)
++        cur[0] = i * DELETE_COST
++        li = literal[i - 1]
++        tap_i = tap_dists[i - 1] if tap_dists is not None else None
++        row_min = cur[0]
++        for j in range(1, m + 1):
++            cj = candidate[j - 1]
++            if tap_i is not None:
++                # Tap-based sub cost; 0 if the tapped char literally equals cj.
++                if li.casefold() == cj.casefold():
++                    sc = 0.0
++                else:
++                    sc = _tap_sub_cost(tap_i, cj)
++            else:
++                sc = sub_cost(li, cj)
++            best = prev[j - 1] + sc                    # substitution / match
++            del_c = prev[j] + DELETE_COST              # delete literal char
++            if del_c < best:
++                best = del_c
++            ins_c = cur[j - 1] + INSERT_COST           # insert candidate char
++            if ins_c < best:
++                best = ins_c
++            # Adjacent transposition (OSA).
++            if (i > 1 and j > 1
++                    and li.casefold() == candidate[j - 2].casefold()
++                    and literal[i - 2].casefold() == cj.casefold()):
++                tr = prev2[j - 2] + TRANSPOSE_COST
++                if tr < best:
++                    best = tr
++            cur[j] = best
++            if best < row_min:
++                row_min = best
++        if cap is not None and row_min > cap:
++            return cap + 1
++        prev2 = prev
++        prev = cur
++    return prev[m]
++
++
++# ===========================================================================
++# 3. CANDIDATE GENERATION  (bounded; never a full-table scan)
++# ===========================================================================
++def _plausible_letters_at(literal, i, tap_dists):
++    """The char at position i plus its plausible spatial neighbours.
++
++    With taps: every key whose tap prob at position i is >= TAP_PROB_THRESHOLD.
++    Without taps: the static _NEIGHBORS of the char. Always includes the
++    literal's own char at i.
++    """
++    ch = literal[i].casefold()
++    out = {ch}
++    if tap_dists is not None and i < len(tap_dists) and tap_dists[i]:
++        for k, p in tap_dists[i].items():
++            if p >= TAP_PROB_THRESHOLD:
++                out.add(k)
++    else:
++        for k in _NEIGHBORS.get(ch, ()):
++            out.add(k)
++    return out
++
++
++def _plausible_first_letters(literal, tap_dists):
++    """First letter plus its plausible spatial neighbours (position 0)."""
++    return _plausible_letters_at(literal, 0, tap_dists)
++
++
++def _sub_probe_strings(literal, i, tap_dists):
++    """One-position substitution probe strings for position i.
++
++    Replaces literal[i] with each plausible ALTERNATIVE key: with taps, every
++    key at tap_dists[i] with prob >= TAP_PROB_THRESHOLD (except the literal
++    char); without taps, the static neighbours. We probe *all* plausible alts
++    (not just the single best) because the top alt is often a wrong-direction
++    neighbour (e.g. a perfect 'q' tap ranks 'w' above 'a'), and missing the
++    right one silently kills recall for real single-key slips. Still bounded --
++    at most a handful of alts per position.
++    """
++    li = literal[i].casefold()
++    alts = []
++    if tap_dists is not None and tap_dists[i]:
++        for k, p in tap_dists[i].items():
++            if k != li and p >= TAP_PROB_THRESHOLD:
++                alts.append(k)
++    else:
++        for k in _NEIGHBORS.get(li, ()):
++            if k != li:
++                alts.append(k)
++    return [literal[:i] + a + literal[i + 1:] for a in alts]
++
++
++def _transpose_probe_strings(literal):
++    """Adjacent-transposition probe strings: the n-1 single-swap variants.
++
++    Swaps each adjacent pair (0,1),(1,2),...,(n-2,n-1), e.g. 'teh' ->
++    {'eth','the'}. A first-two-letter transposition changes the literal's
++    prefix, so the correct word is never fetched by the prefix ranges; probing
++    the swapped strings by exact lookup recovers it (the scorer already ranks
++    adjacent transpositions via TRANSPOSE_COST). Pure and bounded -- adjacent
++    swaps only. Skips swaps of identical chars (they reproduce the literal).
++    """
++    out = []
++    for i in range(len(literal) - 1):
++        if literal[i] != literal[i + 1]:
++            out.append(literal[:i] + literal[i + 1] + literal[i] + literal[i + 2:])
++    return out
++
++
++def candidates(literal, conn, tap_dists=None):
++    """Return a bounded list of (word, freq, flags) candidate rows.
++
++    Strategy (recall vs latency): we never scan the full table. We pull, per
++    plausible first letter, up to PER_LETTER_LIMIT of the highest-frequency
++    words whose length is within +-1 of the literal, then probe single-position
++    substitutions. This catches the vast majority of one/two-error typos while
++    keeping each query index-bounded. The tradeoff: rarer or longer-distance
++    corrections (>1 substitution far from the literal, or low-freq words beyond
++    the per-letter cut) can be missed -- acceptable for an OSK where recall on
++    common words matters far more than exhaustiveness. Final set capped at
++    MAX_CANDIDATES keeping the highest-freq rows.
++
++    Prefix lookups use indexed half-open ranges (lowercase + uppercase) rather
++    than `LIKE`, which under BINARY collation would full-scan the table; the two
++    ranges together still catch capitalized dictionary words like 'Holt'.
++
++    Adjacent-transposition probe strings (the n-1 single-swap variants) are also
++    resolved in the same batched IN(...) query, recovering first-two-letter
++    swaps whose changed prefix the range queries would otherwise miss.
++    """
++    cur = conn.cursor()
++    rows = {}  # lower(word) -> (word, freq, flags)
++    protected = set()  # lower(word)s that must survive the frequency cap
++
++    def add(word, freq, flags, protect=False):
++        key = word.lower()
++        old = rows.get(key)
++        # Prefer a row with a real (higher) freq / real casing.
++        if old is None or (freq is not None and (old[1] is None or freq > old[1])):
++            rows[key] = (word, freq, flags)
++        if protect:
++            protected.add(key)
++
++    # (a) Always include the literal (look up its real row if present).
++    lit_key = literal.lower()
++    cur.execute("SELECT word,freq,flags FROM unigrams WHERE word=?", (literal,))
++    r = cur.fetchone()
++    if r is not None:
++        add(r[0], r[1], r[2], protect=True)
++    else:
++        add(literal, None, None, protect=True)
++
++    n = len(literal)
++    lo = max(1, n - 1)
++    hi = n + 1
++
++    # (b) Prefix queries, length-banded.
++    #
++    # IMPORTANT (latency): a `word LIKE 'h%'` predicate does NOT use the
++    # unigrams(word) PRIMARY-KEY index under the default BINARY collation, so it
++    # degrades to a full-table scan (~10 ms). We instead use indexed half-open
++    # RANGE bounds `word >= lo AND word < hi`. And because a single-letter range
++    # over a ~700k-word dictionary is still huge (all c-words: ~7 ms with the
++    # ORDER BY freq sort), we key on the first TWO letters, which shrinks each
++    # range ~30x. Case: BINARY range bounds are case-sensitive, so we run a
++    # lowercase and an uppercase variant per prefix -- together they reproduce
++    # LIKE's ASCII case-insensitivity (capitalized words like 'Holt' stay
++    # reachable). We generate a "cross" of two-letter prefixes:
++    #   * literal[:2]                         (the exact typed prefix)
++    #   * plausible-first-letter + literal[1] (first-letter slips)
++    #   * literal[0] + plausible-second-letter (second-letter slips)
++    # Single-key slips at every position are ALSO caught cheaply by the exact
++    # substitution probes in step (c), so this cross is sufficient recall at a
++    # fraction of the single-letter-range cost.
++    two_prefixes = set()
++    if n >= 2:
++        # Full 2D cross of plausible first x second letters. This catches
++        # simultaneous first+second-letter slips (e.g. 'yj' -> 'th' for
++        # 'the'); a mere union of single-letter variations would miss those.
++        # With real/synthetic taps each position's plausible set is small
++        # (top few keys above TAP_PROB_THRESHOLD), so the product stays a few
++        # dozen tiny indexed range queries.
++        first_letters = _plausible_first_letters(literal, tap_dists)
++        second_letters = _plausible_letters_at(literal, 1, tap_dists)
++        for fl in first_letters:
++            for sl in second_letters:
++                two_prefixes.add((fl + sl).lower())
++        prefix_iter = ((p, PER_LETTER_LIMIT) for p in two_prefixes)
++    else:
++        # 1-char literal: fall back to single-letter ranges (rare; guards
++        # already reject len<2, so this is defensive only).
++        prefix_iter = ((literal[0].lower(), PER_LETTER_LIMIT),)
++
++    for prefix, limit in prefix_iter:
++        for pfx in (prefix, prefix[:1].upper() + prefix[1:]):
++            lo_b = pfx
++            hi_b = pfx[:-1] + chr(ord(pfx[-1]) + 1)
++            cur.execute(
++                "SELECT word,freq,flags FROM unigrams "
++                "WHERE word >= ? AND word < ? "
++                "AND length(word) BETWEEN ? AND ? "
++                "ORDER BY freq DESC LIMIT ?",
++                (lo_b, hi_b, lo, hi, limit),
++            )
++            for w, f, fg in cur.fetchall():
++                add(w, f, fg)
++
++    # (c) Single-position substitution probes: for each position, every
++    #     plausible alternative key. Adjacent-transposition probe strings (the
++    #     n-1 single-swap variants) are folded into the same set. Collect all
++    #     probe strings, dedup, and resolve them in one IN(...) query to keep
++    #     this a single round-trip.
++    probes = set()
++    for i in range(n):
++        for p in _sub_probe_strings(literal, i, tap_dists):
++            if p.lower() != lit_key:
++                probes.add(p)
++    for p in _transpose_probe_strings(literal):
++        if p.lower() != lit_key:
++            probes.add(p)
++    if probes:
++        plist = list(probes)
++        qmarks = ','.join('?' * len(plist))
++        cur.execute(
++            f"SELECT word,freq,flags FROM unigrams WHERE word IN ({qmarks})",
++            plist,
++        )
++        # Probe hits are single-key-distance from the literal by construction,
++        # so they are the most spatially relevant corrections -- protect them
++        # from the frequency cap (a low-freq near word like 'hola' must not be
++        # evicted by a crowd of high-freq prefix matches).
++        for w, f, fg in cur.fetchall():
++            add(w, f, fg, protect=True)
++
++    # Cap at MAX_CANDIDATES keeping highest-freq bulk rows, but ALWAYS keep the
++    # protected set (literal + substitution-probe hits) -- these are the rows
++    # the scorer most needs to see. None freq sorts last.
++    if len(rows) > MAX_CANDIDATES:
++        prot_rows = [rows[k] for k in protected if k in rows]
++        rest = [rows[k] for k in rows if k not in protected]
++        rest.sort(key=lambda t: (t[1] is not None, t[1] or 0), reverse=True)
++        keep = max(0, MAX_CANDIDATES - len(prot_rows))
++        result = prot_rows + rest[:keep]
++    else:
++        result = list(rows.values())
++    return result
++
++
++# ===========================================================================
++# OFFENSIVE-WORD DETECTION
++# ===========================================================================
++def is_offensive(flags):
++    """True if any colon-split flag is exactly 'offensive'/'possibly_offensive'."""
++    if not flags:
++        return False
++    for f in flags.split(':'):
++        if f == 'offensive' or f == 'possibly_offensive':
++            return True
++    return False
++
++
++# ===========================================================================
++# 4. COMBINED SCORING
++# ===========================================================================
++def _bigram_rank(conn, prev_word, cand_word):
++    """rank of (prev_word, cand_word) bigram, or None. Cached per-connection."""
++    cache = _BIGRAM_CACHE.setdefault(id(conn), {})
++    key = (prev_word, cand_word)
++    if key in cache:
++        return cache[key]
++    cur = conn.execute(
++        "SELECT rank FROM bigrams WHERE prev=? AND word=?",
++        (prev_word, cand_word),
++    )
++    row = cur.fetchone()
++    rank = row[0] if row is not None else None
++    cache[key] = rank
++    return rank
++
++
++_BIGRAM_CACHE = {}
++
++
++def language_cost(freq):
++    """-log((freq+1)/256.0); LANG_COST_OOV when freq is None (absent word)."""
++    if freq is None:
++        return LANG_COST_OOV
++    return -(math.log(freq + 1) - _LOG_256)
++
++
++def bigram_bonus(conn, prev_word, cand_word):
++    """BIGRAM_BONUS/rank if (prev_word, cand_word) is a known bigram, else 0."""
++    if not prev_word:
++        return 0.0
++    rank = _bigram_rank(conn, prev_word.lower(), cand_word.lower())
++    if rank is None:
++        return 0.0
++    return BIGRAM_BONUS / rank
++
++
++def score(literal, cand_word, freq, flags, tap_dists, prev_word, conn):
++    """Combined score (lower is better).
++
++        score = spatial_cost + W_LANG * language_cost - bigram_bonus
++    """
++    spatial = weighted_edit_distance(literal, cand_word, tap_dists)
++    lang = language_cost(freq)
++    bonus = bigram_bonus(conn, prev_word, cand_word)
++    return spatial + W_LANG * lang - bonus
++
++
++# ===========================================================================
++# 5. HELPERS
++# ===========================================================================
++def _has_digit(s):
++    return any(c.isdigit() for c in s)
++
++
++def _build_tap_dists(taps):
++    """Convert a list of (col,row) taps into a list of key->prob dicts.
++
++    Non-letter positions (tap is None) yield an empty dict.
++    """
++    out = []
++    for t in taps:
++        if t is None:
++            out.append({})
++        else:
++            out.append(key_distribution(t[0], t[1]))
++    return out
++
++
++# ===========================================================================
++# 6. SPATIAL CORRECTOR  (engine-embedded entry point)
++# ===========================================================================
++# Sentinel cached in self._conn_cache to mark a language whose DB is known to be
++# absent/unreadable, so we do not retry sqlite3.connect on every decide() call.
++_FAILED = object()
++
++
++class SpatialCorrector:
++    """Instance-scoped spatial autocorrect over read-only reference DBs.
++
++    reference_db_paths is a list[str] of DB file paths (already split from the
++    colon-separated IBUS_TYPING_BOOSTER_REFERENCE_DB by the caller). The
++    language key for each path is derived from the basename: strip a trailing
++    '.db', then take the substring before the first '_' if present, lowercased
++    ('en_US.db' -> 'en', 'es.db' -> 'es'). DBs are opened lazily and strictly
++    read-only; connection failures degrade to a conservative no-op.
++    """
++
++    def __init__(self, reference_db_paths):
++        # lang -> DB path. No DB is opened here (lazy).
++        self._db_paths = {}
++        for path in reference_db_paths:
++            base = path.rsplit('/', 1)[-1]
++            if base.endswith('.db'):
++                base = base[:-3]
++            lang = base.split('_', 1)[0].lower()
++            # First path for a given lang wins (stable, deterministic).
++            if lang and lang not in self._db_paths:
++                self._db_paths[lang] = path
++        # lang -> sqlite3.Connection, or _FAILED sentinel for known-bad DBs.
++        self._conn_cache = {}
++
++    def _get_conn(self, lang):
++        """Return a cached READ-ONLY connection for the given language.
++
++        Opened with mode=ro + PRAGMA query_only=ON + mmap for latency. Never
++        writes. Returns None when there is no DB for this language, or when the
++        DB is missing/unreadable/corrupt (any exception is swallowed and the
++        failure is cached so we never retry or raise).
++        """
++        cached = self._conn_cache.get(lang)
++        if cached is _FAILED:
++            return None
++        if cached is not None:
++            return cached
++        if lang not in self._db_paths:
++            return None
++        path = self._db_paths[lang]
++        try:
++            conn = sqlite3.connect(f'file:{path}?mode=ro', uri=True,
++                                   check_same_thread=False)
++            conn.execute('PRAGMA query_only=ON')
++            conn.execute('PRAGMA mmap_size=268435456')
++        except Exception:
++            # Missing/unreadable/corrupt DB: cache the failure, never raise.
++            self._conn_cache[lang] = _FAILED
++            return None
++        self._conn_cache[lang] = conn
++        return conn
++
++    def decide(self, typed, taps=None, prev_word=None, lang='en'):
++        """Decide the best word for a typed key sequence.
++
++        Returns (best_word, confidence, should_autocorrect):
++          * best_word: lowest-scoring candidate (literal or a correction), with
++            the leading capital preserved if typed[0] is uppercase.
++          * confidence: margin = literal_score - best_score (0.0 if best IS the
++            literal). Positive means a candidate beats the literal.
++          * should_autocorrect: True only if ALL hold --
++              best differs from literal (case-insensitive),
++              margin >= AUTOCORRECT_MARGIN,
++              literal is NOT in-vocab at freq >= SELF_CONFIDENT_FREQ,
++              best_word is not offensive,
++              best_word has no digits/spaces/hyphens.
++
++        Guards (return (typed, 0.0, False) immediately): the literal contains
++        any digit, or len < 2, or len > 24.
++
++        NEVER raises into the engine: any internal exception returns the safe
++        no-op (typed, 0.0, False).
++        """
++        try:
++            return self._decide(typed, taps, prev_word, lang)
++        except Exception:
++            # Any internal failure -> safe no-op; caller keeps the literal.
++            return (typed, 0.0, False)
++
++    def _decide(self, typed, taps, prev_word, lang):
++        literal = typed
++        # --- guards ---
++        if len(literal) < 2 or len(literal) > 24 or _has_digit(literal):
++            return (typed, 0.0, False)
++
++        if taps is None:
++            taps = [synth_tap(c) for c in typed]
++        tap_dists = _build_tap_dists(taps)
++
++        conn = self._get_conn(lang)
++        if conn is None:
++            # No DB for this lang: spatial-only; we never autocorrect without a
++            # frequency prior -- conservative fallback, caller may then use the
++            # legacy corrector. Preserve the leading capital and return no-op.
++            out_word = typed
++            if typed and typed[0].isupper() and out_word:
++                out_word = out_word[0].upper() + out_word[1:]
++            return (out_word, 0.0, False)
++
++        cand_rows = candidates(literal, conn, tap_dists)
++
++        # Literal's own freq/flags (may be OOV).
++        lit_lower = literal.lower()
++        lit_freq = None
++        lit_flags = None
++        for w, f, fg in cand_rows:
++            if w.lower() == lit_lower:
++                lit_freq = f
++                lit_flags = fg
++                break
++
++        # Score everything.
++        best_word = literal
++        best_score = score(literal, literal, lit_freq, lit_flags,
++                           tap_dists, prev_word, conn)
++        literal_score = best_score
++        for w, f, fg in cand_rows:
++            if w.lower() == lit_lower:
++                continue
++            s = score(literal, w, f, fg, tap_dists, prev_word, conn)
++            if s < best_score:
++                best_score = s
++                best_word = w
++
++        if best_word.lower() == lit_lower:
++            margin = 0.0
++        else:
++            margin = literal_score - best_score
++
++        # --- autocorrect gate ---
++        self_confident = (lit_freq is not None and lit_freq >= SELF_CONFIDENT_FREQ)
++        # Look up best_word flags for offensive check.
++        best_flags = None
++        for w, f, fg in cand_rows:
++            if w.lower() == best_word.lower():
++                best_flags = fg
++                break
++        best_clean = not (_has_digit(best_word)
++                          or ' ' in best_word or '-' in best_word)
++        should_autocorrect = (
++            best_word.lower() != lit_lower
++            and margin >= AUTOCORRECT_MARGIN
++            and not self_confident
++            and not is_offensive(best_flags)
++            and best_clean
++        )
++
++        # Preserve leading capital.
++        out_word = best_word
++        if typed and typed[0].isupper() and out_word:
++            out_word = out_word[0].upper() + out_word[1:]
++
++        return (out_word, margin, should_autocorrect)
