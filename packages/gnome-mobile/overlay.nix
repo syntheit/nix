@@ -85,6 +85,7 @@ in
         ++ [
           ./patches/android-quick-settings.patch # Nix-driven 4-column QS grid, compact/custom tiles, long-press settings, robust app focus, persistent mobile data
           ./patches/android-quick-settings-compact-grid.patch # compact Flashlight menu, stable configured ordering, and native Hotspot toggle
+          ./patches/android-quick-settings-collapse.patch # two-row Android-style collapsed grid with an animated expand control
         ];
         prePatch = ''
           cp -r ${libshew} subprojects/libshew

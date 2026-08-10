@@ -169,19 +169,19 @@
     };
     # Calculator — native GTK4/libadwaita Google-Calculator-style app (mobile-first).
     calculator = {
-      url = "git+file:///home/matv/Projects/calculator?rev=9afe15fac043ac691205f33f235257ec73802808";
+      url = "git+file:///home/matv/Projects/calculator?rev=91e2be679fc13e3ede7716ab722358679aa82262";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     # Bourse — native GTK4/libadwaita stocks watchlist app (Yahoo Finance, no API key).
     bourse = {
-      url = "git+file:///home/matv/Projects/bourse?rev=3590708280529c488518f44f3209cecb501c5abb";
+      url = "git+file:///home/matv/Projects/bourse?rev=cb6fb484de2ccee653076e137101d780575a0a95";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # Paloma — native GTK4/libadwaita Telegram client (over TDLib). Built from the
-    # local committed repo; api_id/api_hash are injected at RUNTIME from sops, not
-    # baked at build time (see overlays/default.nix paloma-wrapped + hosts' secrets).
+    # Paloma — native GTK4/libadwaita Telegram client (over TDLib). api_id/api_hash
+    # are injected at RUNTIME from sops, not baked at build time (see
+    # overlays/default.nix paloma-wrapped + hosts' secrets).
     paloma = {
-      url = "git+file:///home/matv/Projects/paloma?rev=8def2f7e14ff82ee8d97f14a4391ce825a2de12d";
+      url = "git+ssh://git@github.com/syntheit/paloma.git";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };

@@ -93,7 +93,13 @@ in
     rows = mkOption {
       type = types.ints.positive;
       default = 5;
-      description = "Design capacity; overflow remains visible and scrollable.";
+      description = "Expanded design capacity; tiles above it trigger a warning.";
+    };
+
+    collapsedRows = mkOption {
+      type = types.nullOr types.ints.positive;
+      default = 2;
+      description = "Tile rows shown before expanding; null shows all rows.";
     };
 
     tiles = mkOption {
@@ -108,6 +114,10 @@ in
       {
         assertion = cfg.columns == 4;
         message = "fajita quick settings currently supports a four-column grid";
+      }
+      {
+        assertion = cfg.collapsedRows == null || cfg.collapsedRows <= cfg.rows;
+        message = "fajita quick-settings collapsedRows must not exceed rows";
       }
       {
         assertion = lib.length ids == lib.length (lib.unique ids);
@@ -130,7 +140,7 @@ in
     environment.etc."gnome-shell-mobile/quick-settings.json".text = builtins.toJSON {
       version = 1;
       grid = {
-        inherit (cfg) columns rows;
+        inherit (cfg) columns rows collapsedRows;
       };
       tiles = jsonTiles;
     };
