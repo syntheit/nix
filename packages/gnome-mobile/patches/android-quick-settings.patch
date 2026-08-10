@@ -429,7 +429,7 @@ index 940317f..d46ad31 100644
 +    }
 +
 +    setCompact(compact) {
-+        this.toggle_style_class_name('quick-toggle-compact', compact);
++        this[compact ? 'add_style_class_name' : 'remove_style_class_name']('quick-toggle-compact');
 +        this._title.get_parent().visible = !compact;
 +        this._icon.set({
 +            x_align: compact
@@ -477,7 +477,7 @@ index 940317f..d46ad31 100644
 +
 +    setCompact(compact) {
 +        this._compact = compact;
-+        this.toggle_style_class_name('quick-toggle-compact', compact);
++        this[compact ? 'add_style_class_name' : 'remove_style_class_name']('quick-toggle-compact');
 +        this._contents.setCompact(compact);
 +        this.notify('menu-enabled');
 +    }
