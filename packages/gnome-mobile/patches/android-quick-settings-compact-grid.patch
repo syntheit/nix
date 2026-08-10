@@ -1,0 +1,212 @@
+diff --git a/data/theme/gnome-shell-sass/widgets/_quick-settings.scss b/data/theme/gnome-shell-sass/widgets/_quick-settings.scss
+index db87c9940..51f51f8c0 100644
+--- a/data/theme/gnome-shell-sass/widgets/_quick-settings.scss
++++ b/data/theme/gnome-shell-sass/widgets/_quick-settings.scss
+@@ -165,6 +165,18 @@
+   }
+ }
+ 
++// Compact toggles need symmetric padding. The normal LTR and menu rules above
++// deliberately bias text pills toward their leading edge; without this final
++// override an icon-only tile is visibly shifted to the right.
++.quick-toggle.quick-toggle-compact:ltr > StBoxLayout,
++.quick-toggle.quick-toggle-compact:rtl > StBoxLayout,
++.quick-toggle-has-menu.quick-toggle-compact .quick-toggle.quick-toggle-compact:ltr > StBoxLayout,
++.quick-toggle-has-menu.quick-toggle-compact .quick-toggle.quick-toggle-compact:rtl > StBoxLayout {
++  padding-left: $base_padding;
++  padding-right: $base_padding;
++  spacing: 0;
++}
++
+ 
+ // Set the color of separators and menu buttons within the toggle.
+ // This is bit of a mess but needed to have working colors in
+diff --git a/js/ui/panel.js b/js/ui/panel.js
+index a3e5ff32f..adbe0d84e 100644
+--- a/js/ui/panel.js
++++ b/js/ui/panel.js
+@@ -498,6 +498,7 @@ class QuickSettings extends PanelMenu.Button {
+     _addConfiguredTiles() {
+         const builtins = new Map([
+             ['wifi', this._network?._wirelessToggle],
++            ['hotspot', this._network?._hotspotToggle],
+             ['mobile-data', this._network?._modemToggle],
+             ['wired', this._network?._wiredToggle],
+             ['bluetooth-tether', this._network?._btToggle],
+@@ -591,6 +592,10 @@ class QuickSettings extends PanelMenu.Button {
+ 
+             const tile = this._mobileQuickSettingsConfig.tiles[order];
+             this._insertConfiguredItem(item, tile, order);
++            const nextItem = this._configuredItems
++                .find(entry => entry.order > order)?.item;
++            if (nextItem)
++                this.menu.placeItemBefore(item, nextItem);
+         }
+     }
+ });
+diff --git a/js/ui/quickSettings.js b/js/ui/quickSettings.js
+index 878a550bb..ef4ca51f2 100644
+--- a/js/ui/quickSettings.js
++++ b/js/ui/quickSettings.js
+@@ -265,6 +265,11 @@ export const QuickMenuToggle = GObject.registerClass({
+             if (this.menuEnabled)
+                 this.menu.open();
+         });
++
++        contents.setLongPressAction(() => {
++            if (this._compact && this.menuEnabled)
++                this.menu.open();
++        });
+     }
+ 
+     setLongPressAction(callback) {
+@@ -943,6 +948,16 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+         layout.layout_changed();
+     }
+ 
++    placeItemBefore(item, sibling) {
++        if (item.get_parent() !== this._grid ||
++            sibling.get_parent() !== this._grid)
++            return;
++
++        // Clutter's actor stack runs opposite the order consumed by this
++        // layout, so "above" places a late external tile before its sibling.
++        this._grid.set_child_above_sibling(item, sibling);
++    }
++
+     insertItemBefore(item, sibling, colSpan = 1) {
+         this._grid.insert_child_below(item, sibling);
+         this._completeAddItem(item, colSpan);
+diff --git a/js/ui/status/network.js b/js/ui/status/network.js
+index e538e641a..89e31f756 100644
+--- a/js/ui/status/network.js
++++ b/js/ui/status/network.js
+@@ -17,7 +17,7 @@ import * as Signals from '../../misc/signals.js';
+ import * as Util from '../../misc/util.js';
+ 
+ import {Spinner} from '../animation.js';
+-import {QuickMenuToggle, SystemIndicator} from '../quickSettings.js';
++import {QuickMenuToggle, QuickToggle, SystemIndicator} from '../quickSettings.js';
+ 
+ import {loadInterfaceXML} from '../../misc/fileUtils.js';
+ import {registerDestroyableType} from '../../misc/signalTracker.js';
+@@ -1935,6 +1935,103 @@ class NMWiredToggle extends NMDeviceToggle {
+     }
+ });
+ 
++const NMHotspotToggle = GObject.registerClass(
++class NMHotspotToggle extends QuickToggle {
++    constructor() {
++        super({
++            title: _('Hotspot'),
++            iconName: 'network-wireless-hotspot-symbolic',
++            toggle_mode: true,
++        });
++
++        this.connect('clicked', () => this.activate());
++    }
++
++    setClient(client) {
++        if (this._client === client)
++            return;
++
++        this._client?.disconnectObject(this);
++        this._device?.disconnectObject(this);
++        this._client = client;
++        this._device = null;
++
++        this._client?.connectObject(
++            'device-added', () => this._syncDevice(),
++            'device-removed', () => this._syncDevice(),
++            'notify::active-connections', () => this._sync(),
++            'notify::wireless-enabled', () => this._sync(),
++            this);
++        this._syncDevice();
++    }
++
++    _syncDevice() {
++        const device = this._client?.get_devices()
++            .find(candidate =>
++                candidate.device_type === NM.DeviceType.WIFI) ?? null;
++        if (this._device === device) {
++            this._sync();
++            return;
++        }
++
++        this._device?.disconnectObject(this);
++        this._device = device;
++        this._device?.connectObject(
++            'notify::active-connection', () => this._sync(),
++            'state-changed', () => this._sync(),
++            this);
++        this._sync();
++    }
++
++    _isHotspotConnection(connection) {
++        if (!connection)
++            return false;
++
++        const wireless = connection.get_setting_wireless();
++        const ip4 = connection.get_setting_ip4_config();
++        return ['ap', 'adhoc'].includes(wireless?.get_mode()) &&
++            ip4?.get_method() === NM.SETTING_IP4_CONFIG_METHOD_SHARED;
++    }
++
++    _getActiveHotspot() {
++        const active = this._device?.active_connection ?? null;
++        return this._isHotspotConnection(active?.connection)
++            ? active
++            : null;
++    }
++
++    _getSavedHotspot() {
++        return this._client?.get_connections()
++            .find(connection => this._isHotspotConnection(connection)) ?? null;
++    }
++
++    activate() {
++        const active = this._getActiveHotspot();
++        if (active) {
++            this._client.deactivate_connection_async(active, null, null);
++            return;
++        }
++
++        const connection = this._getSavedHotspot();
++        if (connection && this._device) {
++            this._client.activate_connection_async(
++                connection, this._device, null, null, null);
++            return;
++        }
++
++        PopupMenu.launchApplication(
++            'gnome-wifi-panel.desktop',
++            'org.gnome.Settings.desktop');
++        this._sync();
++    }
++
++    _sync() {
++        this.visible = !!this._client && !!this._device;
++        this.reactive = this.visible && this._client.wireless_enabled;
++        this.checked = this._getActiveHotspot() !== null;
++    }
++});
++
+ const NMBluetoothToggle = GObject.registerClass(
+ class NMBluetoothToggle extends NMDeviceToggle {
+     constructor() {
+@@ -2208,6 +2305,7 @@ class Indicator extends SystemIndicator {
+ 
+         this._wiredToggle = new NMWiredToggle();
+         this._wirelessToggle = new NMWirelessToggle();
++        this._hotspotToggle = new NMHotspotToggle();
+         this._modemToggle = new NMModemToggle();
+         this._btToggle = new NMBluetoothToggle();
+         this._vpnToggle = new NMVpnToggle();
+@@ -2279,6 +2377,7 @@ class Indicator extends SystemIndicator {
+ 
+         this.quickSettingsItems.forEach(
+             toggle => toggle.setClient(this._client));
++        this._hotspotToggle.setClient(this._client);
+ 
+         this._client.bind_property('nm-running',
+             this, 'visible',

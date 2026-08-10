@@ -81,6 +81,10 @@ in
           ./patches/osk-autocaps-committed-tail.patch # auto-cap: replace dead surrounding-text dance with synchronous committedTail from _onCommitText (inputMethod.js); backspace/Enter handled
           ./patches/osk-swipe-typing.patch # swipe typing: letter-key glide → symbolic trace → PUA-framed emission to engine decoder (MUST stay after osk-spacebar-cursor-slide + osk-autocaps)
           ./patches/osk-strip-longpress-forget.patch # strip long-press → forget word: 600 ms hold on suggestion pill → candidate_clicked CONTROL_MASK → remove_candidate_from_user_database + flash
+        ]
+        ++ [
+          ./patches/android-quick-settings.patch # Nix-driven 4-column QS grid, compact/custom tiles, long-press settings, robust app focus, persistent mobile data
+          ./patches/android-quick-settings-compact-grid.patch # compact Flashlight menu, stable configured ordering, and native Hotspot toggle
         ];
         prePatch = ''
           cp -r ${libshew} subprojects/libshew

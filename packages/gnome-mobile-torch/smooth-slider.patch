@@ -1,0 +1,89 @@
+diff --git a/src/toggle.js b/src/toggle.js
+index f227c12..e02b9e4 100644
+--- a/src/toggle.js
++++ b/src/toggle.js
+@@ -1,4 +1,5 @@
+ import Gio from "gi://Gio";
++import GLib from "gi://GLib";
+ import GObject from "gi://GObject";
+ 
+ import { Slider } from "resource:///org/gnome/shell/ui/slider.js";
+@@ -21,16 +22,16 @@ export class TorchToggle extends QuickSettings.QuickMenuToggle {
+     this._devices = devices;
+     this._cwd = cwd;
+     this._syncingSlider = false;
++    this._writingSlider = false;
++    this._pendingSliderValue = null;
++    this._sliderTimeoutId = 0;
+ 
+     if (this._devices.some((device) => device.can_scale)) {
+       this._sliderItem = new SliderItem();
+       this.menu.box.add_child(this._sliderItem);
+       this._sliderItem._slider.connectObject("notify::value", () => {
+         if (this._syncingSlider) return;
+-        for (const device of this._devices) {
+-          if (device.can_scale) device.scaled_brightness = this._sliderItem._slider.value;
+-        }
+-        this._sync();
++        this._queueSliderValue(this._sliderItem._slider.value);
+       }, this);
+     } else {
+       this.menuEnabled = false;
+@@ -60,11 +61,45 @@ export class TorchToggle extends QuickSettings.QuickMenuToggle {
+     this._sync();
+   }
+ 
++  _queueSliderValue(value) {
++    this._pendingSliderValue = value;
++    if (this._sliderTimeoutId) return;
++
++    this._sliderTimeoutId = GLib.timeout_add(
++      GLib.PRIORITY_DEFAULT, 50, () => {
++        this._sliderTimeoutId = 0;
++        this._flushSliderValue();
++        return GLib.SOURCE_REMOVE;
++      });
++  }
++
++  _flushSliderValue() {
++    if (this._pendingSliderValue === null) return;
++
++    const value = this._pendingSliderValue;
++    this._pendingSliderValue = null;
++    this._writingSlider = true;
++    try {
++      for (const device of this._devices) {
++        if (!device.can_scale) continue;
++        try {
++          device.scaled_brightness = value;
++        } catch (error) {
++          logError(error, `Failed to set flashlight LED ${device.name}`);
++        }
++      }
++    } finally {
++      this._writingSlider = false;
++      this._sync();
++    }
++  }
++
+   _sync() {
+     this.checked = this._devices.some((device) => device.on);
+     this.gicon = this.get_gicon(this._cwd, this.checked);
+ 
+-    if (!this._sliderItem) return;
++    if (!this._sliderItem || this._pendingSliderValue !== null ||
++        this._writingSlider) return;
+     const scalable = this._devices.filter((device) => device.can_scale);
+     const brightness = scalable.reduce(
+       (sum, device) => sum + device.scaled_brightness, 0) / scalable.length;
+@@ -89,6 +124,10 @@ export class TorchToggle extends QuickSettings.QuickMenuToggle {
+ 
+   cleanup() {
+     this._gicon_cache = {};
++    if (this._sliderTimeoutId) {
++      GLib.Source.remove(this._sliderTimeoutId);
++      this._sliderTimeoutId = 0;
++    }
+     this._sliderItem?._slider.disconnectObject(this);
+     for (const device of this._devices) {
+       try {

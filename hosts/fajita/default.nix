@@ -16,8 +16,97 @@
     ./cursor.nix   # hide the phantom mouse pointer on this touch-only device
     ./camera.nix   # camera bring-up (tools/tuning/AF) — see CAMERA_PLAN.md
     ./theme.nix    # Marble GNOME Shell theme (accent + dark/light defined there)
+    ./quick-settings.nix # declarative Android-style quick-settings layout/actions
     ./waydroid.nix # Waydroid on-demand app layer — see ~/fajita-notes/waydroid-apps.md
   ];
+
+  # Four logical columns. The first two rows mirror Android's compact phone
+  # layout; later rows hold less frequently used actions.
+  # Omitted built-ins are not inserted, which intentionally removes Power Mode
+  # and Dark Style without disabling their underlying services/settings.
+  fajita.quickSettings = {
+    enable = true;
+    columns = 4;
+    rows = 5;
+    tiles = [
+      {
+        id = "wifi";
+        span = 1;
+      }
+      {
+        id = "bluetooth";
+        span = 1;
+      }
+      {
+        id = "do-not-disturb";
+        span = 1;
+        longPressDesktopId = "gnome-notifications-panel.desktop";
+      }
+      {
+        id = "flashlight";
+        span = 1;
+      }
+      {
+        id = "hotspot";
+        span = 1;
+        longPressDesktopId = "gnome-wifi-panel.desktop";
+      }
+      {
+        id = "bitwarden";
+        type = "application";
+        span = 1;
+        title = "Bitwarden";
+        iconName = "security-high-symbolic";
+        desktopId = "io.matv.Warden.desktop";
+      }
+      {
+        id = "calculator";
+        type = "application";
+        span = 1;
+        title = "Calculator";
+        iconName = "accessories-calculator-symbolic";
+        desktopId = "io.matv.Calculator.desktop";
+      }
+      {
+        id = "auto-rotate";
+        span = 1;
+        longPressDesktopId = "gnome-display-panel.desktop";
+      }
+      {
+        id = "mobile-data";
+        span = 1;
+        persistent = true;
+      }
+      {
+        id = "airplane-mode";
+        span = 1;
+      }
+      {
+        id = "mousai";
+        type = "application";
+        span = 1;
+        title = "Mousai";
+        iconName = "audio-x-generic-symbolic";
+        desktopId = "io.github.seadve.Mousai.desktop";
+      }
+      {
+        id = "screen-record";
+        type = "shell";
+        span = 1;
+        title = "Screen Record";
+        iconName = "camera-video-symbolic";
+        action = "screen-record";
+      }
+      {
+        id = "authenticator";
+        type = "application";
+        span = 1;
+        title = "Authenticator";
+        iconName = "dialog-password-symbolic";
+        desktopId = "com.belmoussaoui.Authenticator.desktop";
+      }
+    ];
+  };
 
   networking.hostName = "fajita";
 
