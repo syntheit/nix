@@ -361,7 +361,7 @@ in
           # GIT_SSH_COMMAND fully specifies the identity, so no
           # `Host github-malli-nix-write` SSH alias is needed — git just
           # invokes `ssh git@github.com` and the wrapper picks the key.
-          repoURL = "git@github.com:syntheit/malli-nix.git";
+          repoURL = "git@github.com:NRE-Product/malli-nix.git";
           repoSSHCommand = "ssh -i /var/lib/deus/malli-nix-write -o IdentitiesOnly=yes -o UserKnownHostsFile=/var/lib/deus/known_hosts -o StrictHostKeyChecking=accept-new";
         };
 
@@ -584,7 +584,7 @@ in
             set -e
             cd /var/lib/git-mirror
             if [ ! -d malli-nix.git ]; then
-              git clone --mirror git@github.com:syntheit/malli-nix.git
+              git clone --mirror git@github.com:NRE-Product/malli-nix.git
             fi
             git -C malli-nix.git fetch --all --prune
           '';
@@ -612,7 +612,7 @@ in
             set -e
             cd /var/lib/git-mirror
             if [ ! -d malli-deus.git ]; then
-              git clone --mirror git@github-malli-deus:syntheit/malli-deus.git
+              git clone --mirror git@github-malli-deus:NRE-Product/malli-deus.git
             fi
             git -C malli-deus.git fetch --all --prune
           '';

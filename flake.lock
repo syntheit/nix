@@ -186,16 +186,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1786336445,
-        "narHash": "sha256-IMeb2hIzQVGIzUgnJPAID7sqw5t2klW4RVpdEFJupzw=",
+        "lastModified": 1786375802,
+        "narHash": "sha256-D6mfx/YHji74vwllvrL/UtrkTfqWywX7CflPVlZqSPM=",
         "ref": "refs/heads/main",
-        "rev": "17c2a2422c237e780064e7e1e3be55062119ab03",
-        "revCount": 5,
+        "rev": "cd8eee4bafa1998686b76421809b990826353225",
+        "revCount": 6,
         "type": "git",
         "url": "file:///home/matv/Projects/calculator"
       },
       "original": {
-        "rev": "17c2a2422c237e780064e7e1e3be55062119ab03",
+        "rev": "cd8eee4bafa1998686b76421809b990826353225",
         "type": "git",
         "url": "file:///home/matv/Projects/calculator"
       }
@@ -384,11 +384,11 @@
         "rev": "da2a248585f0c3c73c6fb88693be3087a3a52518",
         "revCount": 174,
         "type": "git",
-        "url": "ssh://git@github-malli-deus/syntheit/malli-deus.git"
+        "url": "ssh://git@github-malli-deus/NRE-Product/malli-deus.git"
       },
       "original": {
         "type": "git",
-        "url": "ssh://git@github-malli-deus/syntheit/malli-deus.git"
+        "url": "ssh://git@github-malli-deus/NRE-Product/malli-deus.git"
       }
     },
     "deus_2": {
@@ -1113,17 +1113,17 @@
         "sops-nix": "sops-nix"
       },
       "locked": {
-        "lastModified": 1783964918,
-        "narHash": "sha256-V7rytdVSbDkKKK1HEn6yJAHQMKe+4ds55X538rVNgo4=",
+        "lastModified": 1786374698,
+        "narHash": "sha256-jd5pi2AqQn0GfDwZX8sxGz5z2x1qR3iAQ+VB90OXlOk=",
         "ref": "refs/heads/main",
-        "rev": "3221d08a5bab5bef227e90f68c8a7e295afe141b",
-        "revCount": 355,
+        "rev": "7b68ac84692508df2adf3259d218684f5d324e81",
+        "revCount": 6,
         "type": "git",
-        "url": "ssh://git@github.com/syntheit/malli-nix.git"
+        "url": "ssh://git@github.com/NRE-Product/malli-nix.git"
       },
       "original": {
         "type": "git",
-        "url": "ssh://git@github.com/syntheit/malli-nix.git"
+        "url": "ssh://git@github.com/NRE-Product/malli-nix.git"
       }
     },
     "marble-shell-theme": {
