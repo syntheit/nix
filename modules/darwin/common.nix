@@ -60,7 +60,7 @@ in
     #   sudo mkdir -p /var/root/.ssh
     #   sudo ln -sf /Users/daniel/.ssh/mainkey /var/root/.ssh/mainkey
     #
-    # mainkey is a deploy key on syntheit/malli-deus and malli-nix.
+    # mainkey (the github account key) has access to NRE-Product/malli-deus and malli-nix.
     # Switched away from PAT+netrc because PATs expire silently; SSH
     # deploy keys don't. (See flake.nix:102-110 for the rationale.)
 

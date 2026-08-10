@@ -19,6 +19,11 @@ stdenvNoCC.mkDerivation {
     hash = "sha256-levQq3M7fJUM6y5nsfsKQpA8o1r7RWmw0V7Dg7QGFPY=";
   };
 
+  patches = [
+    ./combined-flashlight.patch
+    ./smooth-slider.patch
+  ];
+
   dontBuild = true;
 
   installPhase = ''

@@ -169,7 +169,12 @@
     };
     # Calculator — native GTK4/libadwaita Google-Calculator-style app (mobile-first).
     calculator = {
-      url = "git+file:///home/matv/Projects/calculator?rev=015604f53cebe9e2676b701e5b6e62363e350726";
+      url = "git+file:///home/matv/Projects/calculator?rev=9afe15fac043ac691205f33f235257ec73802808";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    # Bourse — native GTK4/libadwaita stocks watchlist app (Yahoo Finance, no API key).
+    bourse = {
+      url = "git+file:///home/matv/Projects/bourse?rev=3590708280529c488518f44f3209cecb501c5abb";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     # Paloma — native GTK4/libadwaita Telegram client (over TDLib). Built from the

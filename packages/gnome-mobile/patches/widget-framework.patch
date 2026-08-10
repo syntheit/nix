@@ -80,7 +80,7 @@ new file mode 100644
 +            y_expand: false,
 +        });
 +
-+        this.context = Object.freeze({
++        this._context = Object.freeze({
 +            isOnLockscreen: Boolean(context.isOnLockscreen),
 +        });
 +        this._refreshTimeoutId = 0;
@@ -261,9 +261,10 @@ diff --git a/js/ui/unlockDialog.js b/js/ui/unlockDialog.js
  
  // The timeout before going back automatically to the lock screen (in seconds)
  const IDLE_TIMEOUT = 2 * 60;
-@@ -273,6 +274,8 @@
+@@ -273,6 +274,9 @@
          this._clock = new Clock();
          this._clock.x_expand = true;
++        this._clock.visible = !Main.layoutManager.is_phone;
  
 +        this._widgetHost = new WidgetHost({isOnLockscreen: true});
 +
@@ -286,7 +287,7 @@ diff --git a/data/theme/gnome-shell-sass/widgets/_login-lock.scss b/data/theme/g
  }
  
 +.lock-screen-widget-host {
-+  margin: 16px 24px 0;
++  margin: 32px 24px 0;
 +}
 +
 +.shell-widget-clock {

@@ -1,0 +1,257 @@
+diff --git a/data/theme/gnome-shell-sass/widgets/_login-lock.scss b/data/theme/gnome-shell-sass/widgets/_login-lock.scss
+index e91a05a80..41a9cdb8e 100644
+--- a/data/theme/gnome-shell-sass/widgets/_login-lock.scss
++++ b/data/theme/gnome-shell-sass/widgets/_login-lock.scss
+@@ -282,21 +282,47 @@ $_gdm_dialog_width: 21em;
+ }
+ 
+ .shell-widget-clock {
+-  padding: 12px 20px;
+-  border-radius: 20px;
+-  background-color: rgba(0, 0, 0, 0.32);
++  padding: 0;
++  background-color: transparent;
+   color: $_gdm_fg;
+-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+ 
+   .shell-widget-clock-time {
+     @extend %numeric;
+     @include fontsize(28pt);
+     font-weight: 700;
++    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+   }
+ 
+   .shell-widget-clock-date {
+     @extend %title_3;
+     font-weight: 500;
++    text-shadow: 0 1px 5px rgba(0, 0, 0, 0.5);
++  }
++}
++
++.lock-screen-shortcut {
++  min-width: 64px;
++  min-height: 64px;
++  margin: 0 24px 32px;
++  padding: 0;
++  border-radius: 999px;
++  background-color: rgba(0, 0, 0, 0.45);
++  color: white;
++  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
++
++  &:hover,
++  &:focus {
++    background-color: rgba(0, 0, 0, 0.58);
++  }
++
++  &:active,
++  &:checked {
++    background-color: rgba(255, 255, 255, 0.92);
++    color: black;
++  }
++
++  &.unavailable {
++    opacity: 96;
+   }
+ }
+ 
+diff --git a/js/ui/unlockDialog.js b/js/ui/unlockDialog.js
+index 679f67deb..0e05caa94 100644
+--- a/js/ui/unlockDialog.js
++++ b/js/ui/unlockDialog.js
+@@ -6,6 +6,7 @@ import Gio from 'gi://Gio';
+ import GnomeDesktop from 'gi://GnomeDesktop';
+ import GLib from 'gi://GLib';
+ import GObject from 'gi://GObject';
++import GUdev from 'gi://GUdev';
+ import Shell from 'gi://Shell';
+ import St from 'gi://St';
+ 
+@@ -39,6 +40,66 @@ const FADE_OUT_SCALE = 0.3;
+ const BLUR_BRIGHTNESS = 1.0;
+ const BLUR_RADIUS = 0;
+ 
++const TORCH_ICON_PATH =
++    '/run/current-system/sw/share/gnome-shell/extensions/' +
++    'torch@vixalien.com/data/icons/torch-on-symbolic.svg';
++
++class LockScreenTorch {
++    constructor() {
++        const client = GUdev.Client.new(['leds']);
++        const enumerator = GUdev.Enumerator.new(client);
++        enumerator.add_match_subsystem('leds');
++        enumerator.add_match_name('*:torch');
++        enumerator.add_match_name('*:flash');
++
++        this._devices = enumerator.execute();
++        this._proxy = this._devices.length > 0
++            ? Gio.DBusProxy.new_for_bus_sync(
++                Gio.BusType.SYSTEM,
++                Gio.DBusProxyFlags.NONE,
++                null,
++                'org.freedesktop.login1',
++                '/org/freedesktop/login1/session/auto',
++                'org.freedesktop.login1.Session',
++                null)
++            : null;
++    }
++
++    get available() {
++        return this._devices.length > 0 && this._proxy !== null;
++    }
++
++    get enabled() {
++        return this._devices.some(device =>
++            device.get_sysfs_attr_as_int_uncached('brightness') > 0);
++    }
++
++    toggle() {
++        if (!this.available)
++            return false;
++
++        const enable = !this.enabled;
++        for (const device of this._devices) {
++            const brightness = enable
++                ? device.get_sysfs_attr_as_int('max_brightness')
++                : 0;
++            const args = new GLib.Variant('(ssu)', [
++                device.get_subsystem(),
++                device.get_name(),
++                brightness,
++            ]);
++            this._proxy.call_sync(
++                'SetBrightness',
++                args,
++                Gio.DBusCallFlags.NONE,
++                -1,
++                null);
++        }
++
++        return this.enabled;
++    }
++}
++
+ const Clock = GObject.registerClass(
+ class UnlockDialogClock extends St.BoxLayout {
+     _init() {
+@@ -295,6 +356,7 @@ export const UnlockDialog = GObject.registerClass({
+         }, this);
+ 
+         this._swipeUpHint = new UnlockDialogSwipeHint();
++        this._swipeUpHint.visible = !Main.layoutManager.is_phone;
+ 
+         this._buttonRow = new St.BoxLayout({
+             x_align: Clutter.ActorAlign.CENTER,
+@@ -377,6 +439,76 @@ export const UnlockDialog = GObject.registerClass({
+ 
+         this.add_child(mainBox);
+ 
++        this._shortcutLayer = new St.Widget({
++            layout_manager: new Clutter.BinLayout(),
++            visible: Main.layoutManager.is_phone,
++            x_expand: true,
++            y_expand: true,
++        });
++        this._shortcutLayer.add_constraint(
++            new Layout.MonitorConstraint({primary: true}));
++
++        let torchEnabled = false;
++        try {
++            this._torch = new LockScreenTorch();
++            torchEnabled = this._torch.enabled;
++        } catch (error) {
++            this._torch = null;
++            logError(error, 'Failed to initialize the lock-screen flashlight');
++        }
++        const torchAvailable = this._torch?.available ?? false;
++
++        this._flashlightButton = new St.Button({
++            style_class: 'lock-screen-shortcut',
++            accessible_name: _('Flashlight'),
++            can_focus: torchAvailable,
++            reactive: torchAvailable,
++            toggle_mode: false,
++            checked: torchEnabled,
++            visible: torchAvailable,
++            x_expand: true,
++            y_expand: true,
++            x_align: Clutter.ActorAlign.START,
++            y_align: Clutter.ActorAlign.END,
++            child: new St.Icon({
++                gicon: Gio.icon_new_for_string(TORCH_ICON_PATH),
++                icon_size: 26,
++            }),
++        });
++        this._flashlightButton.connect('clicked', () => {
++            try {
++                this._flashlightButton.checked = this._torch.toggle();
++            } catch (error) {
++                this._flashlightButton.checked = false;
++                logError(error, 'Failed to toggle the lock-screen flashlight');
++            }
++        });
++        this._shortcutLayer.add_child(this._flashlightButton);
++
++        this._cameraApp = Shell.AppSystem.get_default()
++            .lookup_app('org.gnome.Snapshot.desktop');
++        this._launchCameraAfterUnlock = false;
++        this._cameraButton = new St.Button({
++            style_class: 'lock-screen-shortcut',
++            accessible_name: _('Camera'),
++            can_focus: this._cameraApp !== null,
++            reactive: this._cameraApp !== null,
++            x_expand: true,
++            y_expand: true,
++            x_align: Clutter.ActorAlign.END,
++            y_align: Clutter.ActorAlign.END,
++            icon_name: 'camera-photo-symbolic',
++        });
++        if (!this._cameraApp)
++            this._cameraButton.add_style_class_name('unavailable');
++        this._cameraButton.connect('clicked', () => {
++            this._launchCameraAfterUnlock = true;
++            this._showPrompt();
++        });
++        this._shortcutLayer.add_child(this._cameraButton);
++
++        this.add_child(this._shortcutLayer);
++
+         this._idleMonitor = global.backend.get_core_idle_monitor();
+         this._idleWatchId = this._idleMonitor.add_idle_watch(IDLE_TIMEOUT * 1000, this._escape.bind(this));
+ 
+@@ -599,6 +731,8 @@ export const UnlockDialog = GObject.registerClass({
+     }
+ 
+     _showClock() {
++        this._launchCameraAfterUnlock = false;
++
+         if (this._activePage === this._clockNotificationsBox)
+             return;
+ 
+@@ -742,12 +876,25 @@ export const UnlockDialog = GObject.registerClass({
+     }
+ 
+     finish(onComplete) {
+-        if (!this._authPrompt) {
++        const complete = () => {
++            const launchCamera = this._launchCameraAfterUnlock;
++            this._launchCameraAfterUnlock = false;
+             onComplete();
++
++            if (launchCamera && this._cameraApp) {
++                GLib.timeout_add(GLib.PRIORITY_DEFAULT, 400, () => {
++                    this._cameraApp.activate_full(-1, 0);
++                    return GLib.SOURCE_REMOVE;
++                });
++            }
++        };
++
++        if (!this._authPrompt) {
++            complete();
+             return;
+         }
+ 
+-        this._authPrompt.finish(onComplete);
++        this._authPrompt.finish(complete);
+     }
+ 
+     vfunc_collect_event_actors(target, forEvent) {
