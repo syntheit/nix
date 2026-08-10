@@ -1,0 +1,313 @@
+diff --git a/js/js-resources.gresource.xml b/js/js-resources.gresource.xml
+--- a/js/js-resources.gresource.xml
++++ b/js/js-resources.gresource.xml
+@@ -112,6 +112,7 @@
+     <file>ui/search.js</file>
+     <file>ui/searchController.js</file>
+     <file>ui/sessionMode.js</file>
++    <file>ui/shellWidgets.js</file>
+     <file>ui/shellDBus.js</file>
+     <file>ui/shellEntry.js</file>
+     <file>ui/shellMountOperation.js</file>
+diff --git a/data/org.gnome.shell.gschema.xml.in b/data/org.gnome.shell.gschema.xml.in
+--- a/data/org.gnome.shell.gschema.xml.in
++++ b/data/org.gnome.shell.gschema.xml.in
+@@ -70,6 +70,22 @@
+         will be displayed in the favorites area.
+       </description>
+     </key>
++    <key name="lock-screen-widgets" type="as">
++      <default>['clock']</default>
++      <summary>Widgets shown on the lock screen</summary>
++      <description>
++        Ordered list of registered shell widget identifiers shown above the
++        lock-screen clock.
++      </description>
++    </key>
++    <key name="today-view-widgets" type="as">
++      <default>['clock']</default>
++      <summary>Widgets shown in Today View</summary>
++      <description>
++        Ordered list of registered shell widget identifiers shown on the
++        Today View page.
++      </description>
++    </key>
+     <key name="command-history" type="as">
+       <default>[]</default>
+       <summary>History for command (Alt-F2) dialog</summary>
+diff --git a/js/ui/shellWidgets.js b/js/ui/shellWidgets.js
+new file mode 100644
+--- /dev/null
++++ b/js/ui/shellWidgets.js
+@@ -0,0 +1,210 @@
++import Clutter from 'gi://Clutter';
++import GnomeDesktop from 'gi://GnomeDesktop';
++import GLib from 'gi://GLib';
++import GObject from 'gi://GObject';
++import Shell from 'gi://Shell';
++import St from 'gi://St';
++
++import {formatDateWithCFormatString} from '../misc/dateUtils.js';
++
++const LOCK_SCREEN_WIDGETS_KEY = 'lock-screen-widgets';
++const TODAY_VIEW_WIDGETS_KEY = 'today-view-widgets';
++
++const _widgetRegistry = new Map();
++
++export const ShellWidget = GObject.registerClass(
++class ShellWidget extends St.BoxLayout {
++    static get id() {
++        return null;
++    }
++
++    static get title() {
++        return _('Widget');
++    }
++
++    static get preferredHeight() {
++        return -1;
++    }
++
++    static get defaultRefreshInterval() {
++        return 0;
++    }
++
++    constructor(context = {}) {
++        super({
++            style_class: 'shell-widget',
++            orientation: Clutter.Orientation.VERTICAL,
++            x_expand: true,
++            y_expand: false,
++        });
++
++        this.context = Object.freeze({
++            isOnLockscreen: Boolean(context.isOnLockscreen),
++        });
++        this._refreshTimeoutId = 0;
++
++        this.connect('destroy', () => this._stopRefreshTimer());
++    }
++
++    get preferredHeight() {
++        return this.constructor.preferredHeight;
++    }
++
++    update() {
++    }
++
++    vfunc_map() {
++        super.vfunc_map();
++
++        this.update();
++        this._startRefreshTimer();
++    }
++
++    vfunc_unmap() {
++        this._stopRefreshTimer();
++
++        super.vfunc_unmap();
++    }
++
++    _startRefreshTimer() {
++        const interval = this.constructor.defaultRefreshInterval;
++        if (this._refreshTimeoutId || interval <= 0)
++            return;
++
++        this._refreshTimeoutId = GLib.timeout_add_seconds(
++            GLib.PRIORITY_DEFAULT, interval, () => {
++                this.update();
++                return GLib.SOURCE_CONTINUE;
++            });
++        GLib.Source.set_name_by_id(this._refreshTimeoutId,
++            `[gnome-shell] ${this.constructor.id} widget refresh`);
++    }
++
++    _stopRefreshTimer() {
++        if (!this._refreshTimeoutId)
++            return;
++
++        GLib.source_remove(this._refreshTimeoutId);
++        this._refreshTimeoutId = 0;
++    }
++});
++
++export function registerWidget(id, factory, meta = {}) {
++    if (!id || typeof id !== 'string')
++        throw new TypeError('Widget id must be a non-empty string');
++    if (typeof factory !== 'function')
++        throw new TypeError(`Widget factory for ${id} must be a function`);
++    if (_widgetRegistry.has(id))
++        throw new Error(`Widget ${id} is already registered`);
++
++    _widgetRegistry.set(id, Object.freeze({
++        id,
++        factory,
++        meta: Object.freeze({...meta}),
++    }));
++}
++
++export function getRegisteredWidgets() {
++    return [..._widgetRegistry.values()];
++}
++
++export const WidgetHost = GObject.registerClass(
++class WidgetHost extends St.Widget {
++    constructor(context = {}) {
++        const isOnLockscreen = Boolean(context.isOnLockscreen);
++        super({
++            style_class: isOnLockscreen
++                ? 'widget-host lock-screen-widget-host'
++                : 'widget-host today-view-widget-host',
++            layout_manager: new Clutter.BoxLayout({
++                orientation: Clutter.Orientation.VERTICAL,
++                spacing: 12,
++            }),
++            x_expand: true,
++            y_expand: false,
++        });
++
++        this._context = Object.freeze({isOnLockscreen});
++        this._settingsKey = isOnLockscreen
++            ? LOCK_SCREEN_WIDGETS_KEY
++            : TODAY_VIEW_WIDGETS_KEY;
++
++        global.settings.connectObject(`changed::${this._settingsKey}`,
++            () => this._syncWidgets(), this);
++        this._syncWidgets();
++    }
++
++    _syncWidgets() {
++        this.destroy_all_children();
++
++        for (const id of global.settings.get_strv(this._settingsKey)) {
++            const definition = _widgetRegistry.get(id);
++            if (!definition) {
++                console.warn(`Ignoring unknown shell widget “${id}”`);
++                continue;
++            }
++
++            try {
++                this.add_child(definition.factory(this._context));
++            } catch (error) {
++                console.error(`Failed to create shell widget “${id}”:`, error);
++            }
++        }
++
++        this.visible = this.get_n_children() > 0;
++    }
++});
++
++const ClockWidget = GObject.registerClass(
++class ClockWidget extends ShellWidget {
++    static get id() {
++        return 'clock';
++    }
++
++    static get title() {
++        return _('Clock');
++    }
++
++    static get preferredHeight() {
++        return 96;
++    }
++
++    constructor(context) {
++        super(context);
++
++        this.add_style_class_name('shell-widget-clock');
++
++        this._timeLabel = new St.Label({
++            style_class: 'shell-widget-clock-time',
++            x_align: Clutter.ActorAlign.CENTER,
++        });
++        this._dateLabel = new St.Label({
++            style_class: 'shell-widget-clock-date',
++            x_align: Clutter.ActorAlign.CENTER,
++        });
++        this.add_child(this._timeLabel);
++        this.add_child(this._dateLabel);
++
++        this._wallClock = new GnomeDesktop.WallClock({time_only: true});
++        this._wallClock.connect('notify::clock', () => this.update());
++
++        this.connect('destroy', () => this._wallClock.run_dispose());
++    }
++
++    update() {
++        if (!this._wallClock)
++            return;
++
++        this._timeLabel.text = this._wallClock.clock.trim();
++
++        const date = new Date();
++        const dateFormat = Shell.util_translate_time_string(N_('%A, %B %-d'));
++        this._dateLabel.text = formatDateWithCFormatString(date, dateFormat);
++    }
++});
++
++registerWidget(ClockWidget.id, context => new ClockWidget(context), {
++    title: ClockWidget.title,
++    preferredHeight: ClockWidget.preferredHeight,
++    defaultRefreshInterval: ClockWidget.defaultRefreshInterval,
++});
+diff --git a/js/ui/unlockDialog.js b/js/ui/unlockDialog.js
+--- a/js/ui/unlockDialog.js
++++ b/js/ui/unlockDialog.js
+@@ -21,6 +21,7 @@
+ import {AuthPromptStatus} from '../gdm/authPrompt.js';
+ import {MprisSource} from './mpris.js';
+ import {MediaMessage} from './messageList.js';
++import {WidgetHost} from './shellWidgets.js';
+ 
+ // The timeout before going back automatically to the lock screen (in seconds)
+ const IDLE_TIMEOUT = 2 * 60;
+@@ -273,6 +274,8 @@
+         this._clock = new Clock();
+         this._clock.x_expand = true;
+ 
++        this._widgetHost = new WidgetHost({isOnLockscreen: true});
++
+         this._notificationsBox = new Calendar.CalendarMessageList({
+             isOnLockscreen: true,
+         });
+@@ -297,6 +300,7 @@
+             style_class: 'unlock-dialog-button-row',
+         });
+ 
++        this._clockNotificationsBox.add_child(this._widgetHost);
+         this._clockNotificationsBox.add_child(this._clock);
+         this._clockNotificationsBox.add_child(this._notificationsBox);
+         this._clockNotificationsBox.add_child(this._swipeUpHint);
+diff --git a/data/theme/gnome-shell-sass/widgets/_login-lock.scss b/data/theme/gnome-shell-sass/widgets/_login-lock.scss
+--- a/data/theme/gnome-shell-sass/widgets/_login-lock.scss
++++ b/data/theme/gnome-shell-sass/widgets/_login-lock.scss
+@@ -277,6 +277,29 @@
+   }
+ }
+ 
++.lock-screen-widget-host {
++  margin: 16px 24px 0;
++}
++
++.shell-widget-clock {
++  padding: 12px 20px;
++  border-radius: 20px;
++  background-color: rgba(0, 0, 0, 0.32);
++  color: $_gdm_fg;
++  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
++
++  .shell-widget-clock-time {
++    @extend %numeric;
++    @include fontsize(28pt);
++    font-weight: 700;
++  }
++
++  .shell-widget-clock-date {
++    @extend %title_3;
++    font-weight: 500;
++  }
++}
++
+ .login-dialog,
+ .unlock-dialog {
+ 
