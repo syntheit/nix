@@ -28,6 +28,7 @@
     enable = true;
     columns = 4;
     rows = 5;
+    collapsedRows = 2;
     tiles = [
       {
         id = "wifi";

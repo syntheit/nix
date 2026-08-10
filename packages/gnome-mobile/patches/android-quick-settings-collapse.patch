@@ -1,0 +1,286 @@
+diff --git a/data/theme/gnome-shell-sass/widgets/_quick-settings.scss b/data/theme/gnome-shell-sass/widgets/_quick-settings.scss
+index 51f51f8c0..dbf42dfbb 100644
+--- a/data/theme/gnome-shell-sass/widgets/_quick-settings.scss
++++ b/data/theme/gnome-shell-sass/widgets/_quick-settings.scss
+@@ -82,6 +82,16 @@
+   n-columns: 4;
+ }
+ 
++.quick-settings-expand-button.button {
++  min-width: 48px;
++  min-height: 32px;
++  padding: 0;
++  margin-top: -8px;
++  margin-bottom: 8px;
++
++  StIcon { icon-size: $scalable_icon_size * 0.75; }
++}
++
+ .quick-toggle, .quick-toggle-has-menu {
+   border-radius: $forced_circular_radius;
+   min-width: 12em;
+diff --git a/js/ui/panel.js b/js/ui/panel.js
+index adbe0d84e..8ccdb4ba4 100644
+--- a/js/ui/panel.js
++++ b/js/ui/panel.js
+@@ -378,6 +378,8 @@ class QuickSettings extends PanelMenu.Button {
+         if (this._mobileQuickSettingsConfig) {
+             this.menu.setColumns(
+                 this._mobileQuickSettingsConfig.grid?.columns ?? 4);
++            this.menu.setCollapsedRows(
++                this._mobileQuickSettingsConfig.grid?.collapsedRows ?? 0);
+         }
+ 
+         // fajita: no tap-to-open on the top bar. The QS sheet (which also holds
+@@ -553,6 +555,7 @@ class QuickSettings extends PanelMenu.Button {
+             .find(entry => entry.order > order)?.item ??
+             this._configuredTailSibling;
+         this.menu.insertItemBefore(item, nextItem, tile.span ?? 2);
++        this.menu.setItemCollapseManaged(item, true);
+         this._configuredItems.push({item, order});
+         this._configuredItems.sort((a, b) => a.order - b.order);
+     }
+diff --git a/js/ui/quickSettings.js b/js/ui/quickSettings.js
+index ef4ca51f2..23c809df0 100644
+--- a/js/ui/quickSettings.js
++++ b/js/ui/quickSettings.js
+@@ -581,6 +581,10 @@ const QuickSettingsLayoutMeta = GObject.registerClass({
+             'column-span', null, null,
+             GObject.ParamFlags.READWRITE,
+             -1, GLib.MAXINT32, 1),
++        'collapse-managed': GObject.ParamSpec.boolean(
++            'collapse-managed', null, null,
++            GObject.ParamFlags.READWRITE,
++            false),
+     },
+ }, class QuickSettingsLayoutMeta extends Clutter.LayoutMeta {});
+ 
+@@ -604,6 +608,8 @@ const QuickSettingsLayout = GObject.registerClass({
+         super._init(params);
+ 
+         this._overlay = overlay;
++        this.collapsedRows = 0;
++        this.expanded = false;
+     }
+ 
+     _containerStyleChanged() {
+@@ -641,9 +647,10 @@ const QuickSettingsLayout = GObject.registerClass({
+ 
+     _getMaxChildWidth(container) {
+         let [minWidth, natWidth] = [0, 0];
++        const collapsedChildren = this._getCollapsedChildren(container);
+ 
+         for (const child of container) {
+-            if (child === this._overlay)
++            if (child === this._overlay || collapsedChildren.has(child))
+                 continue;
+ 
+             const [childMin, childNat] = child.get_preferred_width(-1);
+@@ -655,10 +662,49 @@ const QuickSettingsLayout = GObject.registerClass({
+         return [minWidth, natWidth];
+     }
+ 
+-    _getRows(container) {
++    _getCollapsedChildren(container, ignoreExpanded = false) {
++        const collapsed = new Set();
++        if (this.collapsedRows <= 0 || (this.expanded && !ignoreExpanded))
++            return collapsed;
++
++        let rowIndex = 0;
++        let lineIndex = 0;
++        for (const child of container) {
++            if (!child.visible || child === this._overlay)
++                continue;
++
++            const {collapseManaged} = this.get_child_meta(container, child);
++            if (!collapseManaged)
++                continue;
++
++            const colSpan = this._getColSpan(container, child);
++            if (lineIndex > 0 && lineIndex + colSpan > this.nColumns) {
++                rowIndex++;
++                lineIndex = 0;
++            }
++
++            if (rowIndex >= this.collapsedRows)
++                collapsed.add(child);
++
++            lineIndex += colSpan;
++            if (lineIndex === this.nColumns) {
++                rowIndex++;
++                lineIndex = 0;
++            }
++        }
++
++        return collapsed;
++    }
++
++    hasCollapsedChildren(container) {
++        return this._getCollapsedChildren(container, true).size > 0;
++    }
++
++    _getRows(container, collapsedChildren = null) {
+         const rows = [];
+         let lineIndex = 0;
+         let curRow;
++        collapsedChildren ??= this._getCollapsedChildren(container);
+ 
+         /** private */
+         function appendRow() {
+@@ -668,7 +714,7 @@ const QuickSettingsLayout = GObject.registerClass({
+         }
+ 
+         for (const child of container) {
+-            if (!child.visible)
++            if (!child.visible || collapsedChildren.has(child))
+                 continue;
+ 
+             if (child === this._overlay)
+@@ -740,7 +786,8 @@ const QuickSettingsLayout = GObject.registerClass({
+     }
+ 
+     vfunc_allocate(container, box) {
+-        const rows = this._getRows(container);
++        const collapsedChildren = this._getCollapsedChildren(container);
++        const rows = this._getRows(container, collapsedChildren);
+ 
+         const [, overlayHeight] = this._overlay.get_preferred_height(-1);
+ 
+@@ -752,6 +799,9 @@ const QuickSettingsLayout = GObject.registerClass({
+         const isRtl = container.text_direction === Clutter.TextDirection.RTL;
+ 
+         const childBox = new Clutter.ActorBox();
++        for (const child of collapsedChildren)
++            child.allocate(new Clutter.ActorBox());
++
+         let y = box.y1;
+         rows.forEach(row => {
+             const [, rowNat] = this._getRowHeight(row);
+@@ -790,7 +840,10 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+         this._boxPointer.setFullscreen(true);
+         this.actor._delegate = this;
+ 
+-        this.connect('menu-closed', () => this.actor.hide());
++        this.connect('menu-closed', () => {
++            this._setExpanded(false, false);
++            this.actor.hide();
++        });
+ 
+         this._dimEffect = new Clutter.BrightnessContrastEffect({
+             enabled: false,
+@@ -832,6 +885,23 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+         this._innerBox.add_child(this._grid);
+         this._grid.add_child(placeholder);
+ 
++        this._expanded = false;
++        this._expandIcon = new St.Icon({
++            icon_name: 'pan-down-symbolic',
++            style_class: 'popup-menu-arrow',
++        });
++        this._expandButton = new St.Button({
++            style_class: 'button quick-settings-expand-button',
++            child: this._expandIcon,
++            x_align: Clutter.ActorAlign.CENTER,
++            can_focus: true,
++            accessible_name: _('Show more quick settings'),
++        });
++        this._expandButton.connect('clicked', () =>
++            this._setExpanded(!this._expanded, true));
++        this._expandButton.hide();
++        this._innerBox.add_child(this._expandButton);
++
+         this._messageList = new Calendar.CalendarMessageList();
+         this._innerBox.add_child(this._messageList);
+ 
+@@ -948,6 +1018,82 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+         layout.layout_changed();
+     }
+ 
++    setCollapsedRows(rows) {
++        const layout = this._grid.layout_manager;
++        layout.collapsedRows = rows;
++        this._setExpanded(false, false);
++        this._syncExpandButton();
++    }
++
++    setItemCollapseManaged(item, managed) {
++        const layout = this._grid.layout_manager;
++        layout.child_set_property(
++            this._grid, item, 'collapse-managed', managed);
++        item.connect('notify::visible', () => this._syncExpandButton());
++        layout.layout_changed();
++        this._syncExpandButton();
++    }
++
++    _syncExpandButton() {
++        const layout = this._grid.layout_manager;
++        const hasOverflow = layout.hasCollapsedChildren(this._grid);
++        this._expandButton.visible = hasOverflow;
++        if (!hasOverflow)
++            this._setExpanded(false, false);
++    }
++
++    _setExpanded(expanded, animate) {
++        const layout = this._grid.layout_manager;
++        if (this._expanded === expanded && layout.expanded === expanded)
++            return;
++
++        this._grid.remove_transition('height');
++        this._expandIcon.remove_transition('rotation-angle-z');
++
++        const oldHeight = this._grid.get_height();
++        this._expanded = expanded;
++        this._expandButton.accessible_name = expanded
++            ? _('Show fewer quick settings')
++            : _('Show more quick settings');
++
++        if (!expanded)
++            this._activeMenu?.close(PopupAnimation.NONE);
++
++        const finish = () => {
++            layout.expanded = expanded;
++            layout.layout_changed();
++            this._grid.set_height(-1);
++            this._grid.clip_to_allocation = false;
++            this._expandButton.reactive = true;
++        };
++
++        if (!animate || !this.actor.visible || oldHeight <= 0) {
++            this._expandIcon.rotation_angle_z = expanded ? 180 : 0;
++            finish();
++            return;
++        }
++
++        layout.expanded = expanded;
++        layout.layout_changed();
++        this._grid.set_height(-1);
++        const [, targetHeight] = this._grid.get_preferred_height(-1);
++        this._grid.set_height(oldHeight);
++        this._grid.clip_to_allocation = true;
++        this._expandButton.reactive = false;
++
++        this._grid.ease({
++            height: targetHeight,
++            duration: 250,
++            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
++            onStopped: finish,
++        });
++        this._expandIcon.ease({
++            rotation_angle_z: expanded ? 180 : 0,
++            duration: 250,
++            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
++        });
++    }
++
+     placeItemBefore(item, sibling) {
+         if (item.get_parent() !== this._grid ||
+             sibling.get_parent() !== this._grid)
+@@ -956,6 +1102,8 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+         // Clutter's actor stack runs opposite the order consumed by this
+         // layout, so "above" places a late external tile before its sibling.
+         this._grid.set_child_above_sibling(item, sibling);
++        this._grid.layout_manager.layout_changed();
++        this._syncExpandButton();
+     }
+ 
+     insertItemBefore(item, sibling, colSpan = 1) {

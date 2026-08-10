@@ -152,16 +152,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1786398595,
-        "narHash": "sha256-2GfXHykk0j4XkuBFrp2wrQpYOjANBrq9uK3S0ryG3dU=",
+        "lastModified": 1786403427,
+        "narHash": "sha256-xdosdV7jfkcIaazB+7+BwvYdX2Kp9Px9H+8IGBBvOQw=",
         "ref": "refs/heads/main",
-        "rev": "3590708280529c488518f44f3209cecb501c5abb",
-        "revCount": 10,
+        "rev": "cb6fb484de2ccee653076e137101d780575a0a95",
+        "revCount": 11,
         "type": "git",
         "url": "file:///home/matv/Projects/bourse"
       },
       "original": {
-        "rev": "3590708280529c488518f44f3209cecb501c5abb",
+        "rev": "cb6fb484de2ccee653076e137101d780575a0a95",
         "type": "git",
         "url": "file:///home/matv/Projects/bourse"
       }
@@ -210,16 +210,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1786402603,
-        "narHash": "sha256-UhmAIofvbqg+j/UwHq2djzjDNRlxuYipVVtbTxsyG7Q=",
+        "lastModified": 1786404704,
+        "narHash": "sha256-FWXLHYssJZvMdNPbeTpGJkyje93by+ypmaQouRpL8Pw=",
         "ref": "refs/heads/main",
-        "rev": "9afe15fac043ac691205f33f235257ec73802808",
-        "revCount": 9,
+        "rev": "91e2be679fc13e3ede7716ab722358679aa82262",
+        "revCount": 10,
         "type": "git",
         "url": "file:///home/matv/Projects/calculator"
       },
       "original": {
-        "rev": "9afe15fac043ac691205f33f235257ec73802808",
+        "rev": "91e2be679fc13e3ede7716ab722358679aa82262",
         "type": "git",
         "url": "file:///home/matv/Projects/calculator"
       }
@@ -1680,18 +1680,17 @@
         ]
       },
       "locked": {
-        "lastModified": 1786201666,
-        "narHash": "sha256-Hm5TDCqruOESA1y/yo4xRspYKdVkBcGvIA52C3txA9E=",
+        "lastModified": 1786403318,
+        "narHash": "sha256-7n8D0UznF4mKmCiLZ/uoy3Oq0n6S6ZCsf3WLfhYBF8g=",
         "ref": "refs/heads/main",
-        "rev": "8def2f7e14ff82ee8d97f14a4391ce825a2de12d",
-        "revCount": 5,
+        "rev": "0677f8d398a01c32212d0889c7ba79bb5b64cebb",
+        "revCount": 21,
         "type": "git",
-        "url": "file:///home/matv/Projects/paloma"
+        "url": "ssh://git@github.com/syntheit/paloma.git"
       },
       "original": {
-        "rev": "8def2f7e14ff82ee8d97f14a4391ce825a2de12d",
         "type": "git",
-        "url": "file:///home/matv/Projects/paloma"
+        "url": "ssh://git@github.com/syntheit/paloma.git"
       }
     },
     "plugin-loader-src": {
