@@ -1,0 +1,182 @@
+diff --git a/src/device.js b/src/device.js
+index f02130b..c857e52 100644
+--- a/src/device.js
++++ b/src/device.js
+@@ -84,11 +84,9 @@ export class TorchDevice extends GObject.Object {
+    * Sets the current brightness as fraction between 0 (off) and 1 (maximum brightness)
+    */
+   set scaled_brightness(frac) {
+-    if (frac <= 0.0 || frac >= 1) return;
+-
+-    const brightness = Math.round(frac * this.max_brightness);
+-
+-    if (brightness < this.max_brightness) this.#set_brightness(brightness);
++    const clamped = Math.max(0, Math.min(1, frac));
++    const brightness = Math.round(clamped * this.max_brightness);
++    this.#set_brightness(brightness);
+   }
+ 
+   #set_brightness(brightness) {
+diff --git a/src/main.js b/src/main.js
+index 9c59921..da35bb9 100644
+--- a/src/main.js
++++ b/src/main.js
+@@ -19,12 +19,10 @@ export default class TorchExtension extends Extension {
+ 
+     if (devices.length == 0) return;
+ 
+-    // only show the name of each torch when there are more than 1
+-    const show_label = devices.length > 1;
+-
+-    const toggles = devices.map((device) =>
+-      new TorchToggle({ device, show_label, cwd: this.metadata.path })
+-    );
++    const toggles = [new TorchToggle({
++      devices,
++      cwd: this.metadata.path,
++    })];
+     this._indicator = new TorchIndicator(toggles);
+ 
+     Main.panel.statusArea.quickSettings.addExternalIndicator(this._indicator);
+diff --git a/src/toggle.js b/src/toggle.js
+index 97bb4e3..684d41a 100644
+--- a/src/toggle.js
++++ b/src/toggle.js
+@@ -8,55 +8,69 @@ import * as QuickSettings from "resource:///org/gnome/shell/ui/quickSettings.js"
+ import { TORCH_DISABLED_ICON, TORCH_ENABLED_ICON } from "./constants.js";
+ 
+ export class TorchToggle extends QuickSettings.QuickMenuToggle {
+-  bindings = [];
+-
+   /**
+-   * @param {import("./device.js").TorchDevice} device The Torch Device
++   * @param {import("./device.js").TorchDevice[]} devices Torch devices
+    */
+-  constructor({ device, show_label = false, cwd }) {
++  constructor({ devices, cwd }) {
+     super({
+-      title: _("Torch"),
+-      subtitle: show_label ? device.name : null,
++      title: _("Flashlight"),
+       toggle_mode: true,
+     });
+ 
+-    this._device = device;
++    this.quickSettingsId = "flashlight";
++    this._devices = devices;
++    this._cwd = cwd;
++    this._syncingSlider = false;
+ 
+-    if (this._device.can_scale) {
++    if (this._devices.some((device) => device.can_scale)) {
+       this._sliderItem = new SliderItem();
+       this.menu.box.add_child(this._sliderItem);
++      this._sliderItem._slider.connectObject("notify::value", () => {
++        if (this._syncingSlider) return;
++        for (const device of this._devices) {
++          if (device.can_scale) device.scaled_brightness = this._sliderItem._slider.value;
++        }
++        this._sync();
++      }, this);
++    } else {
++      this.menuEnabled = false;
++    }
+ 
+-      this.bindings.push(
+-        this._device.bind_property(
+-          "scaled-brightness",
+-          this._sliderItem._slider,
+-          "value",
+-          GObject.BindingFlags.SYNC_CREATE | GObject.BindingFlags.BIDIRECTIONAL,
+-        ),
++    for (const device of this._devices) {
++      device.connectObject(
++        "notify::on", () => this._sync(),
++        "notify::scaled-brightness", () => this._sync(),
++        this,
+       );
+     }
+ 
+-    this.bindings.push(
+-      this._device.bind_property(
+-        "on",
+-        this,
+-        "checked",
+-        GObject.BindingFlags.SYNC_CREATE | GObject.BindingFlags.BIDIRECTIONAL,
+-      ),
+-    );
+-
+-    this.bindings.push(
+-      this._device.bind_property_full(
+-        "on",
+-        this,
+-        "gicon",
+-        GObject.BindingFlags.SYNC_CREATE,
+-        (_, brightness) => {
+-          return [true, this.get_gicon(cwd, brightness)];
+-        },
+-        null,
+-      ),
+-    );
++    this.connect("clicked", () => this._toggle());
++    this._sync();
++  }
++
++  _toggle() {
++    const enable = !this._devices.some((device) => device.on);
++    for (const device of this._devices) {
++      try {
++        device.toggle(enable);
++      } catch (error) {
++        logError(error, `Failed to toggle flashlight LED ${device.name}`);
++      }
++    }
++    this._sync();
++  }
++
++  _sync() {
++    this.checked = this._devices.some((device) => device.on);
++    this.gicon = this.get_gicon(this._cwd, this.checked);
++
++    if (!this._sliderItem) return;
++    const scalable = this._devices.filter((device) => device.can_scale);
++    const brightness = scalable.reduce(
++      (sum, device) => sum + device.scaled_brightness, 0) / scalable.length;
++    this._syncingSlider = true;
++    this._sliderItem._slider.value = brightness;
++    this._syncingSlider = false;
+   }
+ 
+   _gicon_cache = {};
+@@ -75,12 +89,16 @@ export class TorchToggle extends QuickSettings.QuickMenuToggle {
+ 
+   cleanup() {
+     this._gicon_cache = {};
+-
+-    this.bindings.forEach((binding) => binding.unbind());
+-    this.bindings.length = 0;
+-
+-    // this._device.destroy();
+-    this._device = null;
++    this._sliderItem?._slider.disconnectObject(this);
++    for (const device of this._devices) {
++      try {
++        device.toggle(false);
++      } catch (error) {
++        logError(error, `Failed to disable flashlight LED ${device.name}`);
++      }
++      device.disconnectObject(this);
++    }
++    this._devices = [];
+   }
+ 
+   static {
+@@ -96,7 +113,7 @@ class SliderItem extends PopupMenu.PopupBaseMenuItem {
+     });
+ 
+     this._slider = new Slider(0);
+-    this._slider.accessible_name = _("Torch Brightness");
++    this._slider.accessible_name = _("Flashlight Brightness");
+ 
+     this.add_child(this._slider);
+   }

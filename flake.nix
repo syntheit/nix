@@ -169,7 +169,7 @@
     };
     # Calculator — native GTK4/libadwaita Google-Calculator-style app (mobile-first).
     calculator = {
-      url = "git+file:///home/matv/Projects/calculator?rev=143367306af38187536c2eb38606762440b614a6";
+      url = "git+file:///home/matv/Projects/calculator?rev=015604f53cebe9e2676b701e5b6e62363e350726";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     # Paloma — native GTK4/libadwaita Telegram client (over TDLib). Built from the

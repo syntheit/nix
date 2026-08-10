@@ -1,0 +1,673 @@
+diff --git a/data/theme/gnome-shell-sass/widgets/_quick-settings.scss b/data/theme/gnome-shell-sass/widgets/_quick-settings.scss
+index 8cafbbd..db87c99 100644
+--- a/data/theme/gnome-shell-sass/widgets/_quick-settings.scss
++++ b/data/theme/gnome-shell-sass/widgets/_quick-settings.scss
+@@ -89,6 +89,18 @@
+   min-height: $scalable_icon_size * 3; // use icon size so the button scales
+ }
+ 
++.quick-toggle.quick-toggle-compact,
++.quick-toggle-has-menu.quick-toggle-compact {
++  min-width: 0;
++  max-width: none;
++}
++
++.quick-toggle.quick-toggle-compact > StBoxLayout {
++  padding-left: $base_padding;
++  padding-right: $base_padding;
++  spacing: 0;
++}
++
+ // standalone toggle button
+ .quick-toggle {
+   &:checked { @extend %default_button;}
+diff --git a/js/ui/panel.js b/js/ui/panel.js
+index ab9d751..a3e5ff3 100644
+--- a/js/ui/panel.js
++++ b/js/ui/panel.js
+@@ -1,5 +1,6 @@
+ import Atk from 'gi://Atk';
+ import Clutter from 'gi://Clutter';
++import Gio from 'gi://Gio';
+ import GLib from 'gi://GLib';
+ import GObject from 'gi://GObject';
+ import Graphene from 'gi://Graphene';
+@@ -11,8 +12,9 @@ import * as CtrlAltTab from './ctrlAltTab.js';
+ import * as DND from './dnd.js';
+ import * as PopupMenu from './popupMenu.js';
+ import * as PanelMenu from './panelMenu.js';
+-import {QuickSettingsMenu, SystemIndicator} from './quickSettings.js';
++import {QuickSettingsMenu, QuickToggle, SystemIndicator} from './quickSettings.js';
+ import * as Main from './main.js';
++import * as Screenshot from './screenshot.js';
+ import * as Util from '../misc/util.js';
+ 
+ import * as RemoteAccessStatus from './status/remoteAccess.js';
+@@ -40,6 +42,85 @@ import {ScreenRecordingIndicator, ScreenSharingIndicator} from './status/remoteA
+ const BUTTON_DND_ACTIVATION_TIMEOUT = 250;
+ 
+ const INACTIVE_WORKSPACE_DOT_SCALE = 0.75;
++const MOBILE_QUICK_SETTINGS_CONFIG =
++    '/etc/gnome-shell-mobile/quick-settings.json';
++
++function loadMobileQuickSettingsConfig() {
++    try {
++        const file = Gio.File.new_for_path(MOBILE_QUICK_SETTINGS_CONFIG);
++        const [success, contents] = file.load_contents(null);
++        if (!success)
++            return null;
++
++        const config = JSON.parse(new TextDecoder().decode(contents));
++        if (config.version !== 1 || !Array.isArray(config.tiles))
++            throw new Error('unsupported schema');
++        return config;
++    } catch (error) {
++        if (!error.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND))
++            logError(error, `Failed to load ${MOBILE_QUICK_SETTINGS_CONFIG}`);
++        return null;
++    }
++}
++
++const CustomQuickSettingsTile = GObject.registerClass(
++class CustomQuickSettingsTile extends QuickToggle {
++    _init(tile) {
++        super._init({
++            title: tile.title,
++            iconName: tile.iconName,
++            toggle_mode: false,
++            accessible_role: Atk.Role.PUSH_BUTTON,
++            accessible_name: tile.title,
++        });
++
++        this.quickSettingsId = tile.id;
++        this._tile = tile;
++
++        this.connect('clicked', () => this._activate());
++        Main.sessionMode.connectObject('updated', () => this._sync(), this);
++
++        if (tile.type === 'shell' && tile.action === 'screen-record') {
++            Main.screenshotUI.connectObject(
++                'notify::screencast-in-progress', () => this._sync(), this);
++        }
++        this._sync();
++    }
++
++    _sync() {
++        this.reactive = Main.sessionMode.hasWindows;
++        if (this._tile.type === 'shell' &&
++            this._tile.action === 'screen-record') {
++            this.checked = Main.screenshotUI.screencast_in_progress;
++            this.iconName = this.checked
++                ? 'screencast-stop-symbolic'
++                : this._tile.iconName;
++        }
++    }
++
++    _activate() {
++        if (this._tile.type === 'application') {
++            PopupMenu.launchApplication(this._tile.desktopId);
++            return;
++        }
++
++        if (this._tile.type !== 'shell' ||
++            this._tile.action !== 'screen-record')
++            return;
++
++        Main.panel.closeQuickSettings();
++        if (Main.screenshotUI.screencast_in_progress) {
++            Main.screenshotUI.stopScreencast();
++            return;
++        }
++
++        const laters = global.compositor.get_laters();
++        laters.add(Meta.LaterType.BEFORE_REDRAW, () => {
++            Screenshot.showScreenRecordingUI();
++            return GLib.SOURCE_REMOVE;
++        });
++    }
++});
+ 
+ const WorkspaceDot = GObject.registerClass({
+     Properties: {
+@@ -291,6 +372,13 @@ class QuickSettings extends PanelMenu.Button {
+         this.add_child(this._indicators);
+ 
+         this.setMenu(new QuickSettingsMenu(this));
++        this._mobileQuickSettingsConfig = loadMobileQuickSettingsConfig();
++        this._configuredItems = [];
++        this._configuredTailSibling = null;
++        if (this._mobileQuickSettingsConfig) {
++            this.menu.setColumns(
++                this._mobileQuickSettingsConfig.grid?.columns ?? 4);
++        }
+ 
+         // fajita: no tap-to-open on the top bar. The QS sheet (which also holds
+         // the notification list on mobile) stays reachable by swiping down on
+@@ -366,35 +454,106 @@ class QuickSettings extends PanelMenu.Button {
+ 
+         // add our quick settings items before any external ones
+         const sibling = this.menu.getFirstItem();
++        const fullSpan = this._mobileQuickSettingsConfig?.grid?.columns ?? 2;
+         this._addItemsBefore(this._system.quickSettingsItems,
+-            sibling, 2);
++            sibling, fullSpan);
+         this._addItemsBefore(this._volumeOutput.quickSettingsItems,
+-            sibling, 2);
++            sibling, fullSpan);
+         this._addItemsBefore(this._volumeInput.quickSettingsItems,
+-            sibling, 2);
++            sibling, fullSpan);
+         this._addItemsBefore(this._brightness.quickSettingsItems,
+-            sibling, 2);
++            sibling, fullSpan);
+ 
+-        this._addItemsBefore(this._camera.quickSettingsItems, sibling);
+-        this._addItemsBefore(this._remoteAccess.quickSettingsItems, sibling);
+-        this._addItemsBefore(this._thunderbolt.quickSettingsItems, sibling);
+-        this._addItemsBefore(this._location.quickSettingsItems, sibling);
+-        if (this._network)
+-            this._addItemsBefore(this._network.quickSettingsItems, sibling);
+-        if (this._bluetooth)
+-            this._addItemsBefore(this._bluetooth.quickSettingsItems, sibling);
+-        this._addItemsBefore(this._powerProfiles.quickSettingsItems, sibling);
+-        this._addItemsBefore(this._nightLight.quickSettingsItems, sibling);
+-        this._addItemsBefore(this._darkMode.quickSettingsItems, sibling);
+-        this._addItemsBefore(this._doNotDisturb.quickSettingsItems, sibling);
+-        this._addItemsBefore(this._backlight.quickSettingsItems, sibling);
+-        this._addItemsBefore(this._rfkill.quickSettingsItems, sibling);
+-        this._addItemsBefore(this._autoRotate.quickSettingsItems, sibling);
+-        this._addItemsBefore(this._unsafeMode.quickSettingsItems, sibling);
++        const regularSpan = this._mobileQuickSettingsConfig ? 2 : 1;
++        this._addItemsBefore(this._camera.quickSettingsItems, sibling, regularSpan);
++        this._addItemsBefore(this._remoteAccess.quickSettingsItems, sibling, regularSpan);
++        this._addItemsBefore(this._thunderbolt.quickSettingsItems, sibling, regularSpan);
++        this._addItemsBefore(this._location.quickSettingsItems, sibling, regularSpan);
++
++        if (this._mobileQuickSettingsConfig) {
++            this._configuredTailSibling = sibling;
++            this._addConfiguredTiles();
++        } else {
++            if (this._network)
++                this._addItemsBefore(this._network.quickSettingsItems, sibling);
++            if (this._bluetooth)
++                this._addItemsBefore(this._bluetooth.quickSettingsItems, sibling);
++            this._addItemsBefore(this._powerProfiles.quickSettingsItems, sibling);
++            this._addItemsBefore(this._nightLight.quickSettingsItems, sibling);
++            this._addItemsBefore(this._darkMode.quickSettingsItems, sibling);
++            this._addItemsBefore(this._doNotDisturb.quickSettingsItems, sibling);
++            this._addItemsBefore(this._backlight.quickSettingsItems, sibling);
++            this._addItemsBefore(this._rfkill.quickSettingsItems, sibling);
++            this._addItemsBefore(this._autoRotate.quickSettingsItems, sibling);
++            this._addItemsBefore(this._unsafeMode.quickSettingsItems, sibling);
++        }
+ 
+         // append background apps
+         this._backgroundApps.quickSettingsItems.forEach(
+             item => this.menu.addItem(item, -1));
++        this._configuredTailSibling =
++            this._backgroundApps.quickSettingsItems.at(0) ?? sibling;
++    }
++
++    _addConfiguredTiles() {
++        const builtins = new Map([
++            ['wifi', this._network?._wirelessToggle],
++            ['mobile-data', this._network?._modemToggle],
++            ['wired', this._network?._wiredToggle],
++            ['bluetooth-tether', this._network?._btToggle],
++            ['vpn', this._network?._vpnToggle],
++            ['bluetooth', this._bluetooth?.quickSettingsItems.at(0)],
++            ['power-mode', this._powerProfiles.quickSettingsItems.at(0)],
++            ['night-light', this._nightLight.quickSettingsItems.at(0)],
++            ['dark-style', this._darkMode.quickSettingsItems.at(0)],
++            ['do-not-disturb', this._doNotDisturb.quickSettingsItems.at(0)],
++            ['keyboard-backlight', this._backlight.quickSettingsItems.at(0)],
++            ['airplane-mode', this._rfkill.quickSettingsItems.at(0)],
++            ['auto-rotate', this._autoRotate.quickSettingsItems.at(0)],
++            ['unsafe-mode', this._unsafeMode.quickSettingsItems.at(0)],
++        ]);
++
++        for (const [order, tile] of
++            this._mobileQuickSettingsConfig.tiles.entries()) {
++            let item;
++            if (tile.type === 'builtin')
++                item = builtins.get(tile.id);
++            else
++                item = new CustomQuickSettingsTile(tile);
++
++            if (!item) {
++                console.warn(`Quick Settings tile ${tile.id} is unavailable`);
++                continue;
++            }
++
++            this._insertConfiguredItem(item, tile, order);
++        }
++    }
++
++    _insertConfiguredItem(item, tile, order) {
++        if (this._configuredItems.some(entry => entry.item === item))
++            return;
++
++        item.quickSettingsId = tile.id;
++        item.quickSettingsPersistent = tile.persistent ?? false;
++        item.setCompact?.(tile.span === 1);
++
++        if (tile.longPressDesktopId) {
++            item.setLongPressAction?.(() => {
++                PopupMenu.launchApplication(
++                    tile.longPressDesktopId,
++                    'org.gnome.Settings.desktop');
++            });
++        }
++
++        item._sync?.();
++
++        const nextItem = this._configuredItems
++            .find(entry => entry.order > order)?.item ??
++            this._configuredTailSibling;
++        this.menu.insertItemBefore(item, nextItem, tile.span ?? 2);
++        this._configuredItems.push({item, order});
++        this._configuredItems.sort((a, b) => a.order - b.order);
+     }
+ 
+     _addItemsBefore(items, sibling, colSpan = 1) {
+@@ -415,7 +574,24 @@ class QuickSettings extends PanelMenu.Button {
+ 
+         // Insert before background apps if it exists
+         sibling = this._backgroundApps?.quickSettingsItems?.at(-1) ?? null;
+-        this._addItemsBefore(indicator.quickSettingsItems, sibling, colSpan);
++        if (!this._mobileQuickSettingsConfig) {
++            this._addItemsBefore(indicator.quickSettingsItems, sibling, colSpan);
++            return;
++        }
++
++        for (const item of indicator.quickSettingsItems) {
++            const order = this._mobileQuickSettingsConfig.tiles
++                .findIndex(tile => tile.id === item.quickSettingsId);
++            if (order < 0) {
++                this.menu.insertItemBefore(item, sibling,
++                    Math.min(colSpan * 2,
++                        this._mobileQuickSettingsConfig.grid?.columns ?? 4));
++                continue;
++            }
++
++            const tile = this._mobileQuickSettingsConfig.tiles[order];
++            this._insertConfiguredItem(item, tile, order);
++        }
+     }
+ });
+ 
+diff --git a/js/ui/popupMenu.js b/js/ui/popupMenu.js
+index 8bbc521..602ccea 100644
+--- a/js/ui/popupMenu.js
++++ b/js/ui/popupMenu.js
+@@ -1,6 +1,7 @@
+ import Atk from 'gi://Atk';
+ import Clutter from 'gi://Clutter';
+ import Gio from 'gi://Gio';
++import GLib from 'gi://GLib';
+ import GObject from 'gi://GObject';
+ import Graphene from 'gi://Graphene';
+ import Shell from 'gi://Shell';
+@@ -20,6 +21,67 @@ export const Ornament = {
+     NO_DOT: 4,
+ };
+ 
++/**
++ * Launch an application from Quick Settings and focus the window it owns.
++ *
++ * Phone home is itself the overview. Hiding it before a cold launch lets the
++ * zero-window fallback reopen the app grid before the new window maps. Watch
++ * the canonical app instead, and let Main.activateWindow() hide the overview
++ * only once there is a real window to focus.
++ *
++ * @param {string} desktopFile launcher desktop id
++ * @param {string=} focusDesktopFile desktop id that owns the resulting window
++ */
++export function launchApplication(desktopFile, focusDesktopFile = desktopFile) {
++    const appSystem = Shell.AppSystem.get_default();
++    const launchApp = appSystem.lookup_app(desktopFile);
++    const focusApp = appSystem.lookup_app(focusDesktopFile);
++
++    if (!launchApp) {
++        console.warn(`Application ${desktopFile} could not be loaded`);
++        return;
++    }
++
++    Main.panel.closeQuickSettings();
++
++    let windowsChangedId = 0;
++    let timeoutId = 0;
++
++    const cleanup = () => {
++        if (windowsChangedId) {
++            focusApp?.disconnect(windowsChangedId);
++            windowsChangedId = 0;
++        }
++        if (timeoutId) {
++            GLib.source_remove(timeoutId);
++            timeoutId = 0;
++        }
++    };
++
++    const focusWindow = () => {
++        const window = focusApp?.get_windows()
++            .find(candidate => !candidate.skip_taskbar);
++        if (!window)
++            return false;
++
++        cleanup();
++        Main.activateWindow(window);
++        return true;
++    };
++
++    if (focusApp)
++        windowsChangedId = focusApp.connect('windows-changed', focusWindow);
++
++    timeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 5000, () => {
++        timeoutId = 0;
++        cleanup();
++        return GLib.SOURCE_REMOVE;
++    });
++
++    launchApp.activate();
++    focusWindow();
++}
++
+ function isPopupMenuItemVisible(child) {
+     if (child._delegate instanceof PopupMenuSection) {
+         if (child._delegate.isEmpty())
+@@ -790,21 +851,18 @@ export class PopupMenuBase extends Signals.EventEmitter {
+ 
+     addSettingsAction(title, desktopFile) {
+         let menuItem = this.addAction(title, () => {
+-            let app = Shell.AppSystem.get_default().lookup_app(desktopFile);
+-
+-            if (!app) {
+-                log(`Settings panel for desktop file ${desktopFile} could not be loaded!`);
+-                return;
+-            }
+-
+-            Main.overview.hide();
+-            Main.panel.closeQuickSettings();
+-            app.activate();
++            launchApplication(desktopFile, 'org.gnome.Settings.desktop');
+         });
+ 
+         menuItem.visible = Main.sessionMode.allowSettings;
+         this._settingsActions[desktopFile] = menuItem;
+ 
++        this.sourceActor?.setLongPressAction?.(() => {
++            const action = Object.values(this._settingsActions)
++                .find(item => item.visible);
++            action?.activate();
++        });
++
+         return menuItem;
+     }
+ 
+diff --git a/js/ui/quickSettings.js b/js/ui/quickSettings.js
+index 940317f..d46ad31 100644
+--- a/js/ui/quickSettings.js
++++ b/js/ui/quickSettings.js
+@@ -130,6 +130,30 @@ export const QuickToggle = GObject.registerClass({
+             GObject.BindingFlags.SYNC_CREATE,
+             (bind, source) => [true, source !== null],
+             null);
++
++        this._longPressAction = null;
++        this._longPressGesture = new Clutter.LongPressGesture({
++            required_button: Clutter.BUTTON_PRIMARY,
++        });
++        this._longPressGesture.connect('recognize', () => {
++            this._longPressAction?.();
++        });
++        this.add_action(this._longPressGesture);
++    }
++
++    setLongPressAction(callback) {
++        this._longPressAction = callback;
++    }
++
++    setCompact(compact) {
++        this.toggle_style_class_name('quick-toggle-compact', compact);
++        this._title.get_parent().visible = !compact;
++        this._icon.set({
++            x_align: compact
++                ? Clutter.ActorAlign.CENTER
++                : Clutter.ActorAlign.FILL,
++            x_expand: compact,
++        });
+     }
+ 
+     get label() {
+@@ -179,9 +203,11 @@ export const QuickMenuToggle = GObject.registerClass({
+         const contents = new QuickToggle({
+             x_expand: true,
+         });
++        this._contents = contents;
+         this._box.add_child(contents);
+ 
+         let separator = new St.Widget({style_class: 'quick-toggle-separator'});
++        this._separator = separator;
+         this._box.add_child(separator);
+ 
+         this._menuButton = new St.Button({
+@@ -217,9 +243,11 @@ export const QuickMenuToggle = GObject.registerClass({
+             contents, 'icon-name',
+             GObject.BindingFlags.SYNC_CREATE);
+ 
+-        this.bind_property('menu-enabled',
++        this.bind_property_full('menu-enabled',
+             this._menuButton, 'visible',
+-            GObject.BindingFlags.SYNC_CREATE);
++            GObject.BindingFlags.SYNC_CREATE,
++            (bind, source) => [true, source && !this._compact],
++            null);
+         this.bind_property('menu-button-accessible-name',
+             this._menuButton, 'accessible-name',
+             GObject.BindingFlags.SYNC_CREATE);
+@@ -238,6 +266,17 @@ export const QuickMenuToggle = GObject.registerClass({
+                 this.menu.open();
+         });
+     }
++
++    setLongPressAction(callback) {
++        this._contents.setLongPressAction(callback);
++    }
++
++    setCompact(compact) {
++        this._compact = compact;
++        this.toggle_style_class_name('quick-toggle-compact', compact);
++        this._contents.setCompact(compact);
++        this.notify('menu-enabled');
++    }
+ });
+ 
+ export const QuickSlider = GObject.registerClass({
+@@ -582,6 +621,9 @@ const QuickSettingsLayout = GObject.registerClass({
+         if (found)
+             this.nColumns = cols;
+ 
++        if (this.forcedColumns)
++            this.nColumns = this.forcedColumns;
++
+         if (changed)
+             this.layout_changed();
+     }
+@@ -894,6 +936,13 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+         this._completeAddItem(item, colSpan);
+     }
+ 
++    setColumns(columns) {
++        const layout = this._grid.layout_manager;
++        layout.forcedColumns = columns;
++        layout.nColumns = columns;
++        layout.layout_changed();
++    }
++
+     insertItemBefore(item, sibling, colSpan = 1) {
+         this._grid.insert_child_below(item, sibling);
+         this._completeAddItem(item, colSpan);
+diff --git a/js/ui/status/network.js b/js/ui/status/network.js
+index e25aa6e..e538e64 100644
+--- a/js/ui/status/network.js
++++ b/js/ui/status/network.js
+@@ -1961,6 +1961,10 @@ class NMModemToggle extends NMDeviceToggle {
+     constructor() {
+         super(NM.DeviceType.MODEM);
+ 
++        this._pendingActivation = false;
++        this._pendingActivationTimeoutId = 0;
++        this.connect('destroy', () => this._cancelPendingActivation(false));
++
+         this.menu.setHeader('network-cellular-symbolic', _('Mobile Connections'));
+         this.menuButtonAccessibleName = _('Open mobile connections menu');
+ 
+@@ -1972,21 +1976,116 @@ class NMModemToggle extends NMDeviceToggle {
+     }
+ 
+     _getDefaultName() {
+-        // Translators: "Mobile" from "Mobile Broadband"
+-        return _('Mobile');
++        return _('Mobile Data');
+     }
+ 
+     _createDeviceMenuItem(device) {
+         return new NMModemDeviceItem(this._client, device);
+     }
+ 
++    _shouldShowDevice(device) {
++        // ModemManager takes several seconds to bring qrtr modems from
++        // UNAVAILABLE to DISCONNECTED. Keep a stable tile during that window,
++        // just like Wi-Fi does while its radio is disabled.
++        if (device.state === NM.DeviceState.UNAVAILABLE)
++            return true;
++        return super._shouldShowDevice(device);
++    }
++
++    activate() {
++        if (this._pendingActivation) {
++            this._cancelPendingActivation();
++            return;
++        }
++
++        const item = this._itemBinding.source;
++        const state = item?._device?.state ?? NM.DeviceState.UNKNOWN;
++        if (!item || state === NM.DeviceState.UNKNOWN ||
++            state === NM.DeviceState.UNMANAGED ||
++            state === NM.DeviceState.UNAVAILABLE) {
++            this._pendingActivation = true;
++            this._pendingActivationTimeoutId = GLib.timeout_add(
++                GLib.PRIORITY_DEFAULT, 45_000, () => {
++                    this._pendingActivationTimeoutId = 0;
++                    this._pendingActivation = false;
++                    this._sync();
++                    return GLib.SOURCE_REMOVE;
++                });
++            this._sync();
++            return;
++        }
++
++        super.activate();
++    }
++
++    _cancelPendingActivation(sync = true) {
++        if (this._pendingActivationTimeoutId) {
++            GLib.source_remove(this._pendingActivationTimeoutId);
++            this._pendingActivationTimeoutId = 0;
++        }
++        this._pendingActivation = false;
++        if (sync)
++            this._sync();
++    }
++
++    _activatePendingItem() {
++        this._cancelPendingActivation(false);
++        super.activate();
++    }
++
++    _maybeActivatePending() {
++        if (!this._pendingActivation)
++            return;
++
++        const item = this._itemBinding.source;
++        const state = item?._device?.state ?? NM.DeviceState.UNKNOWN;
++        if (!item || state < NM.DeviceState.DISCONNECTED)
++            return;
++
++        if (state > NM.DeviceState.DISCONNECTED) {
++            this._cancelPendingActivation();
++            return;
++        }
++
++        GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
++            if (this._pendingActivation)
++                this._activatePendingItem();
++            return GLib.SOURCE_REMOVE;
++        });
++    }
++
++    _deviceStateChanged(device, newState, oldState, reason) {
++        super._deviceStateChanged(device, newState, oldState, reason);
++        this._maybeActivatePending();
++    }
++
+     _sync() {
+         super._sync();
+ 
++        if (this.quickSettingsPersistent)
++            this.visible = this._client !== null;
++
++        if (!this._itemBinding.source) {
++            this.set({
++                title: _('Mobile Data'),
++                subtitle: null,
++                iconName: this._pendingActivation
++                    ? 'network-cellular-acquiring-symbolic'
++                    : 'network-cellular-disabled-symbolic',
++            });
++        }
++
++        if (this._pendingActivation) {
++            this.checked = true;
++            this.iconName = 'network-cellular-acquiring-symbolic';
++        }
++
+         const useWwanPanel =
+             [...this._items.values()].some(i => i.wwanPanelSupported);
+         this._wwanSettings.visible = useWwanPanel;
+         this._legacySettings.visible = !useWwanPanel;
++
++        this._maybeActivatePending();
+     }
+ });
+ 
+diff --git a/js/ui/status/system.js b/js/ui/status/system.js
+index 8d18bd2..f1b56d1 100644
+--- a/js/ui/status/system.js
++++ b/js/ui/status/system.js
+@@ -52,10 +52,9 @@ const PowerToggle = GObject.registerClass({
+             GObject.BindingFlags.SYNC_CREATE);
+ 
+         this.connect('clicked', () => {
+-            const app = Shell.AppSystem.get_default().lookup_app('gnome-power-panel.desktop');
+-          //  Main.overview.hide();
+-            Main.panel.closeQuickSettings();
+-            app.activate();
++            PopupMenu.launchApplication(
++                'gnome-power-panel.desktop',
++                'org.gnome.Settings.desktop');
+         });
+ 
+         Main.sessionMode.connect('updated', () => this._sessionUpdated());
+@@ -149,9 +148,7 @@ class SettingsItem extends QuickSettingsItem {
+         this.accessible_name = this._settingsApp?.get_name() ?? null;
+ 
+         this.connect('clicked', () => {
+-     //       Main.overview.hide();
+-            Main.panel.closeQuickSettings();
+-            this._settingsApp.activate();
++            PopupMenu.launchApplication('org.gnome.Settings.desktop');
+         });
+ 
+         Main.sessionMode.connectObject('updated', () => this._sync(), this);
