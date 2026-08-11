@@ -21,6 +21,22 @@ let
   listenPort = 51821;       # 51820 is taken by wg0 (harbor link)
   allowChain = "MALLI_USERVPN";
   allowSet = "MALLI_USERVPN_ALLOW";
+
+  # Post-vista-migration (2026-08): the Headscale nspawn no longer runs on
+  # conduit, so the old node lookup `nixos-container run headscale …` is dead
+  # here. user-vpn is a separate remote-access surface — out of scope for the
+  # bot routing this migration unblocks — so we let hostname→IP resolution
+  # DEGRADE rather than couple conduit back to vista over SSH/gRPC. The daemon
+  # still starts and serves (startup Reconcile re-adds ipset tuples from its own
+  # sqlite, not from headscale); only NEW grants that need node resolution fail,
+  # and they fail LOUDLY in the journal instead of silently mis-resolving.
+  # Re-point at vista's headscale (gRPC, or SSH through the :2222 relay) to
+  # re-enable. A single-token script is used because the granter whitespace-
+  # splits the argv, so a quoted `sh -c '…'` would not survive.
+  headscaleLookupDisabled = pkgs.writeShellScript "uservpn-headscale-disabled" ''
+    echo "user-vpn headscale node lookup is disabled on conduit: the Headscale nspawn moved to vista (2026-08). Re-point services.deus.uservpn-server.headscaleCommand at vista to re-enable." >&2
+    exit 1
+  '';
 in
 {
   imports = [ inputs.deus.nixosModules.uservpn-server ];
@@ -36,18 +52,18 @@ in
     publicEndpoint = "conduit.matv.io:${toString listenPort}";
     wgInterface = iface;
     ipsetName = allowSet;
-    # Reuse deus-server's operator token — same humans manage both
-    # surfaces. The activation script in headscale.nix stages
-    # /run/secrets/deus_operator_token into this file.
-    operatorTokenFile = "/var/lib/deus-tokens/operator-token";
-    # Headscale's unix socket lives inside the nspawn container at
-    # /run/headscale and isn't bind-mounted out — the simplest way
-    # for a host-side process to query it is `nixos-container run`,
-    # which enters the container's namespaces and execs the command
-    # there. The container's `headscale` binary is on its system
-    # PATH; we use the absolute path through the running closure
-    # so we don't depend on the container's PATH ordering.
-    headscaleCommand = "nixos-container run headscale -- /run/current-system/sw/bin/headscale nodes list -o json";
+    # Reuse deus-server's operator token — same humans manage both surfaces
+    # (deus itself now runs in the nspawn on vista; this is the same token
+    # value, re-keyed there too). Read the sops secret directly now that the
+    # nspawn's deus-stage activation (which used to stage it) has moved off
+    # conduit with the container.
+    operatorTokenFile = "/run/secrets/deus_operator_token";
+    # DEGRADED post-migration: the nspawn (and its headscale socket) moved to
+    # vista, so this host can no longer `nixos-container run headscale`. Points
+    # at a script that fails loudly (see headscaleLookupDisabled above); the
+    # daemon stays up, only new node-resolving grants error. Re-point at vista
+    # to restore user-vpn fleet lookups.
+    headscaleCommand = "${headscaleLookupDisabled}";
     dnsServers = [ "100.64.0.1" ];
   };
 
