@@ -50,7 +50,12 @@ let
       # OURS (candidate for upstream feedback on the AF series): the branch's
       # focus-loss check restarts the sweep on ANY single-frame ±30% sharpness
       # deviation → continuous hunting on static scenes (observed in Snapshot).
-      # Debounced: drop-only, 10-frame persistence, adopts improvements.
+      # Retuned 2026-08-11 after "constantly moving" field report: the v1
+      # debounce (drop below 50% of the latched all-time max, 10 frames)
+      # still limit-cycled because a 1-2 frame noise/AGC spike became the
+      # baseline wholesale. Now: slowly-tracking baseline (EMA rise 1/8,
+      # decay 1/64 only above threshold), restart below 35% for 30 frames
+      # (~1.5-3 s at the soft ISP's real 10-20 fps).
       ./camera/patches/10-af-debounce-focus-loss-detection.patch
       # OURS, night-violet fix step 2 (see fajita-notes/camera-project/
       # night-violet-code-analysis.md). 11 = companion clamp: once the black

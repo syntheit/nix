@@ -1,41 +1,105 @@
 From ce8b3dec83109a285de459f81fe84e73968cf1e9 Mon Sep 17 00:00:00 2001
 From: Daniel <daniel@matv.io>
-Date: Thu, 16 Jul 2026 16:24:25 -0400
-Subject: [PATCH] af: debounce focus-loss detection (drop-only, 10-frame
- persistence)
+Date: Tue, 11 Aug 2026 16:30:00 -0400
+Subject: [PATCH] af: debounce focus-loss detection (deep sustained drop,
+ smoothed baseline)
 
 The lock-state check restarted a full sweep whenever a SINGLE frame's
 sharpness deviated more than 30% from the sweep-time peak, in EITHER
-direction. Steady-state sharpness is noisy (AGC breathing, handshake),
-so the lens hunted continuously on static scenes, and getting sharper
-also counted as 'lost'. Adopt upward improvements as the new baseline
-and only restart after 10 consecutive frames below 50% of the locked
-sharpness (~1/3s at 30fps): blips are ignored, pointing at a genuinely
-new subject still refocuses within half a second.
+direction. The sharpness metric (squared green gradients over the
+centre window, normalised by the green sum) scales roughly linearly
+with AGC exposure/gain and has heavy-tailed noise, so on a soft ISP
+running at 10-20 fps the lens hunted continuously on static scenes.
+
+An earlier debounce (drop-only, below 50% of the all-time maximum for
+10 consecutive frames) still re-triggered constantly in the field: any
+1-2 frame noise/AGC spike was adopted wholesale as sharpness_max, after
+which the true steady-state sharpness sat at or below the 50% line and
+every ~0.5-1 s dip launched another full 0-100 sweep (~4-7 s of visible
+lens racking), i.e. the camera spent most of its time sweeping.
+
+Rework the locked state around a slowly-tracking baseline instead of a
+latched maximum:
+
+ - restart only after 30 consecutive frames (~1.5-3 s at the real
+   10-20 fps) below 35% of the baseline; genuine defocus collapses the
+   squared-gradient metric by 5-20x so detection is preserved, while
+   AGC breathing (~gain-ratio modulation) can no longer reach the
+   threshold;
+ - adopt improvements via a 1/8-per-frame exponential rise so a spike
+   contributes an eighth of its excess instead of poisoning the
+   baseline;
+ - decay an inflated baseline (e.g. recorded during AGC convergence
+   within the sweep) at 1/64 per frame, but only while the current
+   frame is above the loss threshold, so the baseline is frozen during
+   a genuine sustained drop and detection latency stays exactly
+   kFocusLostFrames.
 
 Observed on OnePlus 6T (fajita) running GNOME Snapshot via
-pipewire->libcamera: continuous back-and-forth hunting on a propped,
-static, well-lit subject.
+pipewire->libcamera: "can focus sometimes but constantly moving" on
+static subjects; sweep-lock-resweep limit cycle in the logs.
 ---
- src/ipa/simple/algorithms/af.cpp | 32 +++++++++++++++++++++++++++-----
+ src/ipa/simple/algorithms/af.cpp | 77 +++++++++++++++++++++++++++++++++++++---
  src/ipa/simple/ipa_context.h     |  1 +
- 2 files changed, 28 insertions(+), 5 deletions(-)
+ 2 files changed, 73 insertions(+), 5 deletions(-)
 
 diff --git a/src/ipa/simple/algorithms/af.cpp b/src/ipa/simple/algorithms/af.cpp
-index 0c640ec..39d3329 100644
+index 0c640ec..3db6dcb 100644
 --- a/src/ipa/simple/algorithms/af.cpp
 +++ b/src/ipa/simple/algorithms/af.cpp
-@@ -18,6 +18,9 @@ namespace libcamera {
+@@ -18,6 +18,51 @@ namespace libcamera {
  
  LOG_DEFINE_CATEGORY(IPASoftAutoFocus)
  
-+/* Consecutive low-sharpness frames before declaring focus lost (~1/3 s @30fps) */
-+static constexpr uint32_t kFocusLostFrames = 10;
++/*
++ * Focus-loss debounce tuning.
++ *
++ * The soft ISP on this class of device runs well below 30 fps (typically
++ * 10-20 fps), and the sharpness metric (sum of squared green gradients
++ * over the centre window, normalised by the green sum) scales roughly
++ * linearly with AGC exposure/gain and has heavy-tailed frame-to-frame
++ * noise, so steady-state readings routinely swing +/-50% with no scene
++ * change at all.
++ */
++
++/*
++ * Consecutive frames below the loss threshold before a new sweep is
++ * started. 30 frames is ~1.5-3 s at the real 10-20 fps rate: long enough
++ * that AGC convergence, hand shake or a passing occlusion cannot fake a
++ * scene change, short enough that pointing at a new subject still
++ * refocuses within a few seconds.
++ */
++static constexpr uint32_t kFocusLostFrames = 30;
++
++/*
++ * Loss threshold as a fraction (num/den, integer maths) of the locked
++ * sharpness baseline. Defocusing a textured scene collapses the
++ * squared-gradient metric by 5-20x, while AGC breathing only modulates
++ * it by roughly the gain ratio, so 35% cleanly separates "new subject"
++ * from "same scene, exposure moved".
++ */
++static constexpr uint64_t kFocusLostNum = 35;
++static constexpr uint64_t kFocusLostDen = 100;
++
++/*
++ * Exponential smoothing shifts for the locked-sharpness baseline.
++ * Upward (1/8 of the excess per frame, ~8-frame time constant, 0.4-0.8 s
++ * at 10-20 fps): genuine sustained improvements are adopted quickly, but
++ * a 1-2 frame noise/AGC spike no longer becomes the baseline wholesale --
++ * a latched spike >2x the steady level used to make every following
++ * frame look "lost" and re-trigger sweeps continuously. Downward (1/64
++ * per frame, ~3-6 s): an inflated baseline (e.g. recorded during AGC
++ * convergence in the sweep) decays toward the observed steady level.
++ * The decay only runs while the current frame is above the loss
++ * threshold, so it can never erode the baseline during a genuine drop.
++ */
++static constexpr unsigned int kBaselineRiseShift = 3;
++static constexpr unsigned int kBaselineDecayShift = 6;
 +
  namespace ipa::soft::algorithms {
  
  Af::Af()
-@@ -88,6 +91,7 @@ void Af::restart(IPAContext &context) {
+@@ -88,6 +133,7 @@ void Af::restart(IPAContext &context) {
  	context.configuration.focus.step = 2;
  	context.configuration.focus.skip = 10;
  	context.activeState.knobs.focus_pos = 0;
@@ -43,7 +107,7 @@ index 0c640ec..39d3329 100644
  	context.activeState.knobs.focus_sweep = true;
  	LOG(IPASoftAutoFocus, Info) << "Starting focus sweep";
  }
-@@ -99,12 +103,30 @@ void Af::step(IPAContext &context, double& focus_pos, uint64_t sharp, bool& swee
+@@ -99,12 +145,33 @@ void Af::step(IPAContext &context, double& focus_pos, uint64_t sharp, bool& swee
  		context.configuration.focus.skip --;
  		return;
  	}
@@ -54,27 +118,30 @@ index 0c640ec..39d3329 100644
 +	if (!sweep) {
 +		/*
 +		 * Locked. Steady-state sharpness is noisy (AGC breathing,
-+		 * hand shake), so a single-frame deviation must not restart
-+		 * the sweep. Adopt improvements as the new baseline; only a
-+		 * sustained drop below half the locked sharpness (~1/3 s)
-+		 * means the scene really changed.
++		 * hand shake), so nothing short of a deep, sustained drop
++		 * may restart the sweep. The baseline tracks the observed
++		 * sharpness slowly in both directions instead of latching
++		 * the all-time maximum: comparing against a latched
++		 * noise/AGC spike made the locked position look permanently
++		 * "lost" and re-triggered full sweeps back to back.
 +		 */
-+		if (sharp > context.configuration.focus.sharpness_max) {
-+			context.configuration.focus.sharpness_max = sharp;
-+			context.configuration.focus.lost_frames = 0;
-+			return;
- 		}
--		return;			
-+		if (sharp < context.configuration.focus.sharpness_max / 2) {
++		uint64_t &baseline = context.configuration.focus.sharpness_max;
++		if (sharp * kFocusLostDen < baseline * kFocusLostNum) {
++			/* Deep drop: freeze the baseline and count. */
 +			if (++context.configuration.focus.lost_frames >= kFocusLostFrames) {
 +				LOG(IPASoftAutoFocus, Info)
 +					<< "Focus lost -- " << sharp << " vs "
-+					<< context.configuration.focus.sharpness_max;
++					<< baseline;
 +				restart(context);
 +			}
-+		} else {
-+			context.configuration.focus.lost_frames = 0;
-+		}
++			return;
+ 		}
+-		return;			
++		context.configuration.focus.lost_frames = 0;
++		if (sharp > baseline)
++			baseline += (sharp - baseline) >> kBaselineRiseShift;
++		else
++			baseline -= (baseline - sharp) >> kBaselineDecayShift;
 +		return;
  	}
  	if (sharp > context.configuration.focus.sharpness_max) {
