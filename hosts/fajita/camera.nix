@@ -80,6 +80,20 @@ let
       # (out = M*(in-black) + black), matching what the GPU debayer shaders
       # already do. Per-channel-black ready for the coming dark-frame BLC.
       ./camera/patches/13-debayer-subtract-black-before-gain.patch
+      # 14 = OURS, CDAF sweep quality (field: "sucks at focusing at stuff up
+      # close" — locks hold (see 10) but land off-peak for near subjects).
+      # Root causes: sweep scored 1 frame/position back-to-back while each
+      # sharpness sample was exposed 1-2 frames (~80 ms VCM settle + pipeline
+      # depth) before its recorded position → peak dragged 2-4 units (~40-80
+      # of 2047 VCM counts) past truth, worst where the curve is steepest
+      # (macro); the refinement pass was dead code (step 2/10=0.2 failed the
+      # >0.2 guard); and position 100 (VCM 2047, macro end) was never scored.
+      # Now: settle 2 frames after every move before scoring, coarse 0..100
+      # step 5 (21 samples incl. 100) + real fine pass (peak±5, step 1) +
+      # parabolic peak interpolation (~±10 VCM counts), and the loss-detection
+      # baseline seeds from a settled frame at the lock instead of the sweep
+      # max. ~105 frames/sweep (5-10 s at 10-20 fps; was ~70 mis-paired).
+      ./camera/patches/14-af-sweep-quality.patch
     ];
     postInstall = (old.postInstall or "") + ''
       install -Dm644 ${./camera/tuning/imx371.yaml} $out/share/libcamera/ipa/simple/imx371.yaml
