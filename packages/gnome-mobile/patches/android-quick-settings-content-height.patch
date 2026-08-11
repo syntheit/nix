@@ -15,7 +15,7 @@ index 8ccdb4ba4..d681d2cb6 100644
 +            }
 +        }
 diff --git a/js/ui/quickSettings.js b/js/ui/quickSettings.js
-index d5e9ca88f..ecc0967d1 100644
+index d5e9ca88f..bbeb55c0d 100644
 --- a/js/ui/quickSettings.js
 +++ b/js/ui/quickSettings.js
 @@ -590,0 +591,4 @@ const QuickSettingsLayoutMeta = GObject.registerClass({
@@ -32,9 +32,71 @@ index d5e9ca88f..ecc0967d1 100644
 +                continue;
 +            }
 +
-@@ -869,0 +880 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+@@ -842,0 +853,51 @@ const QuickSettingsLayout = GObject.registerClass({
++const QuickSettingsShadeLayout = GObject.registerClass(
++class QuickSettingsShadeLayout extends Clutter.LayoutManager {
++    vfunc_get_preferred_width(container, forHeight) {
++        return container.get_children().reduce(([min, nat], child) => {
++            if (!child.visible)
++                return [min, nat];
++
++            const [childMin, childNat] =
++                child.get_preferred_width(forHeight);
++            return [Math.max(min, childMin), Math.max(nat, childNat)];
++        }, [0, 0]);
++    }
++
++    vfunc_get_preferred_height(container, forWidth) {
++        return container.get_children().reduce(([min, nat], child) => {
++            if (!child.visible)
++                return [min, nat];
++
++            const [childMin, childNat] =
++                child.get_preferred_height(forWidth);
++            return [Math.max(min, childMin), Math.max(nat, childNat)];
++        }, [0, 0]);
++    }
++
++    vfunc_allocate(container, box) {
++        const availableWidth = box.x2 - box.x1;
++        const availableHeight = box.y2 - box.y1;
++
++        for (const child of container) {
++            if (!child.visible)
++                continue;
++
++            const [, naturalHeight] =
++                child.get_preferred_height(availableWidth);
++            const allocationHeight =
++                Math.min(naturalHeight, availableHeight);
++            const geometry =
++                `${availableWidth}x${availableHeight}:${naturalHeight}`;
++            if (this._lastGeometry !== geometry) {
++                this._lastGeometry = geometry;
++                console.log(`Quick Settings shade geometry: ${geometry}`);
++            }
++
++            const childBox = new Clutter.ActorBox();
++            childBox.set_origin(box.x1, box.y1);
++            childBox.set_size(availableWidth, allocationHeight);
++            child.allocate(childBox);
++        }
++    }
++});
++
+@@ -850,0 +912,7 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
++        this._shadeStack = new St.Widget({
++            layout_manager: new QuickSettingsShadeLayout(),
++            x_expand: true,
 +            y_expand: true,
-@@ -1088,0 +1100,9 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
++        });
++        this._boxPointer.bin.set_child(this._shadeStack);
++        this._shadeStack.add_child(this.box);
+@@ -864,0 +933 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
++        this.box.y_expand = false;
+@@ -869,0 +939 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
++            y_expand: true,
+@@ -1088,0 +1159,9 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
 +    setItemExpandedOnly(item, expandedOnly) {
 +        const layout = this._grid.layout_manager;
 +        layout.child_set_property(
