@@ -1,7 +1,15 @@
 // OrionScroll actor registration. Loaded once by fx-autoconfig as a background
 // ES module before browser windows run their normal userChrome scripts.
+//
+// IMPORTANT: fx-autoconfig loads .sys.mjs files synchronously through
+// ChromeUtils.importESModule(), so this module must not contain top-level await.
 
 const ACTOR_NAME = "OrionScroll";
+const REGISTER_LOG = "/tmp/ff-orion-register.log";
+
+const registrationLog = [
+  new Date().toISOString() + " module-enter actor=" + ACTOR_NAME,
+];
 
 try {
   ChromeUtils.registerWindowActor(ACTOR_NAME, {
@@ -15,7 +23,6 @@ try {
       events: {
         DOMContentLoaded: { capture: true },
         pageshow: { capture: true },
-        scroll: { capture: true, passive: true },
       },
     },
     allFrames: false,
@@ -24,13 +31,22 @@ try {
     remoteTypes: ["web"],
     messageManagerGroups: ["browsers"],
   });
+  registrationLog.push(new Date().toISOString() + " register-ok");
 } catch (error) {
-  // Duplicate registration during a same-session module reload is expected;
-  // emit a diagnostic rather than allowing module loading to abort silently.
-  try {
-    await IOUtils.writeUTF8(
-      "/tmp/ff-orion-actor.log",
-      "OrionScroll registration failed: " + error + "\n"
-    );
-  } catch (_) {}
+  registrationLog.push(
+    new Date().toISOString() + " register-error " +
+    (error?.name || "Error") + ": " + (error?.message || String(error)) +
+    (error?.stack ? "\n" + error.stack : "")
+  );
+}
+
+// Fire-and-forget is deliberate: top-level await would prevent this system
+// module from loading at all. One overwrite contains both entry and result, so
+// there is no append-before-create race and the file is an unambiguous proof.
+try {
+  IOUtils.writeUTF8(REGISTER_LOG, registrationLog.join("\n") + "\n").catch(
+    error => console.error("[OrionScroll] registration log failed", error)
+  );
+} catch (error) {
+  console.error("[OrionScroll] registration log threw", error);
 }

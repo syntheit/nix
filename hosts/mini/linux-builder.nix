@@ -111,9 +111,18 @@ in
   launchd.daemons.linux-builder-watchdog = {
     script = ''
       state=/var/lib/linux-builder/watchdog-failures
+      # Success requires BOTH sshd reachable AND /nix writable. The remote
+      # check (test -w /nix + a touch/rm probe) catches the ghost-file /
+      # disk-full aftermath: when the host APFS container fills, the guest's
+      # /nix remounts read-only but sshd keeps answering on 31022 — a plain
+      # `ssh ... true` would still "succeed" and the watchdog would never
+      # fire. If ssh reaches the guest but the writable-check fails, this `if`
+      # is false and we fall through to the same failure-counter path below,
+      # so reachable-but-read-only is treated as a failure and restarts after 3.
       if /usr/bin/ssh -o ConnectTimeout=10 -o BatchMode=yes \
            -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-           -i /etc/nix/builder_ed25519 -p 31022 builder@localhost true \
+           -i /etc/nix/builder_ed25519 -p 31022 builder@localhost \
+           'test -w /nix && touch /nix/.rwtest 2>/dev/null && rm -f /nix/.rwtest' \
            2>/dev/null; then
         rm -f "$state"
         exit 0
@@ -122,11 +131,69 @@ in
       echo "$n" > "$state"
       if [ "$n" -ge 3 ]; then
         rm -f "$state"
+        echo "$(/bin/date '+%Y-%m-%dT%H:%M:%S') watchdog: 3 consecutive failures (sshd unreachable or /nix read-only), force-restarting builder" >> /var/lib/linux-builder/watchdog.log
         /usr/bin/pkill -9 -f qemu-system-aarch64 || true
         /bin/launchctl kickstart -k system/org.nixos.linux-builder
       fi
     '';
     serviceConfig.StartInterval = 120;
+  };
+
+  # A SECOND, slower (5 min) watchdog guarding against the host-side disk leak
+  # that the sshd/writability probe above can't see coming. On 2026-08 the
+  # builder's disk image /var/lib/linux-builder/nixos.qcow2 was deleted from
+  # disk while the QEMU process still had it open. On Unix a deleted-but-open
+  # file's blocks aren't freed until the last fd closes, so QEMU kept the
+  # ~91 GiB "ghost" image alive — invisible to du/find/Finder — and went on
+  # writing toward its 100 GiB ceiling, driving the mini's APFS container to
+  # 0 bytes free. That froze macOS AND wedged the builder (guest /nix went
+  # read-only). This daemon detects the two signatures directly on the host:
+  # (1) a deleted-but-open qcow2 held by QEMU (the ghost-file leak), and
+  # (2) low free space on /. Only the leak signature auto-restarts (that's the
+  # one a restart actually cures, by closing the fd and freeing the blocks);
+  # low disk alone only logs, since a restart wouldn't necessarily help and
+  # could mask a real capacity problem.
+  #
+  # NOTE: there is no host-side notification mechanism on the mini (checked:
+  # only a `telegram` homebrew cask + harbor's Elliot bot exist, and neither
+  # is reachable from this launchd daemon context), so critical conditions are
+  # surfaced via a LOUD log line only. A future maintainer could wire an
+  # ntfy POST or an `osascript display notification` here.
+  launchd.daemons.linux-builder-disk-watchdog = {
+    script = ''
+      # Editable thresholds (free space on /, in KiB).
+      warn_kib=15728640   # 15 GiB
+      crit_kib=5242880    # 5 GiB
+
+      # (a) Ghost-file detection: does any process hold a DELETED nixos.qcow2
+      # open? `lsof +L1` lists only files whose on-disk link count is < 1,
+      # i.e. unlinked-but-still-open — exactly the leaking ghost image.
+      leak=0
+      if /usr/sbin/lsof +L1 2>/dev/null | grep -qi nixos.qcow2; then leak=1; fi
+
+      # (b) Host disk-pressure floor: free KiB on / is the 4th field of df's
+      # data line (NR==2).
+      free=$(/bin/df -k / | awk 'NR==2 {print $4}')
+
+      # (c) Decision logic (conservative — never restart merely for low disk).
+      if [ "$leak" -eq 1 ]; then
+        # Leak signature present: a deleted nixos.qcow2 is still open and its
+        # blocks are leaking. Force-restart to close the fd and free the space,
+        # regardless of the current disk level.
+        echo "$(/bin/date '+%Y-%m-%dT%H:%M:%S') disk-watchdog: DELETED-BUT-OPEN nixos.qcow2 detected (ghost-file leak) — space is leaking, force-restarting builder" >> /var/lib/linux-builder/watchdog.log
+        /usr/bin/pkill -9 -f qemu-system-aarch64 || true
+        /bin/launchctl kickstart -k system/org.nixos.linux-builder
+      elif [ "$free" -lt "$crit_kib" ]; then
+        # Critically low disk but NO leak signature — do NOT restart; a restart
+        # wouldn't reclaim anything here and could hide a real capacity issue.
+        echo "$(/bin/date '+%Y-%m-%dT%H:%M:%S') disk-watchdog: CRITICAL free space on / is $free KiB (< $crit_kib KiB) and no ghost-file leak — NOT restarting, manual attention needed" >> /var/lib/linux-builder/watchdog.log
+      elif [ "$free" -lt "$warn_kib" ]; then
+        # Warning band — log only, no action.
+        echo "$(/bin/date '+%Y-%m-%dT%H:%M:%S') disk-watchdog: WARNING free space on / is $free KiB (< $warn_kib KiB)" >> /var/lib/linux-builder/watchdog.log
+      fi
+      # Healthy: exit 0 silently so the log isn't spammed every 5 minutes.
+    '';
+    serviceConfig.StartInterval = 300;
   };
 
   environment.etc."ssh/ssh_config.d/100-linux-builder.conf".text = ''

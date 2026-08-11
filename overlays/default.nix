@@ -37,6 +37,7 @@ let
         warden = inputs.warden.packages.${final.stdenv.hostPlatform.system}.default;
         courier = inputs.courier.packages.${final.stdenv.hostPlatform.system}.default;
         calculator = inputs.calculator.packages.${final.stdenv.hostPlatform.system}.default;
+        bourse = inputs.bourse.packages.${final.stdenv.hostPlatform.system}.default;
         paloma = inputs.paloma.packages.${final.stdenv.hostPlatform.system}.default;
         # Runtime launcher: injects the Telegram api_id/api_hash from sops-decrypted
         # files (/run/secrets/paloma_api_{id,hash}) into the env before exec'ing the
