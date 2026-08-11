@@ -1,0 +1,55 @@
+diff --git a/js/ui/overviewControls.js b/js/ui/overviewControls.js
+--- a/js/ui/overviewControls.js
++++ b/js/ui/overviewControls.js
+@@ -542,6 +542,13 @@
+                 this._resetTodayView();
+         }, this);
+ 
++        // Phone: closing the last window in the app-switcher should land on the
++        // home app-grid instead of an empty picker (upstream has no
++        // last-window-closed -> APP_GRID transition).
++        global.workspace_manager.connectObject('active-workspace-changed',
++            () => this._trackActiveWorkspaceWindows(), this);
++        this._trackActiveWorkspaceWindows();
++
+         const wallpaper = new Clutter.Actor();
+         wallpaper.add_constraint(new Layout.MonitorConstraint({primary: true}));
+         Main.wm.workspaceTracker.bind_property('single-window-workspaces',
+@@ -910,6 +917,37 @@
+         }
+     }
+ 
++    _trackActiveWorkspaceWindows() {
++        const workspace = global.workspace_manager.get_active_workspace();
++        if (this._homeTrackedWorkspace === workspace)
++            return;
++
++        this._homeTrackedWorkspace?.disconnectObject(this);
++        this._homeTrackedWorkspace = workspace;
++        workspace.connectObject('window-removed',
++            () => this._goHomeIfPickerEmpty(), this);
++    }
++
++    _goHomeIfPickerEmpty() {
++        if (!Main.layoutManager.is_phone || !Main.overview.visible)
++            return;
++        if (this._searchController.searchActive)
++            return;
++
++        const {finalState} = this._stateAdjustment.getStateTransitionParams();
++        if (finalState !== ControlsState.WINDOW_PICKER)
++            return;
++
++        const workspace = global.workspace_manager.get_active_workspace();
++        const hasWindows = workspace.list_windows().some(
++            w => w.showing_on_its_workspace() && !w.is_skip_taskbar());
++        if (hasWindows)
++            return;
++
++        // Last card closed -> land on the home app-grid, not an empty picker.
++        this.dash.showAppsButton.checked = true;
++    }
++
+     vfunc_unmap() {
+         super.vfunc_unmap();
+         this._workspacesDisplay?.hide();

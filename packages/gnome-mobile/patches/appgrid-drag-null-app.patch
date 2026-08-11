@@ -1,0 +1,56 @@
+diff --git a/js/ui/appDisplay.js b/js/ui/appDisplay.js
+--- a/js/ui/appDisplay.js
++++ b/js/ui/appDisplay.js
+@@ -859,7 +859,9 @@
+ 
+     _createPlaceholder(source) {
+         const appSys = Shell.AppSystem.get_default();
+-        const app = appSys.lookup_app(source.id);
++        const app = source.app ?? appSys.lookup_app(source.id);
++        if (!app)
++            return null;
+ 
+         const isDraggable =
+             global.settings.is_writable('favorite-apps') ||
+@@ -1051,18 +1053,22 @@
+             this._placeholders.set(source, source);
+ 
+         const appSys = Shell.AppSystem.get_default();
+-        const app = appSys.lookup_app(source.id);
++        const app = source.app ?? appSys.lookup_app(source.id);
+ 
+         const isDraggable =
+             global.settings.is_writable('favorite-apps') ||
+             global.settings.is_writable('app-picker-layout');
+ 
+-        const special = new AppIcon(app, { isDraggable });
+-this._spezial = special;
++        // Guard a null app (Waydroid/PWA/folder ids AppSystem can't resolve):
++        // AppIcon(null) throws in _init and aborts the whole drag.
++        if (app) {
++            const special = new AppIcon(app, { isDraggable });
++            this._spezial = special;
+             this._addItem(special, this._grid.nPages, -1);
+ 
+             special.reactive = false;
+             special.opacity = 0;
++        }
+ 
+             source.reactive = false;
+             source.opacity = 0;
+@@ -1072,10 +1078,12 @@
+ 
+             const pl = this._createPlaceholder(source);
+ 
+-            this._addItem(pl, this._grid.currentPage, -1);
++            if (pl) {
++                this._addItem(pl, this._grid.currentPage, -1);
+ 
+-            pl.reactive = false;
+-            pl.opacity = 0;
++                pl.reactive = false;
++                pl.opacity = 0;
++            }
+         }
+     }
+ 

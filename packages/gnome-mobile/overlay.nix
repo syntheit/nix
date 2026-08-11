@@ -85,6 +85,12 @@ in
           ./patches/ios-home-appswitcher.patch # iOS home + app-switcher: full swipe-up = pure app-grid home (no window strip); half swipe-up = window-picker card switcher (re-adds WINDOW_PICKER snap point on phone, card layout, grid⇄cards crossfade, rounded cards)
           ./patches/widget-framework.patch # native St widget base + registry + settings-backed host; first slice mounts a clock card above the lock-screen clock
           ./patches/lockscreen-ios-controls.patch # transparent widget clock, phone lock shortcuts, no swipe hint; camera remains authentication-gated
+          ./patches/today-view.patch # Today View sibling left of app-grid page 1; shared WidgetHost + boundary-gated horizontal paging
+          ./patches/widget-scroll-safety.patch # WidgetHost/Today are plain BoxLayouts; clamp page height so no non-StScrollable/negative allocation can crash Shell
+          ./patches/today-view-polish.patch # hide search on Today, reset to app grid on lock, and prevent zero-size pager NaNs
+          ./patches/appgrid-folder-drop.patch # drop an app onto an EXISTING folder now adds it (FolderIcon.acceptDrop persists to the folder's apps list instead of the throwing reorder path); guard _removeItem so redisplay can't throw "not part of the IconGridLayout". MUST stay after enable-appgrid-reorder + today-view (same file)
+          ./patches/appgrid-drag-null-app.patch # drag-begin builds a placeholder AppIcon from lookup_app(id); Waydroid/PWA/folder ids don't resolve → AppIcon(null) threw & aborted the drag. Prefer source.app + null-guard. MUST stay after appgrid-folder-drop (same file)
+          ./patches/appgrid-home-on-empty.patch # phone: closing the last window in the app-switcher lands on the home app-grid instead of an empty picker (adds a last-window-removed → APP_GRID transition; upstream has none). MUST stay after ios-home-appswitcher + today-view (same file)
         ]
         ++ [
           ./patches/android-quick-settings.patch # Nix-driven 4-column QS grid, compact/custom tiles, long-press settings, robust app focus, persistent mobile data
