@@ -12,6 +12,7 @@
   # file contents into bind-mounted paths.
   sops.secrets.deus_operator_token.mode = "0444";
   sops.secrets.deus_agent_token.mode = "0444";
+  sops.secrets.deus_service_token.mode = "0444";
   # Read-only by root, copied into the container and re-permissioned to
   # the fleet user there so SSH accepts it as an identity file.
   # Stored as its own binary-encrypted file to avoid YAML multi-line
