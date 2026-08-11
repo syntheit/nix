@@ -52,6 +52,20 @@ let
       # deviation → continuous hunting on static scenes (observed in Snapshot).
       # Debounced: drop-only, 10-frame persistence, adopts improvements.
       ./camera/patches/10-af-debounce-focus-loss-detection.patch
+      # OURS, night-violet fix step 2 (see fajita-notes/camera-project/
+      # night-violet-code-analysis.md). 11 = companion clamp: once the black
+      # pedestal is correctly removed (12), near-black sums get small and the
+      # R/B grey-world ratios get noisy; clamp gains to the range real
+      # illuminants produce on this sensor (~2300K–9500K around the measured
+      # D65 point) so noise can't peg gain_B at the 4.0 cap.
+      ./camera/patches/11-awb-clamp-gains-to-illuminant-range.patch
+      # 12 = root fix (UPSTREAMABLE): swstats accumulated sum_ in RAW
+      # bit-depth units while awb.cpp subtracts an 8-bit-unit black offset —
+      # on our 10-bit sensors only ~1/4 of the pedestal was removed, and the
+      # residual skews the grey-world ratios that the gamma toe amplifies
+      # into violet. Dividing every sample by `div` puts sum_ in the 8-bit
+      # domain, making the existing offset correct for all bit depths.
+      ./camera/patches/12-swstats-normalize-sums-to-8bit.patch
     ];
     postInstall = (old.postInstall or "") + ''
       install -Dm644 ${./camera/tuning/imx371.yaml} $out/share/libcamera/ipa/simple/imx371.yaml

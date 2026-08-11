@@ -1,0 +1,65 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Daniel <daniel@matv.io>
+Date: Tue, 11 Aug 2026 00:00:00 -0400
+Subject: [PATCH] swstats_cpu: normalise channel sums to the 8-bit domain
+
+UNITS-MISMATCH BUG (upstream candidate, affects every >8bpp sensor on
+the soft ISP): SWSTATS_ACCUMULATE_LINE_STATS accumulated sum_ in RAW
+bit-depth units -- the div parameter (1 for 8-bit/10P variants, 4 for
+10-bit, 16 for 12-bit) only scaled the yHistogram index, never the
+channel sums. The sole consumer of sum_, the simple IPA's AWB
+(src/ipa/simple/algorithms/awb.cpp), subtracts
+offset = blackLevel * nPixels with blackLevel in 8-BIT units
+(context.activeState.blc.level, yaml value >> 8). On a 10-bit sensor
+(fajita: IMX376/IMX371, pedestal ~64 raw = 16 in 8-bit) only ~1/4 of
+the black pedestal was removed from the sums, so 3/4 of it polluted
+the grey-world ratios. Near black the residual pedestal dominates the
+signal, the per-channel gain errors of a few percent land right at the
+gamma-table toe, and the toe amplifies them into the violet cast on
+night shots.
+
+Fix: divide each sample by div at accumulation time so sum_ is in the
+8-bit domain for every input bit depth, making the AWB's 8-bit offset
+correct as-is. Per-sample integer truncation (<1 LSB) is negligible
+for AWB averages. The div=1 variants are unchanged (x/1 folds away).
+The yHistogram was already normalised, so AGC/BLC are unaffected. The
+AF-series sharpness metric (patches 05-08) normalises by sumG, so its
+absolute scale grows 4x on 10-bit sensors -- harmless, AF only ever
+compares sharpness ratiometrically against its own running peak.
+
+Companion: patch 11 (AWB illuminant-range clamp). With the pedestal
+correctly removed, near-black sums become small and the gain ratios
+noisy; the clamp keeps them inside physically plausible bounds.
+---
+ include/libcamera/internal/software_isp/swisp_stats.h | 4 ++++
+ src/libcamera/software_isp/swstats_cpu.cpp            | 6 +++---
+ 2 files changed, 7 insertions(+), 3 deletions(-)
+
+--- a/include/libcamera/internal/software_isp/swisp_stats.h
++++ b/include/libcamera/internal/software_isp/swisp_stats.h
+@@ -29,6 +29,10 @@
+ 	bool valid;
+ 	/**
+ 	 * \brief Sums of colour channels of all the sampled pixels
++	 *
++	 * The sums are normalised to the 8-bit range regardless of the
++	 * input bit depth, matching the units of the black level that the
++	 * statistics consumers subtract from them.
+ 	 */
+ 	RGB<uint64_t> sum_;
+ 	/**
+--- a/src/libcamera/software_isp/swstats_cpu.cpp
++++ b/src/libcamera/software_isp/swstats_cpu.cpp
+@@ -178,9 +178,9 @@
+ 	uint64_t sharpness = 0;
+ 
+ #define SWSTATS_ACCUMULATE_LINE_STATS(div) \
+-	sumR += r;                         \
+-	sumG += g;                         \
+-	sumB += b;                         \
++	sumR += r / (div);                 \
++	sumG += g / (div);                 \
++	sumB += b / (div);                 \
+                                            \
+ 	yVal = r * kRedYMul;               \
+ 	yVal += g * kGreenYMul;            \
