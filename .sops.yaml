@@ -45,6 +45,17 @@ creation_rules:
       - age:
           - *vista
           - *daniel
+  # Deus / Headscale nspawn secrets, migrated from conduit → vista.
+  - path_regex: secrets/vista-deus\.yaml$
+    key_groups:
+      - age:
+          - *vista
+          - *daniel
+  - path_regex: secrets/vista/.*$
+    key_groups:
+      - age:
+          - *vista
+          - *daniel
   # Shared user secrets (e.g. openrouter_key for opencode) — readable on every
   # host that runs opencode. Add new hosts' keys here + run `sops updatekeys`.
   - path_regex: secrets/shared\.yaml$
