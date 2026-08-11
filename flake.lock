@@ -210,16 +210,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1786407499,
-        "narHash": "sha256-tceZN9i8aZKbsf2YEzZILV4GtZd2Ytun8diYFmKmAu8=",
+        "lastModified": 1786463945,
+        "narHash": "sha256-ro0NdUY0ju8I20CCgCmLNGzDcQXqpvFL86ST4SuOT4s=",
         "ref": "refs/heads/main",
-        "rev": "433fa2324eac08e06a1f53afb6d5fd1cd571ffe5",
-        "revCount": 11,
+        "rev": "96d5bfa3bab76192b268d483165709ec0f94beb6",
+        "revCount": 12,
         "type": "git",
         "url": "file:///home/matv/Projects/calculator"
       },
       "original": {
-        "rev": "433fa2324eac08e06a1f53afb6d5fd1cd571ffe5",
+        "rev": "96d5bfa3bab76192b268d483165709ec0f94beb6",
         "type": "git",
         "url": "file:///home/matv/Projects/calculator"
       }
@@ -417,11 +417,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1784241482,
-        "narHash": "sha256-A+fGR4nFFZXInKc9Nxeuin6on5E1aUgC7Ja2IprTT54=",
+        "lastModified": 1786412887,
+        "narHash": "sha256-rhBKmZXEteuefhbnanXXElNJTB5uuMvvZjb/ON+PW6w=",
         "ref": "refs/heads/main",
-        "rev": "da2a248585f0c3c73c6fb88693be3087a3a52518",
-        "revCount": 174,
+        "rev": "2c97eb6a3050c5e3074037b6b0b533069053911d",
+        "revCount": 181,
         "type": "git",
         "url": "ssh://git@github-malli-deus/NRE-Product/malli-deus.git"
       },

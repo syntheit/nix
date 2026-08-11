@@ -1,0 +1,346 @@
+--- a/js/ui/appDisplay.js
++++ b/js/ui/appDisplay.js
+@@ -616,6 +616,9 @@
+         this._swipeTracker.connect('end', this._swipeEnd.bind(this));
+ 
+         this._orientation = Clutter.Orientation.HORIZONTAL;
++        // Optional sibling page before grid page 0. Its positive 0…1
++        // adjustment is exposed to this pager as the virtual snap point -1.
++        this._leadingPageAdjustment = null;
+ 
+         this._items = new Map();
+         this._orderedItems = [];
+@@ -722,29 +725,78 @@
+             return;
+ 
+         const adjustment = this._adjustment;
+-        let wasEasingTo = null
+-        const transition = adjustment.get_transition('value');
+-        if (transition) {
+-            wasEasingTo = transition.get_interval().peek_final_value()
+-                / adjustment.page_size;
+-            adjustment.remove_transition('value');
++        const leadingAdjustment = this._leadingPageAdjustment;
++        let wasEasingTo = null;
++        let progress = adjustment.value / adjustment.page_size;
++        let cancelProgress = Math.round(progress);
++        const points = Array.from({length: this._grid.nPages}, (v, i) => i);
++        const onFirstPage = this._grid.currentPage === 0 &&
++            Math.abs(progress) < 0.01;
++        const useLeadingPage = leadingAdjustment &&
++            (leadingAdjustment.value > 0 || onFirstPage);
++
++        if (useLeadingPage) {
++            progress = -leadingAdjustment.value;
++            cancelProgress = Math.round(progress);
++            points.unshift(-1);
++
++            const transition = leadingAdjustment.get_transition('value');
++            if (transition) {
++                wasEasingTo = cancelProgress =
++                    -transition.get_interval().peek_final_value();
++                leadingAdjustment.remove_transition('value');
++            }
++        } else {
++            const transition = adjustment.get_transition('value');
++            if (transition) {
++                wasEasingTo = cancelProgress =
++                    transition.get_interval().peek_final_value() /
++                    adjustment.page_size;
++                adjustment.remove_transition('value');
++            }
+         }
+ 
+-        const progress = adjustment.value / adjustment.page_size;
+-        const points = Array.from({length: this._grid.nPages}, (v, i) => i);
+         const size = tracker.orientation === Clutter.Orientation.VERTICAL
+             ? this._grid.allocation.get_height() : this._grid.allocation.get_width();
+ 
+-        tracker.confirmSwipe(size, points, progress, Math.round(progress), wasEasingTo);
++        tracker.confirmSwipe(size, points, progress, cancelProgress, wasEasingTo);
+     }
+ 
+     _swipeUpdate(tracker, progress) {
+         const adjustment = this._adjustment;
++        const leadingAdjustment = this._leadingPageAdjustment;
++        if (leadingAdjustment && progress < 0) {
++            adjustment.value = 0;
++            leadingAdjustment.value = -progress;
++            return;
++        }
++
++        if (leadingAdjustment)
++            leadingAdjustment.value = 0;
+         adjustment.value = progress * adjustment.page_size;
+     }
+ 
+     _swipeEnd(tracker, duration, endProgress, endCb) {
+         const adjustment = this._adjustment;
++        const leadingAdjustment = this._leadingPageAdjustment;
++
++        if (leadingAdjustment && endProgress < 0) {
++            adjustment.value = 0;
++            leadingAdjustment.ease(-endProgress, {
++                mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
++                duration,
++                onStopped: endCb,
++            });
++            return;
++        }
++
++        if (leadingAdjustment) {
++            leadingAdjustment.ease(0, {
++                mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
++                duration,
++            });
++        }
++
+         const value = endProgress * adjustment.page_size;
+ 
+         adjustment.ease(value, {
+@@ -755,6 +807,10 @@
+         });
+     }
+ 
++    setLeadingPageAdjustment(adjustment) {
++        this._leadingPageAdjustment = adjustment;
++    }
++
+     _connectDnD() {
+         this._dragBeginId =
+             Main.overview.connect('item-drag-begin', this._onDragBegin.bind(this));
+--- a/js/ui/overviewControls.js
++++ b/js/ui/overviewControls.js
+@@ -12,10 +12,12 @@
+ import * as Main from './main.js';
+ import * as Overview from './overview.js';
+ import * as SearchController from './searchController.js';
++import * as SwipeTracker from './swipeTracker.js';
+ import * as Util from '../misc/util.js';
+ import * as WindowManager from './windowManager.js';
+ import * as WorkspaceThumbnail from './workspaceThumbnail.js';
+ import * as WorkspacesView from './workspacesView.js';
++import {WidgetHost} from './shellWidgets.js';
+ 
+ import * as Layout from './layout.js';
+ import {STARTUP_ANIMATION_TIME} from './layout.js';
+@@ -40,14 +42,17 @@
+ 
+ const ControlsManagerLayout = GObject.registerClass(
+ class ControlsManagerLayout extends Clutter.LayoutManager {
+-    _init(searchEntry, appDisplay, workspacesDisplay, workspacesThumbnails,
+-        searchController, dash, stateAdjustment, background) {
++    _init(searchEntry, appDisplay, todayView, workspacesDisplay,
++        workspacesThumbnails, searchController, dash, stateAdjustment,
++        todayAdjustment, background) {
+         super._init();
+ 
+         this._appDisplay = appDisplay;
++        this._todayView = todayView;
+         this._workspacesDisplay = workspacesDisplay;
+         this._workspacesThumbnails = workspacesThumbnails;
+         this._stateAdjustment = stateAdjustment;
++        this._todayAdjustment = todayAdjustment;
+         this._searchEntry = searchEntry;
+         this._searchController = searchController;
+         this._dash = dash;
+@@ -301,7 +306,7 @@
+         this._workspacesDisplay.allocate(workspacesBox);
+ 
+         // AppDisplay
+-        if (this._appDisplay.visible) {
++        if (this._appDisplay.visible || this._todayView.visible) {
+             const workspaceAppGridBox =
+                 this._cachedWorkspaceBoxes.get(ControlsState.APP_GRID);
+ 
+@@ -333,7 +338,23 @@
+             this._appDisplay._pageIndicators.set_easing_duration(500);
+             this._appDisplay._pageIndicators.set_easing_mode(Clutter.AnimationMode.LINEAR);
+ */
+-            this._appDisplay.allocate(appDisplayBox);
++            // Today View is a real sibling one page-width to the left. Moving
++            // both allocations keeps the transition in one Clutter frame.
++            const pageWidth = appDisplayBox.get_width();
++            const pageOffset = Math.round(
++                this._todayAdjustment.value * pageWidth);
++            const appPageBox = appDisplayBox.copy();
++            appPageBox.x1 += pageOffset;
++            appPageBox.x2 += pageOffset;
++
++            const todayPageBox = appDisplayBox.copy();
++            todayPageBox.x1 += pageOffset - pageWidth;
++            todayPageBox.x2 += pageOffset - pageWidth;
++
++            if (this._appDisplay.visible)
++                this._appDisplay.allocate(appPageBox);
++            if (this._todayView.visible)
++                this._todayView.allocate(todayPageBox);
+   /*          this._appDisplay._pageIndicators.restore_easing_state();
+             this._appDisplay._grid.restore_easing_state();
+             this._appDisplay.restore_easing_state();
+@@ -461,6 +482,14 @@
+         this._stateAdjustment.connectObject('notify::value',
+             () => this._update(), this);
+ 
++        this._todayAdjustment = new St.Adjustment({
++            value: 0,
++            lower: 0,
++            upper: 1,
++        });
++        this._todayAdjustment.connectObject('notify::value',
++            () => this.queue_relayout(), this);
++
+         this._searchController = new SearchController.SearchController(
+             this._searchEntry,
+             this.dash.showAppsButton);
+@@ -484,6 +513,36 @@
+             this._workspaceAdjustment,
+             this._stateAdjustment);
+         this._appDisplay = new AppDisplay.AppDisplay();
++        this._appDisplay.setLeadingPageAdjustment(this._todayAdjustment);
++
++        // The same registry-backed host used by the lock screen, with an
++        // unlocked context so future widgets may expose richer content.
++        this._todayWidgetHost = new WidgetHost({isOnLockscreen: false});
++        this._todayView = new St.ScrollView({
++            style_class: 'today-view',
++            x_expand: true,
++            y_expand: true,
++            reactive: true,
++            overlay_scrollbars: true,
++            hscrollbar_policy: St.PolicyType.NEVER,
++            vscrollbar_policy: St.PolicyType.EXTERNAL,
++            visible: false,
++            child: this._todayWidgetHost,
++        });
++        this._todaySwipeTracker = new SwipeTracker.SwipeTracker(
++            this._todayView,
++            Clutter.Orientation.HORIZONTAL,
++            Shell.ActionMode.ALL,
++            {
++                allowScroll: false,
++                name: 'Today View swipe tracker',
++            });
++        this._todaySwipeTracker.connect(
++            'begin', this._todaySwipeBegin.bind(this));
++        this._todaySwipeTracker.connect(
++            'update', this._todaySwipeUpdate.bind(this));
++        this._todaySwipeTracker.connect(
++            'end', this._todaySwipeEnd.bind(this));
+ 
+         const wallpaper = new Clutter.Actor();
+         wallpaper.add_constraint(new Layout.MonitorConstraint({primary: true}));
+@@ -512,6 +571,7 @@
+         this.add_child(wallpaper);
+         this.add_child(this._searchEntryBin);
+         this.add_child(this._appDisplay);
++        this.add_child(this._todayView);
+         this.add_child(this.dash);
+         this.add_child(this._searchController);
+         this.add_child(this._thumbnailsBox);
+@@ -520,11 +580,13 @@
+         this.layout_manager = new ControlsManagerLayout(
+             this._searchEntryBin,
+             this._appDisplay,
++            this._todayView,
+             this._workspacesDisplay,
+             this._thumbnailsBox,
+             this._searchController,
+             this.dash,
+             this._stateAdjustment,
++            this._todayAdjustment,
+             wallpaper);
+ 
+         this.dash.showAppsButton.connectObject('notify::checked',
+@@ -725,9 +787,10 @@
+         const {initialState, finalState} = stateTransitionParams;
+         const state = Math.max(initialState, finalState);
+ 
+-        this._appDisplay.visible =
+-            state > ControlsState.WINDOW_PICKER &&
++        const pagesVisible = state > ControlsState.WINDOW_PICKER &&
+             !this._searchController.searchActive;
++        this._appDisplay.visible = pagesVisible;
++        this._todayView.visible = Main.layoutManager.is_phone && pagesVisible;
+     }
+ 
+     _update() {
+@@ -750,6 +813,7 @@
+                 255 * (1 - Math.clamp(v - ControlsState.WINDOW_PICKER, 0, 1)));
+             this._appDisplay.opacity = Math.round(
+                 255 * Math.clamp(v - ControlsState.WINDOW_PICKER, 0, 1));
++            this._todayView.opacity = this._appDisplay.opacity;
+         }
+     }
+ 
+@@ -853,7 +917,47 @@
+         this._workspacesDisplay?.hide();
+     }
+ 
++    _todaySwipeBegin(tracker, monitor) {
++        if (monitor !== Main.layoutManager.primaryIndex)
++            return;
++
++        const adjustment = this._todayAdjustment;
++        let progress = -adjustment.value;
++        let cancelProgress = Math.round(progress);
++        let wasEasingTo = null;
++        const transition = adjustment.get_transition('value');
++        if (transition) {
++            wasEasingTo = cancelProgress =
++                -transition.get_interval().peek_final_value();
++            adjustment.remove_transition('value');
++        }
++
++        tracker.confirmSwipe(
++            Math.max(this._todayView.width, 1),
++            [-1, 0],
++            progress,
++            cancelProgress,
++            wasEasingTo);
++    }
++
++    _todaySwipeUpdate(_tracker, progress) {
++        this._todayAdjustment.value = -progress;
++    }
++
++    _todaySwipeEnd(_tracker, duration, endProgress, endCb) {
++        this._todayAdjustment.ease(-endProgress, {
++            mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
++            duration,
++            onStopped: endCb,
++        });
++    }
++
+     _onDestroy() {
++        this._todaySwipeTracker.destroy();
++        delete this._todaySwipeTracker;
++        delete this._todayWidgetHost;
++        delete this._todayView;
++        delete this._todayAdjustment;
+         delete this._searchEntryBin;
+         delete this._appDisplay;
+         delete this.dash;
+--- a/data/theme/gnome-shell-sass/widgets/_login-lock.scss
++++ b/data/theme/gnome-shell-sass/widgets/_login-lock.scss
+@@ -300,6 +300,20 @@
+   }
+ }
+ 
++.today-view {
++  padding: 16px 24px 24px;
++}
++
++.today-view-widget-host {
++  .shell-widget {
++    padding: 18px 20px;
++    border-radius: 24px;
++    background-color: rgba(0, 0, 0, 0.38);
++    color: white;
++    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.28);
++  }
++}
++
+ .lock-screen-shortcut {
+   min-width: 64px;
+   min-height: 64px;
