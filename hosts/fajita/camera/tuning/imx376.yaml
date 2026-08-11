@@ -16,20 +16,17 @@
 version: 1
 algorithms:
   - BlackLevel:
-      # 4864 (= 19 << 8 -> gamma-toe index 76/1024), up from 4096 (index 64).
-      # Night-violet fix step 1 (2026-07-18 code-read, VERIFIED in source):
-      # the soft ISP builds one gamma table whose zero-point comes from the
-      # GREEN black level only (debayer_cpu.cpp:757) and flat-fills below
-      # it; AWB stats subtract the black offset in 8-bit units from sums
-      # accumulated in RAW 10-bit units (swstats_cpu.cpp:177 vs awb.cpp:80),
-      # removing only 1/4 of the true pedestal. Near-black scenes therefore
-      # get gains of 1 +/- a few % whose toe-region effect is a violet wash
-      # (R/B land above the zero-point, G in the flat fill). Raising the
-      # zero-point 64 -> 76 swallows gain excursions up to ~1.18 at the
-      # pedestal. Cost: crushes raw codes < 76/1023 (~1.2% of range above
-      # the old point). Step 2 (later): fix the stats offset scale (patch
-      # candidate, upstreamable) + per-channel blacks from a dark frame.
-      blackLevel: 4864
+      # 4096 = 64/1023, the IMX376's nominal pedestal (pmOS-derived).
+      # History: July 2026 inflated this to 4864 (toe index 76) as
+      # night-violet step 1 — the toe widening hid pedestal-times-gain glow
+      # because the debayer LUTs applied AWB gains BEFORE subtracting black.
+      # Patch 13 (2026-08-11) fixed the LUTs to subtract black first, which
+      # made the inflation pure signal loss: in dim scenes most real signal
+      # sits just above the pedestal, and crushing raw 64..76 plus losing
+      # the former violet "shadow lift" read as "really really dark" in the
+      # field. Reverted to the true pedestal same day. Refine per-channel
+      # after the dark-frame calibration.
+      blackLevel: 4096
   - Awb:
   # Ccm PARKED (2026-07-17 night): the violet-night bug lives BELOW the CCM
   # (no-CCM diagnostic frame still violet at near-neutral gains; green
