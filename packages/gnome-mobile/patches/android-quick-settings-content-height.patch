@@ -1,12 +1,46 @@
+diff --git a/js/ui/panel.js b/js/ui/panel.js
+index 8ccdb4ba4..d681d2cb6 100644
+--- a/js/ui/panel.js
++++ b/js/ui/panel.js
+@@ -467,0 +468,11 @@ class QuickSettings extends PanelMenu.Button {
++        if (this._mobileQuickSettingsConfig) {
++            for (const indicator of [
++                this._system,
++                this._volumeOutput,
++                this._volumeInput,
++                this._brightness,
++            ]) {
++                indicator.quickSettingsItems.forEach(item =>
++                    this.menu.setItemExpandedOnly(item, true));
++            }
++        }
 diff --git a/js/ui/quickSettings.js b/js/ui/quickSettings.js
-index d5e9ca88f..992628899 100644
+index d5e9ca88f..ecc0967d1 100644
 --- a/js/ui/quickSettings.js
 +++ b/js/ui/quickSettings.js
-@@ -862,6 +862,7 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
-         this.box.add_style_class_name('quick-settings');
-         this.box.x_align = Clutter.ActorAlign.END;
-         this.box.y_align = Clutter.ActorAlign.START;
-+        this.box.y_expand = false;
-         this.box.clip_to_allocation = true;
- 
-         this._innerBox = new St.BoxLayout({
+@@ -590,0 +591,4 @@ const QuickSettingsLayoutMeta = GObject.registerClass({
++        'expanded-only': GObject.ParamSpec.boolean(
++            'expanded-only', null, null,
++            GObject.ParamFlags.READWRITE,
++            false),
+@@ -679 +683,7 @@ const QuickSettingsLayout = GObject.registerClass({
+-            const {collapseManaged} = this.get_child_meta(container, child);
++            const {collapseManaged, expandedOnly} =
++                this.get_child_meta(container, child);
++            if (expandedOnly) {
++                collapsed.add(child);
++                continue;
++            }
++
+@@ -869,0 +880 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
++            y_expand: true,
+@@ -1088,0 +1100,9 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
++    setItemExpandedOnly(item, expandedOnly) {
++        const layout = this._grid.layout_manager;
++        layout.child_set_property(
++            this._grid, item, 'expanded-only', expandedOnly);
++        item.connect('notify::visible', () => this._syncExpandButton());
++        layout.layout_changed();
++        this._syncExpandButton();
++    }
++

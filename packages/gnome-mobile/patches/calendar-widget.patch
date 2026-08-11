@@ -1,0 +1,168 @@
+--- a/data/org.gnome.shell.gschema.xml.in
++++ b/data/org.gnome.shell.gschema.xml.in
+@@ -79,7 +79,7 @@
+       </description>
+     </key>
+     <key name="today-view-widgets" type="as">
+-      <default>['clock']</default>
++      <default>['clock', 'calendar']</default>
+       <summary>Widgets shown in Today View</summary>
+       <description>
+         Ordered list of registered shell widget identifiers shown on the
+--- a/js/ui/shellWidgets.js
++++ b/js/ui/shellWidgets.js
+@@ -205,5 +205,108 @@
+ registerWidget(ClockWidget.id, context => new ClockWidget(context), {
+     title: ClockWidget.title,
+     preferredHeight: ClockWidget.preferredHeight,
+     defaultRefreshInterval: ClockWidget.defaultRefreshInterval,
+ });
++
++const CalendarWidget = GObject.registerClass(
++class CalendarWidget extends ShellWidget {
++    static get id() {
++        return 'calendar';
++    }
++
++    static get title() {
++        return _('Calendar');
++    }
++
++    static get preferredHeight() {
++        return 244;
++    }
++
++    static get defaultRefreshInterval() {
++        return 60 * 60;
++    }
++
++    constructor(context) {
++        super(context);
++
++        this.add_style_class_name('shell-widget-calendar');
++        this._weekStart = Shell.util_get_week_start();
++        this._dateKey = '';
++
++        this._monthLabel = new St.Label({
++            style_class: 'shell-widget-calendar-title',
++            x_align: Clutter.ActorAlign.CENTER,
++        });
++        this.add_child(this._monthLabel);
++
++        const weekdayRow = new St.BoxLayout({
++            style_class: 'shell-widget-calendar-weekdays',
++            x_expand: true,
++        });
++        for (let column = 0; column < 7; column++) {
++            const weekday = (this._weekStart + column) % 7;
++            const referenceDate = new Date(2023, 0, 1 + weekday);
++            const weekdayName = formatDateWithCFormatString(referenceDate, '%a');
++            weekdayRow.add_child(new St.Label({
++                style_class: 'shell-widget-calendar-weekday',
++                text: Array.from(weekdayName).slice(0, 2).join(''),
++                x_align: Clutter.ActorAlign.CENTER,
++                x_expand: true,
++            }));
++        }
++        this.add_child(weekdayRow);
++
++        this._dayLabels = [];
++        for (let row = 0; row < 6; row++) {
++            const weekRow = new St.BoxLayout({
++                style_class: 'shell-widget-calendar-week',
++                x_expand: true,
++            });
++            for (let column = 0; column < 7; column++) {
++                const label = new St.Label({
++                    style_class: 'shell-widget-calendar-day',
++                    x_align: Clutter.ActorAlign.CENTER,
++                    x_expand: true,
++                });
++                this._dayLabels.push(label);
++                weekRow.add_child(label);
++            }
++            this.add_child(weekRow);
++        }
++    }
++
++    update() {
++        const now = new Date();
++        const dateKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
++        if (dateKey === this._dateKey)
++            return;
++
++        this._dateKey = dateKey;
++        const monthFormat = Shell.util_translate_time_string(N_('%B %Y'));
++        this._monthLabel.text =
++            formatDateWithCFormatString(now, monthFormat);
++
++        const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
++        const firstColumn =
++            (7 + firstOfMonth.getDay() - this._weekStart) % 7;
++        const daysInMonth =
++            new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
++
++        for (let index = 0; index < this._dayLabels.length; index++) {
++            const label = this._dayLabels[index];
++            const day = index - firstColumn + 1;
++            const inMonth = day >= 1 && day <= daysInMonth;
++
++            label.text = inMonth ? `${day}` : '';
++            label.remove_style_class_name('today');
++            if (inMonth && day === now.getDate())
++                label.add_style_class_name('today');
++        }
++    }
++});
++
++registerWidget(CalendarWidget.id, context => new CalendarWidget(context), {
++    title: CalendarWidget.title,
++    preferredHeight: CalendarWidget.preferredHeight,
++    defaultRefreshInterval: CalendarWidget.defaultRefreshInterval,
++});
+--- a/data/theme/gnome-shell-sass/widgets/_login-lock.scss
++++ b/data/theme/gnome-shell-sass/widgets/_login-lock.scss
+@@ -307,2 +307,4 @@
+ .today-view-widget-host {
++  spacing: 12px;
++
+   .shell-widget {
+@@ -317 +319,38 @@
++.shell-widget-calendar {
++  spacing: 2px;
++
++  .shell-widget-calendar-title {
++    @extend %heading;
++    margin-bottom: 6px;
++    font-weight: 700;
++  }
++
++  .shell-widget-calendar-weekdays,
++  .shell-widget-calendar-week {
++    spacing: 2px;
++  }
++
++  .shell-widget-calendar-weekday {
++    @extend %smaller;
++    height: 18px;
++    color: rgba(255, 255, 255, 0.65);
++    font-weight: 700;
++    text-align: center;
++  }
++
++  .shell-widget-calendar-day {
++    @extend %numeric;
++    @extend %smaller;
++    height: 24px;
++    border-radius: 999px;
++    font-weight: 600;
++    text-align: center;
++
++    &.today {
++      background-color: -st-accent-color;
++      color: -st-accent-fg-color;
++    }
++  }
++}
++
+ .lock-screen-shortcut {
