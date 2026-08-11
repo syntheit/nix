@@ -99,6 +99,7 @@ in
       ${pkgs.coreutils}/bin/install -m 0444 /run/secrets/deus_agent_token    /var/lib/deus-tokens/agent-token
       ${pkgs.coreutils}/bin/install -m 0444 /run/secrets/deus_service_token  /var/lib/deus-tokens/service-token
       ${pkgs.coreutils}/bin/install -m 0400 /run/secrets/deus_deploy_key     /var/lib/deus-keys/deploy-malli-deus
+      ${pkgs.coreutils}/bin/install -m 0400 /run/secrets/malli_nix_deploy_key /var/lib/deus-keys/deploy-malli-nix
       # Granter creds — best-effort install so half-configured deploys
       # leave the granter disabled rather than failing activation.
       stage_optional() {
@@ -608,6 +609,9 @@ in
         "d /etc/ssh/authorized_keys.d 0755 root root -"
         "d /home/fleet/.ssh 0700 fleet users -"
         "C+ /home/fleet/.ssh/deploy_key_deus 0600 fleet users - /etc/deus-keys/deploy-malli-deus"
+        # malli-nix READ deploy key (github.com) for the git mirror. Formalized
+        # from the hand-placed key that was on conduit.
+        "C+ /home/fleet/.ssh/deploy_key 0600 fleet users - /etc/deus-keys/deploy-malli-nix"
         "d /var/lib/git-mirror 0755 fleet users -"
         # Granter pushes to malli-nix on GitHub from inside the deus-server
         # systemd unit. Pre-seed github.com host keys so the push doesn't
@@ -673,7 +677,11 @@ in
           # because the failure mode is invisible until bootstrap
           # Verify polls time out. ExecStartPre runs as root and
           # restores consistent ownership before the fetch.
-          ExecStartPre = "+${pkgs.coreutils}/bin/chown -R fleet:users /var/lib/git-mirror/malli-nix.git";
+          # Skip if the mirror hasn't been cloned yet (fresh host) — ExecStart
+          # clones it as fleet with correct ownership; the chown only self-heals
+          # a pre-existing tree. Without the guard the whole service fails on
+          # first run and never clones.
+          ExecStartPre = "+${pkgs.bash}/bin/bash -c 'test -d /var/lib/git-mirror/malli-nix.git && ${pkgs.coreutils}/bin/chown -R fleet:users /var/lib/git-mirror/malli-nix.git || true'";
           ExecStart = pkgs.writeShellScript "malli-nix-mirror" ''
             set -e
             cd /var/lib/git-mirror
