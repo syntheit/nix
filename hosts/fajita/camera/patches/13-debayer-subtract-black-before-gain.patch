@@ -1,0 +1,124 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Daniel <daniel@matv.io>
+Date: Tue, 11 Aug 2026 00:00:00 -0400
+Subject: [PATCH] debayer_cpu: subtract the black level before applying gains
+
+PEDESTAL-AMPLIFICATION BUG (upstream candidate, affects every sensor
+with a non-zero black level on the CPU soft ISP): updateLookupTables()
+built the per-channel LUTs as
+    LUT[i] = gammaTable_[clamp(gain_ch * i * 4, 0, 1023)]
+i.e. the white balance gain multiplied the raw value INCLUDING the
+sensor's black pedestal. The gamma table's zero-point
+(blackIndex = blackLevel[green] * 1024, flat-filled below) only blacks
+out indices < blackIndex, so for green (gain 1.0) the pedestal lands
+in the flat fill, but for R/B (gains 1.5-2.7 in dim scenes on fajita's
+IMX376) the pedestal maps well above the zero-point and renders as a
+violet wash over every dark region. Field data after the stats-offset
+fix (patch 12): dim-scene channel means R90/G55/B100 -- dark areas are
+lifted only in the high-gain channels. Real ISPs subtract the black
+level BEFORE applying WB gains; libcamera's own GPU debayer does too
+(bayer_unpacked.frag / bayer_1x_packed.frag: "rgb = rgb - blacklevel"
+before the ccm multiply). The CPU LUTs are the odd one out.
+
+Fix, gains-only (non-CCM) path: build the index as
+    zeroPoint + gain_ch * (i * 4 - blackIndex_ch)
+clamped to [0, 1023] (float arithmetic, so no signed/unsigned traps;
+under-black results land in the flat fill / at 0 which renders as
+black). Signal above black gets the gain; the pedestal maps to the
+zero-point for ALL channels regardless of gain. blackIndex is floored
+per channel exactly like updateGammaTable() truncates its zero-point,
+which makes gain 1.0 a bit-exact identity with the old code and the
+pedestal -> zeroPoint mapping exact. With blackLevel == 0 the new
+expression degenerates to the old one. The black level is indexed per
+channel so a future per-channel BLC (dark-frame calibration in
+blc.cpp, DebayerParams::blackLevel is already RGB<float>) works here
+unmodified; the per-channel values must follow the same colour
+indexing convention as params.gains (the swapRedBlueGains_ table
+aliasing then handles R/B-swapped formats for both equally).
+
+Fix, CCM path: the combined matrix has the WB gains folded in
+(combinedMatrix = ccm * gainMatrix), so it amplified the pedestal the
+same way, PLUS leaked it across channels through the off-diagonal
+terms. Correct form is out = M * (in - black) + black; equivalently
+old_out + (black - M * black), a per-output-channel constant, folded
+into the green table's entries since every output pixel sums exactly
+one entry from each of the three tables. All-pedestal input now
+restores to the 8-bit black level exactly (gammaLut_'s zero-point),
+saturating whites are unchanged after the [0,255] clamp, and a zero
+black level yields a zero correction (no behaviour change). This
+keeps the CPU CCM path consistent with the GPU shader path.
+---
+ src/libcamera/software_isp/debayer_cpu.cpp | 49 +++++++++++++++++++++++++++---
+ 1 file changed, 45 insertions(+), 4 deletions(-)
+
+--- a/src/libcamera/software_isp/debayer_cpu.cpp
++++ b/src/libcamera/software_isp/debayer_cpu.cpp
+@@ -803,13 +803,31 @@ void DebayerCpu::updateLookupTables(DebayerParams &params)
+ 			const unsigned int redIndex = swapRedBlueGains_ ? 2 : 0;
+ 			const unsigned int greenIndex = 1;
+ 			const unsigned int blueIndex = swapRedBlueGains_ ? 0 : 2;
++			/*
++			 * As in the gains-only path below, the black level must
++			 * not go through the colour matrix (which has the white
++			 * balance gains folded in): compute
++			 * out = M * (in - black) + black instead of M * in by
++			 * folding the constant black - M * black into the green
++			 * table, since each output pixel sums exactly one entry
++			 * of each of the three tables.  The GPU debayer already
++			 * subtracts the black level before the matrix
++			 * (bayer_unpacked.frag); the CPU tables did not.
++			 */
++			const RGB<float> blackLevel8 =
++				params.blackLevel * static_cast<float>(kRGBLookupSize - 1);
++			const RGB<float> ccmBlack =
++				blackLevel8 - params.combinedMatrix * blackLevel8;
+ 			for (unsigned int i = 0; i < kRGBLookupSize; i++) {
+ 				red[i].r = std::round(i * params.combinedMatrix[redIndex][0]);
+ 				red[i].g = std::round(i * params.combinedMatrix[greenIndex][0]);
+ 				red[i].b = std::round(i * params.combinedMatrix[blueIndex][0]);
+-				green[i].r = std::round(i * params.combinedMatrix[redIndex][1]);
+-				green[i].g = std::round(i * params.combinedMatrix[greenIndex][1]);
+-				green[i].b = std::round(i * params.combinedMatrix[blueIndex][1]);
++				green[i].r = std::round(i * params.combinedMatrix[redIndex][1] +
++							ccmBlack[redIndex]);
++				green[i].g = std::round(i * params.combinedMatrix[greenIndex][1] +
++							ccmBlack[greenIndex]);
++				green[i].b = std::round(i * params.combinedMatrix[blueIndex][1] +
++							ccmBlack[blueIndex]);
+ 				blue[i].r = std::round(i * params.combinedMatrix[redIndex][2]);
+ 				blue[i].g = std::round(i * params.combinedMatrix[greenIndex][2]);
+ 				blue[i].b = std::round(i * params.combinedMatrix[blueIndex][2]);
+@@ -822,9 +840,32 @@ void DebayerCpu::updateLookupTables(DebayerParams &params)
+ 			auto &red = swapRedBlueGains_ ? blue_ : red_;
+ 			auto &green = green_;
+ 			auto &blue = swapRedBlueGains_ ? red_ : blue_;
++			/*
++			 * The white balance gains must only amplify the signal
++			 * above the black level; the sensor pedestal carries no
++			 * light information.  Multiplying the raw value
++			 * directly maps the pedestal of any channel with
++			 * gain > 1 above the gamma table zero-point, lifting
++			 * dark regions of the high-gain channels (a
++			 * violet/magenta cast in dim scenes).  Subtract the
++			 * (per-channel capable) black level before applying
++			 * the gain, so the black level itself maps to the
++			 * zero-point for every channel regardless of its gain.
++			 */
++			/* Truncate like the updateGammaTable() zero-point */
++			const RGB<float> blackIndex = { {
++				std::floor(params.blackLevel[0] * gammaTableSize),
++				std::floor(params.blackLevel[1] * gammaTableSize),
++				std::floor(params.blackLevel[2] * gammaTableSize),
++			} };
++			const float zeroPoint = blackIndex[1];
+ 			for (unsigned int i = 0; i < kRGBLookupSize; i++) {
+ 				/* Apply gamma after gain! */
+-				const RGB<float> lutGains = (gains * i / div).min(gammaTableSize - 1);
++				const RGB<float> rawIndex(i / div);
++				const RGB<float> lutGains =
++					(gains * (rawIndex - blackIndex) + zeroPoint)
++						.max(0.0f)
++						.min(gammaTableSize - 1);
+ 				red[i] = gammaTable_[static_cast<unsigned int>(lutGains.r())];
+ 				green[i] = gammaTable_[static_cast<unsigned int>(lutGains.g())];
+ 				blue[i] = gammaTable_[static_cast<unsigned int>(lutGains.b())];
