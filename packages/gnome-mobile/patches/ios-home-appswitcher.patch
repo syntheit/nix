@@ -164,7 +164,7 @@ index e7db089e5..4f8678231 100644
  
      // hide:
 diff --git a/js/ui/overviewControls.js b/js/ui/overviewControls.js
-index 4535f1dcb..7dc62b9bb 100644
+index 4535f1dcb..a7b01406f 100644
 --- a/js/ui/overviewControls.js
 +++ b/js/ui/overviewControls.js
 @@ -21,6 +21,7 @@ import * as Layout from './layout.js';
@@ -268,3 +268,49 @@ index 4535f1dcb..7dc62b9bb 100644
      workspacesGestureBegin(tracker, monitor) {
          this._workspacesDisplay.show();
  
+@@ -1037,6 +1060,23 @@ class ControlsManager extends St.Widget {
+         this.dash.showAppsButton.checked = initialState === ControlsState.APP_GRID;
+         this._ignoreShowAppsButtonToggle = false;
+ 
++        // Phone boot: the app-grid icons are populated by deferred work whose
++        // final grid allocation can land AFTER this startup ease's last frame,
++        // leaving the grid loaded-but-unpainted (no further notify::value fires
++        // to re-run _update()). Catch the moment the grid finishes (re)paging
++        // with a one-shot handler that forces a reconcile + relayout, then
++        // disconnects itself. Only ever makes the grid MORE visible.
++        if (Main.layoutManager.is_phone &&
++            initialState === ControlsState.APP_GRID &&
++            this._appDisplay._grid) {
++            const grid = this._appDisplay._grid;
++            const pagesChangedId = grid.connect('pages-changed', () => {
++                grid.disconnect(pagesChangedId);
++                this._update();
++                this._appDisplay.queue_relayout();
++            });
++        }
++
+         // Set the opacity here to avoid a 1-frame flicker
+         this.opacity = 0;
+ 
+@@ -1081,7 +1121,20 @@ class ControlsManager extends St.Widget {
+             });
+         }));
+ 
+-        return Promise.allSettled(startupPromises);
++        // Preserve the async return contract: await the settle, then (phone +
++        // APP_GRID only) reassert grid visibility/paint once, in case the ease
++        // finished after the deferred icon-load already populated the grid.
++        const startupResult = await Promise.allSettled(startupPromises);
++
++        if (Main.layoutManager.is_phone &&
++            initialState === ControlsState.APP_GRID) {
++            this._appDisplay.visible = true;
++            this._appDisplay.opacity = 255;
++            this._appDisplay.queue_relayout();
++            this._update();
++        }
++
++        return startupResult;
+     }
+ 
+     get searchController() {

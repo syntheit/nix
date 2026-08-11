@@ -39,10 +39,13 @@
     containers = {
       jellyfin = { policy = "manual"; };
 
-      # Containers with database backup associations
-      retrospend = { backups = [ "retrospend" ]; };
-      retrospend_sidecar = { backups = [ "retrospend" ]; };
-      retrospend_postgres = { backups = [ "retrospend" ]; };
+      # Containers with database backup associations.
+      # retrospend is deployed via local builds (not the registry), so Argus must
+      # NOT auto-update it — pulling the stale registry :latest downgrades it below
+      # the migrated DB schema and breaks the app. "manual" keeps backups, no pulls.
+      retrospend = { policy = "manual"; backups = [ "retrospend" ]; };
+      retrospend_sidecar = { policy = "manual"; backups = [ "retrospend" ]; };
+      retrospend_postgres = { policy = "manual"; backups = [ "retrospend" ]; };
       immich_server = { backups = [ "immich" ]; };
       immich_machine_learning = { backups = [ "immich" ]; };
       docmost = { backups = [ "docmost" ]; };

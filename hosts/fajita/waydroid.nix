@@ -17,6 +17,9 @@ let
   # auto-selects it when networking.nftables.enable=true, which fajita does
   # not set, so we pin it explicitly here.
   waydroid = pkgs.waydroid-nftables;
+  waydroidProvisionStart = pkgs.writeShellScriptBin "waydroid-provision-start" ''
+    exec /run/current-system/sw/bin/systemctl start waydroid-apk-provision.service
+  '';
 in
 {
   # System packages: adb (for split APK install) + waydroid-launch wrapper +
@@ -57,14 +60,17 @@ in
         done
       fi
 
-      # Wait for Android to be ready (pm list packages is the reliable check).
-      for i in $(seq 1 30); do
-        "$W" shell pm list packages >/dev/null 2>&1 && break
-        sleep 1
-      done
+      # APK provisioning is privileged because split APK installation uses
+      # root's Waydroid shell.  This narrowly-scoped sudo wrapper starts only
+      # that service; the service waits for a real PackageManager response.
+      # Keep existing installed apps launchable if vista is temporarily down.
+      if ! sudo -n ${waydroidProvisionStart}/bin/waydroid-provision-start; then
+        echo "Waydroid APK provisioning failed; launching $pkg anyway" >&2
+      fi
 
       exec "$W" app launch "$pkg"
     '')
+    waydroidProvisionStart
     (mkWaydroidDesktop "com.whatsapp" "WhatsApp" "im-whatsapp")
     (mkWaydroidDesktop "com.Slack" "Slack" "im-slack")
     (mkWaydroidDesktop "com.discord" "Discord" "im-discord")
@@ -85,9 +91,6 @@ in
         runHook postInstall
       '';
     })
-  ];
-    (mkWaydroidDesktop "com.discord" "Discord" "im-discord")
-    (mkWaydroidDesktop "com.google.android.apps.maps" "Google Maps" "maps")
   ];
 
   virtualisation.waydroid = {
@@ -174,4 +177,217 @@ in
       '';
     };
   };
+
+  # Checkpoint 7: fetch Daniel-managed APKs from vista and provision only the
+  # packages that are absent from the running Android image.  This is pulled in
+  # when the D-Bus-activated container starts, rather than at boot.  It must
+  # run *after* the container: `pm` and Waydroid's /data bind mount are not
+  # available until then.
+  #
+  # The service deliberately relies on root's normal SSH configuration for
+  # daniel@vista.  Set up that key separately on fajita before enabling this
+  # in production; no private key belongs in the Nix store.
+  systemd.services.waydroid-apk-provision = {
+    description = "Provision missing Waydroid APKs from vista";
+    # Provisioning needs a running user session and PackageManager, so it is
+    # started by waydroid-launch after session startup—not by the container
+    # activation transaction.
+    wantedBy = [ ];
+    # Do not pull in network-online.target: on fajita its pre-existing
+    # systemd-networkd wait job can remain pending indefinitely.  Tailscale
+    # is already ordered ahead when present, and rsync reports a real network
+    # failure directly instead of blocking the app launch transaction.
+    after = [ "waydroid-container.service" "tailscaled.service" ];
+
+    path = [
+      pkgs.coreutils
+      pkgs.gnugrep
+      pkgs.gnused
+      pkgs.lxc
+      pkgs.openssh
+      pkgs.procps
+      pkgs.rsync
+      pkgs.unzip
+      pkgs.util-linux
+    ];
+
+    serviceConfig = {
+      Type = "oneshot";
+      # Leave the unit inactive after each run, so a later container start can
+      # run the idempotency check again.
+      RemainAfterExit = false;
+    };
+
+    script = ''
+      set -euo pipefail
+
+      W=${waydroid}/bin/waydroid
+      REMOTE="daniel@vista:/home/daniel/waydroid-apks/"
+      CACHE=/var/cache/waydroid-apks
+      DATATMP=/home/daniel/.local/share/waydroid/data/local/tmp
+
+      mkdir -p "$CACHE" "$DATATMP"
+
+      # A Waydroid container may still be frozen despite suspend_action=none.
+      # Do this before asking Android to service pm commands.
+      lxc-unfreeze -P /var/lib/waydroid/lxc -n waydroid 2>/dev/null || true
+
+      # `waydroid-container.service` can be active while Waydroid still calls
+      # the container stopped: pm only becomes usable after a graphical
+      # Waydroid session starts.  Start it with Daniel's GNOME session
+      # environment, matching waydroid-launch (the root systemd environment
+      # has neither the Wayland socket nor the session D-Bus address).
+      gnome_pid=$(pgrep -u daniel -f '[g]nome-shell' | head -n 1 || true)
+      if [ -z "$gnome_pid" ]; then
+        echo "Could not find Daniel's GNOME Shell session" >&2
+        exit 1
+      fi
+      xdg_runtime_dir=$(tr '\0' '\n' < "/proc/$gnome_pid/environ" | ${pkgs.gnused}/bin/sed -n 's/^XDG_RUNTIME_DIR=//p' | head -n 1)
+      dbus_session_bus=$(tr '\0' '\n' < "/proc/$gnome_pid/environ" | ${pkgs.gnused}/bin/sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p' | head -n 1)
+      wayland_display=$(tr '\0' '\n' < "/proc/$gnome_pid/environ" | ${pkgs.gnused}/bin/sed -n 's/^WAYLAND_DISPLAY=//p' | head -n 1)
+      if [ -z "$xdg_runtime_dir" ] || [ -z "$dbus_session_bus" ]; then
+        echo "Could not read Daniel's graphical session environment" >&2
+        exit 1
+      fi
+      # Root performs the pm session operations, but the Waydroid CLI still
+      # consults the graphical-session environment to find the active session.
+      export XDG_RUNTIME_DIR="$xdg_runtime_dir"
+      export DBUS_SESSION_BUS_ADDRESS="$dbus_session_bus"
+      export WAYLAND_DISPLAY="''${wayland_display:-wayland-0}"
+      if ! "$W" status 2>/dev/null | grep -q 'Session:.*RUNNING'; then
+        runuser -u daniel -- env \
+          XDG_RUNTIME_DIR="$xdg_runtime_dir" \
+          DBUS_SESSION_BUS_ADDRESS="$dbus_session_bus" \
+          WAYLAND_DISPLAY="$WAYLAND_DISPLAY" \
+          "$W" session start >/dev/null 2>&1 &
+      fi
+
+      session_ready=0
+      for i in $(seq 1 40); do
+        if "$W" status 2>/dev/null | grep -q 'Session:.*RUNNING'; then
+          session_ready=1
+          break
+        fi
+        sleep 3
+      done
+      if [ "$session_ready" -ne 1 ]; then
+        echo "Waydroid session did not become ready" >&2
+        exit 1
+      fi
+
+      ready=0
+      for i in $(seq 1 30); do
+        # `waydroid shell` itself exits zero even when Android replies
+        # "Can't find service: package" during early boot.  Require actual
+        # PackageManager output instead of trusting that wrapper exit status.
+        if "$W" shell -- pm list packages 2>/dev/null | grep -q '^package:'; then
+          ready=1
+          break
+        fi
+        sleep 3
+      done
+      if [ "$ready" -ne 1 ]; then
+        echo "Waydroid package manager did not become ready" >&2
+        exit 1
+      fi
+
+      # Mirror only installable artifacts.  --delete prevents an old cached
+      # APK from being selected after Daniel replaces it on vista.
+      rsync -az --delete \
+        --include='*.apk' --include='*.apkm' --exclude='*' \
+        -e 'ssh -o BatchMode=yes' "$REMOTE" "$CACHE/"
+
+      package_present() {
+        "$W" shell -- pm list packages 2>/dev/null | grep -qFx "package:$1"
+      }
+
+      install_split_bundle() {
+        local file="$1" pkg="$2" work jobdir session split name failed
+        work=$(mktemp -d)
+        jobdir="$DATATMP/waydroid-provision-$pkg"
+        rm -rf "$jobdir"
+        mkdir -p "$jobdir"
+
+        # APKMirror .apkm archives contain many ABI, density, and locale
+        # splits.  fajita only needs the base, arm64-v8a, and xxhdpi splits.
+        for split in base.apk split_config.arm64_v8a.apk split_config.xxhdpi.apk; do
+          if ! unzip -p "$file" "$split" > "$work/$split"; then
+            echo "Missing required split $split in $file" >&2
+            rm -rf "$work" "$jobdir"
+            return 1
+          fi
+        done
+        cp "$work"/*.apk "$jobdir/"
+
+        session=$("$W" shell -- pm install-create 2>&1 | ${pkgs.gnused}/bin/sed -n 's/.*\[\([0-9][0-9]*\)\].*/\1/p')
+        if [ -z "$session" ]; then
+          echo "pm install-create failed for $pkg" >&2
+          rm -rf "$work" "$jobdir"
+          return 1
+        fi
+
+        failed=0
+        for split in base.apk split_config.arm64_v8a.apk split_config.xxhdpi.apk; do
+          name="''${split%.apk}"
+          if ! "$W" shell -- pm install-write "$session" "$name" "/data/local/tmp/waydroid-provision-$pkg/$split"; then
+            failed=1
+            break
+          fi
+        done
+        if [ "$failed" -eq 0 ] && ! "$W" shell -- pm install-commit "$session"; then
+          failed=1
+        fi
+        if [ "$failed" -ne 0 ]; then
+          "$W" shell -- pm install-abandon "$session" >/dev/null 2>&1 || true
+        fi
+
+        rm -rf "$work" "$jobdir"
+        [ "$failed" -eq 0 ]
+      }
+
+      shopt -s nullglob nocasematch
+      for file in "$CACHE"/*.apk "$CACHE"/*.apkm; do
+        base=$(basename "$file")
+        case "$base" in
+          com.whatsapp*.apk) pkg=com.whatsapp; kind=apk ;;
+          com.slack*.apkm) pkg=com.Slack; kind=apkm ;;
+          com.discord*.apkm) pkg=com.discord; kind=apkm ;;
+          com.google.android.apps.maps*.apk) pkg=com.google.android.apps.maps; kind=apk ;;
+          *) echo "Skipping unrecognised APK artifact: $base"; continue ;;
+        esac
+
+        if package_present "$pkg"; then
+          echo "Skipping $pkg: already installed"
+          continue
+        fi
+
+        echo "Installing missing $pkg from $base"
+        if [ "$kind" = apk ]; then
+          "$W" app install "$file"
+        else
+          install_split_bundle "$file" "$pkg"
+        fi
+
+        if ! package_present "$pkg"; then
+          echo "Package install did not register $pkg" >&2
+          exit 1
+        fi
+      done
+    '';
+  };
+
+  # Allow Daniel's app launcher to start exactly the provisioning wrapper,
+  # without granting passwordless access to systemctl or arbitrary root
+  # commands.  The wrapper accepts no arguments.
+  security.sudo.extraRules = [
+    {
+      users = [ "daniel" ];
+      commands = [
+        {
+          command = "${waydroidProvisionStart}/bin/waydroid-provision-start";
+          options = [ "NOPASSWD" ];
+        }
+      ];
+    }
+  ];
 }

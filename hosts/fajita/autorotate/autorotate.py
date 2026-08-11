@@ -39,6 +39,9 @@ DC = "org.gnome.Mutter.DisplayConfig"
 DC_PATH = "/org/gnome/Mutter/DisplayConfig"
 SCREENSAVER = "org.gnome.ScreenSaver"
 SCREENSAVER_PATH = "/org/gnome/ScreenSaver"
+LOGIN1 = "org.freedesktop.login1"
+LOGIN1_SESSION = "org.freedesktop.login1.Session"
+LOGIN1_SESSION_PATH = "/org/freedesktop/login1/session/auto"
 
 # SensorProxy orientation → mutter transform (0=normal,1=90°,2=180°,3=270°).
 # Same mapping the old gsd-orientation used; flip left-up/right-up if rotation
@@ -57,7 +60,13 @@ class AutoRotate:
         self.session = Gio.bus_get_sync(Gio.BusType.SESSION, None)
         self.last = None
         self.sensor = None          # None while unclaimed / unavailable
-        self.screen_active = False  # True = screensaver active = screen off
+        # ScreenSaver.ActiveChanged becomes false as soon as the display wakes,
+        # even though authentication may still be pending. LockedHint remains
+        # true until the shield is actually dismissed, so it is authoritative
+        # for keeping the lock screen portrait.
+        self.screen_active = False
+        self.locked = False
+        self.login_session = None
         self._backoff_idx = 0
         self._retry_source = None   # pending GLib timeout id
         # Track whether we've already logged "no accelerometer" to avoid spam
@@ -67,8 +76,9 @@ class AutoRotate:
         self.settings.connect("changed::orientation-lock",
                               lambda *_: self._apply_current())
 
-        # Subscribe to screensaver ActiveChanged BEFORE claiming the sensor so
-        # we don't miss a blank that happens during startup.
+        # Subscribe to both states BEFORE claiming the sensor so startup cannot
+        # briefly enable rotation over an already locked session.
+        self._subscribe_login_session()
         self._subscribe_screensaver()
 
         # Re-acquire the moment SensorProxy (re)appears on the bus rather than
@@ -80,12 +90,55 @@ class AutoRotate:
             lambda *_: self._on_sensor_appeared(),
             lambda *_: self._on_sensor_vanished())
 
-        # Begin sensor acquisition (non-fatal if it fails).
-        self._try_acquire_sensor()
+        # Begin sensor acquisition (non-fatal if it fails). If the session is
+        # already locked, hold portrait instead.
+        if self.locked:
+            self._force_portrait()
+        else:
+            self._try_acquire_sensor()
 
     # ------------------------------------------------------------------
-    # Screensaver / screen-blank handling
+    # Lock-screen / screen-blank handling
     # ------------------------------------------------------------------
+
+    def _subscribe_login_session(self):
+        """Track logind's lock state through authentication completion."""
+        try:
+            self.login_session = Gio.DBusProxy.new_sync(
+                self.system, Gio.DBusProxyFlags.NONE, None,
+                LOGIN1, LOGIN1_SESSION_PATH, LOGIN1_SESSION, None)
+            self.login_session.connect(
+                "g-properties-changed", self._on_login_properties_changed)
+            self.locked = self._read_locked_hint()
+        except GLib.Error as e:
+            # Non-fatal: ScreenSaver still handles blanking, but the lit lock
+            # screen may rotate on wake on systems without this property.
+            log.warning("could not track logind lock state: %s", e.message)
+
+    def _read_locked_hint(self):
+        if self.login_session is None:
+            return False
+        value = self.login_session.get_cached_property("LockedHint")
+        return value.unpack() if value is not None else False
+
+    def _on_login_properties_changed(self, _proxy, changed, _invalidated):
+        if "LockedHint" not in changed.unpack():
+            return
+
+        self.locked = self._read_locked_hint()
+        if self.locked:
+            self._force_portrait()
+            self._release_sensor()
+        elif not self.screen_active:
+            self._try_acquire_sensor()
+
+    def _force_portrait(self):
+        try:
+            self._apply(TRANSFORM["normal"])
+            self.last = "normal"
+            log.info("lock screen forced to portrait")
+        except GLib.Error as e:
+            log.warning("could not force lock-screen portrait: %s", e.message)
 
     def _subscribe_screensaver(self):
         """Subscribe to org.gnome.ScreenSaver ActiveChanged on the session bus."""
@@ -114,11 +167,20 @@ class AutoRotate:
 
         self.screen_active = active
         if active:
-            # Screen going off — release the accelerometer claim to allow deep idle.
+            # The lock screen must stay portrait even if the unlocked session
+            # was landscape when it locked. Stop sensor-driven rotation until
+            # authentication completes, then restore the live sensor value.
+            self._force_portrait()
+
+            # Releasing the claim also saves power while the display is off.
             self._release_sensor()
         else:
-            # Screen coming back on — re-claim and apply any orientation change.
-            self._try_acquire_sensor()
+            # Waking the screen does not mean it has been unlocked. Resume only
+            # after logind's LockedHint clears following authentication.
+            if self.locked:
+                self._force_portrait()
+            else:
+                self._try_acquire_sensor()
 
     # ------------------------------------------------------------------
     # Sensor acquisition with backoff
@@ -126,7 +188,7 @@ class AutoRotate:
 
     def _on_sensor_appeared(self):
         """SensorProxy (re)appeared on the bus — claim right away."""
-        if self.sensor is not None or self.screen_active:
+        if self.sensor is not None or self.screen_active or self.locked:
             return
         self._backoff_idx = 0
         self._try_acquire_sensor()
@@ -149,6 +211,9 @@ class AutoRotate:
 
         if self.sensor is not None:
             # Already claimed.
+            return
+
+        if self.screen_active or self.locked:
             return
 
         try:
@@ -188,7 +253,7 @@ class AutoRotate:
         return GLib.SOURCE_REMOVE
 
     def _release_sensor(self):
-        """Release the accelerometer claim (called on screen-blank)."""
+        """Release the accelerometer claim while blanked or locked."""
         if self.sensor is None:
             return
         # Cancel any pending retry; the screen is off, no point retrying.
@@ -201,7 +266,7 @@ class AutoRotate:
         except GLib.Error as e:
             log.warning("ReleaseAccelerometer failed: %s", e.message)
         self.sensor = None
-        log.info("accelerometer released (screen off)")
+        log.info("accelerometer released (screen blanked or locked)")
 
     # ------------------------------------------------------------------
     # Orientation application

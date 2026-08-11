@@ -81,11 +81,16 @@ in
           ./patches/osk-autocaps-committed-tail.patch # auto-cap: replace dead surrounding-text dance with synchronous committedTail from _onCommitText (inputMethod.js); backspace/Enter handled
           ./patches/osk-swipe-typing.patch # swipe typing: letter-key glide → symbolic trace → PUA-framed emission to engine decoder (MUST stay after osk-spacebar-cursor-slide + osk-autocaps)
           ./patches/osk-strip-longpress-forget.patch # strip long-press → forget word: 600 ms hold on suggestion pill → candidate_clicked CONTROL_MASK → remove_candidate_from_user_database + flash
+          ./patches/osk-tap-coords.patch # per-tap (col,row) coords → engine via press-only PUA markers (mirrors swipe channel; feeds spatial autocorrect). MUST stay after osk-swipe-typing + osk-autocaps (same files)
+          ./patches/ios-home-appswitcher.patch # iOS home + app-switcher: full swipe-up = pure app-grid home (no window strip); half swipe-up = window-picker card switcher (re-adds WINDOW_PICKER snap point on phone, card layout, grid⇄cards crossfade, rounded cards)
+          ./patches/widget-framework.patch # native St widget base + registry + settings-backed host; first slice mounts a clock card above the lock-screen clock
+          ./patches/lockscreen-ios-controls.patch # transparent widget clock, phone lock shortcuts, no swipe hint; camera remains authentication-gated
         ]
         ++ [
           ./patches/android-quick-settings.patch # Nix-driven 4-column QS grid, compact/custom tiles, long-press settings, robust app focus, persistent mobile data
           ./patches/android-quick-settings-compact-grid.patch # compact Flashlight menu, stable configured ordering, and native Hotspot toggle
           ./patches/android-quick-settings-collapse.patch # two-row Android-style collapsed grid with an animated expand control
+          ./patches/android-quick-settings-pull-expand.patch # pull down to reveal overflow rows; swipe up to collapse before closing
         ];
         prePatch = ''
           cp -r ${libshew} subprojects/libshew

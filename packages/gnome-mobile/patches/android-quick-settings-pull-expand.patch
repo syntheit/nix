@@ -1,0 +1,126 @@
+diff --git a/data/theme/gnome-shell-sass/widgets/_quick-settings.scss b/data/theme/gnome-shell-sass/widgets/_quick-settings.scss
+index dbf42dfbb..54bdb1fb2 100644
+--- a/data/theme/gnome-shell-sass/widgets/_quick-settings.scss
++++ b/data/theme/gnome-shell-sass/widgets/_quick-settings.scss
+@@ -89,7 +89,7 @@
+   margin-top: -8px;
+   margin-bottom: 8px;
+ 
+-  StIcon { icon-size: $scalable_icon_size * 0.75; }
++  StIcon { icon-size: $scalable_icon_size; }
+ }
+ 
+ .quick-toggle, .quick-toggle-has-menu {
+diff --git a/js/ui/quickSettings.js b/js/ui/quickSettings.js
+index 23c809df0..d5e9ca88f 100644
+--- a/js/ui/quickSettings.js
++++ b/js/ui/quickSettings.js
+@@ -18,6 +18,9 @@ import {PopupAnimation} from './boxpointer.js';
+ 
+ const DIM_BRIGHTNESS = -0.4;
+ const POPUP_ANIMATION_TIME = 400;
++const QUICK_SETTINGS_EXPAND_DRAG_THRESHOLD = 48;
++const QUICK_SETTINGS_COLLAPSE_DRAG_THRESHOLD = 72;
++const QUICK_SETTINGS_EXPAND_VELOCITY = 0.5;
+ 
+ export const QuickSettingsItem = GObject.registerClass({
+     Properties: {
+@@ -799,8 +802,15 @@ const QuickSettingsLayout = GObject.registerClass({
+         const isRtl = container.text_direction === Clutter.TextDirection.RTL;
+ 
+         const childBox = new Clutter.ActorBox();
+-        for (const child of collapsedChildren)
+-            child.allocate(new Clutter.ActorBox());
++        for (const child of collapsedChildren) {
++            const colSpan = this._getColSpan(container, child);
++            const width =
++                childWidth * colSpan + this.column_spacing * (colSpan - 1);
++            const [, height] = child.get_preferred_height(-1);
++            childBox.set_origin(box.x1, box.y2 + this.row_spacing);
++            childBox.set_size(Math.max(width, 1), Math.max(height, 1));
++            child.allocate(childBox);
++        }
+ 
+         let y = box.y1;
+         rows.forEach(row => {
+@@ -968,12 +978,29 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+         this.box.remove_transition('translation-y');
+ 
+         this._panHeight = this.box.allocation.get_height() + this.box.margin_top;
++        this._panStartedExpanded = this._expanded;
++        this._panExpandedDuringGesture = false;
++        this._panDownDistance = 0;
+     }
+ 
+     _panUpdate(gesture) {
+         const latestDeltaVec = gesture.get_delta();
++        const deltaY = latestDeltaVec.get_y();
++
++        if (!this._panStartedExpanded && !this._panExpandedDuringGesture &&
++            deltaY > 0) {
++            this._panDownDistance += deltaY;
++            if (this._panDownDistance >= QUICK_SETTINGS_EXPAND_DRAG_THRESHOLD) {
++                this._panExpandedDuringGesture = true;
++                this._setExpanded(true, true);
++            }
++            return;
++        }
+ 
+-        this.box.translation_y += latestDeltaVec.get_y();
++        if (this._panExpandedDuringGesture)
++            return;
++
++        this.box.translation_y += deltaY;
+         if (this.box.translation_y > 0)
+             this.box.translation_y = 0;
+     }
+@@ -981,6 +1008,31 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+     _panEnd(gesture) {
+         const velocityY = gesture.get_velocity().get_y();
+ 
++        if (this._panExpandedDuringGesture) {
++            this.box.translation_y = 0;
++            return;
++        }
++
++        if (!this._panStartedExpanded &&
++            velocityY > QUICK_SETTINGS_EXPAND_VELOCITY) {
++            this.box.translation_y = 0;
++            this._setExpanded(true, true);
++            return;
++        }
++
++        if (this._panStartedExpanded &&
++            (velocityY < -QUICK_SETTINGS_EXPAND_VELOCITY ||
++             Math.abs(this.box.translation_y) >=
++                QUICK_SETTINGS_COLLAPSE_DRAG_THRESHOLD)) {
++            this.box.ease({
++                translation_y: 0,
++                duration: 160,
++                mode: Clutter.AnimationMode.EASE_OUT_QUINT,
++            });
++            this._setExpanded(false, true);
++            return;
++        }
++
+         const remainingHeight = this._panHeight - Math.abs(this.box.translation_y);
+ 
+         if (velocityY < -0.9 || (remainingHeight < this._panHeight * 0.75 && velocityY <= 0)) {
+@@ -1003,7 +1055,7 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+     }
+ 
+     _panCancel(gesture) {
+-        this._boxPointer.translation_y = 0;
++        this.box.translation_y = 0;
+     }
+ 
+     addItem(item, colSpan = 1) {
+@@ -1063,7 +1115,7 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+             layout.expanded = expanded;
+             layout.layout_changed();
+             this._grid.set_height(-1);
+-            this._grid.clip_to_allocation = false;
++            this._grid.clip_to_allocation = !expanded;
+             this._expandButton.reactive = true;
+         };
+ 

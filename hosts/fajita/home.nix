@@ -96,6 +96,16 @@
     # copy-URL button. Logs to /tmp/ff-pill.log.
     ".config/mozilla/firefox/default/chrome/JS/urlbar-pill.uc.mjs".source =
       ../../packages/orion-chrome/js/urlbar-pill.uc.mjs;
+
+    # Fission-safe content-to-chrome bridge for the scroll-collapse proof.
+    # Actor modules live under JS/ so fx-autoconfig's chrome://userscripts/
+    # manifest mapping can load them in Firefox's content and parent processes.
+    ".config/mozilla/firefox/default/chrome/JS/orion-scroll-register.sys.mjs".source =
+      ../../packages/orion-chrome/js/orion-scroll-register.sys.mjs;
+    ".config/mozilla/firefox/default/chrome/JS/OrionScroll/OrionScrollChild.sys.mjs".source =
+      ../../packages/orion-chrome/js/OrionScroll/OrionScrollChild.sys.mjs;
+    ".config/mozilla/firefox/default/chrome/JS/OrionScroll/OrionScrollParent.sys.mjs".source =
+      ../../packages/orion-chrome/js/OrionScroll/OrionScrollParent.sys.mjs;
   };
 
   # foot is the tmux terminal on fajita. VTE-based terminals (Ptyxis/Console)

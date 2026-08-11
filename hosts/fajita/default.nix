@@ -1054,6 +1054,7 @@
     clapper                               # libadwaita video player; works as a youtube client too
     totem                                 # GNOME Videos; libadwaita
     vlc                                   # fallback for anything clapper/totem can't handle
+    parabolic                             # yt-dlp GTK4/libadwaita downloader (Nickvision) — video + audio, from nixpkgs
     delfin                                # Jellyfin client, GTK4/libadwaita
     # mimick — Immich client. Its ARM build (vendored image-codec C + LTO link)
     # is too heavy for harbor's qemu, so it builds natively on the mini's aarch64
@@ -1067,7 +1068,8 @@
     warden                                # Bitwarden/Vaultwarden client (GTK4/libadwaita, over rbw) — inputs.warden (github)
     courier                               # Email client (GTK4/libadwaita, IMAP/SMTP, privacy-first) — inputs.courier (local ~/Projects/courier)
     calculator                            # Calculator (GTK4/libadwaita, Google-Calculator-style, mobile-first) — inputs.calculator (local ~/Projects/calculator)
-    # paloma-wrapped                      # Telegram client (GTK4/libadwaita, TDLib); api creds injected at runtime from sops — inputs.paloma (local ~/Projects/paloma). Secret is DECLARED (secrets.nix); uncomment to install once validated on mantle (heavy aarch64 build).
+    bourse                                # Bourse (GTK4/libadwaita stocks watchlist, Yahoo Finance, mobile-first) — inputs.bourse (local ~/Projects/bourse)
+    paloma-wrapped                        # Telegram client (GTK4/libadwaita, TDLib); api creds injected at runtime from sops — inputs.paloma (github syntheit/paloma).
     # YouTube → self-hosted Invidious as a PWA (see pwas.nix). Dropped `pipeline`
     # because it speaks Piped, not Invidious. Clapper below still handles
     # paste-a-link one-off playback.
