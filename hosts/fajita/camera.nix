@@ -71,6 +71,15 @@ let
       # into violet. Dividing every sample by `div` puts sum_ in the 8-bit
       # domain, making the existing offset correct for all bit depths.
       ./camera/patches/12-swstats-normalize-sums-to-8bit.patch
+      # 13 = night-violet fix step 3 (UPSTREAMABLE): the debayer LUTs applied
+      # the AWB gains to the raw value INCLUDING the black pedestal, so for
+      # any gain > 1 the pedestal maps above the gamma-table zero-point —
+      # dark regions render violet in dim scenes (post-12 field means
+      # R90/G55/B100). Subtract black before the gain so the pedestal maps
+      # to the zero-point for every channel; same fold for the CCM path
+      # (out = M*(in-black) + black), matching what the GPU debayer shaders
+      # already do. Per-channel-black ready for the coming dark-frame BLC.
+      ./camera/patches/13-debayer-subtract-black-before-gain.patch
     ];
     postInstall = (old.postInstall or "") + ''
       install -Dm644 ${./camera/tuning/imx371.yaml} $out/share/libcamera/ipa/simple/imx371.yaml
