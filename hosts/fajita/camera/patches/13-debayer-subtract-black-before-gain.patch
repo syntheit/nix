@@ -39,21 +39,31 @@ aliasing then handles R/B-swapped formats for both equally).
 Fix, CCM path: the combined matrix has the WB gains folded in
 (combinedMatrix = ccm * gainMatrix), so it amplified the pedestal the
 same way, PLUS leaked it across channels through the off-diagonal
-terms. Correct form is out = M * (in - black) + black; equivalently
-old_out + (black - M * black), a per-output-channel constant, folded
-into the green table's entries since every output pixel sums exactly
-one entry from each of the three tables. All-pedestal input now
-restores to the 8-bit black level exactly (gammaLut_'s zero-point),
-saturating whites are unchanged after the [0,255] clamp, and a zero
-black level yields a zero correction (no behaviour change). This
-keeps the CPU CCM path consistent with the GPU shader path.
+terms. Correct form is out = M * (in - black) + greenZero, where
+greenZero is the green channel's 8-bit black level -- the same shared
+zero-point updateGammaTable() derives from green and that the
+gains-only path re-anchors every channel to. Restoring each channel's
+own pedestal instead would, once per-channel black levels differ
+(dark-frame BLC calibration), put an R/B pedestal above green's back
+above the gamma zero-point where it survives as tinted blacks -- the
+defect class this patch removes. Only the re-anchor constant is
+shared-green; the subtracted M * black keeps the true per-channel
+vector. The constant greenZero - M * black is folded into the green
+table's entries since every output pixel sums exactly one entry from
+each of the three tables. All-pedestal input now maps every channel
+exactly to the green 8-bit black level (gammaLut_'s zero-point), with
+uniform per-channel blacks the correction is bit-identical to
+restoring the per-channel level, saturating whites are unchanged
+after the [0,255] clamp, and a zero black level yields a zero
+correction (no behaviour change). This keeps the CPU CCM path
+consistent with the GPU shader path.
 ---
- src/libcamera/software_isp/debayer_cpu.cpp | 49 +++++++++++++++++++++++++++---
- 1 file changed, 45 insertions(+), 4 deletions(-)
+ src/libcamera/software_isp/debayer_cpu.cpp | 58 +++++++++++++++++++++++++++---
+ 1 file changed, 54 insertions(+), 4 deletions(-)
 
 --- a/src/libcamera/software_isp/debayer_cpu.cpp
 +++ b/src/libcamera/software_isp/debayer_cpu.cpp
-@@ -803,13 +803,31 @@ void DebayerCpu::updateLookupTables(DebayerParams &params)
+@@ -803,13 +803,40 @@ void DebayerCpu::updateLookupTables(DebayerParams &params)
  			const unsigned int redIndex = swapRedBlueGains_ ? 2 : 0;
  			const unsigned int greenIndex = 1;
  			const unsigned int blueIndex = swapRedBlueGains_ ? 0 : 2;
@@ -61,17 +71,26 @@ keeps the CPU CCM path consistent with the GPU shader path.
 +			 * As in the gains-only path below, the black level must
 +			 * not go through the colour matrix (which has the white
 +			 * balance gains folded in): compute
-+			 * out = M * (in - black) + black instead of M * in by
-+			 * folding the constant black - M * black into the green
-+			 * table, since each output pixel sums exactly one entry
-+			 * of each of the three tables.  The GPU debayer already
++			 * out = M * (in - black) + greenZero instead of M * in,
++			 * where greenZero is the green channel's 8-bit black
++			 * level -- the shared zero-point updateGammaTable()
++			 * derives from green.  Re-anchoring every output channel
++			 * there (instead of restoring each channel's own
++			 * pedestal) keeps unequal per-channel black levels from
++			 * landing above the gamma zero-point and surviving as
++			 * tinted blacks; the gains-only path anchors at the
++			 * green zero-point the same way.  The constant
++			 * greenZero - M * black is folded into the green table,
++			 * since each output pixel sums exactly one entry of
++			 * each of the three tables.  The GPU debayer already
 +			 * subtracts the black level before the matrix
 +			 * (bayer_unpacked.frag); the CPU tables did not.
 +			 */
 +			const RGB<float> blackLevel8 =
 +				params.blackLevel * static_cast<float>(kRGBLookupSize - 1);
++			const RGB<float> greenZero8(blackLevel8[greenIndex]);
 +			const RGB<float> ccmBlack =
-+				blackLevel8 - params.combinedMatrix * blackLevel8;
++				greenZero8 - params.combinedMatrix * blackLevel8;
  			for (unsigned int i = 0; i < kRGBLookupSize; i++) {
  				red[i].r = std::round(i * params.combinedMatrix[redIndex][0]);
  				red[i].g = std::round(i * params.combinedMatrix[greenIndex][0]);
@@ -88,7 +107,7 @@ keeps the CPU CCM path consistent with the GPU shader path.
  				blue[i].r = std::round(i * params.combinedMatrix[redIndex][2]);
  				blue[i].g = std::round(i * params.combinedMatrix[greenIndex][2]);
  				blue[i].b = std::round(i * params.combinedMatrix[blueIndex][2]);
-@@ -822,9 +840,32 @@ void DebayerCpu::updateLookupTables(DebayerParams &params)
+@@ -822,9 +849,32 @@ void DebayerCpu::updateLookupTables(DebayerParams &params)
  			auto &red = swapRedBlueGains_ ? blue_ : red_;
  			auto &green = green_;
  			auto &blue = swapRedBlueGains_ ? red_ : blue_;
