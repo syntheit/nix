@@ -112,6 +112,9 @@
 
   networking.hostName = "fajita";
 
+  # No generated NixOS manual (removes the nixos-help app from the grid).
+  documentation.nixos.enable = false;
+
   # GNOME Shell Mobile session lives in ../../modules/gnome-mobile.nix (GDM +
   # desktopManager.gnome + the mobile overlay). Display scale is handled by
   # GNOME/Mutter fractional scaling, not Phosh's phoc.ini. Notch coverage is
@@ -1021,7 +1024,6 @@
     # ─── Browsers ────────────────────────────────────────────────────────────
     ptyxis                                # libadwaita terminal; scrollbar-policy='always' (see dconf above) enables touch-drag scroll
     epiphany                              # Phosh-native, adaptive — best mobile browser
-    brave                                 # Chromium-based, has aarch64 builds
     chromium                              # for sites that explicitly require Chrome (e.g. Preply Classroom)
     # zen-browser dropped — no touchscreen support
     # firefox: enabled separately via programs.firefox; squeeze/cutoff to be
@@ -1033,8 +1035,6 @@
     # telegram-desktop dropped — desktop-only, painful on touch. Use the PWA at
     # https://web.telegram.org via Epiphany ("Install Site as Web Application"
     # in the Phosh menu) until paper-plane is revived upstream.
-    geary                                 # Email — folds to single-pane at phone width (GTK3/libhandy),
-                                          # full IMAP. Replaces Thunderbird, which is unusable on mobile.
 
     # ─── Diagnostics ─────────────────────────────────────────────────────────
     (pkgs.callPackage ./phone-check { }) # sensor readouts + keyring re-key button
@@ -1048,7 +1048,6 @@
     papers                                # PDF reader (replaces evince; libadwaita)
     snapshot                              # GNOME Camera (libadwaita, GTK4)
     gnome-text-editor                     # libadwaita text editor
-    gnome-calculator
     gnome-calendar
     gnome-contacts
     gnome-maps                            # libadwaita, online (GMaps tiles)

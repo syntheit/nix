@@ -64,29 +64,10 @@ let
   pwas = [
     # ─── Chat / comms ────────────────────────────────────────────────────────
     (mkPwa {
-      id = "telegram";
-      name = "Telegram";
-      url = "https://web.telegram.org/k/";
-    })
-    (mkPwa {
       id = "gvoice";
       name = "Google Voice";
       url = "https://voice.google.com/u/0/messages";
       profile = "google";
-    })
-
-    # ─── Finance (low priority — "deal with it / web") ───────────────────────
-    (mkPwa {
-      id = "yahoo-finance";
-      name = "Yahoo Finance";
-      url = "https://finance.yahoo.com/portfolios";
-      comment = "Stocks";
-    })
-    (mkPwa {
-      id = "fidelity";
-      name = "Fidelity";
-      url = "https://digital.fidelity.com/";
-      comment = "Brokerage — verify mobile-web fit on device; add dsf if desktop-only";
     })
 
     # ─── News ────────────────────────────────────────────────────────────────
@@ -112,14 +93,6 @@ let
       url = "https://www.strava.com/dashboard";
     })
 
-    # ─── Auth / AI ───────────────────────────────────────────────────────────
-    (mkPwa {
-      id = "bitwarden";
-      name = "Bitwarden";
-      url = "https://vault.matv.io/";
-      comment = "Self-hosted Vaultwarden";
-    })
-
     # ─── Self-hosted / hosted PWAs ───────────────────────────────────────────
     # Linkding + Memos PWAs dropped — replaced by the native anchorage (Linkding)
     # and jotter (Memos) GTK apps in systemPackages.
@@ -128,6 +101,7 @@ let
       name = "Retrospend";
       url = "https://retrospend.app/dashboard";
       comment = "Expense tracker";
+      icon = ./retrospend-icon.png;
     })
   ];
 in
