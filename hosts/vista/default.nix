@@ -18,7 +18,7 @@
     ./invidious.nix
     ./nix-builder.nix
     # Malli fleet control plane, migrated from conduit (2026-08).
-    # ./headscale.nix # Headscale + deus nspawn — WIP, see plan (needs in-nspawn tailscale)
+    ./headscale.nix # Headscale + deus nspawn (self-contained tailscale inside)
     ./registry.nix # docker registry:2 on :5000
     ./zot.nix # zot OCI registry on :5001
     ../../system

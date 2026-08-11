@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>PayloadDisplayName</key>
+			<string>com.apple.MCX</string>
+			<key>PayloadEnabled</key>
+			<true/>
+			<key>PayloadIdentifier</key>
+			<string>io.matv.fleet.filevault-lock.com.apple.MCX.0</string>
+			<key>PayloadType</key>
+			<string>com.apple.MCX</string>
+			<key>PayloadUUID</key>
+			<string>D44CA44F-1DF2-8885-B048-C862612F3CED</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>dontAllowFDEEnable</key>
+			<true/>
+		</dict>
+	</array>
+	<key>PayloadDescription</key>
+	<string>Prevents FileVault from being (re-)enabled.</string>
+	<key>PayloadDisplayName</key>
+	<string>Malli — FileVault lock-off</string>
+	<key>PayloadIdentifier</key>
+	<string>io.matv.fleet.filevault-lock</string>
+	<key>PayloadOrganization</key>
+	<string>matv</string>
+	<key>PayloadRemovalDisallowed</key>
+	<false/>
+	<key>PayloadScope</key>
+	<string>System</string>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>2F3D247B-2CC3-E914-3E10-54E5131C8969</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+</dict>
+</plist>

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>PayloadDisplayName</key>
+			<string>com.apple.applicationaccess</string>
+			<key>PayloadEnabled</key>
+			<true/>
+			<key>PayloadIdentifier</key>
+			<string>io.matv.fleet.restrictions.com.apple.applicationaccess.0</string>
+			<key>PayloadType</key>
+			<string>com.apple.applicationaccess</string>
+			<key>PayloadUUID</key>
+			<string>750D462E-485B-3F84-1A01-D6B67A3796DB</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>allowAccountModification</key>
+			<false/>
+			<key>allowActivationLock</key>
+			<false/>
+			<key>allowCloudDocumentSync</key>
+			<false/>
+			<key>allowDiagnosticSubmission</key>
+			<false/>
+		</dict>
+	</array>
+	<key>PayloadDescription</key>
+	<string>Blocks Apple-ID sign-in, Activation Lock, and diagnostics.</string>
+	<key>PayloadDisplayName</key>
+	<string>Malli — restrictions (Apple ID / Activation Lock)</string>
+	<key>PayloadIdentifier</key>
+	<string>io.matv.fleet.restrictions</string>
+	<key>PayloadOrganization</key>
+	<string>matv</string>
+	<key>PayloadRemovalDisallowed</key>
+	<false/>
+	<key>PayloadScope</key>
+	<string>System</string>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>657BE7E2-D5FC-6575-09A7-FE16CFF8CF00</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+</dict>
+</plist>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>PayloadType</key><string>Configuration</string>
+  <key>PayloadVersion</key><integer>1</integer>
+  <key>PayloadIdentifier</key><string>io.matv.fleet.installer-trust</string>
+  <key>PayloadUUID</key><string>EEACDDFF-B92E-4A86-68AF-7E89F72CE85D</string>
+  <key>PayloadDisplayName</key><string>Malli — trust self-signed installer signer</string>
+  <key>PayloadDescription</key><string>Adds the Malli fleet self-signed installer certificate so MDM-delivered bootstrap pkgs validate.</string>
+  <key>PayloadOrganization</key><string>matv</string>
+  <key>PayloadScope</key><string>System</string>
+  <key>PayloadRemovalDisallowed</key><false/>
+  <key>PayloadContent</key>
+  <array>
+    <dict>
+      <key>PayloadType</key><string>com.apple.security.pkcs1</string>
+      <key>PayloadVersion</key><integer>1</integer>
+      <key>PayloadIdentifier</key><string>io.matv.fleet.installer-trust.cert</string>
+      <key>PayloadUUID</key><string>A9516714-DF54-FBB1-AA61-324BE09887EC</string>
+      <key>PayloadDisplayName</key><string>Malli Installer Signing Certificate</string>
+      <key>PayloadCertificateFileName</key><string>installer.cer</string>
+      <key>PayloadContent</key>
+      <data>
+MIIEETCCAvmgAwIBAgIBATANBgkqhkiG9w0BAQsFADCBozEaMBgGCgmSJomT8ixkAQEMCk1BTExJMDAwMDAxQzBBBgNVBAMMOkRldmVsb3BlciBJRCBJbnN0YWxsZXI6IE1hbGxpIEZsZWV0IEluc3RhbGxlciAoTUFMTEkwMDAwMCkxEzARBgNVBAsMCk1BTExJMDAwMDAxHjAcBgNVBAoMFU1hbGxpIEZsZWV0IEluc3RhbGxlcjELMAkGA1UEBhMCWFgwHhcNMjYwNzAxMTUzMDQwWhcNMzYwNjI4MTUzMDQwWjCBozEaMBgGCgmSJomT8ixkAQEMCk1BTExJMDAwMDAxQzBBBgNVBAMMOkRldmVsb3BlciBJRCBJbnN0YWxsZXI6IE1hbGxpIEZsZWV0IEluc3RhbGxlciAoTUFMTEkwMDAwMCkxEzARBgNVBAsMCk1BTExJMDAwMDAxHjAcBgNVBAoMFU1hbGxpIEZsZWV0IEluc3RhbGxlcjELMAkGA1UEBhMCWFgwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCpwl5zMDD2T/77w5nfWydpOMdAiD9JeuwP/B4FwM/T+lBRzEbdjUlcym+7tOpCt82zbkzmRVa9aKzvuVi1yUAW/qaPDLjyUX2LJuddz4xu3QDWeDQxVXR2QU5ZKN1tyu2v4dK4ejkpIiHlV/a8BpMwIS3vW10N61v+aKH97OoBxuI80C8dZKFbDKBWixwqTokzZqF+4WV/Fd/uiq6agi5tXr+Z28qvhzXU5mDDAt7TGpNx0mPZ735Snx/AMP0COSVLmyvKIi9eRd+CSHt2r+IoU/ts2xMuKXYVwqs9bm3CS1eSCASRe01lxuw9HWx0mMP3BJWoABRvOz34iFNpOugdAgMBAAGjTjBMMAwGA1UdEwEB/wQCMAAwFwYDVR0lAQH/BA0wCwYJKoZIhvdjZAQNMA4GA1UdDwEB/wQEAwIHgDATBgoqhkiG92NkBgEOAQH/BAIFADANBgkqhkiG9w0BAQsFAAOCAQEAki0QMCwYUzC7dkaFr+JbICJQnAXByoR+HSGnA+8Yl40iiRmB5/p39N7dCmZ7jbBGHzXi7LKLzXRPSS9ZOQVm7Gok7B150R331SBWLdw7sfiQLthw8xZM1chSH8jS2v8EDqeeinsMCwHWFU36hWShMBZNMSZ3LvzRdSEuEMY2rR6rLc+ziXZnWahsF3SO2j0D36oT4QJQmK0EJ7icnKBIDGRwm8ErVtKZ9L0ogV7Sd2Y1HX/fwRl2rE1lmPmWd5y1uScIZ59fuS4xgIQPHneSV4KsdLNg33TMUYrkH8lxkLS+PT+fnbKzu8bRVoynZa/XEU8tKR3lUDmQCsbmKWmvKg==
+      </data>
+    </dict>
+  </array>
+</dict>
+</plist>
