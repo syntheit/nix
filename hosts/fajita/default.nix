@@ -18,6 +18,7 @@
     ./theme.nix    # Marble GNOME Shell theme (accent + dark/light defined there)
     ./quick-settings.nix # declarative Android-style quick-settings layout/actions
     ./waydroid.nix # Waydroid on-demand app layer — see ~/fajita-notes/waydroid-apps.md
+    ./battery-logger.nix # always-on power sampler → /var/lib/battery-log
   ];
 
   # Four logical columns. The first two rows mirror Android's compact phone
@@ -242,6 +243,17 @@
   # basically always online via WiFi/LTE — be explicit that they're off so
   # they never wake the modem for a captive-portal check.
   networking.networkmanager.settings.connectivity.enabled = false;
+
+  # 802.11 power save (adopted 2026-08-11 without a dedicated A/B — research
+  # verdict: WCN3990 firmware supports PS, worst case is WiFi flakiness →
+  # revert this line. The always-on battery-logger will show the effect over
+  # normal use. Literature estimate: ~30-100 mA at idle-connected.
+  networking.networkmanager.wifi.powersave = true;
+
+  # networkd's wait-online has never had a configured networkd interface to
+  # wait for (NM owns wifi/modem; networkd exists for the USB gadget) — it
+  # times out on every boot and switch, making nixos-rebuild report failure.
+  systemd.network.wait-online.enable = false;
 
   # Networking — NetworkManager (iwd backend was getting confused; just use wpa_supplicant default)
   networking.networkmanager.enable = true;
