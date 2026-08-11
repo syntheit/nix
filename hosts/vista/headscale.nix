@@ -177,12 +177,10 @@ in
     hostAddress = "10.100.1.1";
     localAddress = "10.100.1.2";
     enableTun = true; # /dev/net/tun for the container's own tailscaled
-    forwardPorts = [
-      { protocol = "tcp"; hostPort = 8085; containerPort = 8085; } # headscale
-      { protocol = "tcp"; hostPort = 8086; containerPort = 8086; } # deus-server
-      { protocol = "tcp"; hostPort = 9418; containerPort = 9418; } # git:// mirror
-      { protocol = "tcp"; hostPort = 2222; containerPort = 2222; } # operator ssh
-    ];
+    # NB: nixos-container `forwardPorts` doesn't work here — like the veth, its
+    # DNAT rules never get installed on this NetworkManager host. Ports are
+    # exposed instead by the explicit DNAT in networking.firewall.extraCommands
+    # (host side) → the container at 10.100.1.2.
 
     # Bind-mount headscale state from the host so data persists
     # across container rebuilds and is easy to back up.
@@ -484,6 +482,13 @@ in
       # tailscale integrates with for split DNS (tail.matv.io → MagicDNS) once
       # the container's tailscaled joins.
       services.resolved.enable = true;
+
+      # Open the service ports in the CONTAINER's own firewall. On conduit the
+      # nspawn used host networking so the host firewall covered these; a
+      # private-net container has its own netns + firewall. (2222 is already
+      # opened by the sshd below.) Reached from the vista host / conduit via the
+      # DNAT rules on the host side.
+      networking.firewall.allowedTCPPorts = [ 8085 8086 9418 ];
 
       # ── Tailscale (INSIDE the nspawn — self-contained) ────
       # The container joins the malli tailnet as its OWN node ("deus-vista")
@@ -1048,13 +1053,21 @@ in
   # controlplane), and reaching conduit (10.100.0.1:9990 for ADE via wg0).
   # Interface-agnostic: forward the veth both ways and masquerade the container
   # subnet onto whatever egress path (uplink for internet, wg0 for conduit).
-  # Inbound service ports are handled by the container's forwardPorts (DNAT).
+  #
+  # Inbound service ports: nixos-container forwardPorts doesn't install its DNAT
+  # on this NM host, so do it explicitly — DNAT the service ports arriving at
+  # vista (from conduit over wg0, or the public :2222) to the container at
+  # 10.100.1.2. PREROUTING catches forwarded + redirected-local traffic.
   boot.kernel.sysctl."net.ipv4.ip_forward" = 1;
   networking.firewall.extraCommands = ''
     iptables -t nat -C POSTROUTING -s 10.100.1.0/24 ! -d 10.100.1.0/24 -j MASQUERADE 2>/dev/null \
       || iptables -t nat -A POSTROUTING -s 10.100.1.0/24 ! -d 10.100.1.0/24 -j MASQUERADE
     iptables -C FORWARD -i ve-headscale -j ACCEPT 2>/dev/null || iptables -A FORWARD -i ve-headscale -j ACCEPT
     iptables -C FORWARD -o ve-headscale -j ACCEPT 2>/dev/null || iptables -A FORWARD -o ve-headscale -j ACCEPT
+    for p in 8085 8086 9418 2222; do
+      iptables -t nat -C PREROUTING -p tcp --dport $p -j DNAT --to-destination 10.100.1.2:$p 2>/dev/null \
+        || iptables -t nat -A PREROUTING -p tcp --dport $p -j DNAT --to-destination 10.100.1.2:$p
+    done
   '';
 
   # ── Bring up + address the container veth ──────────────────
