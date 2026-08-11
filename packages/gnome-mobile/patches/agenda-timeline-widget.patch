@@ -1,0 +1,564 @@
+diff --git a/data/theme/gnome-shell-sass/widgets/_login-lock.scss b/data/theme/gnome-shell-sass/widgets/_login-lock.scss
+index a29aa8c..4b8dd74 100644
+--- a/data/theme/gnome-shell-sass/widgets/_login-lock.scss
++++ b/data/theme/gnome-shell-sass/widgets/_login-lock.scss
+@@ -316,40 +316,107 @@ $_gdm_dialog_width: 21em;
+   }
+ }
+ 
+-.shell-widget-calendar {
+-  spacing: 2px;
+-
+-  .shell-widget-calendar-title {
+-    @extend %heading;
+-    margin-bottom: 6px;
+-    font-weight: 700;
++.shell-widget-agenda {
++  .shell-widget-agenda-columns {
++    spacing: 12px;
+   }
+ 
+-  .shell-widget-calendar-weekdays,
+-  .shell-widget-calendar-week {
++  .shell-widget-agenda-day {
+     spacing: 2px;
+   }
+ 
+-  .shell-widget-calendar-weekday {
++  .shell-widget-agenda-day-title {
+     @extend %smaller;
+-    height: 18px;
+-    color: rgba(255, 255, 255, 0.65);
++    color: rgba(255, 255, 255, 0.58);
+     font-weight: 700;
+-    text-align: center;
++
++    &.today {
++      color: #ff453a;
++    }
+   }
+ 
+-  .shell-widget-calendar-day {
++  .shell-widget-agenda-day-number {
+     @extend %numeric;
++    @include fontsize(24pt);
++    margin-bottom: 2px;
++    font-weight: 500;
++  }
++
++  .shell-widget-agenda-all-day {
+     @extend %smaller;
+-    height: 24px;
+-    border-radius: 999px;
++    height: 20px;
++    padding: 2px 5px;
++    border-radius: 5px;
++    background-color: rgba(130, 210, 255, 0.22);
++    color: #a7e4ff;
+     font-weight: 600;
+-    text-align: center;
++  }
+ 
+-    &.today {
+-      background-color: -st-accent-color;
+-      color: -st-accent-fg-color;
+-    }
++  .shell-widget-agenda-timeline {
++    spacing: 4px;
++  }
++
++  .shell-widget-agenda-step {
++    height: 10px;
++  }
++
++  .shell-widget-agenda-hour {
++    @extend %numeric;
++    @extend %smaller;
++    width: 34px;
++    padding-right: 5px;
++    color: rgba(255, 255, 255, 0.48);
++  }
++
++  .shell-widget-agenda-hour-line {
++    height: 1px;
++    background-color: rgba(255, 255, 255, 0.13);
++  }
++
++  .shell-widget-agenda-now-line {
++    height: 2px;
++    border-radius: 999px;
++    background-color: #ff453a;
++  }
++
++  .shell-widget-agenda-event {
++    min-height: 20px;
++    padding: 2px 5px 2px 3px;
++    spacing: 4px;
++    border-radius: 5px;
++
++    &.color-0 { background-color: rgba(255, 69, 58, 0.34); }
++    &.color-1 { background-color: rgba(100, 210, 255, 0.30); }
++    &.color-2 { background-color: rgba(48, 209, 88, 0.28); }
++    &.color-3 { background-color: rgba(191, 90, 242, 0.30); }
++    &.color-4 { background-color: rgba(255, 159, 10, 0.30); }
++  }
++
++  .shell-widget-agenda-event-accent {
++    width: 3px;
++    border-radius: 999px;
++
++    &.color-0 { background-color: #ff453a; }
++    &.color-1 { background-color: #64d2ff; }
++    &.color-2 { background-color: #30d158; }
++    &.color-3 { background-color: #bf5af2; }
++    &.color-4 { background-color: #ff9f0a; }
++  }
++
++  .shell-widget-agenda-event-title {
++    @extend %smaller;
++    font-weight: 700;
++  }
++
++  .shell-widget-agenda-empty,
++  .shell-widget-agenda-overflow {
++    @extend %smaller;
++    color: rgba(255, 255, 255, 0.48);
++  }
++
++  .shell-widget-agenda-overflow {
++    height: 18px;
++    padding-left: 38px;
+   }
+ }
+ 
+diff --git a/js/ui/shellWidgets.js b/js/ui/shellWidgets.js
+index 2036920..398446d 100644
+--- a/js/ui/shellWidgets.js
++++ b/js/ui/shellWidgets.js
+@@ -2,13 +2,19 @@ import Clutter from 'gi://Clutter';
+ import GnomeDesktop from 'gi://GnomeDesktop';
+ import GLib from 'gi://GLib';
+ import GObject from 'gi://GObject';
++import Pango from 'gi://Pango';
+ import Shell from 'gi://Shell';
+ import St from 'gi://St';
+ 
+-import {formatDateWithCFormatString} from '../misc/dateUtils.js';
++import * as Calendar from './calendar.js';
++import {formatDateWithCFormatString, formatTime} from '../misc/dateUtils.js';
+ 
+ const LOCK_SCREEN_WIDGETS_KEY = 'lock-screen-widgets';
+ const TODAY_VIEW_WIDGETS_KEY = 'today-view-widgets';
++const AGENDA_HOURS = 5;
++const AGENDA_STEPS_PER_HOUR = 4;
++const AGENDA_STEP_MINUTES = 60 / AGENDA_STEPS_PER_HOUR;
++const AGENDA_TOTAL_STEPS = AGENDA_HOURS * AGENDA_STEPS_PER_HOUR;
+ 
+ const _widgetRegistry = new Map();
+ 
+@@ -208,105 +214,340 @@ registerWidget(ClockWidget.id, context => new ClockWidget(context), {
+     defaultRefreshInterval: ClockWidget.defaultRefreshInterval,
+ });
+ 
+-const CalendarWidget = GObject.registerClass(
+-class CalendarWidget extends ShellWidget {
++const AgendaWidget = GObject.registerClass(
++class AgendaWidget extends ShellWidget {
+     static get id() {
+         return 'calendar';
+     }
+ 
+     static get title() {
+-        return _('Calendar');
++        return _('Agenda');
+     }
+ 
+     static get preferredHeight() {
+-        return 244;
++        return 316;
+     }
+ 
+     static get defaultRefreshInterval() {
+-        return 60 * 60;
++        return 60;
+     }
+ 
+     constructor(context) {
+         super(context);
+ 
+-        this.add_style_class_name('shell-widget-calendar');
+-        this._weekStart = Shell.util_get_week_start();
+-        this._dateKey = '';
++        this.add_style_class_name('shell-widget-agenda');
++        this._requestedDateKey = '';
++        this._updating = false;
+ 
+-        this._monthLabel = new St.Label({
+-            style_class: 'shell-widget-calendar-title',
+-            x_align: Clutter.ActorAlign.CENTER,
++        const columns = new St.BoxLayout({
++            style_class: 'shell-widget-agenda-columns',
++            x_expand: true,
+         });
+-        this.add_child(this._monthLabel);
++        this.add_child(columns);
++
++        this._todayColumn = this._createDayColumn(_('Today'), true);
++        this._tomorrowColumn = this._createDayColumn(_('Tomorrow'), false);
++        columns.add_child(this._todayColumn.actor);
++        columns.add_child(this._tomorrowColumn.actor);
++
++        this._eventSource = new Calendar.DBusEventSource();
++        this._eventChangedId = this._eventSource.connect('changed',
++            () => this.update());
++        this._calendarChangedId = this._eventSource.connect(
++            'notify::has-calendars', () => this.update());
++
++        this.connect('destroy', () => {
++            const eventSource = this._eventSource;
++            this._eventSource = null;
++            if (!eventSource)
++                return;
++
++            eventSource.disconnect(this._eventChangedId);
++            eventSource.disconnect(this._calendarChangedId);
++            eventSource.destroy();
++        });
++    }
+ 
+-        const weekdayRow = new St.BoxLayout({
+-            style_class: 'shell-widget-calendar-weekdays',
++    _createDayColumn(title, isToday) {
++        const actor = new St.BoxLayout({
++            style_class: 'shell-widget-agenda-day',
++            orientation: Clutter.Orientation.VERTICAL,
+             x_expand: true,
+         });
+-        for (let column = 0; column < 7; column++) {
+-            const weekday = (this._weekStart + column) % 7;
+-            const referenceDate = new Date(2023, 0, 1 + weekday);
+-            const weekdayName = formatDateWithCFormatString(referenceDate, '%a');
+-            weekdayRow.add_child(new St.Label({
+-                style_class: 'shell-widget-calendar-weekday',
+-                text: Array.from(weekdayName).slice(0, 2).join(''),
+-                x_align: Clutter.ActorAlign.CENTER,
++
++        const titleLabel = new St.Label({
++            style_class: `shell-widget-agenda-day-title${isToday ? ' today' : ''}`,
++            text: title,
++            x_align: Clutter.ActorAlign.START,
++        });
++        const dateLabel = new St.Label({
++            style_class: 'shell-widget-agenda-day-number',
++            x_align: Clutter.ActorAlign.START,
++        });
++        actor.add_child(titleLabel);
++        actor.add_child(dateLabel);
++
++        const allDayLabel = new St.Label({
++            style_class: 'shell-widget-agenda-all-day',
++            height: 20,
++            x_expand: true,
++        });
++        allDayLabel.clutter_text.ellipsize = Pango.EllipsizeMode.END;
++        allDayLabel.clutter_text.single_line_mode = true;
++        actor.add_child(allDayLabel);
++
++        const layout = new Clutter.GridLayout({
++            orientation: Clutter.Orientation.VERTICAL,
++        });
++        const timeline = new St.Widget({
++            style_class: 'shell-widget-agenda-timeline',
++            layout_manager: layout,
++            x_expand: true,
++        });
++        layout.hookup_style(timeline);
++        actor.add_child(timeline);
++
++        const overflowLabel = new St.Label({
++            style_class: 'shell-widget-agenda-overflow',
++            height: 18,
++            x_align: Clutter.ActorAlign.START,
++        });
++        actor.add_child(overflowLabel);
++
++        return {
++            actor,
++            dateLabel,
++            allDayLabel,
++            timeline,
++            layout,
++            overflowLabel,
++        };
++    }
++
++    _isAllDay(event) {
++        const startsAtMidnight = event.date.getHours() === 0 &&
++            event.date.getMinutes() === 0 && event.date.getSeconds() === 0;
++        const endsAtMidnight = event.end.getHours() === 0 &&
++            event.end.getMinutes() === 0 && event.end.getSeconds() === 0;
++        return startsAtMidnight && endsAtMidnight &&
++            event.end.getTime() - event.date.getTime() >= 24 * 60 * 60 * 1000;
++    }
++
++    _eventColor(event) {
++        const sourceId = `${event.id ?? ''}`.split('\n', 1)[0];
++        let hash = 5381;
++        for (const character of sourceId)
++            hash = ((hash << 5) + hash + character.codePointAt(0)) >>> 0;
++        return hash % 5;
++    }
++
++    _groupOverlappingEvents(events) {
++        const groups = [];
++        const sortedEvents = [...events].sort((a, b) => a.date - b.date);
++        for (const event of sortedEvents) {
++            const last = groups.at(-1);
++            if (!last || event.date >= last.end) {
++                groups.push({
++                    start: event.date,
++                    end: event.end,
++                    events: [event],
++                });
++                continue;
++            }
++
++            last.events.push(event);
++            if (event.end > last.end)
++                last.end = event.end;
++        }
++        return groups;
++    }
++
++    _addHourGrid(column, windowStart) {
++        for (let step = 0; step < AGENDA_TOTAL_STEPS; step++) {
++            column.layout.attach(new St.Widget({
++                style_class: 'shell-widget-agenda-step',
++                height: 10,
++                x_expand: true,
++            }), 1, step, 1, 1);
++
++            if (step % AGENDA_STEPS_PER_HOUR !== 0)
++                continue;
++
++            const time = new Date(windowStart.getTime() +
++                step * AGENDA_STEP_MINUTES * 60 * 1000);
++            const label = new St.Label({
++                style_class: 'shell-widget-agenda-hour',
++                text: formatTime(time, {timeOnly: true, ampm: false}),
++                x_align: Clutter.ActorAlign.END,
++            });
++            const line = new St.Widget({
++                style_class: 'shell-widget-agenda-hour-line',
++                height: 1,
+                 x_expand: true,
+-            }));
++            });
++            column.layout.attach(label, 0, step, 1, 1);
++            column.layout.attach(line, 1, step, 1, 1);
+         }
+-        this.add_child(weekdayRow);
++    }
++
++    _addEventBlock(column, group, windowStart, windowEnd) {
++        const stepDuration = AGENDA_STEP_MINUTES * 60 * 1000;
++        const clippedStart = Math.max(group.start.getTime(), windowStart.getTime());
++        const clippedEnd = Math.min(group.end.getTime(), windowEnd.getTime());
++        const startStep = Math.max(0, Math.min(AGENDA_TOTAL_STEPS - 1,
++            Math.floor((clippedStart - windowStart.getTime()) / stepDuration)));
++        const endStep = Math.max(startStep + 1, Math.min(AGENDA_TOTAL_STEPS,
++            Math.ceil((clippedEnd - windowStart.getTime()) / stepDuration)));
++        const span = Math.max(2, endStep - startStep);
++
++        const firstEvent = group.events[0];
++        const color = this._eventColor(firstEvent);
++        const block = new St.BoxLayout({
++            style_class: `shell-widget-agenda-event color-${color}`,
++            x_expand: true,
++        });
++        block.add_child(new St.Widget({
++            style_class: `shell-widget-agenda-event-accent color-${color}`,
++            width: 3,
++            y_expand: true,
++        }));
++
++        const suffix = group.events.length > 1
++            ? `  +${group.events.length - 1}`
++            : '';
++        const summary = firstEvent.summary || _('Untitled Event');
++        const label = new St.Label({
++            style_class: 'shell-widget-agenda-event-title',
++            text: `${summary}${suffix}`,
++            y_align: Clutter.ActorAlign.CENTER,
++            x_expand: true,
++        });
++        label.clutter_text.ellipsize = Pango.EllipsizeMode.END;
++        label.clutter_text.single_line_mode = true;
++        block.add_child(label);
+ 
+-        this._dayLabels = [];
+-        for (let row = 0; row < 6; row++) {
+-            const weekRow = new St.BoxLayout({
+-                style_class: 'shell-widget-calendar-week',
++        column.layout.attach(block, 1, startStep, 1,
++            Math.min(span, AGENDA_TOTAL_STEPS - startStep));
++    }
++
++    _renderDay(column, date, windowStart, events, now, showNow) {
++        column.timeline.destroy_all_children();
++        column.dateLabel.text = `${date.getDate()}`;
++
++        const dayEnd = new Date(date.getFullYear(), date.getMonth(),
++            date.getDate() + 1);
++        const windowEnd = new Date(windowStart.getTime() +
++            AGENDA_HOURS * 60 * 60 * 1000);
++        const validEvents = events.filter(event =>
++            event.date instanceof Date && event.end instanceof Date &&
++            Number.isFinite(event.date.getTime()) &&
++            Number.isFinite(event.end.getTime()));
++        const allDayEvents = validEvents.filter(event => this._isAllDay(event));
++        const timedEvents = validEvents.filter(event => !this._isAllDay(event));
++        const visibleEvents = timedEvents.filter(event =>
++            event.end > windowStart && event.date < windowEnd);
++
++        if (allDayEvents.length > 0) {
++            const suffix = allDayEvents.length > 1
++                ? `  +${allDayEvents.length - 1}`
++                : '';
++            const summary = allDayEvents[0].summary || _('Untitled Event');
++            column.allDayLabel.text = `${summary}${suffix}`;
++            column.allDayLabel.opacity = 255;
++        } else {
++            column.allDayLabel.text = '';
++            column.allDayLabel.opacity = 0;
++        }
++
++        this._addHourGrid(column, windowStart);
++
++        if (showNow && now >= windowStart && now < windowEnd) {
++            const nowStep = Math.max(0, Math.min(AGENDA_TOTAL_STEPS - 1,
++                Math.floor((now.getTime() - windowStart.getTime()) /
++                    (AGENDA_STEP_MINUTES * 60 * 1000))));
++            column.layout.attach(new St.Widget({
++                style_class: 'shell-widget-agenda-now-line',
++                height: 2,
+                 x_expand: true,
++            }), 1, nowStep, 1, 1);
++        }
++
++        const groups = this._groupOverlappingEvents(visibleEvents);
++        for (const group of groups)
++            this._addEventBlock(column, group, windowStart, windowEnd);
++
++        if (visibleEvents.length === 0) {
++            const emptyLabel = new St.Label({
++                style_class: 'shell-widget-agenda-empty',
++                text: _('No events'),
++                x_align: Clutter.ActorAlign.CENTER,
+             });
+-            for (let column = 0; column < 7; column++) {
+-                const label = new St.Label({
+-                    style_class: 'shell-widget-calendar-day',
+-                    x_align: Clutter.ActorAlign.CENTER,
+-                    x_expand: true,
+-                });
+-                this._dayLabels.push(label);
+-                weekRow.add_child(label);
+-            }
+-            this.add_child(weekRow);
++            column.layout.attach(emptyLabel, 1,
++                Math.floor(AGENDA_TOTAL_STEPS / 2) - 1, 1, 2);
+         }
++
++        const laterCount = timedEvents.filter(event =>
++            event.date >= windowEnd && event.date < dayEnd).length;
++        column.overflowLabel.text = laterCount > 0
++            ? ngettext('+%d later event', '+%d later events', laterCount)
++                .format(laterCount)
++            : '';
++        column.overflowLabel.opacity = laterCount > 0 ? 255 : 0;
+     }
+ 
+     update() {
+-        const now = new Date();
+-        const dateKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+-        if (dateKey === this._dateKey)
++        if (!this._eventSource || this._updating)
+             return;
+ 
+-        this._dateKey = dateKey;
+-        const monthFormat = Shell.util_translate_time_string(N_('%B %Y'));
+-        this._monthLabel.text =
+-            formatDateWithCFormatString(now, monthFormat);
+-
+-        const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+-        const firstColumn =
+-            (7 + firstOfMonth.getDay() - this._weekStart) % 7;
+-        const daysInMonth =
+-            new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+-
+-        for (let index = 0; index < this._dayLabels.length; index++) {
+-            const label = this._dayLabels[index];
+-            const day = index - firstColumn + 1;
+-            const inMonth = day >= 1 && day <= daysInMonth;
+-
+-            label.text = inMonth ? `${day}` : '';
+-            label.remove_style_class_name('today');
+-            if (inMonth && day === now.getDate())
+-                label.add_style_class_name('today');
++        this._updating = true;
++        try {
++            const now = new Date();
++            const todayStart = new Date(now.getFullYear(), now.getMonth(),
++                now.getDate());
++            const tomorrowStart = new Date(now.getFullYear(), now.getMonth(),
++                now.getDate() + 1);
++            const rangeEnd = new Date(now.getFullYear(), now.getMonth(),
++                now.getDate() + 2);
++            const dateKey = [
++                todayStart.getFullYear(),
++                todayStart.getMonth(),
++                todayStart.getDate(),
++            ].join('-');
++
++            if (dateKey !== this._requestedDateKey) {
++                this._requestedDateKey = dateKey;
++                this._eventSource.requestRange(todayStart, rangeEnd);
++            }
++
++            const todayEvents = this._eventSource.getEvents(
++                todayStart, tomorrowStart);
++            const tomorrowEvents = this._eventSource.getEvents(
++                tomorrowStart, rangeEnd);
++
++            const todayWindowStart = new Date(now);
++            todayWindowStart.setMinutes(0, 0, 0);
++
++            const firstTomorrowEvent = tomorrowEvents.find(event =>
++                !this._isAllDay(event));
++            const tomorrowWindowStart = firstTomorrowEvent
++                ? new Date(Math.max(firstTomorrowEvent.date.getTime(),
++                    tomorrowStart.getTime()))
++                : new Date(tomorrowStart.getFullYear(),
++                    tomorrowStart.getMonth(), tomorrowStart.getDate(), 9);
++            tomorrowWindowStart.setMinutes(0, 0, 0);
++
++            this._renderDay(this._todayColumn, todayStart,
++                todayWindowStart, todayEvents, now, true);
++            this._renderDay(this._tomorrowColumn, tomorrowStart,
++                tomorrowWindowStart, tomorrowEvents, now, false);
++        } finally {
++            this._updating = false;
+         }
+     }
+ });
+ 
+-registerWidget(CalendarWidget.id, context => new CalendarWidget(context), {
+-    title: CalendarWidget.title,
+-    preferredHeight: CalendarWidget.preferredHeight,
+-    defaultRefreshInterval: CalendarWidget.defaultRefreshInterval,
++registerWidget(AgendaWidget.id, context => new AgendaWidget(context), {
++    title: AgendaWidget.title,
++    preferredHeight: AgendaWidget.preferredHeight,
++    defaultRefreshInterval: AgendaWidget.defaultRefreshInterval,
+ });

@@ -70,6 +70,13 @@
     format = "binary";
     mode = "0400";
   };
+  # malli-nix READ deploy key for the git mirror (github.com). On conduit this
+  # was placed by hand and never managed; formalized here as a sops secret.
+  sops.secrets.malli_nix_deploy_key = {
+    sopsFile = ../../secrets/vista/malli_nix_deploy_key;
+    format = "binary";
+    mode = "0400";
+  };
   sops.secrets.deus_malli_nix_write_key = {
     sopsFile = ../../secrets/vista/deus_malli_nix_write_key;
     format = "binary";
