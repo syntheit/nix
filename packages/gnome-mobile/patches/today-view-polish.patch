@@ -1,0 +1,135 @@
+--- a/js/ui/appDisplay.js
++++ b/js/ui/appDisplay.js
+@@ -507,5 +507,7 @@
+         this._adjustment = this._scrollView.hadjustment;
+         this._adjustment.connect('notify::value', adj => {
+-            const value = adj.value / adj.page_size;
++            const value = adj.page_size > 0
++                ? adj.value / adj.page_size
++                : 0;
+             this._pageIndicators.setCurrentPosition(value);
+         });
+@@ -730,3 +732,7 @@
+         const leadingAdjustment = this._leadingPageAdjustment;
++        const pageSize = Number.isFinite(adjustment.page_size) &&
++            adjustment.page_size > 0
++            ? adjustment.page_size
++            : 1;
+         let wasEasingTo = null;
+-        let progress = adjustment.value / adjustment.page_size;
++        let progress = adjustment.value / pageSize;
+@@ -751,13 +757,14 @@
+             if (transition) {
+                 wasEasingTo = cancelProgress =
+                     transition.get_interval().peek_final_value() /
+-                    adjustment.page_size;
++                    pageSize;
+                 adjustment.remove_transition('value');
+             }
+         }
+ 
+-        const size = tracker.orientation === Clutter.Orientation.VERTICAL
++        const rawSize = tracker.orientation === Clutter.Orientation.VERTICAL
+             ? this._grid.allocation.get_height() : this._grid.allocation.get_width();
++        const size = Number.isFinite(rawSize) ? Math.max(rawSize, 1) : 1;
+ 
+         tracker.confirmSwipe(size, points, progress, cancelProgress, wasEasingTo);
+     }
+@@ -765,4 +772,7 @@
+     _swipeUpdate(tracker, progress) {
++        if (!Number.isFinite(progress))
++            return;
++
+         const adjustment = this._adjustment;
+         const leadingAdjustment = this._leadingPageAdjustment;
+         if (leadingAdjustment && progress < 0) {
+@@ -779,4 +789,9 @@
+     _swipeEnd(tracker, duration, endProgress, endCb) {
++        if (!Number.isFinite(endProgress)) {
++            endCb();
++            return;
++        }
++
+         const adjustment = this._adjustment;
+         const leadingAdjustment = this._leadingPageAdjustment;
+ 
+--- a/js/ui/overviewControls.js
++++ b/js/ui/overviewControls.js
+@@ -478,11 +478,13 @@
+         this._todayAdjustment = new St.Adjustment({
+             value: 0,
+             lower: 0,
+             upper: 1,
+         });
+-        this._todayAdjustment.connectObject('notify::value',
+-            () => this.queue_relayout(), this);
++        this._todayAdjustment.connectObject('notify::value', () => {
++            this._syncTodayViewChrome();
++            this.queue_relayout();
++        }, this);
+ 
+         this._searchController = new SearchController.SearchController(
+             this._searchEntry,
+             this.dash.showAppsButton);
+@@ -531,6 +533,11 @@
+         this._todaySwipeTracker.connect(
+             'end', this._todaySwipeEnd.bind(this));
+ 
++        Main.sessionMode.connectObject('updated', () => {
++            if (Main.sessionMode.isLocked)
++                this._resetTodayView();
++        }, this);
++
+         const wallpaper = new Clutter.Actor();
+         wallpaper.add_constraint(new Layout.MonitorConstraint({primary: true}));
+         Main.wm.workspaceTracker.bind_property('single-window-workspaces',
+@@ -903,6 +910,18 @@
+         this._workspacesDisplay?.hide();
+     }
+ 
++    _syncTodayViewChrome() {
++        const value = this._todayAdjustment.value;
++        const progress = Number.isFinite(value) ? Math.clamp(value, 0, 1) : 0;
++        this._searchEntryBin.opacity = Math.round(255 * (1 - progress));
++        this._searchEntryBin.visible = progress < 0.999;
++    }
++
++    _resetTodayView() {
++        this._todayAdjustment.remove_transition('value');
++        this._todayAdjustment.value = 0;
++    }
++
+     _todaySwipeBegin(tracker, monitor) {
+         if (monitor !== Main.layoutManager.primaryIndex)
+             return;
+@@ -923,8 +941,9 @@
+             adjustment.remove_transition('value');
+         }
+ 
++        const rawWidth = this._todayView.width;
+         tracker.confirmSwipe(
+-            Math.max(this._todayView.width, 1),
++            Number.isFinite(rawWidth) ? Math.max(rawWidth, 1) : 1,
+             [-1, 0],
+             progress,
+             cancelProgress,
+@@ -933,10 +952,19 @@
+     }
+ 
+     _todaySwipeUpdate(_tracker, progress) {
++        if (!Number.isFinite(progress))
++            return;
++
+         this._todayAdjustment.value = -progress;
+     }
+ 
+     _todaySwipeEnd(_tracker, duration, endProgress, endCb) {
++        if (!Number.isFinite(endProgress)) {
++            this._resetTodayView();
++            endCb();
++            return;
++        }
++
+         this._todayAdjustment.ease(-endProgress, {
+             mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
+             duration,

@@ -1,0 +1,51 @@
+diff --git a/js/ui/appDisplay.js b/js/ui/appDisplay.js
+--- a/js/ui/appDisplay.js
++++ b/js/ui/appDisplay.js
+@@ -1287,10 +1287,14 @@
+ 
+     _removeItem(item) {
+         const iconIndex = this._orderedItems.indexOf(item);
++        if (iconIndex !== -1)
++            this._orderedItems.splice(iconIndex, 1);
+ 
+-        this._orderedItems.splice(iconIndex, 1);
+         this._items.delete(item.id);
+-        this._grid.removeItem(item);
++
++        const [gridPage] = this._grid.getItemPosition(item);
++        if (gridPage !== -1)
++            this._grid.removeItem(item);
+     }
+ 
+     _getItemPosition(item) {
+@@ -2643,10 +2647,28 @@
+     }
+ 
+     acceptDrop(source) {
+-        if (!super.acceptDrop(source))
++        if (!this._canAccept(source))
+             return false;
+ 
+-        return this.view.acceptDrop(source);
++        this._setHoveringByDnd(false);
++
++        // Add the dropped app to this folder. verdre's FolderView inherits the
++        // grid-reorder acceptDrop, which has no placeholder for a foreign drag
++        // source and throws; persist to the folder's app list directly instead.
++        const appId = source.app?.get_id?.() ?? source.id;
++        if (!appId)
++            return false;
++
++        const apps = this._folder.get_strv('apps');
++        if (!apps.includes(appId)) {
++            apps.push(appId);
++            this._folder.set_strv('apps', apps);
++            // Refresh now: the settings 'changed' signal fires async and lags a
++            // drop behind, so force the folder view to pick up the new app.
++            this.view._redisplay();
++        }
++
++        return true;
+     }
+ 
+     _updateName() {
