@@ -38,11 +38,14 @@ Mechanism -- three compounding sweep defects:
 Fix:
 
  - Per-position settling: after every lens move, discard kSettleFrames
-   (2) frames and score the next one, so each sample was exposed
-   entirely at its recorded position (kBigMoveSettleFrames = 4 for the
-   large pass-start/lock jumps). This removes the systematic bias at
-   its source rather than guessing an exact lag to re-pair samples
-   with earlier commands (queue depth varies with load and fps).
+   (3: 2-frame command-to-exposure pipeline depth + 1 frame budgeted
+   for the per-step VCM settle) frames and score the next one, so each
+   sample was exposed entirely at its recorded position
+   (kBigMoveSettleFrames = 5 for the large pass-start/lock jumps,
+   whose ~80 ms-or-worse settle gets 3 budgeted frames). This removes
+   the systematic bias at its source rather than guessing an exact lag
+   to re-pair samples with earlier commands (queue depth varies with
+   load and fps).
  - Real two-pass sweep: coarse 0..100 step 5 (21 samples, macro end
    included), then a fine pass over the coarse peak +-5 at step 1.
  - Parabolic interpolation over the fine maximum and its two settled
@@ -56,22 +59,23 @@ Fix:
    on fajita where focus_min = 0, correct where it isn't).
 
 Frame budget at the soft ISP's 10-20 fps:
-  coarse: 4 settle + 21 scored + 20x2 settle = 65 frames
-  fine:   4 settle + 11 scored + 10x2 settle = 35 frames
-  lock:   4 settle + 1 baseline seed         =  5 frames
-  total ~105 frames = 5.3 s @ 20 fps, 10.5 s @ 10 fps
+  coarse: 5 settle + 21 scored + 20x3 settle = 86 frames
+  fine:   5 settle + 11 scored + 10x3 settle = 46 frames
+  lock:   5 settle + 1 baseline seed         =  6 frames
+  total ~138 frames = 6.9 s @ 20 fps, 13.8 s @ 10 fps
   (before: ~70 frames = 3.5-7 s, but ~50 of those scored samples were
-  attributed to the wrong lens position; the extra ~2-3 s buys a lock
+  attributed to the wrong lens position; the extra seconds buy a lock
   that is correct for the thin near-field depth of field. If sweep
-  time ever matters more, kSettleFrames = 1 brings the total back to
-  ~75 frames at the cost of tolerating 1 step of residual lag.)
+  time ever matters more, kSettleFrames = 2 brings the total back to
+  ~108 frames = 5.4-10.8 s at the cost of scoring the per-step frame
+  right at the settle deadline -- see the derivation at the constant.)
 ---
 
 diff --git a/src/ipa/simple/algorithms/af.cpp b/src/ipa/simple/algorithms/af.cpp
-index 3db6dcb..736aa92 100644
+index 3db6dcb..7f81af5 100644
 --- a/src/ipa/simple/algorithms/af.cpp
 +++ b/src/ipa/simple/algorithms/af.cpp
-@@ -63,6 +63,67 @@ static constexpr uint64_t kFocusLostDen = 100;
+@@ -63,6 +63,78 @@ static constexpr uint64_t kFocusLostDen = 100;
  static constexpr unsigned int kBaselineRiseShift = 3;
  static constexpr unsigned int kBaselineDecayShift = 6;
  
@@ -99,19 +103,30 @@ index 3db6dcb..736aa92 100644
 +
 +/*
 + * Frames discarded after every per-step lens move before one frame is
-+ * scored: covers the 1-2 frame command-to-exposure pipeline depth plus
-+ * the VCM settle (~80 ms, under 2 frame times at 10-20 fps). This
-+ * guarantees the scored frame was exposed entirely at the commanded
-+ * position, which is what makes the recorded peak trustworthy.
++ * scored, so the scored frame was exposed entirely at the commanded
++ * position. Derivation: command-to-exposure pipeline depth (2 frames,
++ * libcamera's default sensor exposureDelay) + ceil(settle / frame
++ * time). The ~80 ms settle was measured for LARGE jumps; per-step
++ * moves (1-5 knob units, ~20-102 DAC counts) settle faster but are
++ * unmeasured, so budget 1 frame at the soft ISP's 10-20 fps
++ * (50-100 ms frames): 2 + 1 = 3. With only 2 discarded frames the
++ * scored frame at 20 fps can be exposed ~50 ms after the move, while
++ * the lens may still be settling -- exactly the misattribution this
++ * patch removes. If small-step settle is ever measured under one
++ * frame time, kSettleFrames = 2 is the faster knob (~30 fewer frames
++ * per sweep).
 + */
-+static constexpr uint32_t kSettleFrames = 2;
++static constexpr uint32_t kSettleFrames = 3;
 +
 +/*
 + * Settle for large jumps (sweep start, pass transition, final move to
-+ * the lock position): these can cross a large part of the mechanical
-+ * range, so give the VCM two extra frames of margin.
++ * the lock position): these can cross the whole 0..2047 DAC range.
++ * Same derivation: 2 pipeline frames + ceil(settle / frame time). The
++ * ~80 ms measurement is already 2 frames at 20 fps with zero margin,
++ * and a full-range jump can settle slower than what was measured, so
++ * budget 3 frames: 2 + 3 = 5.
 + */
-+static constexpr uint32_t kBigMoveSettleFrames = 4;
++static constexpr uint32_t kBigMoveSettleFrames = 5;
 +
 +/*
 + * Coarse pass step in knob units (~102 DAC counts): positions
@@ -139,7 +154,7 @@ index 3db6dcb..736aa92 100644
  namespace ipa::soft::algorithms {
  
  Af::Af()
-@@ -119,7 +180,12 @@ void Af::queueRequest([[maybe_unused]] typename Module::Context &context,
+@@ -119,7 +191,12 @@ void Af::queueRequest([[maybe_unused]] typename Module::Context &context,
  
  void Af::updateFocus([[maybe_unused]] IPAContext &context, [[maybe_unused]] IPAFrameContext &frameContext, [[maybe_unused]] double exposureMSV)
  {
@@ -153,7 +168,7 @@ index 3db6dcb..736aa92 100644
  }
  
  static int steps;
-@@ -130,8 +196,20 @@ void Af::restart(IPAContext &context) {
+@@ -130,8 +207,20 @@ void Af::restart(IPAContext &context) {
  	context.configuration.focus.sharpness_max = 0;
  	context.configuration.focus.start = 0;
  	context.configuration.focus.stop = 100;
@@ -176,7 +191,7 @@ index 3db6dcb..736aa92 100644
  	context.activeState.knobs.focus_pos = 0;
  	context.configuration.focus.lost_frames = 0;
  	context.activeState.knobs.focus_sweep = true;
-@@ -139,13 +217,27 @@ void Af::restart(IPAContext &context) {
+@@ -139,13 +228,27 @@ void Af::restart(IPAContext &context) {
  }
  
  void Af::step(IPAContext &context, double& focus_pos, uint64_t sharp, bool& sweep){
@@ -207,7 +222,7 @@ index 3db6dcb..736aa92 100644
  		/*
  		 * Locked. Steady-state sharpness is noisy (AGC breathing,
  		 * hand shake), so nothing short of a deep, sustained drop
-@@ -155,10 +247,10 @@ void Af::step(IPAContext &context, double& focus_pos, uint64_t sharp, bool& swee
+@@ -155,10 +258,10 @@ void Af::step(IPAContext &context, double& focus_pos, uint64_t sharp, bool& swee
  		 * noise/AGC spike made the locked position look permanently
  		 * "lost" and re-triggered full sweeps back to back.
  		 */
@@ -220,7 +235,7 @@ index 3db6dcb..736aa92 100644
  				LOG(IPASoftAutoFocus, Info)
  					<< "Focus lost -- " << sharp << " vs "
  					<< baseline;
-@@ -166,39 +258,94 @@ void Af::step(IPAContext &context, double& focus_pos, uint64_t sharp, bool& swee
+@@ -166,39 +269,94 @@ void Af::step(IPAContext &context, double& focus_pos, uint64_t sharp, bool& swee
  			}
  			return;
  		}
