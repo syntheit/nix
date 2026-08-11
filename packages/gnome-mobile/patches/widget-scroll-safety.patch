@@ -1,0 +1,93 @@
+--- a/js/ui/shellWidgets.js
++++ b/js/ui/shellWidgets.js
+@@ -47,7 +47,8 @@
+     }
+ 
+     get preferredHeight() {
+-        return this.constructor.preferredHeight;
++        const h = this.constructor.preferredHeight;
++        return Number.isFinite(h) ? h : -1;
+     }
+ 
+     update() {
+@@ -109,17 +110,14 @@
+ }
+ 
+ export const WidgetHost = GObject.registerClass(
+-class WidgetHost extends St.Widget {
++class WidgetHost extends St.BoxLayout {
+     constructor(context = {}) {
+         const isOnLockscreen = Boolean(context.isOnLockscreen);
+         super({
+             style_class: isOnLockscreen
+                 ? 'widget-host lock-screen-widget-host'
+                 : 'widget-host today-view-widget-host',
+-            layout_manager: new Clutter.BoxLayout({
+-                orientation: Clutter.Orientation.VERTICAL,
+-                spacing: 12,
+-            }),
++            orientation: Clutter.Orientation.VERTICAL,
+             x_expand: true,
+             y_expand: false,
+         });
+@@ -137,7 +136,8 @@
+     _syncWidgets() {
+         this.destroy_all_children();
+ 
+-        for (const id of global.settings.get_strv(this._settingsKey)) {
++        const ids = global.settings.get_strv(this._settingsKey) ?? [];
++        for (const id of ids) {
+             const definition = _widgetRegistry.get(id);
+             if (!definition) {
+                 console.warn(`Ignoring unknown shell widget “${id}”`);
+--- a/js/ui/overviewControls.js
++++ b/js/ui/overviewControls.js
+@@ -153,20 +153,13 @@
+         const {y1: startY} = this._workAreaBox;
+ 
+         const appDisplayBox = new Clutter.ActorBox();
+-
+-if (this.empty) {
+-        appDisplayBox.set_size(width,
+-            height -
+-            searchHeight - spacing-
+-            workspacesBox.get_height() * 0.8 -
+-            (dashHeight > 0 ? dashHeight + spacing : 0));
+-} else {
+-        appDisplayBox.set_size(width,
+-            height -
+-            searchHeight - spacing -
+-            workspacesBox.get_height() - spacing -
+-            (dashHeight > 0 ? dashHeight + spacing : 0));
+-}
++        const workspaceHeight = this.empty
++            ? workspacesBox.get_height() * 0.8
++            : workspacesBox.get_height() + spacing;
++        const appDisplayHeight = height - searchHeight - spacing -
++            workspaceHeight - (dashHeight > 0 ? dashHeight + spacing : 0);
++        appDisplayBox.set_size(
++            Math.max(width, 0), Math.max(appDisplayHeight, 0));
+ 
+         if (Main.layoutManager.is_phone) {
+             const hiddenStateBox = appDisplayBox.copy();
+@@ -518,17 +511,15 @@
+         // The same registry-backed host used by the lock screen, with an
+         // unlocked context so future widgets may expose richer content.
+         this._todayWidgetHost = new WidgetHost({isOnLockscreen: false});
+-        this._todayView = new St.ScrollView({
++        this._todayView = new St.BoxLayout({
+             style_class: 'today-view',
++            orientation: Clutter.Orientation.VERTICAL,
+             x_expand: true,
+             y_expand: true,
+             reactive: true,
+-            overlay_scrollbars: true,
+-            hscrollbar_policy: St.PolicyType.NEVER,
+-            vscrollbar_policy: St.PolicyType.EXTERNAL,
+             visible: false,
+-            child: this._todayWidgetHost,
+         });
++        this._todayView.add_child(this._todayWidgetHost);
+         this._todaySwipeTracker = new SwipeTracker.SwipeTracker(
+             this._todayView,
+             Clutter.Orientation.HORIZONTAL,
