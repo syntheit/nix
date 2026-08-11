@@ -1,4 +1,4 @@
-{ config, ... }:
+{ config, lib, ... }:
 
 {
   # sops-nix — secrets decrypted at activation time to /run/secrets/.
@@ -53,4 +53,34 @@
     owner = "daniel";
     mode = "0400";
   };
+
+  # ── Deus / Headscale nspawn (migrated from conduit) ──────────────────────
+  # Re-keyed from conduit into secrets/vista-deus.yaml + secrets/vista/*.
+  # sops renders to /run/secrets/; the deus-stage activation script in
+  # headscale.nix copies the contents into the nspawn's bind-mounted paths.
+  sops.secrets.deus_operator_token = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0444"; };
+  sops.secrets.deus_agent_token = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0444"; };
+  sops.secrets.deus_service_token = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0444"; };
+  sops.secrets.cloudflare_api_token = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0444"; };
+  sops.secrets.cloudflare_account_id = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0444"; };
+  sops.secrets.cloudflare_zone_id = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0444"; };
+  sops.secrets.nanomdm_api = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0444"; };
+  sops.secrets.deus_deploy_key = {
+    sopsFile = ../../secrets/vista/deus_deploy_key;
+    format = "binary";
+    mode = "0400";
+  };
+  sops.secrets.deus_malli_nix_write_key = {
+    sopsFile = ../../secrets/vista/deus_malli_nix_write_key;
+    format = "binary";
+    mode = "0400";
+  };
+  sops.secrets.deus_fleet_age_key = lib.mkIf (builtins.pathExists ../../secrets/vista/deus_fleet_age_key) {
+    sopsFile = ../../secrets/vista/deus_fleet_age_key;
+    format = "binary";
+    mode = "0444";
+  };
+
+  # WireGuard private key for the wg0 link to conduit (vista = 10.100.0.4).
+  sops.secrets.vista_wg_private_key = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0400"; };
 }

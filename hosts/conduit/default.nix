@@ -182,6 +182,16 @@
         allowedIPs = [ "10.100.0.3/32" ];
         # No endpoint — mantle connects to us
       }
+      {
+        # vista — fleet control plane (Headscale + deus nspawn + registries),
+        # migrated off conduit (2026-08). conduit forwards fleet-facing traffic
+        # to it: Caddy → :8085/:8086, socat → :8086/:9418/:5000/:5001, and the
+        # public operator ssh :2222. deus reaches nanomdm via conduit's :9990
+        # socat → mantle; the nanomdm webhook still posts to 10.100.0.1:8086.
+        publicKey = "IMdynalmqKH0fna9YRBw4OGOHbyMfX5Ort1NNYXbHl0=";
+        allowedIPs = [ "10.100.0.4/32" ];
+        # No endpoint — vista connects to us
+      }
     ];
   };
 

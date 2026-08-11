@@ -1,4 +1,5 @@
 {
+  config,
   pkgs,
   lib,
   vars,
@@ -16,6 +17,10 @@
     ./secrets.nix
     ./invidious.nix
     ./nix-builder.nix
+    # Malli fleet control plane, migrated from conduit (2026-08).
+    # ./headscale.nix # Headscale + deus nspawn — WIP, see plan (needs in-nspawn tailscale)
+    ./registry.nix # docker registry:2 on :5000
+    ./zot.nix # zot OCI registry on :5001
     ../../system
     ../../services
   ];
@@ -27,8 +32,30 @@
   security.sudo.wheelNeedsPassword = false;
 
   # ── Network / remote access ───────────────────────────────────────────────
+  # vista's OWN tailscale stays on the personal (syntheit) tailnet — untouched
+  # by the fleet migration. The malli tailnet lives entirely INSIDE the
+  # headscale nspawn (its own tailscaled), so the two never collide.
   services.tailscale.enable = true;
-  networking.firewall.trustedInterfaces = [ "tailscale0" ];
+  networking.firewall.trustedInterfaces = [ "tailscale0" "wg0" ];
+
+  # ── WireGuard link to conduit (fleet control-plane relay) ─────────────────
+  # vista = 10.100.0.4 on the hub-and-spoke wg0 mesh (conduit = 10.100.0.1 hub,
+  # harbor = .2, mantle = .3). Same shape as harbor/mantle: vista dials conduit's
+  # public endpoint; conduit forwards fleet-facing traffic (headscale :8085,
+  # deus :8086, git :9418, registry :5000/:5001, operator ssh :2222) here over
+  # this link. Private key re-keyed into secrets/vista-deus.yaml.
+  networking.wg-quick.interfaces.wg0 = {
+    address = [ "10.100.0.4/24" ];
+    privateKeyFile = config.sops.secrets.vista_wg_private_key.path;
+    peers = [
+      {
+        publicKey = "bhXOmLJsZDR0ZeF/Wnzt116Jw0tHzbfhoe2kG2+ZDAw="; # conduit
+        endpoint = "192.3.203.146:51820";
+        allowedIPs = [ "10.100.0.1/32" ]; # hub only; spoke-to-spoke routes via conduit socat
+        persistentKeepalive = 25;
+      }
+    ];
+  };
 
   # SSH: key-only. openFirewall=true keeps it reachable on the LAN for the
   # bootstrap phase (and it's a stationary box on a trusted home LAN). Tighten
