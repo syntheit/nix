@@ -210,16 +210,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1786473882,
-        "narHash": "sha256-JKb5XiWJxGgVh5tQdXy2F7d6Et3fZqNVm989gDIXbHQ=",
+        "lastModified": 1786475217,
+        "narHash": "sha256-00JCxe9E0dILKjh7EjPEFPaeH0I3ayNsdA+v1st6EAw=",
         "ref": "refs/heads/main",
-        "rev": "42852c0363dfbf31c229fd7f7a8519d92a1e7ec4",
-        "revCount": 14,
+        "rev": "785cdec603a1ea7685d42afc0e0d9c8aab12a676",
+        "revCount": 17,
         "type": "git",
         "url": "file:///home/matv/Projects/calculator"
       },
       "original": {
-        "rev": "42852c0363dfbf31c229fd7f7a8519d92a1e7ec4",
+        "rev": "785cdec603a1ea7685d42afc0e0d9c8aab12a676",
         "type": "git",
         "url": "file:///home/matv/Projects/calculator"
       }
