@@ -460,10 +460,29 @@ in
         # readable (see unix_socket_permission below) so no sudo wrapper.
       };
 
-      # Use Tailscale's DNS so tailnet hostnames resolve
-      # (e.g. ssh tars@m-1w6l works inside the container).
-      networking.nameservers = [ "100.100.100.100" ];
+      # Bootstrap DNS: real resolvers so headscale can fetch its DERP map
+      # (controlplane.tailscale.com) and the git mirror can reach github at
+      # startup. On conduit this was 100.100.100.100 (the HOST's tailscale
+      # MagicDNS), but in this private-net nspawn there's no tailscale DNS
+      # until the container's OWN tailscale is up — which needs headscale,
+      # which needs DNS (chicken-and-egg). Once tailscaled joins with
+      # --accept-dns=true it registers split DNS via systemd-resolved so
+      # tail.matv.io (m-xxxx fleet hosts) resolves via MagicDNS while
+      # everything else keeps using these upstreams.
+      networking.nameservers = [ "1.1.1.1" "1.0.0.1" ];
       networking.search = [ "tail.matv.io" ];
+      # Don't inherit the host's resolv.conf — in a private-net container the
+      # host's 127.0.0.53 stub points at the CONTAINER's own (empty) loopback,
+      # so DNS is dead. Let the container manage its own resolv.conf instead
+      # (required anyway once resolved is enabled below).
+      networking.useHostResolvConf = false;
+      # Run systemd-resolved INSIDE the container so the 127.0.0.53 stub that
+      # nspawn wires up actually has a listener (upstreaming to the nameservers
+      # above). Without this the container has no working DNS at all and
+      # headscale crash-loops fetching its DERP map. resolved is also what
+      # tailscale integrates with for split DNS (tail.matv.io → MagicDNS) once
+      # the container's tailscaled joins.
+      services.resolved.enable = true;
 
       # ── Tailscale (INSIDE the nspawn — self-contained) ────
       # The container joins the malli tailnet as its OWN node ("deus-vista")
@@ -1029,5 +1048,33 @@ in
     iptables -C FORWARD -i ve-headscale -j ACCEPT 2>/dev/null || iptables -A FORWARD -i ve-headscale -j ACCEPT
     iptables -C FORWARD -o ve-headscale -j ACCEPT 2>/dev/null || iptables -A FORWARD -o ve-headscale -j ACCEPT
   '';
+
+  # ── Bring up + address the container veth ──────────────────
+  # NixOS private-network containers expect systemd-networkd to configure the
+  # host side of the veth (ve-headscale). vista uses NetworkManager, which
+  # leaves ve-headscale unmanaged + DOWN, so the container has no gateway/egress.
+  # This service is triggered by the veth device appearing (which nspawn creates
+  # on container start), so it fires on first boot AND on every container
+  # restart — bringing the link up and assigning the gateway address the
+  # container routes through (hostAddress = 10.100.1.1).
+  systemd.services."ve-headscale-setup" = {
+    description = "Bring up + address the headscale container veth (NM host)";
+    bindsTo = [ "sys-subsystem-net-devices-ve\\x2dheadscale.device" ];
+    after = [ "sys-subsystem-net-devices-ve\\x2dheadscale.device" ];
+    wantedBy = [ "sys-subsystem-net-devices-ve\\x2dheadscale.device" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      ${pkgs.iproute2}/bin/ip link set ve-headscale up
+      ${pkgs.iproute2}/bin/ip addr replace 10.100.1.1/24 dev ve-headscale
+    '';
+  };
+
+  # Keep NetworkManager's hands off the container veth (belt-and-suspenders;
+  # it already reports ve-headscale unmanaged, but pin it so a NM restart
+  # doesn't grab + reconfigure it).
+  networking.networkmanager.unmanaged = [ "interface-name:ve-headscale" ];
 
 }

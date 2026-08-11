@@ -97,7 +97,7 @@ in
           ./patches/android-quick-settings-compact-grid.patch # compact Flashlight menu, stable configured ordering, and native Hotspot toggle
           ./patches/android-quick-settings-collapse.patch # two-row Android-style collapsed grid with an animated expand control
           ./patches/android-quick-settings-pull-expand.patch # pull down to reveal overflow rows; swipe up to collapse before closing
-          ./patches/android-quick-settings-content-height.patch # shrink-wrap the collapsed shade so notifications retain the remaining screen
+          ./patches/android-quick-settings-content-height.patch # keep auxiliary controls expanded-only and give notifications the collapsed shade remainder
         ];
         prePatch = ''
           cp -r ${libshew} subprojects/libshew
