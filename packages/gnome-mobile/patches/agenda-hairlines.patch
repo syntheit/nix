@@ -1,0 +1,35 @@
+--- a/js/ui/shellWidgets.js
++++ b/js/ui/shellWidgets.js
+@@ -383,7 +383,9 @@ class AgendaWidget extends ShellWidget {
+             const line = new St.Widget({
+                 style_class: 'shell-widget-agenda-hour-line',
+                 height: 1,
++                y_align: Clutter.ActorAlign.CENTER,
+                 x_expand: true,
++                y_expand: false,
+             });
+             column.layout.attach(label, 0, step, 1, 1);
+             column.layout.attach(line, 1, step, 1, 1);
+@@ -467,8 +469,10 @@ class AgendaWidget extends ShellWidget {
+                     (AGENDA_STEP_MINUTES * 60 * 1000))));
+             column.layout.attach(new St.Widget({
+                 style_class: 'shell-widget-agenda-now-line',
+-                height: 2,
++                height: 1,
++                y_align: Clutter.ActorAlign.CENTER,
+                 x_expand: true,
++                y_expand: false,
+             }), 1, nowStep, 1, 1);
+         }
+
+--- a/data/theme/gnome-shell-sass/widgets/_login-lock.scss
++++ b/data/theme/gnome-shell-sass/widgets/_login-lock.scss
+@@ -374,7 +374,7 @@ $_gdm_dialog_width: 21em;
+   }
+
+   .shell-widget-agenda-now-line {
+-    height: 2px;
++    height: 1px;
+     border-radius: 999px;
+     background-color: #ff453a;
+   }

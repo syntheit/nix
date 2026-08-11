@@ -1,0 +1,484 @@
+diff --git a/data/theme/gnome-shell-sass/widgets/_login-lock.scss b/data/theme/gnome-shell-sass/widgets/_login-lock.scss
+index 935bbc3..898dfc8 100644
+--- a/data/theme/gnome-shell-sass/widgets/_login-lock.scss
++++ b/data/theme/gnome-shell-sass/widgets/_login-lock.scss
+@@ -317,6 +317,10 @@ $_gdm_dialog_width: 21em;
+ }
+ 
+ .shell-widget-agenda {
++  .shell-widget-agenda-scroll {
++    height: 300px;
++  }
++
+   .shell-widget-agenda-columns {
+     spacing: 12px;
+   }
+@@ -325,6 +329,23 @@ $_gdm_dialog_width: 21em;
+     spacing: 2px;
+   }
+ 
++  .shell-widget-agenda-header-button {
++    padding: 0;
++    border: none;
++    border-radius: 7px;
++    background-color: transparent;
++    box-shadow: none;
++
++    &:hover,
++    &:focus {
++      background-color: rgba(255, 255, 255, 0.08);
++    }
++
++    &:active {
++      background-color: rgba(255, 255, 255, 0.14);
++    }
++  }
++
+   .shell-widget-agenda-day-title {
+     @extend %smaller;
+     color: rgba(255, 255, 255, 0.58);
+@@ -350,6 +371,15 @@ $_gdm_dialog_width: 21em;
+     background-color: rgba(130, 210, 255, 0.22);
+     color: #a7e4ff;
+     font-weight: 600;
++
++    &:hover,
++    &:focus {
++      background-color: rgba(130, 210, 255, 0.32);
++    }
++
++    &:active {
++      background-color: rgba(130, 210, 255, 0.42);
++    }
+   }
+ 
+   .shell-widget-agenda-timeline {
+@@ -382,7 +412,6 @@ $_gdm_dialog_width: 21em;
+   .shell-widget-agenda-event {
+     min-height: 20px;
+     padding: 2px 5px 2px 3px;
+-    spacing: 4px;
+     border-radius: 5px;
+ 
+     &.color-0 { background-color: rgba(255, 69, 58, 0.34); }
+@@ -390,6 +419,18 @@ $_gdm_dialog_width: 21em;
+     &.color-2 { background-color: rgba(48, 209, 88, 0.28); }
+     &.color-3 { background-color: rgba(191, 90, 242, 0.30); }
+     &.color-4 { background-color: rgba(255, 159, 10, 0.30); }
++
++    &:focus {
++      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
++    }
++
++    &:active {
++      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.70);
++    }
++  }
++
++  .shell-widget-agenda-event-content {
++    spacing: 4px;
+   }
+ 
+   .shell-widget-agenda-event-accent {
+diff --git a/js/ui/shellWidgets.js b/js/ui/shellWidgets.js
+index b1ce4e8..debc25a 100644
+--- a/js/ui/shellWidgets.js
++++ b/js/ui/shellWidgets.js
+@@ -1,4 +1,5 @@
+ import Clutter from 'gi://Clutter';
++import Gio from 'gi://Gio';
+ import GnomeDesktop from 'gi://GnomeDesktop';
+ import GLib from 'gi://GLib';
+ import GObject from 'gi://GObject';
+@@ -11,10 +12,11 @@ import {formatDateWithCFormatString, formatTime} from '../misc/dateUtils.js';
+ 
+ const LOCK_SCREEN_WIDGETS_KEY = 'lock-screen-widgets';
+ const TODAY_VIEW_WIDGETS_KEY = 'today-view-widgets';
+-const AGENDA_HOURS = 5;
++const AGENDA_VISIBLE_HOURS = 5;
++const AGENDA_MAX_HOURS = 16;
+ const AGENDA_STEPS_PER_HOUR = 4;
+ const AGENDA_STEP_MINUTES = 60 / AGENDA_STEPS_PER_HOUR;
+-const AGENDA_TOTAL_STEPS = AGENDA_HOURS * AGENDA_STEPS_PER_HOUR;
++const AGENDA_VISIBLE_STEPS = AGENDA_VISIBLE_HOURS * AGENDA_STEPS_PER_HOUR;
+ 
+ const _widgetRegistry = new Map();
+ 
+@@ -225,7 +227,7 @@ class AgendaWidget extends ShellWidget {
+     }
+ 
+     static get preferredHeight() {
+-        return 316;
++        return 336;
+     }
+ 
+     static get defaultRefreshInterval() {
+@@ -242,8 +244,40 @@ class AgendaWidget extends ShellWidget {
+         const columns = new St.BoxLayout({
+             style_class: 'shell-widget-agenda-columns',
+             x_expand: true,
++            y_align: Clutter.ActorAlign.START,
+         });
+-        this.add_child(columns);
++
++        // St.ScrollView requires its direct child to implement StScrollable.
++        // Keep the columns inside an explicit viewport rather than ever making
++        // this widget (or WidgetHost) the scroll view's direct child.
++        this._agendaViewport = new St.Viewport({
++            layout_manager: new Clutter.BinLayout(),
++            x_expand: true,
++            y_expand: true,
++        });
++        this._agendaViewport.add_child(columns);
++
++        this._scrollView = new St.ScrollView({
++            style_class: 'shell-widget-agenda-scroll',
++            clip_to_allocation: true,
++            overlay_scrollbars: true,
++            x_expand: true,
++            y_expand: false,
++            hscrollbar_policy: St.PolicyType.NEVER,
++            vscrollbar_policy: St.PolicyType.EXTERNAL,
++            child: this._agendaViewport,
++        });
++
++        this._panGesture = new Clutter.PanGesture({
++            pan_axis: Clutter.PanAxis.Y,
++            max_n_points: 1,
++        });
++        this._panGesture.connect('may-recognize',
++            this._panMayRecognize.bind(this));
++        this._panGesture.connect('pan-update',
++            this._onPanUpdate.bind(this));
++        this._scrollView.add_action(this._panGesture);
++        this.add_child(this._scrollView);
+ 
+         this._todayColumn = this._createDayColumn(_('Today'), true);
+         this._tomorrowColumn = this._createDayColumn(_('Tomorrow'), false);
+@@ -275,6 +309,10 @@ class AgendaWidget extends ShellWidget {
+             x_expand: true,
+         });
+ 
++        const headerContent = new St.BoxLayout({
++            orientation: Clutter.Orientation.VERTICAL,
++            x_expand: true,
++        });
+         const titleLabel = new St.Label({
+             style_class: `shell-widget-agenda-day-title${isToday ? ' today' : ''}`,
+             text: title,
+@@ -284,17 +322,33 @@ class AgendaWidget extends ShellWidget {
+             style_class: 'shell-widget-agenda-day-number',
+             x_align: Clutter.ActorAlign.START,
+         });
+-        actor.add_child(titleLabel);
+-        actor.add_child(dateLabel);
++        headerContent.add_child(titleLabel);
++        headerContent.add_child(dateLabel);
++
++        const headerButton = new St.Button({
++            style_class: 'shell-widget-agenda-header-button',
++            can_focus: true,
++            x_align: Clutter.ActorAlign.FILL,
++            x_expand: true,
++            child: headerContent,
++        });
++        actor.add_child(headerButton);
+ 
+         const allDayLabel = new St.Label({
+-            style_class: 'shell-widget-agenda-all-day',
+-            height: 20,
++            style_class: 'shell-widget-agenda-all-day-label',
+             x_expand: true,
+         });
+         allDayLabel.clutter_text.ellipsize = Pango.EllipsizeMode.END;
+         allDayLabel.clutter_text.single_line_mode = true;
+-        actor.add_child(allDayLabel);
++        const allDayButton = new St.Button({
++            style_class: 'shell-widget-agenda-all-day',
++            can_focus: true,
++            height: 20,
++            x_align: Clutter.ActorAlign.FILL,
++            x_expand: true,
++            child: allDayLabel,
++        });
++        actor.add_child(allDayButton);
+ 
+         const layout = new Clutter.GridLayout({
+             orientation: Clutter.Orientation.VERTICAL,
+@@ -314,14 +368,124 @@ class AgendaWidget extends ShellWidget {
+         });
+         actor.add_child(overflowLabel);
+ 
+-        return {
++        const column = {
+             actor,
++            date: null,
++            headerButton,
+             dateLabel,
++            allDayButton,
+             allDayLabel,
++            allDayEvent: null,
+             timeline,
+             layout,
+             overflowLabel,
+         };
++
++        headerButton.connect('clicked', () => this._openDate(column.date));
++        allDayButton.connect('clicked', () => {
++            if (column.allDayEvent)
++                this._openEvent(column.allDayEvent);
++        });
++
++        return column;
++    }
++
++    _panMayRecognize(gesture) {
++        const adjustment = this._scrollView.vadjustment;
++        if (!adjustment || adjustment.upper <= adjustment.page_size)
++            return false;
++
++        const beginCoords = gesture.get_begin_centroid_abs();
++        if (!this._scrollView.get_transformed_extents().contains_point(beginCoords))
++            return true;
++
++        const coords = gesture.get_centroid_abs();
++        const delta = coords.y - beginCoords.y;
++        const end = adjustment.upper - adjustment.page_size;
++        const epsilon = 0.5;
++
++        // At either end, let another gesture win instead of trapping the
++        // sequence in a timeline that cannot move any farther.
++        if (delta < 0 && adjustment.value >= end - epsilon)
++            return false;
++        if (delta > 0 && adjustment.value <= adjustment.lower + epsilon)
++            return false;
++
++        return true;
++    }
++
++    _onPanUpdate(gesture) {
++        const delta = gesture.get_delta();
++        const adjustment = this._scrollView.vadjustment;
++        const height = Math.max(this._scrollView.height, 1);
++        adjustment.value -= delta.get_y() / height * adjustment.page_size;
++    }
++
++    _calendarApp() {
++        const apps = Gio.AppInfo.get_recommended_for_type('text/calendar');
++        if (!apps || apps.length === 0)
++            return null;
++
++        const defaultApp = Gio.AppInfo.get_default_for_type(
++            'text/calendar', false);
++        if (defaultApp && apps.some(app => app.equal(defaultApp)))
++            return defaultApp;
++
++        return apps[0];
++    }
++
++    _launchCalendar(args = []) {
++        const appInfo = this._calendarApp();
++        if (!appInfo)
++            return;
++
++        // GNOME Calendar exposes exact date/event opening through its command
++        // line. Other calendar apps still get a normal launch fallback.
++        if (args.length > 0 &&
++            appInfo.get_id() === 'org.gnome.Calendar.desktop') {
++            const executable = appInfo.get_executable();
++            if (executable) {
++                try {
++                    Gio.Subprocess.new([executable, ...args],
++                        Gio.SubprocessFlags.NONE);
++                    return;
++                } catch (error) {
++                    console.error('Failed to launch GNOME Calendar:', error);
++                }
++            }
++        }
++
++        try {
++            appInfo.launch([], global.create_app_launch_context(0, -1));
++        } catch (error) {
++            console.error('Failed to launch calendar application:', error);
++        }
++    }
++
++    _openDate(date) {
++        if (!(date instanceof Date) || !Number.isFinite(date.getTime()))
++            return;
++
++        const year = `${date.getFullYear()}`.padStart(4, '0');
++        const month = `${date.getMonth() + 1}`.padStart(2, '0');
++        const day = `${date.getDate()}`.padStart(2, '0');
++        this._launchCalendar(['--date', `${year}-${month}-${day}`]);
++    }
++
++    _openEvent(event) {
++        const [sourceUid = '', eventUid = '', recurrenceId = ''] =
++            `${event?.id ?? ''}`.split('\n');
++        if (!sourceUid || !eventUid) {
++            this._launchCalendar();
++            return;
++        }
++
++        // Shell's calendar server separates source/UID/RID with newlines;
++        // GNOME Calendar's --uuid argument uses the same fields with colons.
++        const uuid = [sourceUid, eventUid, recurrenceId]
++            .filter(part => part.length > 0)
++            .join(':');
++        this._launchCalendar(['--uuid', uuid]);
+     }
+ 
+     _isAllDay(event) {
+@@ -362,8 +526,8 @@ class AgendaWidget extends ShellWidget {
+         return groups;
+     }
+ 
+-    _addHourGrid(column, windowStart) {
+-        for (let step = 0; step < AGENDA_TOTAL_STEPS; step++) {
++    _addHourGrid(column, windowStart, totalSteps) {
++        for (let step = 0; step < totalSteps; step++) {
+             column.layout.attach(new St.Widget({
+                 style_class: 'shell-widget-agenda-step',
+                 height: 10,
+@@ -392,23 +556,30 @@ class AgendaWidget extends ShellWidget {
+         }
+     }
+ 
+-    _addEventBlock(column, group, windowStart, windowEnd) {
++    _addEventBlock(column, group, windowStart, windowEnd, totalSteps) {
+         const stepDuration = AGENDA_STEP_MINUTES * 60 * 1000;
+         const clippedStart = Math.max(group.start.getTime(), windowStart.getTime());
+         const clippedEnd = Math.min(group.end.getTime(), windowEnd.getTime());
+-        const startStep = Math.max(0, Math.min(AGENDA_TOTAL_STEPS - 1,
++        const startStep = Math.max(0, Math.min(totalSteps - 1,
+             Math.floor((clippedStart - windowStart.getTime()) / stepDuration)));
+-        const endStep = Math.max(startStep + 1, Math.min(AGENDA_TOTAL_STEPS,
++        const endStep = Math.max(startStep + 1, Math.min(totalSteps,
+             Math.ceil((clippedEnd - windowStart.getTime()) / stepDuration)));
+         const span = Math.max(2, endStep - startStep);
+ 
+         const firstEvent = group.events[0];
+         const color = this._eventColor(firstEvent);
+-        const block = new St.BoxLayout({
++        const content = new St.BoxLayout({
++            style_class: 'shell-widget-agenda-event-content',
++            x_expand: true,
++        });
++        const block = new St.Button({
+             style_class: `shell-widget-agenda-event color-${color}`,
++            can_focus: true,
++            x_align: Clutter.ActorAlign.FILL,
+             x_expand: true,
++            child: content,
+         });
+-        block.add_child(new St.Widget({
++        content.add_child(new St.Widget({
+             style_class: `shell-widget-agenda-event-accent color-${color}`,
+             width: 3,
+             y_expand: true,
+@@ -426,20 +597,26 @@ class AgendaWidget extends ShellWidget {
+         });
+         label.clutter_text.ellipsize = Pango.EllipsizeMode.END;
+         label.clutter_text.single_line_mode = true;
+-        block.add_child(label);
++        content.add_child(label);
++        block.connect('clicked', () => this._openEvent(firstEvent));
+ 
+         column.layout.attach(block, 1, startStep, 1,
+-            Math.min(span, AGENDA_TOTAL_STEPS - startStep));
++            Math.min(span, totalSteps - startStep));
+     }
+ 
+     _renderDay(column, date, windowStart, events, now, showNow) {
+         column.timeline.destroy_all_children();
++        column.date = new Date(date);
+         column.dateLabel.text = `${date.getDate()}`;
+ 
+         const dayEnd = new Date(date.getFullYear(), date.getMonth(),
+             date.getDate() + 1);
+-        const windowEnd = new Date(windowStart.getTime() +
+-            AGENDA_HOURS * 60 * 60 * 1000);
++        const stepDuration = AGENDA_STEP_MINUTES * 60 * 1000;
++        const windowEnd = new Date(Math.min(dayEnd.getTime(),
++            windowStart.getTime() + AGENDA_MAX_HOURS * 60 * 60 * 1000));
++        const totalSteps = Math.max(1,
++            Math.ceil((windowEnd.getTime() - windowStart.getTime()) /
++                stepDuration));
+         const validEvents = events.filter(event =>
+             event.date instanceof Date && event.end instanceof Date &&
+             Number.isFinite(event.date.getTime()) &&
+@@ -455,18 +632,24 @@ class AgendaWidget extends ShellWidget {
+                 : '';
+             const summary = allDayEvents[0].summary || _('Untitled Event');
+             column.allDayLabel.text = `${summary}${suffix}`;
+-            column.allDayLabel.opacity = 255;
++            column.allDayEvent = allDayEvents[0];
++            column.allDayButton.can_focus = true;
++            column.allDayButton.reactive = true;
++            column.allDayButton.opacity = 255;
+         } else {
+             column.allDayLabel.text = '';
+-            column.allDayLabel.opacity = 0;
++            column.allDayEvent = null;
++            column.allDayButton.can_focus = false;
++            column.allDayButton.reactive = false;
++            column.allDayButton.opacity = 0;
+         }
+ 
+-        this._addHourGrid(column, windowStart);
++        this._addHourGrid(column, windowStart, totalSteps);
+ 
+         if (showNow && now >= windowStart && now < windowEnd) {
+-            const nowStep = Math.max(0, Math.min(AGENDA_TOTAL_STEPS - 1,
++            const nowStep = Math.max(0, Math.min(totalSteps - 1,
+                 Math.floor((now.getTime() - windowStart.getTime()) /
+-                    (AGENDA_STEP_MINUTES * 60 * 1000))));
++                    stepDuration)));
+             column.layout.attach(new St.Widget({
+                 style_class: 'shell-widget-agenda-now-line',
+                 height: 1,
+@@ -478,7 +661,8 @@ class AgendaWidget extends ShellWidget {
+ 
+         const groups = this._groupOverlappingEvents(visibleEvents);
+         for (const group of groups)
+-            this._addEventBlock(column, group, windowStart, windowEnd);
++            this._addEventBlock(column, group, windowStart, windowEnd,
++                totalSteps);
+ 
+         if (visibleEvents.length === 0) {
+             const emptyLabel = new St.Label({
+@@ -487,7 +671,10 @@ class AgendaWidget extends ShellWidget {
+                 x_align: Clutter.ActorAlign.CENTER,
+             });
+             column.layout.attach(emptyLabel, 1,
+-                Math.floor(AGENDA_TOTAL_STEPS / 2) - 1, 1, 2);
++                Math.max(0, Math.min(
++                    Math.floor(AGENDA_VISIBLE_STEPS / 2) - 1,
++                    Math.floor(totalSteps / 2) - 1)), 1,
++                Math.min(2, totalSteps));
+         }
+ 
+         const laterCount = timedEvents.filter(event =>
+@@ -518,7 +705,8 @@ class AgendaWidget extends ShellWidget {
+                 todayStart.getDate(),
+             ].join('-');
+ 
+-            if (dateKey !== this._requestedDateKey) {
++            const dateChanged = dateKey !== this._requestedDateKey;
++            if (dateChanged) {
+                 this._requestedDateKey = dateKey;
+                 this._eventSource.requestRange(todayStart, rangeEnd);
+             }
+@@ -544,6 +732,10 @@ class AgendaWidget extends ShellWidget {
+                 todayWindowStart, todayEvents, now, true);
+             this._renderDay(this._tomorrowColumn, tomorrowStart,
+                 tomorrowWindowStart, tomorrowEvents, now, false);
++
++            if (dateChanged)
++                this._scrollView.vadjustment.value =
++                    this._scrollView.vadjustment.lower;
+         } finally {
+             this._updating = false;
+         }
