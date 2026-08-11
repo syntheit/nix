@@ -1,0 +1,355 @@
+From 0000000000000000000000000000000000000014 Mon Sep 17 00:00:00 2001
+From: Daniel <daniel@matv.io>
+Date: Tue, 11 Aug 2026 18:00:00 -0400
+Subject: [PATCH] af: settle the lens before scoring, real fine pass, cover
+ the macro end
+
+Field symptom (post focus-loss-debounce deploy): focus locks and holds,
+but the LOCKED POSITION is often wrong for near/macro subjects -- close
+text and objects render soft while far scenes look fine.
+
+Mechanism -- three compounding sweep defects:
+
+ 1. Lag-contaminated scoring. The sweep scored ONE frame per position
+    back-to-back, but a sharpness sample delivered with frame N was
+    exposed 1-2 frame times before the lens command issued at frame N-1
+    landed (in-flight buffers; libcamera's default sensor exposureDelay
+    is 2), and the lc898217xc VCM itself needs ~80 ms to settle
+    (measured on fajita) -- 1-2 frame times at the soft ISP's real
+    10-20 fps. Each sample was therefore attributed to a position 1-2
+    steps AHEAD of the one that exposed it, dragging the recorded peak
+    2-4 knob units (~40-80 of 2047 DAC counts) past the true peak in
+    the sweep direction. Far subjects hide that inside their generous
+    depth of field; near subjects, whose sharpness-vs-position curve is
+    steepest, do not.
+
+ 2. Dead refinement pass. After the coarse pass `step /= 10` turned
+    step 2 into 0.2 and the `if (step > 0.2)` guard was false, so the
+    fine pass never ran: the lock came straight from the coarse pass's
+    contaminated argmax. (The sharpness_max reset for a second pass was
+    unreachable code.)
+
+ 3. Macro end never sampled. The loop scored a position, incremented,
+    and continued only `while (pos < stop)` -- with step 2 the scored
+    positions were 0,2,...,98 and position 100 (VCM DAC 2047, the macro
+    end: DAC 0 = spring rest = infinity) was never evaluated, clipping
+    exactly the close-focus extreme the field complaint is about.
+
+Fix:
+
+ - Per-position settling: after every lens move, discard kSettleFrames
+   (2) frames and score the next one, so each sample was exposed
+   entirely at its recorded position (kBigMoveSettleFrames = 4 for the
+   large pass-start/lock jumps). This removes the systematic bias at
+   its source rather than guessing an exact lag to re-pair samples
+   with earlier commands (queue depth varies with load and fps).
+ - Real two-pass sweep: coarse 0..100 step 5 (21 samples, macro end
+   included), then a fine pass over the coarse peak +-5 at step 1.
+ - Parabolic interpolation over the fine maximum and its two settled
+   neighbours refines the lock below fine-step granularity (~+-10 DAC
+   counts), clamped to half a step against noise.
+ - The focus-loss baseline is seeded from the first SETTLED frame at
+   the final lock position instead of the sweep maximum (largest of ~30
+   noisy samples, biased high and possibly AGC-drifted). The debounce
+   logic itself is unchanged.
+ - updateFocus() now adds focus_min into the knob->DAC mapping (no-op
+   on fajita where focus_min = 0, correct where it isn't).
+
+Frame budget at the soft ISP's 10-20 fps:
+  coarse: 4 settle + 21 scored + 20x2 settle = 65 frames
+  fine:   4 settle + 11 scored + 10x2 settle = 35 frames
+  lock:   4 settle + 1 baseline seed         =  5 frames
+  total ~105 frames = 5.3 s @ 20 fps, 10.5 s @ 10 fps
+  (before: ~70 frames = 3.5-7 s, but ~50 of those scored samples were
+  attributed to the wrong lens position; the extra ~2-3 s buys a lock
+  that is correct for the thin near-field depth of field. If sweep
+  time ever matters more, kSettleFrames = 1 brings the total back to
+  ~75 frames at the cost of tolerating 1 step of residual lag.)
+---
+
+diff --git a/src/ipa/simple/algorithms/af.cpp b/src/ipa/simple/algorithms/af.cpp
+index 3db6dcb..736aa92 100644
+--- a/src/ipa/simple/algorithms/af.cpp
++++ b/src/ipa/simple/algorithms/af.cpp
+@@ -63,6 +63,67 @@ static constexpr uint64_t kFocusLostDen = 100;
+ static constexpr unsigned int kBaselineRiseShift = 3;
+ static constexpr unsigned int kBaselineDecayShift = 6;
+ 
++/*
++ * CDAF sweep tuning.
++ *
++ * LensPosition knob units are 0..100 across the VCM's whole
++ * V4L2_CID_FOCUS_ABSOLUTE range (updateFocus() maps linearly), so one
++ * unit is 1% of mechanical travel -- ~20 DAC counts on fajita's
++ * lc898217xc (0..2047, DAC 0 = spring rest = infinity end, 2047 =
++ * macro end).
++ *
++ * Sharpness samples are late relative to lens commands: the command
++ * issued when frame N's stats complete only affects frames exposed 1-2
++ * frame times later (in-flight buffers; libcamera's default sensor
++ * exposureDelay is 2 frames), and the VCM itself needs ~80 ms to
++ * mechanically settle (measured on fajita's lc898217xc) -- 1-2 frame
++ * times at the soft ISP's real-world 10-20 fps. Scoring one frame per
++ * position back-to-back therefore attributes each sample to a lens
++ * position 1-2 sweep steps ahead of the one that exposed it, dragging
++ * the recorded peak past the true peak in the sweep direction. The
++ * error is worst where the sharpness curve is steepest -- near/macro
++ * subjects, whose depth of field is thinnest.
++ */
++
++/*
++ * Frames discarded after every per-step lens move before one frame is
++ * scored: covers the 1-2 frame command-to-exposure pipeline depth plus
++ * the VCM settle (~80 ms, under 2 frame times at 10-20 fps). This
++ * guarantees the scored frame was exposed entirely at the commanded
++ * position, which is what makes the recorded peak trustworthy.
++ */
++static constexpr uint32_t kSettleFrames = 2;
++
++/*
++ * Settle for large jumps (sweep start, pass transition, final move to
++ * the lock position): these can cross a large part of the mechanical
++ * range, so give the VCM two extra frames of margin.
++ */
++static constexpr uint32_t kBigMoveSettleFrames = 4;
++
++/*
++ * Coarse pass step in knob units (~102 DAC counts): positions
++ * 0,5,...,100 = 21 samples, so the macro end (100) is sampled exactly
++ * (the old loop's exclusive bound never scored it). The coarse pass
++ * only needs to bracket the peak within one step for the fine pass;
++ * don't go much coarser or a thin near-subject sharpness lobe can fall
++ * between samples.
++ */
++static constexpr double kCoarseStep = 5.0;
++
++/*
++ * Fine pass: +-kFineSpan window around the coarse peak, stepped by
++ * kFineStep (~20 DAC counts). With settled scoring the true peak lies
++ * within one coarse step of the coarse maximum, so the span is one
++ * coarse step. The lock position is then refined below fine-step
++ * granularity by parabolic interpolation.
++ */
++static constexpr double kFineStep = 1.0;
++static constexpr double kFineSpan = kCoarseStep;
++
++/* Tolerance for accumulated floating-point error in position stepping. */
++static constexpr double kPosEpsilon = 1e-6;
++
+ namespace ipa::soft::algorithms {
+ 
+ Af::Af()
+@@ -119,7 +180,12 @@ void Af::queueRequest([[maybe_unused]] typename Module::Context &context,
+ 
+ void Af::updateFocus([[maybe_unused]] IPAContext &context, [[maybe_unused]] IPAFrameContext &frameContext, [[maybe_unused]] double exposureMSV)
+ {
+-	frameContext.lens.focus_pos = context.activeState.knobs.focus_pos.value_or(50.0) / 100.0 * (context.configuration.focus.focus_max - context.configuration.focus.focus_min);
++	/*
++	 * Map knob units (0..100) onto the whole V4L2 focus range,
++	 * offset by focus_min (0 on fajita's lc898217xc, where 100 ==
++	 * DAC 2047 == the macro end, but nonzero minima exist).
++	 */
++	frameContext.lens.focus_pos = context.configuration.focus.focus_min + context.activeState.knobs.focus_pos.value_or(50.0) / 100.0 * (context.configuration.focus.focus_max - context.configuration.focus.focus_min);
+ }
+ 
+ static int steps;
+@@ -130,8 +196,20 @@ void Af::restart(IPAContext &context) {
+ 	context.configuration.focus.sharpness_max = 0;
+ 	context.configuration.focus.start = 0;
+ 	context.configuration.focus.stop = 100;
+-	context.configuration.focus.step = 2;
+-	context.configuration.focus.skip = 10;
++	context.configuration.focus.step = kCoarseStep;
++	/*
++	 * A restart only ever happens after the focus-loss debounce (30
++	 * frames on the new scene, AGC already re-converged) or an
++	 * explicit trigger, so the start skip only needs to cover the
++	 * jump back to position 0.
++	 */
++	context.configuration.focus.skip = kBigMoveSettleFrames;
++	context.configuration.focus.fine_pass = false;
++	context.configuration.focus.seed_baseline = false;
++	context.configuration.focus.last_was_max = false;
++	context.configuration.focus.sharp_prev = 0;
++	context.configuration.focus.sharp_before_max = 0;
++	context.configuration.focus.sharp_after_max = 0;
+ 	context.activeState.knobs.focus_pos = 0;
+ 	context.configuration.focus.lost_frames = 0;
+ 	context.activeState.knobs.focus_sweep = true;
+@@ -139,13 +217,27 @@ void Af::restart(IPAContext &context) {
+ }
+ 
+ void Af::step(IPAContext &context, double& focus_pos, uint64_t sharp, bool& sweep){
++	auto &focus = context.configuration.focus;
+ 	steps ++;
+-	// Even for sweep, we need some time to move to new lens position
+-	if(context.configuration.focus.skip != 0){
+-		context.configuration.focus.skip --;
++	/* Discard frames until the lens has settled at the commanded position. */
++	if(focus.skip != 0){
++		focus.skip --;
+ 		return;
+ 	}
+ 	if (!sweep) {
++		if (focus.seed_baseline) {
++			/*
++			 * First settled frame at the lock position: seed the
++			 * focus-loss baseline from what the lens actually
++			 * delivers here. The sweep maximum is unsuitable as
++			 * a baseline -- it is the largest of ~30 noisy
++			 * samples (biased high) and may include AGC drift.
++			 */
++			focus.sharpness_max = sharp;
++			focus.seed_baseline = false;
++			focus.lost_frames = 0;
++			return;
++		}
+ 		/*
+ 		 * Locked. Steady-state sharpness is noisy (AGC breathing,
+ 		 * hand shake), so nothing short of a deep, sustained drop
+@@ -155,10 +247,10 @@ void Af::step(IPAContext &context, double& focus_pos, uint64_t sharp, bool& swee
+ 		 * noise/AGC spike made the locked position look permanently
+ 		 * "lost" and re-triggered full sweeps back to back.
+ 		 */
+-		uint64_t &baseline = context.configuration.focus.sharpness_max;
++		uint64_t &baseline = focus.sharpness_max;
+ 		if (sharp * kFocusLostDen < baseline * kFocusLostNum) {
+ 			/* Deep drop: freeze the baseline and count. */
+-			if (++context.configuration.focus.lost_frames >= kFocusLostFrames) {
++			if (++focus.lost_frames >= kFocusLostFrames) {
+ 				LOG(IPASoftAutoFocus, Info)
+ 					<< "Focus lost -- " << sharp << " vs "
+ 					<< baseline;
+@@ -166,39 +258,94 @@ void Af::step(IPAContext &context, double& focus_pos, uint64_t sharp, bool& swee
+ 			}
+ 			return;
+ 		}
+-		context.configuration.focus.lost_frames = 0;
++		focus.lost_frames = 0;
+ 		if (sharp > baseline)
+ 			baseline += (sharp - baseline) >> kBaselineRiseShift;
+ 		else
+ 			baseline -= (baseline - sharp) >> kBaselineDecayShift;
+ 		return;
+ 	}
+-	if (sharp > context.configuration.focus.sharpness_max) {
+-		context.configuration.focus.sharpness_max = sharp;
+-		context.configuration.focus.focus_max_pos = focus_pos;
++
++	/*
++	 * Sweeping: score one settled frame at the current position,
++	 * remembering the samples on either side of the running maximum
++	 * for the parabolic refinement at the end of the fine pass.
++	 */
++	if (sharp > focus.sharpness_max) {
++		focus.sharpness_max = sharp;
++		focus.focus_max_pos = focus_pos;
++		focus.sharp_before_max = focus.sharp_prev;
++		focus.sharp_after_max = 0;
++		focus.last_was_max = true;
++	} else {
++		if (focus.last_was_max)
++			focus.sharp_after_max = sharp;
++		focus.last_was_max = false;
+ 	}
+-	focus_pos += context.configuration.focus.step;	
+-	if (focus_pos > context.configuration.focus.start && focus_pos < context.configuration.focus.stop)
++	focus.sharp_prev = sharp;
++
++	if (focus_pos + focus.step <= focus.stop + kPosEpsilon) {
++		focus_pos += focus.step;
++		focus.skip = kSettleFrames;
+ 		return;
++	}
+ 
+-	int spread = 5;
+-	context.configuration.focus.start = std::clamp(context.configuration.focus.focus_max_pos - context.configuration.focus.step*spread, 0.0, 100.0);
+-	context.configuration.focus.stop = std::clamp(context.configuration.focus.focus_max_pos +  context.configuration.focus.step*spread, 0.0, 100.0);
+-	LOG(IPASoftAutoFocus, Info) << "Best focus on step " <<context.configuration.focus.step << " (" << context.configuration.focus.start << ".." << context.configuration.focus.stop << "): " << focus_pos << " value " << context.configuration.focus.sharpness_max;
+-	focus_pos = context.configuration.focus.start;
+-	context.configuration.focus.step /= 10; // HERE
+-	context.configuration.focus.skip = 10; // We need lens to settle after big move
+-	if (context.configuration.focus.step > 0.2){
+-		// We want to search for maximum at smaller step, forget maximum from prev step
+-		context.configuration.focus.sharpness_max = 0;
++	if (!focus.fine_pass) {
++		/*
++		 * Coarse pass done: rescan +-kFineSpan around its peak
++		 * with kFineStep. Restart the maximum tracking -- the
++		 * fine samples are scored under (slightly) different AGC
++		 * than the coarse ones, so the two sets don't compare.
++		 */
++		LOG(IPASoftAutoFocus, Info)
++			<< "Coarse peak " << focus.focus_max_pos
++			<< " value " << focus.sharpness_max;
++		focus.fine_pass = true;
++		focus.start = std::clamp(focus.focus_max_pos - kFineSpan, 0.0, 100.0);
++		focus.stop = std::clamp(focus.focus_max_pos + kFineSpan, 0.0, 100.0);
++		focus.step = kFineStep;
++		focus.sharpness_max = 0;
++		focus.sharp_prev = 0;
++		focus.sharp_before_max = 0;
++		focus.sharp_after_max = 0;
++		focus.last_was_max = false;
++		focus_pos = focus.start;
++		focus.skip = kBigMoveSettleFrames;
+ 		return;
+ 	}
+ 
+-	//We are done
++	/*
++	 * Fine pass done. Refine the peak by fitting a parabola through
++	 * the maximum and its two settled neighbours (uniform kFineStep
++	 * spacing): vertex = step/2 * (s- - s+) / (s- - 2*s0 + s+). Only
++	 * valid when both neighbours exist (maximum not at a window
++	 * edge) and the three points are strictly concave. The vertex of
++	 * a genuine local maximum lies within half a step of the sampled
++	 * maximum, so clamp there to bound the effect of noise.
++	 */
++	double lock_pos = focus.focus_max_pos;
++	if (focus.sharp_before_max != 0 && focus.sharp_after_max != 0) {
++		const double sm = static_cast<double>(focus.sharp_before_max);
++		const double s0 = static_cast<double>(focus.sharpness_max);
++		const double sp = static_cast<double>(focus.sharp_after_max);
++		const double denom = sm - 2.0 * s0 + sp;
++		if (denom < 0.0) {
++			double offset = 0.5 * (sm - sp) / denom * focus.step;
++			offset = std::clamp(offset, -focus.step / 2.0, focus.step / 2.0);
++			lock_pos = std::clamp(lock_pos + offset, 0.0, 100.0);
++		}
++	}
++
+ 	sweep = false;
+-	LOG(IPASoftAutoFocus, Info) << "Sweep end. Best focus: " << context.configuration.focus.focus_max_pos << " steps " << steps;
+-	// We want to keep context.configuration.focus.sharpness_max, to detect when scene changes (aka focus lost)
+-	focus_pos = context.configuration.focus.focus_max_pos;
++	focus.focus_max_pos = lock_pos;
++	focus_pos = lock_pos;
++	/*
++	 * Settle at the lock position, then let the first settled frame
++	 * seed the focus-loss baseline (see the locked branch above).
++	 */
++	focus.skip = kBigMoveSettleFrames;
++	focus.seed_baseline = true;
++	LOG(IPASoftAutoFocus, Info) << "Sweep end. Best focus: " << lock_pos << " steps " << steps;
+ }
+ 
+ void Af::process([[maybe_unused]] IPAContext &context,
+diff --git a/src/ipa/simple/ipa_context.h b/src/ipa/simple/ipa_context.h
+index cbe3b76..8deaaa0 100644
+--- a/src/ipa/simple/ipa_context.h
++++ b/src/ipa/simple/ipa_context.h
+@@ -40,6 +40,13 @@ struct IPASessionConfiguration {
+ 		double start, stop, step;
+ 		uint32_t skip;
+ 		uint32_t lost_frames;
++		/* CDAF sweep state (af.cpp) */
++		bool fine_pass;
++		bool seed_baseline;
++		bool last_was_max;
++		uint64_t sharp_prev;
++		uint64_t sharp_before_max;
++		uint64_t sharp_after_max;
+ 	} focus;
+ };
+ 
