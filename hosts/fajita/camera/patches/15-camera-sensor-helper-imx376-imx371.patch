@@ -1,0 +1,87 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Daniel <daniel@matv.io>
+Date: Mon, 11 Aug 2026 00:00:00 -0400
+Subject: [PATCH] libipa: camera_sensor_helper: add imx376 and imx371
+
+MISSING-HELPER FIX (fajita OnePlus 6T: rear IMX376, front IMX371).
+libcamera has no CameraSensorHelper for either sensor, so the soft
+(simple) IPA logs "Failed to create camera sensor helper for imx376"
+/ "... imx371" (soft_simple.cpp:104) and falls back to the no-helper
+path. Consequences on the AGC (src/ipa/simple/algorithms/agc.cpp via
+IPASoftSimple::configure): againMin/againMax/again10 are taken as RAW
+V4L2 gain CODES instead of real gain multiples, and again is seeded
+from the sensor's default code 0. The AGC's multiplicative up-ramp
+(again = again * 11/10) cannot move off 0, so it crawls +againMinStep
+(1.0 code) per frame; combined with exposure being ramped to
+exposureMax first, low-light scenes take far too long to brighten and
+never express the sensor's real gain range cleanly.
+
+Both sensors are driven by the same Intel-authored kernel drivers
+(drivers/media/i2c/imx376.c, imx371.c; Copyright (C) 2018 Intel) and
+are register-identical to the in-tree imx258: analogue gain lives in
+CCI_REG16(0x0204), ANA_GAIN {min 0, max 480, step 1, default 0},
+written to the register verbatim, 10-bit RGGB, DGTL_GAIN default 1024.
+This is the standard Sony/SMIA global analogue gain register, whose
+real gain is
+
+    gain = 512 / (512 - code)
+
+i.e. the AnalogueGainLinear{ 0, 512, -1, 512 } model libcamera already
+uses for imx258/imx214. code 0 -> 1.0x, code 480 -> 16.0x (the SMIA
+16x analogue-gain ceiling). Black level is the Sony 10-bit pedestal
+64 DN = 0x40 at 10 bits = 4096 at 16 bits, matching imx258 and the
+fajita tuning YAMLs (which keep final say via the BlackLevel
+algorithm's configure()).
+
+EVIDENCE / confidence: HIGH for the model, MEDIUM-HIGH for the exact
+denominator. Register, ranges and direct-write are read straight from
+the pinned kernel drivers (sdm845-mainline/linux
+c4804e960aef, tag sdm845-6.16.7-r0). The 512/(512-code) denominator is
+the documented imx258 datasheet formula for this identical register;
+imx376/imx371 datasheets are not public, so the constant is inferred
+by driver-identity analogy, not read from an imx376 datasheet. If a
+future on-device measurement shows requested-vs-achieved brightness is
+off by a constant factor at high gain, revisit the denominator (a 1024
+value would cap at 1.88x and is the failure signature to watch for).
+
+Effect: the helper makes the soft IPA drive real gain multiples, seed
+again at 1.0x, and expose the full 1.0x-16.0x analogue range, so dusk
+and indoor scenes brighten promptly and reach a usable ceiling.
+
+Registration names "imx376"/"imx371" match sensor->model() exactly
+(confirmed by the on-device "Failed to create ... imx376/imx371"
+warnings). No existing helper uses these names -- no collision.
+---
+ src/ipa/libipa/camera_sensor_helper.cpp | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+--- a/src/ipa/libipa/camera_sensor_helper.cpp
++++ b/src/ipa/libipa/camera_sensor_helper.cpp
+@@ -620,3 +620,27 @@
++class CameraSensorHelperImx371 : public CameraSensorHelper
++{
++public:
++	CameraSensorHelperImx371()
++	{
++		/* From datasheet: 0x40 at 10bits. */
++		blackLevel_ = 4096;
++		gain_ = AnalogueGainLinear{ 0, 512, -1, 512 };
++	}
++};
++REGISTER_CAMERA_SENSOR_HELPER("imx371", CameraSensorHelperImx371)
++
++class CameraSensorHelperImx376 : public CameraSensorHelper
++{
++public:
++	CameraSensorHelperImx376()
++	{
++		/* From datasheet: 0x40 at 10bits. */
++		blackLevel_ = 4096;
++		gain_ = AnalogueGainLinear{ 0, 512, -1, 512 };
++	}
++};
++REGISTER_CAMERA_SENSOR_HELPER("imx376", CameraSensorHelperImx376)
++
+ class CameraSensorHelperImx415 : public CameraSensorHelper
+ {
+ public:

@@ -94,6 +94,46 @@ let
       # baseline seeds from a settled frame at the lock instead of the sweep
       # max. ~105 frames/sweep (5-10 s at 10-20 fps; was ~70 mis-paired).
       ./camera/patches/14-af-sweep-quality.patch
+      # 15 = OURS, low-light brightness ceiling (UPSTREAMABLE). libcamera has
+      # no CameraSensorHelper for imx376/imx371, so the soft IPA logged
+      # "Failed to create camera sensor helper" and drove the AGC in RAW
+      # V4L2 gain CODES instead of real gain multiples: analogue gain seeded
+      # at the sensor's default code 0, and the AGC's multiplicative up-ramp
+      # (again *= 11/10) can't move off 0 -> it crawls +1 code/frame while
+      # exposure is already pinned at exposureMax, so dusk/indoor scenes
+      # brighten far too slowly and never express the real gain range. Both
+      # sensors are register-identical to the in-tree imx258 (Intel 2018
+      # drivers, analogue gain CCI_REG16(0x0204), range 0..480 written
+      # verbatim), so they take imx258's Sony/SMIA model
+      # AnalogueGainLinear{ 0, 512, -1, 512 } => gain = 512/(512-code), i.e.
+      # 1.0x at code 0 up to 16.0x at code 480, plus the 64-DN 10-bit
+      # pedestal (blackLevel 4096, same value the tuning YAMLs already set).
+      # With the helper the AGC seeds again at 1.0x and ramps real
+      # multiples, so low light brightens promptly and reaches a usable
+      # ceiling. Denominator 512 is the documented imx258-datasheet formula
+      # for this identical register (imx376/imx371 datasheets aren't public
+      # -> inferred by driver identity); verify on-device by comparing
+      # requested vs achieved AnalogueGain metadata at high gain.
+      ./camera/patches/15-camera-sensor-helper-imx376-imx371.patch
+      # 16 = OURS, AGC ramp efficiency (UPSTREAMABLE), companion to 15. The
+      # soft AGC ramps EXPOSURE to exposureMax before it engages analogue
+      # gain, and exposureMax is the V4L2 EXPOSURE control max -- which the
+      # driver reports for the MAXIMUM frame length (max VBLANK): 65515 lines
+      # on IMX376. But the soft IPA never programs VBLANK (it only writes
+      # exposure/gain/focus), so the frame length is pinned at its minimum
+      # (height + vblank.min = 1080 + 2796 = 3876) for the whole session and
+      # the sensor can't integrate past the frame period. So the AGC burns
+      # ~30 frames ramping exposure 3876 -> 65515 (10%/frame) with zero
+      # brightness gain before finally switching to gain -- low light
+      # brightens far too slowly. Fix: cap exposureMax at
+      # context_.sensorInfo.minFrameLength (framework-filled from
+      # height + vblank.min), so the ramp hands off to analogue gain as soon
+      # as real integration is maxed. Only ever LOWERS the ceiling ->
+      # cannot over-expose or oscillate (AGC hysteresis untouched); guarded
+      # to a no-op when frame-length info is unpopulated. With 15 (gain now
+      # seeds at 1.0x and ramps real 1.0-16x multiples) this makes dusk /
+      # indoor scenes brighten promptly and reach a usable ceiling.
+      ./camera/patches/16-agc-cap-exposure-to-frame-length.patch
     ];
     postInstall = (old.postInstall or "") + ''
       install -Dm644 ${./camera/tuning/imx371.yaml} $out/share/libcamera/ipa/simple/imx371.yaml
