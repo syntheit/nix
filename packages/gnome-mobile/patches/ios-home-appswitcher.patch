@@ -268,7 +268,7 @@ index 4535f1dcb..a7b01406f 100644
      workspacesGestureBegin(tracker, monitor) {
          this._workspacesDisplay.show();
  
-@@ -1037,6 +1060,23 @@ class ControlsManager extends St.Widget {
+@@ -1037,6 +1060,30 @@ class ControlsManager extends St.Widget {
          this.dash.showAppsButton.checked = initialState === ControlsState.APP_GRID;
          this._ignoreShowAppsButtonToggle = false;
  
@@ -276,14 +276,21 @@ index 4535f1dcb..a7b01406f 100644
 +        // final grid allocation can land AFTER this startup ease's last frame,
 +        // leaving the grid loaded-but-unpainted (no further notify::value fires
 +        // to re-run _update()). Catch the moment the grid finishes (re)paging
-+        // with a one-shot handler that forces a reconcile + relayout, then
-+        // disconnects itself. Only ever makes the grid MORE visible.
++        // by watching the grid's 'pages-changed' (see the persistent handler
++        // below). Only ever makes the grid MORE visible.
 +        if (Main.layoutManager.is_phone &&
 +            initialState === ControlsState.APP_GRID &&
-+            this._appDisplay._grid) {
++            this._appDisplay._grid &&
++            !this._phoneGridRepaintId) {
++            // Persistent (NOT one-shot): the app grid is populated by deferred
++            // idle work whose real/late populate can land after this startup
++            // ease's last frame, and nothing else re-runs _update() once the
++            // ease settles at APP_GRID. 'pages-changed' fires on every actual
++            // page-count change, so re-running the paint reconcile here catches
++            // the late boot populate (and future app install/remove) regardless
++            // of when it lands. Kept connected for the shell's lifetime; cheap.
 +            const grid = this._appDisplay._grid;
-+            const pagesChangedId = grid.connect('pages-changed', () => {
-+                grid.disconnect(pagesChangedId);
++            this._phoneGridRepaintId = grid.connect('pages-changed', () => {
 +                this._update();
 +                this._appDisplay.queue_relayout();
 +            });
@@ -292,7 +299,7 @@ index 4535f1dcb..a7b01406f 100644
          // Set the opacity here to avoid a 1-frame flicker
          this.opacity = 0;
  
-@@ -1081,7 +1121,20 @@ class ControlsManager extends St.Widget {
+@@ -1081,7 +1128,20 @@ class ControlsManager extends St.Widget {
              });
          }));
  
