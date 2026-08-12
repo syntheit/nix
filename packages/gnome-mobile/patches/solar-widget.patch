@@ -1,0 +1,381 @@
+diff --git a/data/org.gnome.shell.gschema.xml.in b/data/org.gnome.shell.gschema.xml.in
+index 45556fd..cfc4e77 100644
+--- a/data/org.gnome.shell.gschema.xml.in
++++ b/data/org.gnome.shell.gschema.xml.in
+@@ -79,7 +79,7 @@
+       </description>
+     </key>
+     <key name="today-view-widgets" type="as">
+-      <default>['clock', 'calendar']</default>
++      <default>['clock', 'calendar', 'solar']</default>
+       <summary>Widgets shown in Today View</summary>
+       <description>
+         Ordered list of registered shell widget identifiers shown on the
+diff --git a/data/theme/gnome-shell-sass/widgets/_login-lock.scss b/data/theme/gnome-shell-sass/widgets/_login-lock.scss
+index 898dfc8..4602f12 100644
+--- a/data/theme/gnome-shell-sass/widgets/_login-lock.scss
++++ b/data/theme/gnome-shell-sass/widgets/_login-lock.scss
+@@ -316,6 +316,76 @@ $_gdm_dialog_width: 21em;
+   }
+ }
+ 
++.shell-widget-solar {
++  spacing: 5px;
++
++  .shell-widget-solar-header {
++    spacing: 8px;
++  }
++
++  .shell-widget-solar-title {
++    @extend %title_3;
++    font-weight: 700;
++  }
++
++  .shell-widget-solar-location {
++    @extend %smaller;
++    max-width: 140px;
++    color: rgba(255, 255, 255, 0.56);
++  }
++
++  .shell-widget-solar-status {
++    @extend %smaller;
++    color: rgba(255, 255, 255, 0.78);
++  }
++
++  .shell-widget-solar-progress {
++    height: 8px;
++    spacing: 3px;
++  }
++
++  .shell-widget-solar-progress-segment {
++    height: 3px;
++    border-radius: 999px;
++    background-color: rgba(255, 255, 255, 0.16);
++
++    &.elapsed {
++      background-color: rgba(255, 190, 64, 0.62);
++    }
++
++    &.current {
++      height: 8px;
++      background-color: #ffd60a;
++    }
++  }
++
++  .shell-widget-solar-metrics {
++    spacing: 6px;
++  }
++
++  .shell-widget-solar-metric {
++    spacing: 1px;
++  }
++
++  .shell-widget-solar-metric-title {
++    @extend %smaller;
++    color: rgba(255, 255, 255, 0.50);
++  }
++
++  .shell-widget-solar-metric-value {
++    @extend %numeric;
++    font-weight: 700;
++  }
++
++  .shell-widget-solar-metric.sunrise .shell-widget-solar-metric-value {
++    color: #ffd60a;
++  }
++
++  .shell-widget-solar-metric.sunset .shell-widget-solar-metric-value {
++    color: #ff9f0a;
++  }
++}
++
+ .shell-widget-agenda {
+   .shell-widget-agenda-scroll {
+     height: 300px;
+diff --git a/js/ui/shellWidgets.js b/js/ui/shellWidgets.js
+index debc25a..7bca7fd 100644
+--- a/js/ui/shellWidgets.js
++++ b/js/ui/shellWidgets.js
+@@ -3,12 +3,14 @@ import Gio from 'gi://Gio';
+ import GnomeDesktop from 'gi://GnomeDesktop';
+ import GLib from 'gi://GLib';
+ import GObject from 'gi://GObject';
++import GWeather from 'gi://GWeather';
+ import Pango from 'gi://Pango';
+ import Shell from 'gi://Shell';
+ import St from 'gi://St';
+ 
+ import * as Calendar from './calendar.js';
+ import {formatDateWithCFormatString, formatTime} from '../misc/dateUtils.js';
++import * as Weather from '../misc/weather.js';
+ 
+ const LOCK_SCREEN_WIDGETS_KEY = 'lock-screen-widgets';
+ const TODAY_VIEW_WIDGETS_KEY = 'today-view-widgets';
+@@ -17,8 +19,15 @@ const AGENDA_MAX_HOURS = 16;
+ const AGENDA_STEPS_PER_HOUR = 4;
+ const AGENDA_STEP_MINUTES = 60 / AGENDA_STEPS_PER_HOUR;
+ const AGENDA_VISIBLE_STEPS = AGENDA_VISIBLE_HOURS * AGENDA_STEPS_PER_HOUR;
++const SOLAR_PROGRESS_SEGMENTS = 16;
+ 
+ const _widgetRegistry = new Map();
++let _sharedWeatherClient = null;
++
++function getSharedWeatherClient() {
++    _sharedWeatherClient ??= new Weather.WeatherClient();
++    return _sharedWeatherClient;
++}
+ 
+ export const ShellWidget = GObject.registerClass(
+ class ShellWidget extends St.BoxLayout {
+@@ -216,6 +225,251 @@ registerWidget(ClockWidget.id, context => new ClockWidget(context), {
+     defaultRefreshInterval: ClockWidget.defaultRefreshInterval,
+ });
+ 
++const SolarWidget = GObject.registerClass(
++class SolarWidget extends ShellWidget {
++    static get id() {
++        return 'solar';
++    }
++
++    static get title() {
++        return _('Sunrise & Sunset');
++    }
++
++    static get preferredHeight() {
++        return 126;
++    }
++
++    static get defaultRefreshInterval() {
++        return 60;
++    }
++
++    constructor(context) {
++        super(context);
++
++        this.add_style_class_name('shell-widget-solar');
++        this._weatherClient = getSharedWeatherClient();
++        this._solarInfo = null;
++        this._solarLocation = null;
++        this._solarDateKey = '';
++
++        const header = new St.BoxLayout({
++            style_class: 'shell-widget-solar-header',
++            x_expand: true,
++        });
++        this._titleLabel = new St.Label({
++            style_class: 'shell-widget-solar-title',
++            text: _('Sun'),
++            x_align: Clutter.ActorAlign.START,
++            x_expand: true,
++        });
++        this._locationLabel = new St.Label({
++            style_class: 'shell-widget-solar-location',
++            x_align: Clutter.ActorAlign.END,
++        });
++        this._locationLabel.clutter_text.ellipsize = Pango.EllipsizeMode.END;
++        this._locationLabel.clutter_text.single_line_mode = true;
++        header.add_child(this._titleLabel);
++        header.add_child(this._locationLabel);
++        this.add_child(header);
++
++        this._statusLabel = new St.Label({
++            style_class: 'shell-widget-solar-status',
++            x_align: Clutter.ActorAlign.START,
++        });
++        this.add_child(this._statusLabel);
++
++        const progress = new St.BoxLayout({
++            style_class: 'shell-widget-solar-progress',
++            x_expand: true,
++        });
++        this._progressSegments = [];
++        for (let i = 0; i < SOLAR_PROGRESS_SEGMENTS; i++) {
++            const segment = new St.Widget({
++                style_class: 'shell-widget-solar-progress-segment',
++                y_align: Clutter.ActorAlign.CENTER,
++                x_expand: true,
++                y_expand: false,
++            });
++            this._progressSegments.push(segment);
++            progress.add_child(segment);
++        }
++        this.add_child(progress);
++
++        const metrics = new St.BoxLayout({
++            style_class: 'shell-widget-solar-metrics',
++            x_expand: true,
++        });
++        [this._sunriseValue] = this._addMetric(
++            metrics, _('Sunrise'), 'sunrise');
++        [this._daylightValue] = this._addMetric(
++            metrics, _('Daylight'), 'daylight');
++        [this._sunsetValue] = this._addMetric(
++            metrics, _('Sunset'), 'sunset');
++        this.add_child(metrics);
++
++        this._weatherChangedId = this._weatherClient.connect('changed',
++            () => this.update());
++        this.connect('destroy', () => {
++            if (this._weatherChangedId) {
++                this._weatherClient.disconnect(this._weatherChangedId);
++                this._weatherChangedId = 0;
++            }
++        });
++    }
++
++    _addMetric(parent, title, styleClass) {
++        const box = new St.BoxLayout({
++            style_class: `shell-widget-solar-metric ${styleClass}`,
++            orientation: Clutter.Orientation.VERTICAL,
++            x_expand: true,
++        });
++        const titleLabel = new St.Label({
++            style_class: 'shell-widget-solar-metric-title',
++            text: title,
++            x_align: Clutter.ActorAlign.CENTER,
++        });
++        const valueLabel = new St.Label({
++            style_class: 'shell-widget-solar-metric-value',
++            x_align: Clutter.ActorAlign.CENTER,
++        });
++        box.add_child(titleLabel);
++        box.add_child(valueLabel);
++        parent.add_child(box);
++        return [valueLabel, box];
++    }
++
++    _locationDateKey(location) {
++        const timezone = location.get_timezone();
++        const now = timezone
++            ? GLib.DateTime.new_now(timezone)
++            : GLib.DateTime.new_now_local();
++        return `${now.get_year()}-${now.get_month()}-${now.get_day_of_month()}`;
++    }
++
++    _syncSolarInfo() {
++        if (!this._weatherClient.hasLocation)
++            return false;
++
++        const location = this._weatherClient.info.location;
++        if (!location)
++            return false;
++
++        const dateKey = this._locationDateKey(location);
++        const locationChanged = !this._solarLocation ||
++            !this._solarLocation.equal(location);
++        if (this._solarInfo && !locationChanged &&
++            dateKey === this._solarDateKey)
++            return true;
++
++        this._solarInfo = new GWeather.Info({
++            application_id: 'org.gnome.Shell',
++            contact_info:
++                'https://gitlab.gnome.org/GNOME/gnome-shell/-/raw/HEAD/gnome-shell.doap',
++            enabled_providers: GWeather.Provider.NONE,
++        });
++        this._solarInfo.set_location(location);
++        this._solarLocation = location;
++        this._solarDateKey = dateKey;
++        return true;
++    }
++
++    _formatSolarTime(timestamp) {
++        let dateTime = GLib.DateTime.new_from_unix_utc(timestamp);
++        const timezone = this._solarLocation?.get_timezone();
++        if (timezone)
++            dateTime = dateTime.to_timezone(timezone);
++        return formatTime(dateTime, {timeOnly: true});
++    }
++
++    _formatDuration(milliseconds) {
++        const totalMinutes = Math.max(0,
++            Math.round(milliseconds / (60 * 1000)));
++        const hours = Math.floor(totalMinutes / 60);
++        const minutes = totalMinutes % 60;
++
++        if (hours === 0)
++            return _('%d min').format(minutes);
++        if (minutes === 0)
++            return _('%d hr').format(hours);
++        return _('%d hr %d min').format(hours, minutes);
++    }
++
++    _setProgress(progress, isDaytime) {
++        const currentSegment = isDaytime
++            ? Math.min(SOLAR_PROGRESS_SEGMENTS - 1,
++                Math.floor(progress * SOLAR_PROGRESS_SEGMENTS))
++            : -1;
++
++        this._progressSegments.forEach((segment, index) => {
++            segment.remove_style_class_name('elapsed');
++            segment.remove_style_class_name('current');
++
++            if (progress >= 1 || index < currentSegment)
++                segment.add_style_class_name('elapsed');
++            else if (index === currentSegment)
++                segment.add_style_class_name('current');
++        });
++    }
++
++    _setUnavailable() {
++        this._locationLabel.text = _('Set a weather location');
++        this._statusLabel.text = _('Sun times unavailable');
++        this._sunriseValue.text = '—';
++        this._daylightValue.text = '—';
++        this._sunsetValue.text = '—';
++        this._setProgress(0, false);
++    }
++
++    update() {
++        if (!this._weatherClient || !this._syncSolarInfo()) {
++            this._setUnavailable();
++            return;
++        }
++
++        const [sunriseValid, sunrise] =
++            this._solarInfo.get_value_sunrise();
++        const [sunsetValid, sunset] =
++            this._solarInfo.get_value_sunset();
++        if (!sunriseValid || !sunsetValid || sunset <= sunrise) {
++            this._setUnavailable();
++            return;
++        }
++
++        const now = Date.now();
++        const sunriseMs = sunrise * 1000;
++        const sunsetMs = sunset * 1000;
++        const daylightMs = sunsetMs - sunriseMs;
++        const locationName = this._solarLocation.get_city_name() ||
++            this._solarLocation.get_name() || _('Current Location');
++
++        this._locationLabel.text = locationName;
++        this._sunriseValue.text = this._formatSolarTime(sunrise);
++        this._daylightValue.text = this._formatDuration(daylightMs);
++        this._sunsetValue.text = this._formatSolarTime(sunset);
++
++        if (now < sunriseMs) {
++            this._statusLabel.text = _('Night · Sunrise in %s')
++                .format(this._formatDuration(sunriseMs - now));
++            this._setProgress(0, false);
++        } else if (now < sunsetMs) {
++            const progress = (now - sunriseMs) / daylightMs;
++            this._statusLabel.text = _('Daylight · %s left')
++                .format(this._formatDuration(sunsetMs - now));
++            this._setProgress(progress, true);
++        } else {
++            this._statusLabel.text = _('Night · Sunset was at %s')
++                .format(this._formatSolarTime(sunset));
++            this._setProgress(1, false);
++        }
++    }
++});
++
++registerWidget(SolarWidget.id, context => new SolarWidget(context), {
++    title: SolarWidget.title,
++    preferredHeight: SolarWidget.preferredHeight,
++    defaultRefreshInterval: SolarWidget.defaultRefreshInterval,
++});
++
+ const AgendaWidget = GObject.registerClass(
+ class AgendaWidget extends ShellWidget {
+     static get id() {
