@@ -14,10 +14,10 @@ index 614e8128d..8e81555a4 100644
    &.empty { box-shadow: 0 0 0 0 none; }
  }
 diff --git a/js/ui/overview.js b/js/ui/overview.js
-index e7db089e5..4f8678231 100644
+index e7db089e5..d0357d826 100644
 --- a/js/ui/overview.js
 +++ b/js/ui/overview.js
-@@ -279,11 +279,44 @@ export class Overview extends Signals.EventEmitter {
+@@ -279,11 +279,60 @@ export class Overview extends Signals.EventEmitter {
  
          Main.wm.workspaceTracker.connect('notify::zero-open-windows', () => {
              this._threeFingerOverviewGesture.enabled = !Main.wm.workspaceTracker.zeroOpenWindows;
@@ -47,13 +47,29 @@ index e7db089e5..4f8678231 100644
 +            if (!this._edgeToSwitcherActive)
 +                return;
 +            const adjustment = this._overview.controls._stateAdjustment;
++            // Defensive: a non-finite pixel travel or a zero/undefined commit
++            // distance would make `frac` NaN, and Math.clamp does NOT sanitize
++            // NaN (clamp(NaN,…) === NaN). Writing NaN into the state adjustment
++            // wedges the overview (every workspace/window-picker actor then
++            // allocates with NaN coords → blank + stuck). Bail before computing.
++            if (!Number.isFinite(px) || !this._edgeToSwitcherDistance) {
++                console.warn('fajita edge-drag: rejected non-finite progress; ' +
++                    `px=${px} dist=${this._edgeToSwitcherDistance}`);
++                return;
++            }
 +            // Finger up (px > 0) drives value from APP_GRID(2) down toward
 +            // WINDOW_PICKER(1). Reaching the commit distance lands at WINDOW_PICKER.
 +            const frac = Math.clamp(px / this._edgeToSwitcherDistance, 0, 1);
-+            adjustment.value = Math.clamp(
++            const target = Math.clamp(
 +                OverviewControls.ControlsState.APP_GRID - frac,
 +                OverviewControls.ControlsState.WINDOW_PICKER,
 +                OverviewControls.ControlsState.APP_GRID);
++            if (!Number.isFinite(target)) {
++                console.warn('fajita edge-drag: rejected non-finite state value; ' +
++                    `px=${px} dist=${this._edgeToSwitcherDistance} frac=${frac}`);
++                return;
++            }
++            adjustment.value = target;
 +        });
 +        this._singleFingerOverviewEdgeDrag.connect('end',
 +            () => this._endEdgeToSwitcherDrag());
@@ -64,7 +80,7 @@ index e7db089e5..4f8678231 100644
  
          const singleFingerWorkspacesGesture = new SwipeTracker.SwipeTracker(global.stage,
              Clutter.Orientation.HORIZONTAL,
-@@ -315,6 +348,68 @@ export class Overview extends Signals.EventEmitter {
+@@ -315,6 +364,77 @@ export class Overview extends Signals.EventEmitter {
              workspaceManager.layoutRows !== -1;
          this._singleFingerWorkspacesGesture.enabled =
              workspaceManager.layoutRows !== -1;
@@ -91,6 +107,15 @@ index e7db089e5..4f8678231 100644
 +            return;
 +        this._edgeToSwitcherActive = false;
 +        const adjustment = this._overview.controls._stateAdjustment;
++        // Recovery: if a bad progress frame ever left the state value non-finite
++        // (NaN can't be recovered by any gesture — the phone would be stranded
++        // on a blank overview), force it back to APP_GRID before the snap
++        // decision so the `< 1.5` comparison never runs on NaN.
++        if (!Number.isFinite(adjustment.value)) {
++            console.warn('fajita edge-drag: recovered non-finite state value at ' +
++                `drag end; value=${adjustment.value}`);
++            adjustment.value = OverviewControls.ControlsState.APP_GRID;
++        }
 +        // Snap to the nearer of WINDOW_PICKER(1) / APP_GRID(2) by position.
 +        const target = adjustment.value < 1.5
 +            ? OverviewControls.ControlsState.WINDOW_PICKER
@@ -133,7 +158,7 @@ index e7db089e5..4f8678231 100644
      }
  
      _changeShownState(state) {
-@@ -326,7 +421,7 @@ export class Overview extends Signals.EventEmitter {
+@@ -326,7 +446,7 @@ export class Overview extends Signals.EventEmitter {
                  `${this._shownState} to ${state}`);
          }
  
@@ -142,7 +167,7 @@ index e7db089e5..4f8678231 100644
              this._singleFingerOverviewEdgeDrag.enabled = false;
  
          if (state === OverviewShownState.HIDING)
-@@ -684,7 +779,9 @@ export class Overview extends Signals.EventEmitter {
+@@ -684,7 +804,9 @@ export class Overview extends Signals.EventEmitter {
      // show:
      //
      // Animates the overview visible and grabs mouse and keyboard input
@@ -153,7 +178,7 @@ index e7db089e5..4f8678231 100644
          if (state === OverviewControls.ControlsState.HIDDEN)
              throw new Error('Invalid state, use hide() to hide');
  
-@@ -731,6 +828,9 @@ export class Overview extends Signals.EventEmitter {
+@@ -731,6 +853,9 @@ export class Overview extends Signals.EventEmitter {
  
          this._threeFingerWorkspacesGesture.allowLongSwipes = true;
          this._singleFingerWorkspacesGesture.allowLongSwipes = true;
@@ -164,7 +189,7 @@ index e7db089e5..4f8678231 100644
  
      // hide:
 diff --git a/js/ui/overviewControls.js b/js/ui/overviewControls.js
-index 4535f1dcb..a7b01406f 100644
+index 4535f1dcb..fee0f48b1 100644
 --- a/js/ui/overviewControls.js
 +++ b/js/ui/overviewControls.js
 @@ -21,6 +21,7 @@ import * as Layout from './layout.js';
@@ -205,7 +230,41 @@ index 4535f1dcb..a7b01406f 100644
              case ControlsState.APP_GRID:
                  return appGridStateBox;
              }
-@@ -721,7 +726,7 @@ class ControlsManager extends St.Widget {
+@@ -281,13 +286,23 @@ else
+                 state, this._computeWorkspacesBoxForState(state, ...params));
+         }
+ 
++        // Defensive: if the state adjustment value ever goes non-finite, the
++        // interpolation progress becomes NaN, which would produce NaN box
++        // coordinates and fail every downstream actor allocation (blank, stuck
++        // overview). Sanitize the progress used for box interpolation — a no-op
++        // in all normal cases (progress is finite), so normal behavior is
++        // unchanged.
++        const interpProgress = Number.isFinite(transitionParams.progress)
++            ? transitionParams.progress
++            : 1;
++
+         let workspacesBox;
+         if (!transitionParams.transitioning) {
+             workspacesBox = this._cachedWorkspaceBoxes.get(transitionParams.currentState);
+         } else {
+             const initialBox = this._cachedWorkspaceBoxes.get(transitionParams.initialState);
+             const finalBox = this._cachedWorkspaceBoxes.get(transitionParams.finalState);
+-            workspacesBox = initialBox.interpolate(finalBox, transitionParams.progress);
++            workspacesBox = initialBox.interpolate(finalBox, interpProgress);
+         }
+ 
+ if (this.empty)
+@@ -311,7 +326,7 @@ else
+                 const finalBox =
+                     this._getAppDisplayBoxForState(transitionParams.finalState, ...params);
+ 
+-                appDisplayBox = initialBox.interpolate(finalBox, transitionParams.progress);
++                appDisplayBox = initialBox.interpolate(finalBox, interpProgress);
+             }
+ 
+        /*     this._appDisplay.save_easing_state();
+@@ -721,7 +736,7 @@ class ControlsManager extends St.Widget {
          const state = Math.max(initialState, finalState);
  
          this._appDisplay.visible =
@@ -214,7 +273,7 @@ index 4535f1dcb..a7b01406f 100644
              !this._searchController.searchActive;
      }
  
-@@ -738,6 +743,14 @@ class ControlsManager extends St.Widget {
+@@ -738,6 +753,14 @@ class ControlsManager extends St.Widget {
  
          this._updateThumbnailsBox();
          this._updateAppDisplayVisibility(params);
@@ -229,7 +288,7 @@ index 4535f1dcb..a7b01406f 100644
      }
  
      _onSearchChanged() {
-@@ -750,6 +763,9 @@ class ControlsManager extends St.Widget {
+@@ -750,6 +773,9 @@ class ControlsManager extends St.Widget {
              this._updateAppDisplayVisibility();
              this._workspacesDisplay.reactive = true;
              this._workspacesDisplay.setPrimaryWorkspaceVisible(true);
@@ -239,7 +298,7 @@ index 4535f1dcb..a7b01406f 100644
          } else {
              this.add_style_class_name('search-active');
              this._searchController.show();
-@@ -898,10 +914,8 @@ class ControlsManager extends St.Widget {
+@@ -898,10 +924,8 @@ class ControlsManager extends St.Widget {
  
      overviewGestureBegin(tracker) {
          const progress = this._stateAdjustment.value;
@@ -252,7 +311,7 @@ index 4535f1dcb..a7b01406f 100644
              ControlsState.HIDDEN,
              ControlsState.WINDOW_PICKER,
              ControlsState.APP_GRID,
-@@ -968,6 +982,15 @@ class ControlsManager extends St.Widget {
+@@ -968,6 +992,15 @@ class ControlsManager extends St.Widget {
          this._stateAdjustment.gestureInProgress = false;
      }
  
@@ -268,7 +327,7 @@ index 4535f1dcb..a7b01406f 100644
      workspacesGestureBegin(tracker, monitor) {
          this._workspacesDisplay.show();
  
-@@ -1037,6 +1060,30 @@ class ControlsManager extends St.Widget {
+@@ -1037,6 +1070,30 @@ class ControlsManager extends St.Widget {
          this.dash.showAppsButton.checked = initialState === ControlsState.APP_GRID;
          this._ignoreShowAppsButtonToggle = false;
  
@@ -299,7 +358,7 @@ index 4535f1dcb..a7b01406f 100644
          // Set the opacity here to avoid a 1-frame flicker
          this.opacity = 0;
  
-@@ -1081,7 +1128,20 @@ class ControlsManager extends St.Widget {
+@@ -1081,7 +1138,20 @@ class ControlsManager extends St.Widget {
              });
          }));
  
