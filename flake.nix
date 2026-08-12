@@ -169,7 +169,7 @@
     };
     # Calculator — native GTK4/libadwaita Google-Calculator-style app (mobile-first).
     calculator = {
-      url = "git+file:///home/matv/Projects/calculator?rev=58d6fb640f10327912086bc5df4f8c03883eff4c";
+      url = "git+file:///home/matv/Projects/calculator?rev=d5f662b89325f042a29a42ccbea23067a79404e5";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     # Bourse — native GTK4/libadwaita stocks watchlist app (Yahoo Finance, no API key).
