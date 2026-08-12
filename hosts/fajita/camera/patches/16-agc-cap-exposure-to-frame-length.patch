@@ -1,0 +1,63 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Daniel <daniel@matv.io>
+Date: Mon, 11 Aug 2026 00:00:00 -0400
+Subject: [PATCH] ipa: soft: cap AGC exposure ceiling at the frame length
+
+AGC-RAMP-EFFICIENCY FIX (upstream candidate; observed on fajita's
+IMX376/IMX371, applies to any sensor on the soft ISP). The soft AGC
+(src/ipa/simple/algorithms/agc.cpp) ramps exposure up to
+configuration.agc.exposureMax and only then engages analogue gain.
+exposureMax is taken verbatim from the V4L2 EXPOSURE control's max,
+which the sensor driver reports for the MAXIMUM frame length, i.e. the
+maximum VBLANK (on fajita's IMX376: 65515 lines = VTS_MAX - 10). But
+the soft IPA never programs VBLANK -- it only ever writes EXPOSURE,
+ANALOGUE_GAIN and FOCUS -- so the frame length is pinned at its
+minimum (outputSize.height + vblank.min(); IMX376: 1080 + 2796 = 3876)
+for the whole session, and the sensor cannot integrate longer than the
+frame period. Every exposure code above ~minFrameLength is clamped by
+the hardware to the same integration time, so the AGC spends ~30
+frames ramping exposure 3876 -> 65515 (10%/frame) with no brightness
+gain before it finally switches to analogue gain -- low-light scenes
+brighten far too slowly.
+
+Cap exposureMax at context_.sensorInfo.minFrameLength (the fixed frame
+length the soft IPA actually runs at) so the ramp hands off to gain as
+soon as real integration is maxed. The framework fills minFrameLength
+from outputSize.height + vblank.min() (camera_sensor_legacy.cpp), and
+it is already available via context_.sensorInfo (set in init()). The
+change only ever LOWERS the exposure ceiling, so it cannot cause
+over-exposure or oscillation: the AGC's up/down hysteresis is
+untouched, exposure simply saturates sooner and analogue gain (bounded
+by againMax) takes over. Guarded against unpopulated frame-length info
+(minFrameLength == 0) and never raises the ceiling, so sensors that
+already report a frame-length-limited exposure max are unaffected.
+
+Pairs with the imx376/imx371 CameraSensorHelper (previous patch): with
+the helper, analogue gain now seeds at 1.0x and ramps real multiples
+1.0x->16.0x, and with this cap the exposure ramp reaches that hand-off
+promptly -- together they fix the "far too dark" dusk/indoor rendering.
+---
+ src/ipa/simple/soft_simple.cpp | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+--- a/src/ipa/simple/soft_simple.cpp
++++ b/src/ipa/simple/soft_simple.cpp
+@@ -229,5 +229,18 @@ int IPASoftSimple::configure(const IPAConfigInfo &configInfo)
+ 	context_.configuration.agc.exposureMin = exposureInfo.min().get<int32_t>();
+ 	context_.configuration.agc.exposureMax = exposureInfo.max().get<int32_t>();
++	/*
++	 * The soft IPA never programs VBLANK, so the frame length is fixed
++	 * at its minimum for the whole session and integration cannot exceed
++	 * it. The EXPOSURE control max is reported for the maximum frame
++	 * length, though, so cap the AGC's exposure ceiling at the actual
++	 * (minimum) frame length -- otherwise the ramp wastes many frames
++	 * driving exposure into values the sensor clamps to the frame period
++	 * before it hands off to analogue gain (too dark, too slow, in low
++	 * light). Guarded so it is a no-op when frame-length info is missing.
++	 */
++	int32_t frameLengthMax = static_cast<int32_t>(context_.sensorInfo.minFrameLength);
++	if (frameLengthMax > 0 && frameLengthMax < context_.configuration.agc.exposureMax)
++		context_.configuration.agc.exposureMax = frameLengthMax;
+ 	if (!context_.configuration.agc.exposureMin) {
+ 		LOG(IPASoft, Warning) << "Minimum exposure is zero, that can't be linear";
+ 		context_.configuration.agc.exposureMin = 1;
