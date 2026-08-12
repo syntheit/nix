@@ -1,8 +1,45 @@
+diff --git a/data/theme/gnome-shell-sass/widgets/_quick-settings.scss b/data/theme/gnome-shell-sass/widgets/_quick-settings.scss
+index 54bdb1fb2..4f4717a03 100644
+--- a/data/theme/gnome-shell-sass/widgets/_quick-settings.scss
++++ b/data/theme/gnome-shell-sass/widgets/_quick-settings.scss
+@@ -86,8 +86,10 @@
+   min-width: 48px;
+   min-height: 32px;
+   padding: 0;
+-  margin-top: -8px;
+-  margin-bottom: 8px;
++  // Clutter actor margins cannot be negative; -8px wraps the preferred
++  // height through G_MAXUINT and makes the entire shade request full height.
++  margin-top: 0;
++  margin-bottom: 0;
+ 
+   StIcon { icon-size: $scalable_icon_size; }
+ }
+diff --git a/js/ui/calendar.js b/js/ui/calendar.js
+index 4f447aa22..cc6ce2788 100644
+--- a/js/ui/calendar.js
++++ b/js/ui/calendar.js
+@@ -809,6 +809,12 @@ class CalendarMessageList extends St.Widget {
+             }, this);
+     }
+ 
++    getContentPreferredHeight(forWidth) {
++        const [minimumHeight] =
++            this._messageView.get_preferred_height(forWidth);
++        return minimumHeight;
++    }
++
+     maybeCollapseMessageGroupForEvent(event) {
+         if (!this._messageView.expandedGroup)
+             return Clutter.EVENT_PROPAGATE;
 diff --git a/js/ui/panel.js b/js/ui/panel.js
 index 8ccdb4ba4..d681d2cb6 100644
 --- a/js/ui/panel.js
 +++ b/js/ui/panel.js
-@@ -467,0 +468,11 @@ class QuickSettings extends PanelMenu.Button {
+@@ -465,6 +465,17 @@ class QuickSettings extends PanelMenu.Button {
+             sibling, fullSpan);
+         this._addItemsBefore(this._brightness.quickSettingsItems,
+             sibling, fullSpan);
 +        if (this._mobileQuickSettingsConfig) {
 +            for (const indicator of [
 +                this._system,
@@ -14,16 +51,28 @@ index 8ccdb4ba4..d681d2cb6 100644
 +                    this.menu.setItemExpandedOnly(item, true));
 +            }
 +        }
+ 
+         const regularSpan = this._mobileQuickSettingsConfig ? 2 : 1;
+         this._addItemsBefore(this._camera.quickSettingsItems, sibling, regularSpan);
 diff --git a/js/ui/quickSettings.js b/js/ui/quickSettings.js
-index d5e9ca88f..bbeb55c0d 100644
+index d5e9ca88f..900669304 100644
 --- a/js/ui/quickSettings.js
 +++ b/js/ui/quickSettings.js
-@@ -590,0 +591,4 @@ const QuickSettingsLayoutMeta = GObject.registerClass({
+@@ -588,6 +588,10 @@ const QuickSettingsLayoutMeta = GObject.registerClass({
+             'collapse-managed', null, null,
+             GObject.ParamFlags.READWRITE,
+             false),
 +        'expanded-only': GObject.ParamSpec.boolean(
 +            'expanded-only', null, null,
 +            GObject.ParamFlags.READWRITE,
 +            false),
-@@ -679 +683,7 @@ const QuickSettingsLayout = GObject.registerClass({
+     },
+ }, class QuickSettingsLayoutMeta extends Clutter.LayoutMeta {});
+ 
+@@ -676,7 +680,13 @@ const QuickSettingsLayout = GObject.registerClass({
+             if (!child.visible || child === this._overlay)
+                 continue;
+ 
 -            const {collapseManaged} = this.get_child_meta(container, child);
 +            const {collapseManaged, expandedOnly} =
 +                this.get_child_meta(container, child);
@@ -32,9 +81,64 @@ index d5e9ca88f..bbeb55c0d 100644
 +                continue;
 +            }
 +
-@@ -842,0 +853,51 @@ const QuickSettingsLayout = GObject.registerClass({
+             if (!collapseManaged)
+                 continue;
+ 
+@@ -773,7 +783,10 @@ const QuickSettingsLayout = GObject.registerClass({
+     vfunc_get_preferred_height(container, _forWidth) {
+         const rows = this._getRows(container);
+ 
+-        let [minHeight, natHeight] = this._overlay.get_preferred_height(-1);
++        const hasOpenMenu = rows.some(row =>
++            row.some(child => child.menu?.isOpen));
++        let [minHeight, natHeight] = hasOpenMenu
++            ? this._overlay.get_preferred_height(-1) : [0, 0];
+ 
+         const spacing = (rows.length - 1) * this.row_spacing;
+         minHeight += spacing;
+@@ -792,7 +805,11 @@ const QuickSettingsLayout = GObject.registerClass({
+         const collapsedChildren = this._getCollapsedChildren(container);
+         const rows = this._getRows(container, collapsedChildren);
+ 
+-        const [, overlayHeight] = this._overlay.get_preferred_height(-1);
++        const hasOpenMenu = rows.some(row =>
++            row.some(child => child.menu?.isOpen));
++        const [, requestedOverlayHeight] = hasOpenMenu
++            ? this._overlay.get_preferred_height(-1) : [0, 0];
++        const overlayHeight = Math.min(requestedOverlayHeight, box.get_height());
+ 
+         const availWidth = box.get_width() - (this.nColumns - 1) * this.column_spacing;
+         const childWidth = Math.floor(availWidth / this.nColumns);
+@@ -834,12 +851,77 @@ const QuickSettingsLayout = GObject.registerClass({
+ 
+             y += rowNat + this.row_spacing;
+ 
+-            if (row.some(c => c.menu?.actor.visible))
++            if (row.some(child => child.menu?.isOpen))
+                 y += overlayHeight;
+         });
+     }
+ });
+ 
 +const QuickSettingsShadeLayout = GObject.registerClass(
 +class QuickSettingsShadeLayout extends Clutter.LayoutManager {
++    _init() {
++        super._init();
++        this._messageList = null;
++    }
++
++    setMessageList(messageList) {
++        this._messageList = messageList;
++        this.layout_changed();
++    }
++
++    _getContentHeight(child, forWidth) {
++        const [fixedHeight] = child.get_preferred_height(forWidth);
++        const messageHeight =
++            this._messageList?.getContentPreferredHeight(forWidth) ?? 0;
++        return Math.max(0, fixedHeight) + Math.max(0, messageHeight);
++    }
++
 +    vfunc_get_preferred_width(container, forHeight) {
 +        return container.get_children().reduce(([min, nat], child) => {
 +            if (!child.visible)
@@ -47,14 +151,14 @@ index d5e9ca88f..bbeb55c0d 100644
 +    }
 +
 +    vfunc_get_preferred_height(container, forWidth) {
-+        return container.get_children().reduce(([min, nat], child) => {
++        const height = container.get_children().reduce((preferred, child) => {
 +            if (!child.visible)
-+                return [min, nat];
++                return preferred;
 +
-+            const [childMin, childNat] =
-+                child.get_preferred_height(forWidth);
-+            return [Math.max(min, childMin), Math.max(nat, childNat)];
-+        }, [0, 0]);
++            return Math.max(
++                preferred, this._getContentHeight(child, forWidth));
++        }, 0);
++        return [height, height];
 +    }
 +
 +    vfunc_allocate(container, box) {
@@ -65,17 +169,14 @@ index d5e9ca88f..bbeb55c0d 100644
 +            if (!child.visible)
 +                continue;
 +
-+            const [, naturalHeight] =
++            const [minimumHeight] =
 +                child.get_preferred_height(availableWidth);
++            const messageHeight =
++                this._messageList?.getContentPreferredHeight(availableWidth) ?? 0;
++            const contentHeight =
++                Math.max(0, minimumHeight) + Math.max(0, messageHeight);
 +            const allocationHeight =
-+                Math.min(naturalHeight, availableHeight);
-+            const geometry =
-+                `${availableWidth}x${availableHeight}:${naturalHeight}`;
-+            if (this._lastGeometry !== geometry) {
-+                this._lastGeometry = geometry;
-+                console.log(`Quick Settings shade geometry: ${geometry}`);
-+            }
-+
++                Math.min(contentHeight, availableHeight);
 +            const childBox = new Clutter.ActorBox();
 +            childBox.set_origin(box.x1, box.y1);
 +            childBox.set_size(availableWidth, allocationHeight);
@@ -84,19 +185,50 @@ index d5e9ca88f..bbeb55c0d 100644
 +    }
 +});
 +
-@@ -850,0 +912,7 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+     constructor(sourceActor) {
+         super(sourceActor, 0, St.Side.TOP);
+@@ -848,6 +930,14 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+         this.actor.add_child(this._boxPointer);
+         this._boxPointer.add_style_class_name("quick-settings-boxpointer");
+         this._boxPointer.setFullscreen(true);
++        this._shadeLayout = new QuickSettingsShadeLayout();
 +        this._shadeStack = new St.Widget({
-+            layout_manager: new QuickSettingsShadeLayout(),
++            layout_manager: this._shadeLayout,
 +            x_expand: true,
 +            y_expand: true,
 +        });
 +        this._boxPointer.bin.set_child(this._shadeStack);
 +        this._shadeStack.add_child(this.box);
-@@ -864,0 +933 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+         this.actor._delegate = this;
+ 
+         this.connect('menu-closed', () => {
+@@ -862,11 +952,13 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+         this.box.add_style_class_name('quick-settings');
+         this.box.x_align = Clutter.ActorAlign.END;
+         this.box.y_align = Clutter.ActorAlign.START;
 +        this.box.y_expand = false;
-@@ -869,0 +939 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+         this.box.clip_to_allocation = true;
+ 
+         this._innerBox = new St.BoxLayout({
+             style_class: 'inner-box',
+             vertical: true,
 +            y_expand: true,
-@@ -1088,0 +1159,9 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+         });
+         this.box.add_child(this._innerBox);
+ 
+@@ -914,6 +1006,7 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+ 
+         this._messageList = new Calendar.CalendarMessageList();
+         this._innerBox.add_child(this._messageList);
++        this._shadeLayout.setMessageList(this._messageList);
+ 
+         const yConstraint = new Clutter.BindConstraint({
+             coordinate: Clutter.BindCoordinate.Y,
+@@ -1086,6 +1179,15 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+         this._syncExpandButton();
+     }
+ 
 +    setItemExpandedOnly(item, expandedOnly) {
 +        const layout = this._grid.layout_manager;
 +        layout.child_set_property(
@@ -106,3 +238,6 @@ index d5e9ca88f..bbeb55c0d 100644
 +        this._syncExpandButton();
 +    }
 +
+     _syncExpandButton() {
+         const layout = this._grid.layout_manager;
+         const hasOverflow = layout.hasCollapsedChildren(this._grid);
