@@ -88,6 +88,11 @@ in
           ./patches/today-view.patch # Today View sibling left of app-grid page 1; shared WidgetHost + boundary-gated horizontal paging
           ./patches/widget-scroll-safety.patch # WidgetHost/Today are plain BoxLayouts; clamp page height so no non-StScrollable/negative allocation can crash Shell
           ./patches/today-view-polish.patch # hide search on Today, reset to app grid on lock, and prevent zero-size pager NaNs
+          ./patches/calendar-widget.patch # native local month calendar; Today-only default and compact card styling
+          ./patches/agenda-timeline-widget.patch # replace month grid with a local Today/Tomorrow five-hour agenda; bounded native GridLayout, live now line
+          ./patches/agenda-hairlines.patch # keep hour separators and current-time marker at true 1px height instead of GridLayout row-fill thickness
+          ./patches/agenda-scroll-actions.patch # vertically scroll the agenda through the day via an explicit St.Viewport; date/event buttons open GNOME Calendar
+          ./patches/solar-widget.patch # compact local sunrise/sunset card using Shell's weather location, libgweather astronomy, and a segmented daylight-progress track
           ./patches/appgrid-folder-drop.patch # drop an app onto an EXISTING folder now adds it (FolderIcon.acceptDrop persists to the folder's apps list instead of the throwing reorder path); guard _removeItem so redisplay can't throw "not part of the IconGridLayout". MUST stay after enable-appgrid-reorder + today-view (same file)
           ./patches/appgrid-drag-null-app.patch # drag-begin builds a placeholder AppIcon from lookup_app(id); Waydroid/PWA/folder ids don't resolve → AppIcon(null) threw & aborted the drag. Prefer source.app + null-guard. MUST stay after appgrid-folder-drop (same file)
           ./patches/appgrid-home-on-empty.patch # phone: closing the last window in the app-switcher lands on the home app-grid instead of an empty picker (adds a last-window-removed → APP_GRID transition; upstream has none). MUST stay after ios-home-appswitcher + today-view (same file)
