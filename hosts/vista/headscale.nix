@@ -977,6 +977,7 @@ in
           "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGUH4FlVZkcKIanaFPMcb8vNy/FIGE8lGsGTA9dZSzIz matt@newreacheducation.com"
           "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEj1O0FjhOogZaMYwhwntdmbytnQ/FPlaSbzmwGn0uQN calebd@newreach.com"
           "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBSCDtHtHGA9EpNAUhm8WdrkPV7l/qKofLmiDcFipjBj arcbjorn@proton.me"
+          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDWD39txIQueOEsZI81xCmtaFBNY3uyfnmjQyNh0hQ6s nathan@prop.ai"
         ];
       };
 
