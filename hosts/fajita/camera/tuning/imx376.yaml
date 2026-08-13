@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: CC0-1.0
+# STATUS (2026-08-13): Ccm RE-ENABLED with the SOFTENED matrix after the
+# night-violet root cause was fixed (patches 12/13/15 + blackLevel=4096). See
+# the block comment above the Ccm entry below for the swap-to-full recipe.
 # NOTE (fajita, 2026-07-17): OUR OWN Ccm, derived Phase 4 from a 24-patch
 # ColorChecker on a calibrated MacBook screen (dark room), shot raw on this
 # IMX376, solved least-squares (rows sum to 1 → neutrals preserved). Raw fit
@@ -28,11 +31,33 @@ algorithms:
       # after the dark-frame calibration.
       blackLevel: 4096
   - Awb:
-  # Ccm PARKED (2026-07-17 night): the violet-night bug lives BELOW the CCM
-  # (no-CCM diagnostic frame still violet at near-neutral gains; green
-  # crushed in the raw-to-render path at low signal — suspected per-channel
-  # black-level/gamma residue). Re-enable after that's fixed; both solved
-  # matrices are in git history (full: 81e388e^, softened: 81e388e).
+  # Ccm RE-ENABLED (2026-08-13) — SOFTENED matrix (M' = 0.5*I + 0.5*M_solved).
+  # Parked 2026-07-17 because dark scenes rendered violet; that root cause is
+  # now fully fixed (patch 12 AWB stats black-offset units, patch 13 subtract
+  # black before gain in the debayer LUTs — incl. the CCM path re-anchored to
+  # the green zero-point, patch 15 analogue gain 1-16x, blackLevel reverted to
+  # 4096). Field symptom without CCM: flat green-grey daylight cast + low
+  # saturation (channel means ~151/165/155, green leads R by ~14) = classic
+  # missing-CCM look. Pipeline order matters: Awb must precede Ccm so the
+  # debayer's combinedMatrix = ccm * gainMatrix (patch 13 assumes exactly this
+  # and folds greenZero - M*black into the green LUT — no double-apply).
+  # Enabling Ccm also flips context.ccmEnabled=true, which lets Adjust's
+  # saturation boost run. Starting SOFTENED (halves the off-diagonal ×
+  # AWB-gain-mismatch tint that made the FULL matrix throw magenta highlights
+  # / green midtones on some scenes) so Daniel can judge with less tint risk.
+  # To swap to the FULL solved matrix (deeper blues/reds, more tint risk),
+  # replace the ccm row below with:
+  #   ccm: [  1.64895, -0.69694,  0.04799,
+  #          -0.26600,  1.62365, -0.35765,
+  #          -0.16022, -0.61066,  1.77088 ]
+  # Both matrices: 24-patch ColorChecker on a MacBook screen, least-squares,
+  # rows sum to 1 (neutrals preserved). Full in git 4c946d8, softened 24ba63f.
+  - Ccm:
+      ccms:
+        - ct: 6500
+          ccm: [  1.32448, -0.34847,  0.02400,
+                 -0.13300,  1.31183, -0.17883,
+                 -0.08011, -0.30533,  1.38544 ]
   - Adjust:
   - Agc:
   # Contrast-detect autofocus (phase-3 vendored patches; drives the
