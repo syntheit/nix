@@ -1,18 +1,19 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Daniel <daniel@matv.io>
 Date: Wed, 13 Aug 2026 00:00:00 -0400
-Subject: [PATCH] swstats_cpu: centre + enlarge the AF sharpness window
+Subject: [PATCH] swstats_cpu: centre the AF sharpness window in PIXELS on all
+ formats (packed + unpacked)
 
 LOW-CONTRAST AF ROBUSTNESS + WINDOW MIS-PLACEMENT (OURS; companion to
 the CDAF sweep-quality work in patches 07-10, 14). The soft-ISP CDAF
 scores focus from the green squared-gradient metric
 `stats_.sharpness += 1000 * Sum((g - g0)^2) / sumG`, accumulated only
-where BOTH `(5*x)/window_.width == 3` and `(5*y)/window_.height == 3`
-(patch 08). That predicate is true for x,y in [0.6, 0.8) of the frame,
-i.e. the FOURTH fifth on each axis -- a single 20%x20% = 4% patch sitting
-in the lower-right quadrant, NOT the centre (the centred fifth is index 2,
-[0.4, 0.6)). The in-code comments elsewhere call this "centre of picture",
-but the arithmetic never was.
+inside a window predicate (patch 08). As shipped that predicate was
+`(5*x)/window_.width == 3 && (5*y)/window_.height == 3`, which is true
+for x,y in [0.6, 0.8) of the frame -- the FOURTH fifth on each axis, a
+single 20%x20% = 4% patch sitting in the lower-right quadrant, NOT the
+centre (the centred fifth is index 2, [0.4, 0.6)). The in-code comments
+elsewhere call this "centre of picture", but the arithmetic never was.
 
 Two consequences, both seen in the field on a ~1-2 m indoor shot of flat
 white surfaces (washing machine / white cabinets / tiles) that locked at
@@ -30,34 +31,71 @@ the wrong distance and came out uniformly soft:
      the argmax over the ~21 coarse sweep positions is noise-driven and
      the lens lands at an arbitrary distance (the observed failure).
 
-Fix: sample the centred middle third on each axis -- true when
-`(3*x)/window_.width == 1` AND `(3*y)/window_.height == 1`, i.e.
-x,y in [1/3, 2/3). That re-centres the window onto where the photographer
-aims and grows it from 4% to ~11% of the frame (~2.8x the linear extent,
-~9x the pixels sampled), which lifts the metric's signal-to-noise by ~3x
-(sqrt of the sample count) on marginally-textured scenes and catches
-texture the old off-centre patch missed. It also picks up more of any
-in-frame edge (tile grout, appliance seams, cabinet gaps) even when the
-dead-centre is blank.
+Aim: sample the centred middle third on each axis (x,y in [1/3, 2/3)),
+which re-centres onto where the photographer aims and grows the window
+from 4% to ~11% of the frame (~2.8x the linear extent, ~9x the pixels),
+lifting the metric's signal-to-noise on marginally-textured scenes.
+
+BUT the naive ratio test `(3*x)/window_.width == 1` is only correct where
+`x` is a PIXEL index. The window predicate lives in a shared macro
+(SWSTATS_ACCUMULATE_LINE_STATS) expanded by every per-format line-stat
+function, and `x` does NOT have uniform units:
+
+  - UNPACKED  statsBGGR{8,10,12}Line0: `x` is a pixel column index,
+    loop `for (x = 0; x < window_.width; x += 4)`. window_.width is in
+    pixels (debayer_cpu.cpp setWindow: window_.width = outputCfg.size
+    .width), so `(3*x)/window_.width` is a genuine pixel ratio. OK.
+
+  - PACKED    statsBGGR10PLine0 / statsGBRG10PLine0 (CSI-2 10-bit, 4
+    pixels packed into 5 bytes): `x` is a BYTE offset, loop
+    `for (x = 0; x < window_.width*5/4; x += 5)`. Here `x` runs to
+    ~window_.width * 5/4 while window_.width is still in PIXELS, so
+    `(3*x)/window_.width == 1` selects source columns ~26.7%-53.3% --
+    still OFF-CENTRE. This is the format fajita actually runs: our
+    sensors deliver packed pRAA (SRGGB10_CSI2P -> statsGBRG10PLine0) and
+    pBAA (SBGGR10_CSI2P -> statsBGGR10PLine0), so on-device the ratio
+    trick never centred the window at all.
+
+Fix: make the window bounds map to the SAME pixels in every format by
+testing against the loop's own x-domain extent rather than a hard-coded
+pixel width. Each function already knows (or trivially derives) its x
+upper bound; expose it as a uniformly-named local `windowXEnd`
+(= window_.width for unpacked, = window_.width*5/4 for packed -- the
+latter just renames the pre-existing `widthInBytes`) and use it both as
+the loop bound and in the predicate:
+
+    x >= windowXEnd / 3 && x < 2 * windowXEnd / 3
+
+Because windowXEnd is expressed in the SAME units as `x` in each
+function (pixels for unpacked, bytes for packed) and is linearly
+proportional to the window width in pixels, [windowXEnd/3, 2*windowXEnd/3)
+is the centred middle third IN PIXELS on every path. The packed loop
+still steps by 5 bytes, so no 5-byte/4-pixel group is ever split by the
+new bounds. `y` is a pixel line index in all functions (it is the frame
+line index passed by processBayerFrame2, 0 <= y < window_.height in
+pixels), so its test stays the pixel-domain `(3*y)/window_.height == 1`.
+
+No per-pixel division is added to the hot loop -- windowXEnd/3 and
+2*windowXEnd/3 are loop-invariant and the compiler hoists them; this is
+cheaper than the old `(N*x)/window_.width` divide that ran every sample.
 
 The metric stays exactly ratiometric: `sharpness` and its per-line
 normaliser `sumG` both scale with the window, and the AF logic only ever
 compares sharpness against its own running peak (patches 07-10, 14), so
-no threshold or sweep constant needs retuning. Pure widening of an
-existing predicate -- no new state, no allocation, no change to the
-squared-gradient kernel or the normalisation.
+no threshold or sweep constant needs retuning. No new state, no
+allocation, no change to the squared-gradient kernel or normalisation.
 
-HONEST LIMIT: this cannot rescue a genuinely textureless target. Contrast-
-detection AF (CDAF) has zero gradient to hill-climb on a perfectly flat
-field regardless of window size; a bigger centred window only helps when
-SOME texture exists in frame (as in the kitchen scene). True flat-white
-focus needs phase-detect / hybrid AF hardware this contrast-only sensor
-does not have. Follow-ups that need on-device tuning (multi-zone weighted
-window, low-contrast hold-position guard) are deliberately left out of
-this minimal, unambiguous change.
+HONEST LIMIT: this cannot rescue a genuinely textureless target.
+Contrast-detection AF has zero gradient to hill-climb on a perfectly
+flat field regardless of window size; a bigger centred window only helps
+when SOME texture exists in frame (as in the kitchen scene). True
+flat-white focus needs phase-detect / hybrid AF hardware this
+contrast-only sensor does not have. Follow-ups that need on-device
+tuning (multi-zone weighted window, low-contrast hold-position guard)
+are deliberately left out of this minimal, unambiguous change.
 ---
- src/libcamera/software_isp/swstats_cpu.cpp | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
+ src/libcamera/software_isp/swstats_cpu.cpp | 18 ++++++++++++------
+ 1 file changed, 12 insertions(+), 6 deletions(-)
 
 --- a/src/libcamera/software_isp/swstats_cpu.cpp
 +++ b/src/libcamera/software_isp/swstats_cpu.cpp
@@ -66,7 +104,79 @@ this minimal, unambiguous change.
  	yVal += b * kBlueYMul;             \
  	stats_.yHistogram[yVal * SwIspStats::kYHistogramSize / (256 * 256 * (div))]++; \
 -	if (1 && r0 != 0 && ((5*x) / window_.width == 3) && ((5*y) / window_.height == 3)) \
-+	if (1 && r0 != 0 && ((3*x) / window_.width == 1) && ((3*y) / window_.height == 1)) \
++	if (1 && r0 != 0 && x >= windowXEnd / 3 && x < 2 * windowXEnd / 3 && ((3*y) / window_.height == 1)) \
  	  sharpness += (g-g0) * (g-g0); \
  	r0 = r1; g0 = g1; b0 = b1; \
  	r1 = r; g1 = g; b1 = b; \
+@@ -208,8 +208,10 @@ void SwStatsCpu::statsBGGR8Line0(const uint8_t *src[], int y)
+ 	if (swapLines_)
+ 		std::swap(src0, src1);
+
++	const unsigned int windowXEnd = window_.width;
++
+ 	/* x += 4 sample every other 2x2 block */
+-	for (unsigned int x = 0; x < window_.width; x += 4) {
++	for (unsigned int x = 0; x < windowXEnd; x += 4) {
+ 		b = src0[x];
+ 		g = src0[x + 1];
+ 		g2 = src1[x];
+@@ -233,8 +235,10 @@ void SwStatsCpu::statsBGGR10Line0(const uint8_t *src[], int y)
+ 	if (swapLines_)
+ 		std::swap(src0, src1);
+
++	const unsigned int windowXEnd = window_.width;
++
+ 	/* x += 4 sample every other 2x2 block */
+-	for (unsigned int x = 0; x < window_.width; x += 4) {
++	for (unsigned int x = 0; x < windowXEnd; x += 4) {
+ 		b = src0[x];
+ 		g = src0[x + 1];
+ 		g2 = src1[x];
+@@ -259,8 +263,10 @@ void SwStatsCpu::statsBGGR12Line0(const uint8_t *src[], int y)
+ 	if (swapLines_)
+ 		std::swap(src0, src1);
+
++	const unsigned int windowXEnd = window_.width;
++
+ 	/* x += 4 sample every other 2x2 block */
+-	for (unsigned int x = 0; x < window_.width; x += 4) {
++	for (unsigned int x = 0; x < windowXEnd; x += 4) {
+ 		b = src0[x];
+ 		g = src0[x + 1];
+ 		g2 = src1[x];
+@@ -279,7 +285,7 @@ void SwStatsCpu::statsBGGR10PLine0(const uint8_t *src[], int y)
+ {
+ 	const uint8_t *src0 = src[1] + window_.x * 5 / 4;
+ 	const uint8_t *src1 = src[2] + window_.x * 5 / 4;
+-	const unsigned int widthInBytes = window_.width * 5 / 4;
++	const unsigned int windowXEnd = window_.width * 5 / 4;
+
+ 	if (swapLines_)
+ 		std::swap(src0, src1);
+@@ -287,7 +293,7 @@ void SwStatsCpu::statsBGGR10PLine0(const uint8_t *src[], int y)
+ 	SWSTATS_START_LINE_STATS(uint8_t)
+
+ 	/* x += 5 sample every other 2x2 block */
+-	for (unsigned int x = 0; x < widthInBytes; x += 5) {
++	for (unsigned int x = 0; x < windowXEnd; x += 5) {
+ 		/* BGGR */
+ 		b = src0[x];
+ 		g = src0[x + 1];
+@@ -305,7 +311,7 @@ void SwStatsCpu::statsGBRG10PLine0(const uint8_t *src[], int y)
+ {
+ 	const uint8_t *src0 = src[1] + window_.x * 5 / 4;
+ 	const uint8_t *src1 = src[2] + window_.x * 5 / 4;
+-	const unsigned int widthInBytes = window_.width * 5 / 4;
++	const unsigned int windowXEnd = window_.width * 5 / 4;
+
+ 	if (swapLines_)
+ 		std::swap(src0, src1);
+@@ -313,7 +319,7 @@ void SwStatsCpu::statsGBRG10PLine0(const uint8_t *src[], int y)
+ 	SWSTATS_START_LINE_STATS(uint8_t)
+
+ 	/* x += 5 sample every other 2x2 block */
+-	for (unsigned int x = 0; x < widthInBytes; x += 5) {
++	for (unsigned int x = 0; x < windowXEnd; x += 5) {
+ 		/* GBRG */
+ 		g = src0[x];
+ 		b = src0[x + 1];
