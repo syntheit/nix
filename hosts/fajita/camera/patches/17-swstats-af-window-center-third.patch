@@ -1,0 +1,72 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Daniel <daniel@matv.io>
+Date: Wed, 13 Aug 2026 00:00:00 -0400
+Subject: [PATCH] swstats_cpu: centre + enlarge the AF sharpness window
+
+LOW-CONTRAST AF ROBUSTNESS + WINDOW MIS-PLACEMENT (OURS; companion to
+the CDAF sweep-quality work in patches 07-10, 14). The soft-ISP CDAF
+scores focus from the green squared-gradient metric
+`stats_.sharpness += 1000 * Sum((g - g0)^2) / sumG`, accumulated only
+where BOTH `(5*x)/window_.width == 3` and `(5*y)/window_.height == 3`
+(patch 08). That predicate is true for x,y in [0.6, 0.8) of the frame,
+i.e. the FOURTH fifth on each axis -- a single 20%x20% = 4% patch sitting
+in the lower-right quadrant, NOT the centre (the centred fifth is index 2,
+[0.4, 0.6)). The in-code comments elsewhere call this "centre of picture",
+but the arithmetic never was.
+
+Two consequences, both seen in the field on a ~1-2 m indoor shot of flat
+white surfaces (washing machine / white cabinets / tiles) that locked at
+the wrong distance and came out uniformly soft:
+
+  1. Off-centre metering: the 4% patch samples the lower-right of the
+     frame, so a subject the user framed centrally (where they aim) may
+     fall entirely outside the AF window while off-axis clutter drives
+     the lock.
+
+  2. Tiny sampling area starves the metric on low-texture scenes. Over a
+     4% patch of near-flat white the squared-gradient sum is a handful of
+     sensor-noise counts, and dividing by the LARGE green sum of a bright
+     white field drives it to near zero with high relative variance -- so
+     the argmax over the ~21 coarse sweep positions is noise-driven and
+     the lens lands at an arbitrary distance (the observed failure).
+
+Fix: sample the centred middle third on each axis -- true when
+`(3*x)/window_.width == 1` AND `(3*y)/window_.height == 1`, i.e.
+x,y in [1/3, 2/3). That re-centres the window onto where the photographer
+aims and grows it from 4% to ~11% of the frame (~2.8x the linear extent,
+~9x the pixels sampled), which lifts the metric's signal-to-noise by ~3x
+(sqrt of the sample count) on marginally-textured scenes and catches
+texture the old off-centre patch missed. It also picks up more of any
+in-frame edge (tile grout, appliance seams, cabinet gaps) even when the
+dead-centre is blank.
+
+The metric stays exactly ratiometric: `sharpness` and its per-line
+normaliser `sumG` both scale with the window, and the AF logic only ever
+compares sharpness against its own running peak (patches 07-10, 14), so
+no threshold or sweep constant needs retuning. Pure widening of an
+existing predicate -- no new state, no allocation, no change to the
+squared-gradient kernel or the normalisation.
+
+HONEST LIMIT: this cannot rescue a genuinely textureless target. Contrast-
+detection AF (CDAF) has zero gradient to hill-climb on a perfectly flat
+field regardless of window size; a bigger centred window only helps when
+SOME texture exists in frame (as in the kitchen scene). True flat-white
+focus needs phase-detect / hybrid AF hardware this contrast-only sensor
+does not have. Follow-ups that need on-device tuning (multi-zone weighted
+window, low-contrast hold-position guard) are deliberately left out of
+this minimal, unambiguous change.
+---
+ src/libcamera/software_isp/swstats_cpu.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/src/libcamera/software_isp/swstats_cpu.cpp
++++ b/src/libcamera/software_isp/swstats_cpu.cpp
+@@ -186,7 +186,7 @@ static constexpr unsigned int kBlueYMul = 29; /* 0.114 * 256 */
+ 	yVal += g * kGreenYMul;            \
+ 	yVal += b * kBlueYMul;             \
+ 	stats_.yHistogram[yVal * SwIspStats::kYHistogramSize / (256 * 256 * (div))]++; \
+-	if (1 && r0 != 0 && ((5*x) / window_.width == 3) && ((5*y) / window_.height == 3)) \
++	if (1 && r0 != 0 && ((3*x) / window_.width == 1) && ((3*y) / window_.height == 1)) \
+ 	  sharpness += (g-g0) * (g-g0); \
+ 	r0 = r1; g0 = g1; b0 = b1; \
+ 	r1 = r; g1 = g; b1 = b; \

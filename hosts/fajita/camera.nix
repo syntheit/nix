@@ -134,6 +134,28 @@ let
       # seeds at 1.0x and ramps real 1.0-16x multiples) this makes dusk /
       # indoor scenes brighten promptly and reach a usable ceiling.
       ./camera/patches/16-agc-cap-exposure-to-frame-length.patch
+      # 17 = OURS, CDAF low-contrast robustness + window fix. The sharpness
+      # metric (patch 08) accumulated the green squared-gradient only where
+      # (5*x)/width==3 && (5*y)/height==3, i.e. x,y in [0.6,0.8) -- a 4% patch
+      # in the LOWER-RIGHT quadrant, not the centre the comments claim. Field:
+      # a ~1-2 m indoor shot of flat white surfaces (washing machine / white
+      # cabinets / tiles) locked at the wrong distance and came out uniformly
+      # soft -- the tiny off-centre patch saw almost no texture, so the
+      # squared-gradient sum was a few noise counts, and normalising by the
+      # bright field's large green sum drove the metric to near zero with high
+      # variance -> the coarse-sweep argmax was noise-driven and the lens
+      # landed at an arbitrary distance. Fix: sample the CENTRED middle third
+      # ((3*x)/width==1 && (3*y)/height==1, x,y in [1/3,2/3)) -- re-centres on
+      # where the user aims and grows 4% -> ~11% of the frame (~9x the sampled
+      # pixels, ~3x metric SNR on marginal texture). Stays exactly ratiometric
+      # (sharpness and its per-line sumG normaliser both scale with the
+      # window; AF only compares against its own running peak), so no sweep
+      # constant needs retuning. Cannot rescue a truly textureless target --
+      # CDAF has no gradient to climb on a flat field regardless of window
+      # size (that needs PDAF/hybrid hardware this contrast-only sensor lacks);
+      # multi-zone weighting + a low-contrast hold-position guard are the
+      # tuning follow-ups deliberately left out of this minimal change.
+      ./camera/patches/17-swstats-af-window-center-third.patch
     ];
     postInstall = (old.postInstall or "") + ''
       install -Dm644 ${./camera/tuning/imx371.yaml} $out/share/libcamera/ipa/simple/imx371.yaml
