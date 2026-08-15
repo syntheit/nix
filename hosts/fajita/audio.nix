@@ -64,4 +64,17 @@ in
       }
     ];
   };
+
+  # On sdm845 any restart of the audio graph drops the real DSP devices to a
+  # "Dummy Output" sink until a reboot (SLIM-NGD/QMI re-acquire race). The camera
+  # overrides rebuild the pipewire/wireplumber packages, so without this every
+  # deploy that touches camera restarts wireplumber and kills audio. Keep the
+  # audio stack alive across rebuilds (stale-until-reboot is fine); mirrors the
+  # Phosh/GNOME-Shell keep-alive and the tailscaled.restartIfChanged pattern.
+  systemd.user.services.pipewire.restartIfChanged = false;
+  systemd.user.services.pipewire.stopIfChanged = false;
+  systemd.user.services.wireplumber.restartIfChanged = false;
+  systemd.user.services.wireplumber.stopIfChanged = false;
+  systemd.user.services.pipewire-pulse.restartIfChanged = false;
+  systemd.user.services.pipewire-pulse.stopIfChanged = false;
 }
