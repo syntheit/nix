@@ -1,7 +1,19 @@
 # SPDX-License-Identifier: CC0-1.0
-# STATUS (2026-08-13): Ccm RE-ENABLED with the SOFTENED matrix after the
-# night-violet root cause was fixed (patches 12/13/15 + blackLevel=4096). See
-# the block comment above the Ccm entry below for the swap-to-full recipe.
+# STATUS (2026-08-15): Ccm RE-PARKED. The softened matrix (re-enabled
+# 2026-08-13) was FIELD-CONFIRMED to regress the viewfinder: ~5 fps (was
+# ~15-20), autofocus never completes (the ~138-frame CDAF sweep at 5 fps
+# takes ~28 s), and light green/pink color distortion. ROOT CAUSE is CPU
+# cost, not correctness: on this build libcamera's soft ISP runs the CPU
+# debayer (DebayerEGL is NOT compiled — nixpkgs libcamera lacks the egl/
+# glesv2 deps, so HAVE_DEBAYER_EGL is unset), and the CCM STORE_PIXEL path
+# does ~3 table lookups + 6 adds + 3 gamma-clamp lookups per output pixel
+# vs the non-CCM path's 3 flat table lookups — roughly 3x the per-pixel
+# work. At the full-res WYSIWYG viewfinder (patch 20 raised Aperture
+# MAX_HEIGHT to 1944 so it negotiates the IMX376's native 2592x1940 ~= 5.0
+# MP) that ~3x lands the single-threaded debayer under the ~20 fps frame
+# budget -> ~5 fps -> the AF sweep can't finish. See the block comment
+# above the (now commented-out) Ccm entry below for the swap-back recipe
+# and the affordable-color options being evaluated.
 # NOTE (fajita, 2026-07-17): OUR OWN Ccm, derived Phase 4 from a 24-patch
 # ColorChecker on a calibrated MacBook screen (dark room), shot raw on this
 # IMX376, solved least-squares (rows sum to 1 → neutrals preserved). Raw fit
@@ -31,33 +43,50 @@ algorithms:
       # after the dark-frame calibration.
       blackLevel: 4096
   - Awb:
-  # Ccm RE-ENABLED (2026-08-13) — SOFTENED matrix (M' = 0.5*I + 0.5*M_solved).
-  # Parked 2026-07-17 because dark scenes rendered violet; that root cause is
-  # now fully fixed (patch 12 AWB stats black-offset units, patch 13 subtract
-  # black before gain in the debayer LUTs — incl. the CCM path re-anchored to
-  # the green zero-point, patch 15 analogue gain 1-16x, blackLevel reverted to
-  # 4096). Field symptom without CCM: flat green-grey daylight cast + low
-  # saturation (channel means ~151/165/155, green leads R by ~14) = classic
-  # missing-CCM look. Pipeline order matters: Awb must precede Ccm so the
-  # debayer's combinedMatrix = ccm * gainMatrix (patch 13 assumes exactly this
-  # and folds greenZero - M*black into the green LUT — no double-apply).
-  # Enabling Ccm also flips context.ccmEnabled=true, which lets Adjust's
-  # saturation boost run. Starting SOFTENED (halves the off-diagonal ×
-  # AWB-gain-mismatch tint that made the FULL matrix throw magenta highlights
-  # / green midtones on some scenes) so Daniel can judge with less tint risk.
-  # To swap to the FULL solved matrix (deeper blues/reds, more tint risk),
-  # replace the ccm row below with:
+  # ==== Ccm RE-PARKED 2026-08-15 (field-confirmed CPU regression) ============
+  # DO NOT re-enable at full-res viewfinder without one of the affordable-color
+  # mitigations below. When enabled (2026-08-13, softened matrix) the CPU soft
+  # ISP dropped to ~5 fps (was ~15-20), AF stopped completing (~138-frame CDAF
+  # sweep * ~200 ms/frame ~= 28 s, so focus-loss never lands a lock), and
+  # scenes showed light green/pink distortion. WHY: this build has no GPU
+  # debayer (DebayerEGL uncompiled — nixpkgs libcamera lacks egl/glesv2, so
+  # HAVE_DEBAYER_EGL is unset), so every frame is debayered on the SDM845 CPU.
+  # The CCM STORE_PIXEL path costs ~3x the non-CCM path per output pixel
+  # (3 CcmColumn lookups + 6 int adds + 3 gamma-clamp GAMMA() lookups, vs 3
+  # flat LUT writes). At ~5.0 MP full-res that ~3x blows the frame budget.
+  # It is NOT a correctness bug — the night-violet root cause stays fixed
+  # (patch 12 AWB stats units, patch 13 subtract-black-before-gain incl. the
+  # CCM path re-anchored to the green zero-point, patch 15 gain 1-16x,
+  # blackLevel 4096). Field symptom WITHOUT Ccm is only a mild flat green-grey
+  # daylight cast + low saturation (channel means ~151/165/155, green leads R
+  # by ~14) — acceptable next to a broken viewfinder.
+  #
+  # NOTE: re-enabling Ccm also flips context.ccmEnabled=true, which is what
+  # lets Adjust's saturation boost run — so with Ccm parked, Adjust's
+  # saturation path is inert too (Adjust stays listed; it is a no-op here).
+  #
+  # TO RE-ENABLE (only with a mitigation, e.g. a lower-res viewfinder stream):
+  # restore the `- Ccm:` block below between Awb and Adjust. Pipeline order
+  # matters — Awb MUST precede Ccm so the debayer's combinedMatrix =
+  # ccm * gainMatrix (patch 13 folds greenZero - M*black into the green LUT
+  # assuming exactly this; no double-apply).
+  #
+  #   - Ccm:
+  #       ccms:
+  #         - ct: 6500
+  #           # SOFTENED matrix M' = 0.5*I + 0.5*M_solved (less tint risk):
+  #           ccm: [  1.32448, -0.34847,  0.02400,
+  #                  -0.13300,  1.31183, -0.17883,
+  #                  -0.08011, -0.30533,  1.38544 ]
+  #
+  # To use the FULL solved matrix instead (deeper blues/reds, more tint risk),
+  # swap the ccm row above for:
   #   ccm: [  1.64895, -0.69694,  0.04799,
   #          -0.26600,  1.62365, -0.35765,
   #          -0.16022, -0.61066,  1.77088 ]
-  # Both matrices: 24-patch ColorChecker on a MacBook screen, least-squares,
-  # rows sum to 1 (neutrals preserved). Full in git 4c946d8, softened 24ba63f.
-  - Ccm:
-      ccms:
-        - ct: 6500
-          ccm: [  1.32448, -0.34847,  0.02400,
-                 -0.13300,  1.31183, -0.17883,
-                 -0.08011, -0.30533,  1.38544 ]
+  # Both: 24-patch ColorChecker on a MacBook screen, least-squares, rows sum
+  # to 1 (neutrals preserved). Full in git 4c946d8, softened 24ba63f.
+  # ===========================================================================
   - Adjust:
   - Agc:
   # Contrast-detect autofocus (phase-3 vendored patches; drives the
