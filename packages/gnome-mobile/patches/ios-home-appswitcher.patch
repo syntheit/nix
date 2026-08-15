@@ -14,10 +14,10 @@ index 614e8128d..8e81555a4 100644
    &.empty { box-shadow: 0 0 0 0 none; }
  }
 diff --git a/js/ui/overview.js b/js/ui/overview.js
-index e7db089e5..d0357d826 100644
+index e7db089e5..b3a54a461 100644
 --- a/js/ui/overview.js
 +++ b/js/ui/overview.js
-@@ -279,11 +279,60 @@ export class Overview extends Signals.EventEmitter {
+@@ -279,11 +279,75 @@ export class Overview extends Signals.EventEmitter {
  
          Main.wm.workspaceTracker.connect('notify::zero-open-windows', () => {
              this._threeFingerOverviewGesture.enabled = !Main.wm.workspaceTracker.zeroOpenWindows;
@@ -35,13 +35,28 @@ index e7db089e5..d0357d826 100644
 +        // job (unlocking the vertical pan tracker to enter the overview from an app).
 +        this._edgeToSwitcherActive = false;
 +        this._singleFingerOverviewEdgeDrag.connect('recognize', () => {
-+            if (!this._canEdgeToSwitcher())
++            const controls = this._overview.controls;
++            const canEdge = this._canEdgeToSwitcher();
++            console.log('fajita switcher: recognize ' +
++                `can=${canEdge} ` +
++                `zeroOpenWindows=${Main.wm.workspaceTracker.zeroOpenWindows} ` +
++                `shownState=${this._shownState} ` +
++                `value=${controls._stateAdjustment.value}`);
++            if (!canEdge)
 +                return;
 +            this._edgeToSwitcherActive = true;
-+            const adjustment = this._overview.controls._stateAdjustment;
++            const adjustment = controls._stateAdjustment;
 +            adjustment.remove_transition('value');
 +            adjustment.gestureInProgress = true;
-+            this._edgeToSwitcherDistance = this._overview.controls.getSwitcherEdgeDragDistance();
++            // Reveal the workspaces display so the window-preview cards actually
++            // lay out and paint as the state drives APP_GRID(2)->WINDOW_PICKER(1).
++            // The normal reveal path (ControlsManager.overviewGestureBegin ->
++            // prepareToEnterOverview) does exactly this; the phone _update() branch
++            // only cross-fades opacity, which does nothing on a hidden display.
++            controls._workspacesDisplay.show();
++            controls._workspacesDisplay.reactive = true;
++            controls._workspacesDisplay.setPrimaryWorkspaceVisible(true);
++            this._edgeToSwitcherDistance = controls.getSwitcherEdgeDragDistance();
 +        });
 +        this._singleFingerOverviewEdgeDrag.connect('progress', (_g, px) => {
 +            if (!this._edgeToSwitcherActive)
@@ -80,7 +95,7 @@ index e7db089e5..d0357d826 100644
  
          const singleFingerWorkspacesGesture = new SwipeTracker.SwipeTracker(global.stage,
              Clutter.Orientation.HORIZONTAL,
-@@ -315,6 +364,77 @@ export class Overview extends Signals.EventEmitter {
+@@ -315,6 +379,86 @@ export class Overview extends Signals.EventEmitter {
              workspaceManager.layoutRows !== -1;
          this._singleFingerWorkspacesGesture.enabled =
              workspaceManager.layoutRows !== -1;
@@ -120,6 +135,15 @@ index e7db089e5..d0357d826 100644
 +        const target = adjustment.value < 1.5
 +            ? OverviewControls.ControlsState.WINDOW_PICKER
 +            : OverviewControls.ControlsState.APP_GRID;
++        const wsDisplay = this._overview.controls._workspacesDisplay;
++        console.log('fajita switcher: end ' +
++            `target=${target} value=${adjustment.value} ` +
++            `wsVisible=${wsDisplay.visible} wsOpacity=${wsDisplay.opacity} ` +
++            `wsMapped=${wsDisplay.mapped}`);
++        // Leave the workspaces display shown + reactive for BOTH outcomes: at
++        // WINDOW_PICKER the cards must stay interactive, and at APP_GRID the
++        // resting state is "shown with opacity 0" (runStartupAnimation shows it
++        // and _update() fades it out) — so snap-back must NOT hide it.
 +        this._overview.controls.overviewGestureEnd(
 +            target, OverviewControls.SIDE_CONTROLS_ANIMATION_TIME, () => {});
 +    }
@@ -158,7 +182,7 @@ index e7db089e5..d0357d826 100644
      }
  
      _changeShownState(state) {
-@@ -326,7 +446,7 @@ export class Overview extends Signals.EventEmitter {
+@@ -326,7 +470,7 @@ export class Overview extends Signals.EventEmitter {
                  `${this._shownState} to ${state}`);
          }
  
@@ -167,7 +191,7 @@ index e7db089e5..d0357d826 100644
              this._singleFingerOverviewEdgeDrag.enabled = false;
  
          if (state === OverviewShownState.HIDING)
-@@ -684,7 +804,9 @@ export class Overview extends Signals.EventEmitter {
+@@ -684,7 +828,9 @@ export class Overview extends Signals.EventEmitter {
      // show:
      //
      // Animates the overview visible and grabs mouse and keyboard input
@@ -178,7 +202,7 @@ index e7db089e5..d0357d826 100644
          if (state === OverviewControls.ControlsState.HIDDEN)
              throw new Error('Invalid state, use hide() to hide');
  
-@@ -731,6 +853,9 @@ export class Overview extends Signals.EventEmitter {
+@@ -731,6 +877,9 @@ export class Overview extends Signals.EventEmitter {
  
          this._threeFingerWorkspacesGesture.allowLongSwipes = true;
          this._singleFingerWorkspacesGesture.allowLongSwipes = true;
