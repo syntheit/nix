@@ -21,6 +21,7 @@
     ./headscale.nix # Headscale + deus nspawn (self-contained tailscale inside)
     ./registry.nix # docker registry:2 on :5000
     ./zot.nix # zot OCI registry on :5001
+    ./mdm.nix # nanomdm/scep/nanodep/enroll — migrated from mantle (2026-08)
     ../../system
     ../../services
   ];
