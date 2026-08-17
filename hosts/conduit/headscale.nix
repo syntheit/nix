@@ -130,14 +130,16 @@ in
       }
     '';
   };
+  # MDM stack migrated mantle → vista (2026-08). Public URLs unchanged;
+  # only these relay backends flip. mantle kept as hot standby until soak.
   services.caddy.virtualHosts."mdm.matv.io".extraConfig = ''
-    reverse_proxy ${mantle}:9990
+    reverse_proxy ${vista}:9990
   '';
   services.caddy.virtualHosts."scep.matv.io".extraConfig = ''
-    reverse_proxy ${mantle}:8081
+    reverse_proxy ${vista}:8081
   '';
   services.caddy.virtualHosts."enroll.matv.io".extraConfig = ''
-    reverse_proxy ${mantle}:9991
+    reverse_proxy ${vista}:9991
   '';
 
   # ── socat forwards to vista (and mantle) ───────────────────
@@ -148,7 +150,7 @@ in
     // (socatProxy "deus-proxy" "deus-server → vista (fleet + ADE webhook)" "8086" "${vista}:8086")
     // (socatProxy "git-mirror-proxy" "git:// mirror → vista over wg" "9418" "${vista}:9418")
     // (socatProxy "operator-ssh-proxy" "operator SSH into the nspawn → vista" "2222" "${vista}:2222")
-    // (socatProxy "nanomdm-proxy" "deus-on-vista's ADE call → mantle (hub-routed)" "9990" "${mantle}:9990");
+    // (socatProxy "nanomdm-proxy" "deus-on-vista's ADE call → vista nanomdm (hub-routed)" "9990" "${vista}:9990");
 
   # Fleet-facing tailnet ports (blocked from the internet), plus the wg0-only
   # nanomdm forward. Public :2222 for operator SSH into the moved nspawn.

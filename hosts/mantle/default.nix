@@ -4,7 +4,8 @@
     ./hardware-configuration.nix
     ./hardware.nix
     ./secrets.nix
-    ./mdm.nix
+    # ./mdm.nix — MDM stack migrated to vista 2026-08 (hosts/vista/mdm.nix).
+    #   /var/lib/mdm state kept here + backup ~/backups/ until retention window ends.
     ../../system
     ../../services
     ../../desktop

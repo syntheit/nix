@@ -39,6 +39,7 @@ creation_rules:
     key_groups:
       - age:
           - *mantle
+          - *vista
           - *daniel
   - path_regex: secrets/vista\.yaml$
     key_groups:
