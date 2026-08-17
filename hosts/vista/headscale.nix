@@ -390,21 +390,16 @@ in
 
         # ── ADE / zero-touch orchestrator ──
         # Drives Apple Automated Device Enrollment through the self-hosted
-        # nanomdm on harbor, reached over the harbor↔conduit WireGuard link
-        # (nanomdm binds 0.0.0.0:9990 there; wg0 is firewall-trusted). The
-        # nanomdm API key doubles as the webhook ?token= secret, so the one
-        # staged file feeds both flags. nanomdm POSTs every check-in/ack
-        # back to this server at http://10.100.0.1:8086/ade/webhook (which
-        # deus-server already serves on 0.0.0.0:8086 over wg). The
-        # nanomdm-api secret is staged from sops by the deus-stage
-        # activation script above; it must be added to secrets/conduit.yaml
-        # (it currently lives only in secrets/harbor.yaml).
+        # nanomdm runs on vista (hosts/vista/mdm.nix, migrated from mantle
+        # 2026-08). The nanomdm API key doubles as the webhook ?token= secret,
+        # so the one staged file feeds both flags. nanomdm POSTs every
+        # check-in/ack back to deus at http://10.100.0.1:8086/ade/webhook.
         ade = {
-          # deus is now inside vista's nspawn (a wg spoke) — it can't reach the
-          # mantle spoke (10.100.0.3) directly. Route via the conduit hub, which
-          # socat-forwards :9990 → mantle. Webhook back still posts to conduit's
-          # 10.100.0.1:8086, which forwards here.
-          nanomdmURL = "http://10.100.0.1:9990"; # conduit socat → mantle 10.100.0.3
+          # deus is inside vista's nspawn (a wg spoke) and reaches nanomdm via
+          # the conduit hub, which socat-forwards :9990 → vista's nanomdm
+          # (10.100.0.4:9990). Webhook back posts to conduit 10.100.0.1:8086,
+          # which forwards here. (Local veth wiring is a deferred optimization.)
+          nanomdmURL = "http://10.100.0.1:9990"; # conduit socat → vista 10.100.0.4
           apiKeyFile = "/var/lib/deus-tokens/nanomdm-api";
           webhookSecretFile = "/var/lib/deus-tokens/nanomdm-api";
 
