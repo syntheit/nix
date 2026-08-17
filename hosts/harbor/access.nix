@@ -36,13 +36,7 @@
           "asado-list.matv.io" = "http://localhost:4730";
           "malli-dev.sudoman.net" = "http://localhost:8787";
           "pro-malli-dev.sudoman.net" = "http://localhost:3000";
-          # Mac fleet MDM (nanomdm + scep) — see hosts/harbor/mdm.nix
-          "mdm.matv.io" = "http://localhost:9990";
-          "scep.matv.io" = "http://localhost:8081";
-          # ADE enrollment-profile server (serves enroll.mobileconfig for
-          # Automated Device Enrollment). Needs a CNAME enroll.matv.io →
-          # 7bdc416d-23f8-491b-9b52-f1fdb77fdedc.cfargotunnel.com.
-          "enroll.matv.io" = "http://localhost:9991";
+          # (Mac fleet MDM moved to vista 2026-08; served via conduit Caddy, not this tunnel.)
         };
         default = "http_status:404";
         credentialsFile = "/etc/cloudflared/credentials.json";
