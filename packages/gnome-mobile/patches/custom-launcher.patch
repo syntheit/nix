@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000..1111111
 --- /dev/null
 +++ b/js/ui/customLauncher.js
-@@ -0,0 +1,436 @@
+@@ -0,0 +1,449 @@
 +import Clutter from 'gi://Clutter';
 +import Gio from 'gi://Gio';
 +import GObject from 'gi://GObject';
@@ -42,6 +42,10 @@ index 0000000..1111111
 +        // Strip first so the overlay child is added LAST and renders on top.
 +        this._buildAzStrip();
 +        this._buildScrubOverlay();
++
++        this.connect('notify::opacity', () => this._syncScrubEnabled());
++        this.connect('notify::visible', () => this._syncScrubEnabled());
++        this._syncScrubEnabled();
 +
 +        Shell.AppSystem.get_default().connectObject('installed-changed', () => {
 +            this._rebuildAppIndex();
@@ -209,9 +213,18 @@ index 0000000..1111111
 +        });
 +        pan.connect('end', () => this._scrubCommit());
 +        pan.connect('cancel', () => this._scrubDismiss());
++        pan.enabled = false;
 +        this._azStrip.add_action_full(
 +            'launcher-az-scrub', Clutter.EventPhase.BUBBLE, pan);
 +        this._scrubGesture = pan;
++    }
++
++    _syncScrubEnabled() {
++        const enabled = this.visible && this.opacity >= 255;
++        if (this._scrubGesture)
++            this._scrubGesture.enabled = enabled;
++        if (!enabled)
++            this._scrubDismiss();
 +    }
 +
 +    _scrubTo(x, y) {
