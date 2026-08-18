@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000..1111111
 --- /dev/null
 +++ b/js/ui/customLauncher.js
-@@ -0,0 +1,232 @@
+@@ -0,0 +1,279 @@
 +import Clutter from 'gi://Clutter';
 +import Gio from 'gi://Gio';
 +import GObject from 'gi://GObject';
@@ -28,6 +28,7 @@ index 0000000..1111111
 +
 +        // Stored for later Today-View paging; a no-op store is correct for phase 1.
 +        this._leadingPageAdjustment = null;
++        this._folderPopup = null;
 +
 +        this._rebuildAppIndex();
 +        this._buildFavorites();
@@ -109,10 +110,9 @@ index 0000000..1111111
 +            y_align: Clutter.ActorAlign.CENTER,
 +            x_expand: true,
 +            y_expand: true,
++            style: 'spacing: 10px;',
 +        });
 +        this.add_child(this._favoritesBox);
-+
-+        this._expandedFolders = new Set();
 +
 +        this._rebuildFavorites();
 +    }
@@ -127,18 +127,6 @@ index 0000000..1111111
 +
 +            if (type === 'folder') {
 +                this._favoritesBox.add_child(this._makeFolderRow(entry));
-+
-+                if (this._expandedFolders.has(entry.title)) {
-+                    const members = Array.isArray(entry.apps) ? entry.apps : [];
-+                    for (const memberId of members) {
-+                        const memberInfo = this._appInfoById.get(memberId);
-+                        if (!memberInfo)
-+                            continue;
-+
-+                        this._favoritesBox.add_child(
-+                            this._makeAppRow(memberInfo, true));
-+                    }
-+                }
 +            } else {
 +                const appInfo = this._appInfoById.get(entry.desktopId);
 +                if (!appInfo) {
@@ -152,10 +140,11 @@ index 0000000..1111111
 +        }
 +    }
 +
-+    _makeAppRow(appInfo, indented) {
++    _makeAppRow(appInfo, indented, onActivate) {
 +        const button = new St.Button({
 +            style_class: 'custom-launcher-row' +
 +                (indented ? ' custom-launcher-row-indented' : ''),
++            style: 'padding: 12px 20px; border-radius: 14px;',
 +            x_expand: true,
 +            can_focus: true,
 +        });
@@ -163,21 +152,24 @@ index 0000000..1111111
 +        const box = new St.BoxLayout({
 +            style_class: 'custom-launcher-row-box',
 +            orientation: Clutter.Orientation.HORIZONTAL,
++            style: 'spacing: 16px;',
 +        });
 +
 +        box.add_child(new St.Icon({
 +            gicon: appInfo.get_icon(),
-+            icon_size: 28,
++            icon_size: 40,
 +            style_class: 'custom-launcher-icon',
 +        }));
 +        box.add_child(new St.Label({
 +            text: appInfo.get_name(),
 +            y_align: Clutter.ActorAlign.CENTER,
 +            style_class: 'custom-launcher-label',
++            style: 'font-size: 20px; font-weight: 500;',
 +        }));
 +
 +        button.set_child(box);
-+        button.connect('clicked', () => this._launch(appInfo));
++        const activate = onActivate ?? (() => this._launch(appInfo));
++        button.connect('clicked', activate);
 +
 +        return button;
 +    }
@@ -185,6 +177,7 @@ index 0000000..1111111
 +    _makeFolderRow(entry) {
 +        const button = new St.Button({
 +            style_class: 'custom-launcher-row custom-launcher-folder-row',
++            style: 'padding: 12px 20px; border-radius: 14px;',
 +            x_expand: true,
 +            can_focus: true,
 +        });
@@ -192,30 +185,79 @@ index 0000000..1111111
 +        const box = new St.BoxLayout({
 +            style_class: 'custom-launcher-row-box',
 +            orientation: Clutter.Orientation.HORIZONTAL,
++            style: 'spacing: 16px;',
 +        });
 +
 +        box.add_child(new St.Icon({
 +            icon_name: entry.iconName || 'folder-symbolic',
-+            icon_size: 28,
++            icon_size: 40,
 +            style_class: 'custom-launcher-icon',
 +        }));
 +        box.add_child(new St.Label({
 +            text: entry.title,
 +            y_align: Clutter.ActorAlign.CENTER,
 +            style_class: 'custom-launcher-label',
++            style: 'font-size: 20px; font-weight: 500;',
 +        }));
 +
 +        button.set_child(box);
-+        button.connect('clicked', () => {
-+            if (this._expandedFolders.has(entry.title))
-+                this._expandedFolders.delete(entry.title);
-+            else
-+                this._expandedFolders.add(entry.title);
-+
-+            this._rebuildFavorites();
-+        });
++        button.connect('clicked', () => this._openFolderPopup(entry));
 +
 +        return button;
++    }
++
++    _openFolderPopup(entry) {
++        this._closeFolderPopup();
++
++        this._folderPopup = new St.Widget({
++            layout_manager: new Clutter.BinLayout(),
++            reactive: true,
++            x_expand: true,
++            y_expand: true,
++            style: 'background-color: rgba(0,0,0,0.55);',
++        });
++
++        const card = new St.BoxLayout({
++            orientation: Clutter.Orientation.VERTICAL,
++            reactive: true,
++            x_align: Clutter.ActorAlign.CENTER,
++            y_align: Clutter.ActorAlign.CENTER,
++            style: 'background-color: rgba(32,32,34,0.98); border-radius: 24px; ' +
++                'padding: 20px 16px; spacing: 8px; min-width: 300px;',
++        });
++
++        card.add_child(new St.Label({
++            text: entry.title,
++            x_align: Clutter.ActorAlign.CENTER,
++            style: 'font-size: 22px; font-weight: 700; padding-bottom: 10px;',
++        }));
++
++        const members = Array.isArray(entry.apps) ? entry.apps : [];
++        for (const id of members) {
++            const appInfo = this._appInfoById.get(id);
++            if (!appInfo)
++                continue;
++
++            card.add_child(this._makeAppRow(appInfo, false, () => {
++                this._closeFolderPopup();
++                this._launch(appInfo);
++            }));
++        }
++
++        this._folderPopup.add_child(card);
++        this.add_child(this._folderPopup);
++
++        this._folderPopup.connect('button-press-event', () => {
++            this._closeFolderPopup();
++            return Clutter.EVENT_STOP;
++        });
++    }
++
++    _closeFolderPopup() {
++        if (this._folderPopup) {
++            this._folderPopup.destroy();
++            this._folderPopup = null;
++        }
 +    }
 +
 +    _launch(appInfo) {
@@ -229,6 +271,11 @@ index 0000000..1111111
 +        } catch (e) {
 +            logError(e, 'CustomLauncher: failed to launch app');
 +        }
++    }
++
++    vfunc_unmap() {
++        this._closeFolderPopup();
++        super.vfunc_unmap();
 +    }
 +
 +    _onDestroy() {
