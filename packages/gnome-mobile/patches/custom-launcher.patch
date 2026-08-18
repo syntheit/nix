@@ -1,0 +1,270 @@
+diff --git a/js/ui/customLauncher.js b/js/ui/customLauncher.js
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/js/ui/customLauncher.js
+@@ -0,0 +1,232 @@
++import Clutter from 'gi://Clutter';
++import Gio from 'gi://Gio';
++import GObject from 'gi://GObject';
++import Shell from 'gi://Shell';
++import St from 'gi://St';
++
++import * as Main from './main.js';
++
++const LAUNCHER_CONFIG = '/etc/gnome-shell-mobile/launcher.json';
++
++export const CustomLauncher = GObject.registerClass(
++class CustomLauncher extends St.Widget {
++    _init() {
++        super._init({
++            style_class: 'custom-launcher',
++            x_expand: true,
++            y_expand: true,
++            reactive: false, // CRITICAL: root must NOT be reactive, so a center
++                             // swipe-up still reaches the shell's app-switcher gesture
++            layout_manager: new Clutter.BinLayout(),
++        });
++
++        // Stored for later Today-View paging; a no-op store is correct for phase 1.
++        this._leadingPageAdjustment = null;
++
++        this._rebuildAppIndex();
++        this._buildFavorites();
++
++        Shell.AppSystem.get_default().connectObject('installed-changed', () => {
++            this._rebuildAppIndex();
++            this._rebuildFavorites();
++        }, this);
++
++        this.connect('destroy', () => this._onDestroy());
++    }
++
++    // Overview contract: the overview stores an adjustment on us for Today-View
++    // paging. We just keep a reference; if this method is missing the shell
++    // throws at init and the screen goes blank.
++    setLeadingPageAdjustment(adjustment) {
++        this._leadingPageAdjustment = adjustment;
++    }
++
++    // Overview contract: the org.gnome.Shell.FocusApp D-Bus path
++    // (overview.selectApp → appDisplay.selectApp) calls this to highlight an
++    // app in the grid. showApps() has already surfaced us; we have no per-app
++    // selection UI, so this is intentionally a no-op (prevents a TypeError on
++    // that D-Bus path).
++    selectApp(_id) {
++    }
++
++    _rebuildAppIndex() {
++        this._appInfoById = new Map();
++        this._sortedApps = [];
++
++        for (const appInfo of Shell.AppSystem.get_default().get_installed()) {
++            let id;
++            try {
++                id = appInfo.get_id(); // catch invalid file encodings
++            } catch {
++                continue;
++            }
++
++            this._appInfoById.set(id, appInfo);
++
++            if (appInfo.should_show())
++                this._sortedApps.push(appInfo);
++        }
++
++        this._sortedApps.sort((a, b) =>
++            a.get_name().toLowerCase().localeCompare(b.get_name().toLowerCase()));
++    }
++
++    _loadConfig() {
++        try {
++            const file = Gio.File.new_for_path(LAUNCHER_CONFIG);
++            const [ok, contents] = file.load_contents(null);
++            if (!ok)
++                return null;
++
++            const config = JSON.parse(new TextDecoder().decode(contents));
++            if (config.version !== 1 || !Array.isArray(config.favorites))
++                return null;
++
++            return config.favorites;
++        } catch {
++            return null;
++        }
++    }
++
++    _fallbackEntries() {
++        return this._sortedApps.slice(0, 8).map(appInfo => ({
++            type: 'app',
++            desktopId: appInfo.get_id(),
++        }));
++    }
++
++    _buildFavorites() {
++        this._favoritesBox = new St.BoxLayout({
++            style_class: 'custom-launcher-favorites',
++            orientation: Clutter.Orientation.VERTICAL,
++            x_align: Clutter.ActorAlign.CENTER,
++            y_align: Clutter.ActorAlign.CENTER,
++            x_expand: true,
++            y_expand: true,
++        });
++        this.add_child(this._favoritesBox);
++
++        this._expandedFolders = new Set();
++
++        this._rebuildFavorites();
++    }
++
++    _rebuildFavorites() {
++        this._favoritesBox.destroy_all_children();
++
++        const entries = this._loadConfig() ?? this._fallbackEntries();
++
++        for (const entry of entries) {
++            const type = entry.type ?? 'app';
++
++            if (type === 'folder') {
++                this._favoritesBox.add_child(this._makeFolderRow(entry));
++
++                if (this._expandedFolders.has(entry.title)) {
++                    const members = Array.isArray(entry.apps) ? entry.apps : [];
++                    for (const memberId of members) {
++                        const memberInfo = this._appInfoById.get(memberId);
++                        if (!memberInfo)
++                            continue;
++
++                        this._favoritesBox.add_child(
++                            this._makeAppRow(memberInfo, true));
++                    }
++                }
++            } else {
++                const appInfo = this._appInfoById.get(entry.desktopId);
++                if (!appInfo) {
++                    console.warn(
++                        `CustomLauncher: could not resolve favorite app “${entry.desktopId}”`);
++                    continue;
++                }
++
++                this._favoritesBox.add_child(this._makeAppRow(appInfo, false));
++            }
++        }
++    }
++
++    _makeAppRow(appInfo, indented) {
++        const button = new St.Button({
++            style_class: 'custom-launcher-row' +
++                (indented ? ' custom-launcher-row-indented' : ''),
++            x_expand: true,
++            can_focus: true,
++        });
++
++        const box = new St.BoxLayout({
++            style_class: 'custom-launcher-row-box',
++            orientation: Clutter.Orientation.HORIZONTAL,
++        });
++
++        box.add_child(new St.Icon({
++            gicon: appInfo.get_icon(),
++            icon_size: 28,
++            style_class: 'custom-launcher-icon',
++        }));
++        box.add_child(new St.Label({
++            text: appInfo.get_name(),
++            y_align: Clutter.ActorAlign.CENTER,
++            style_class: 'custom-launcher-label',
++        }));
++
++        button.set_child(box);
++        button.connect('clicked', () => this._launch(appInfo));
++
++        return button;
++    }
++
++    _makeFolderRow(entry) {
++        const button = new St.Button({
++            style_class: 'custom-launcher-row custom-launcher-folder-row',
++            x_expand: true,
++            can_focus: true,
++        });
++
++        const box = new St.BoxLayout({
++            style_class: 'custom-launcher-row-box',
++            orientation: Clutter.Orientation.HORIZONTAL,
++        });
++
++        box.add_child(new St.Icon({
++            icon_name: entry.iconName || 'folder-symbolic',
++            icon_size: 28,
++            style_class: 'custom-launcher-icon',
++        }));
++        box.add_child(new St.Label({
++            text: entry.title,
++            y_align: Clutter.ActorAlign.CENTER,
++            style_class: 'custom-launcher-label',
++        }));
++
++        button.set_child(box);
++        button.connect('clicked', () => {
++            if (this._expandedFolders.has(entry.title))
++                this._expandedFolders.delete(entry.title);
++            else
++                this._expandedFolders.add(entry.title);
++
++            this._rebuildFavorites();
++        });
++
++        return button;
++    }
++
++    _launch(appInfo) {
++        try {
++            const app = Shell.AppSystem.get_default().lookup_app(appInfo.get_id());
++            if (app)
++                app.activate();
++            else
++                appInfo.launch([], global.create_app_launch_context(0, -1));
++            Main.overview.hide();
++        } catch (e) {
++            logError(e, 'CustomLauncher: failed to launch app');
++        }
++    }
++
++    _onDestroy() {
++        // connectObject with `this` owner auto-disconnects on destroy; phase 1
++        // allocates no GLib timers, so nothing else to clean up here.
++    }
++});
+diff --git a/js/ui/overviewControls.js b/js/ui/overviewControls.js
+--- a/js/ui/overviewControls.js
++++ b/js/ui/overviewControls.js
+@@ -6,7 +6,7 @@
+ import Shell from 'gi://Shell';
+ import St from 'gi://St';
+ 
+-import * as AppDisplay from './appDisplay.js';
++import {CustomLauncher} from './customLauncher.js';
+ import * as Background from './background.js';
+ import * as Dash from './dash.js';
+ import * as Main from './main.js';
+@@ -517,7 +517,7 @@
+             this,
+             this._workspaceAdjustment,
+             this._stateAdjustment);
+-        this._appDisplay = new AppDisplay.AppDisplay();
++        this._appDisplay = new CustomLauncher();
+         this._appDisplay.setLeadingPageAdjustment(this._todayAdjustment);
+ 
+         // The same registry-backed host used by the lock screen, with an
+diff --git a/js/js-resources.gresource.xml b/js/js-resources.gresource.xml
+--- a/js/js-resources.gresource.xml
++++ b/js/js-resources.gresource.xml
+@@ -53,6 +53,7 @@
+     <file>ui/animation.js</file>
+     <file>ui/appDisplay.js</file>
+     <file>ui/appFavorites.js</file>
++    <file>ui/customLauncher.js</file>
+     <file>ui/appMenu.js</file>
+     <file>ui/audioDeviceSelection.js</file>
+     <file>ui/background.js</file>
