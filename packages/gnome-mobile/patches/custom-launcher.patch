@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000..1111111
 --- /dev/null
 +++ b/js/ui/customLauncher.js
-@@ -0,0 +1,279 @@
+@@ -0,0 +1,436 @@
 +import Clutter from 'gi://Clutter';
 +import Gio from 'gi://Gio';
 +import GObject from 'gi://GObject';
@@ -13,6 +13,8 @@ index 0000000..1111111
 +import * as Main from './main.js';
 +
 +const LAUNCHER_CONFIG = '/etc/gnome-shell-mobile/launcher.json';
++
++const AZ = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', '#'];
 +
 +export const CustomLauncher = GObject.registerClass(
 +class CustomLauncher extends St.Widget {
@@ -30,8 +32,16 @@ index 0000000..1111111
 +        this._leadingPageAdjustment = null;
 +        this._folderPopup = null;
 +
++        this._scrubOverlay = null;
++        this._activeLetter = null;
++        this._lastScrubXY = null;
++
 +        this._rebuildAppIndex();
 +        this._buildFavorites();
++
++        // Strip first so the overlay child is added LAST and renders on top.
++        this._buildAzStrip();
++        this._buildScrubOverlay();
 +
 +        Shell.AppSystem.get_default().connectObject('installed-changed', () => {
 +            this._rebuildAppIndex();
@@ -76,6 +86,15 @@ index 0000000..1111111
 +
 +        this._sortedApps.sort((a, b) =>
 +            a.get_name().toLowerCase().localeCompare(b.get_name().toLowerCase()));
++
++        this._buckets = new Map();
++        for (const letter of AZ)
++            this._buckets.set(letter, []);
++        for (const app of this._sortedApps) {
++            const ch = (app.get_name().trim()[0] || '#').toUpperCase();
++            const key = (ch >= 'A' && ch <= 'Z') ? ch : '#';
++            this._buckets.get(key).push(app);
++        }
 +    }
 +
 +    _loadConfig() {
@@ -137,6 +156,143 @@ index 0000000..1111111
 +
 +                this._favoritesBox.add_child(this._makeAppRow(appInfo, false));
 +            }
++        }
++    }
++
++    _buildAzStrip() {
++        this._azStrip = new St.BoxLayout({
++            orientation: Clutter.Orientation.VERTICAL,
++            reactive: true,
++            x_align: Clutter.ActorAlign.END,
++            y_align: Clutter.ActorAlign.FILL,
++            y_expand: true,
++            style: 'padding: 4px 6px;',
++        });
++
++        for (const letter of AZ) {
++            this._azStrip.add_child(new St.Label({
++                text: letter,
++                x_align: Clutter.ActorAlign.CENTER,
++                y_expand: true,
++                y_align: Clutter.ActorAlign.CENTER,
++                style: 'font-size: 12px; font-weight: 600;',
++            }));
++        }
++
++        this.add_child(this._azStrip);
++        this._setupScrubGesture();
++    }
++
++    _buildScrubOverlay() {
++        this._scrubOverlay = new St.BoxLayout({
++            orientation: Clutter.Orientation.VERTICAL,
++            reactive: true,
++            visible: false,
++            x_align: Clutter.ActorAlign.END,
++            y_align: Clutter.ActorAlign.START,
++            style: 'background-color: rgba(32,32,34,0.98); ' +
++                'border-radius: 18px; padding: 8px; spacing: 4px;',
++        });
++        this.add_child(this._scrubOverlay);
++    }
++
++    _setupScrubGesture() {
++        const pan = new Clutter.PanGesture({ max_n_points: 1 });
++        pan.connect('may-recognize', () => true);
++        pan.connect('recognize', () => {
++            const c = pan.get_begin_centroid();
++            this._scrubTo(c.x, c.y);
++        });
++        pan.connect('pan-update', () => {
++            const c = pan.get_centroid();
++            this._scrubTo(c.x, c.y);
++        });
++        pan.connect('end', () => this._scrubCommit());
++        pan.connect('cancel', () => this._scrubDismiss());
++        this._azStrip.add_action_full(
++            'launcher-az-scrub', Clutter.EventPhase.BUBBLE, pan);
++        this._scrubGesture = pan;
++    }
++
++    _scrubTo(x, y) {
++        this._lastScrubXY = { x, y };
++
++        const [ , stripY] = this._azStrip.get_transformed_position();
++        const stripH = Math.max(this._azStrip.get_height(), 1);
++        const frac = Math.clamp((y - stripY) / stripH, 0, 1);
++        const idx = Math.min(AZ.length - 1, Math.floor(frac * AZ.length));
++        const letter = AZ[idx];
++
++        if (letter !== this._activeLetter) {
++            this._activeLetter = letter;
++            this._showLetter(letter);
++        }
++
++        this._positionOverlay(y);
++    }
++
++    _showLetter(letter) {
++        this._scrubOverlay.destroy_all_children();
++
++        const apps = this._buckets.get(letter) || [];
++        if (apps.length === 0) {
++            this._scrubOverlay.visible = false;
++            return;
++        }
++
++        // CAP to 12 (a ScrollView here would crash the shell).
++        for (const appInfo of apps.slice(0, 12)) {
++            const row = this._makeAppRow(appInfo, false, () => {
++                this._scrubDismiss();
++                this._launch(appInfo);
++            });
++            row._launcherApp = appInfo;
++            this._scrubOverlay.add_child(row);
++        }
++
++        this._scrubOverlay.visible = true;
++    }
++
++    _positionOverlay(y) {
++        if (!this._scrubOverlay.visible)
++            return;
++
++        const [ , launcherY] = this.get_transformed_position();
++        const H = Math.max(this.get_height(), 1);
++        const oh = this._scrubOverlay.get_height();
++        const stripW = this._azStrip.get_width();
++
++        this._scrubOverlay.translation_y =
++            Math.clamp((y - launcherY) - oh / 2, 0, Math.max(H - oh, 0));
++        this._scrubOverlay.translation_x = -(stripW + 12);
++    }
++
++    _scrubCommit() {
++        const p = this._lastScrubXY;
++        if (p) {
++            const actor = global.stage.get_actor_at_pos(
++                Clutter.PickMode.REACTIVE, p.x, p.y);
++            let a = actor;
++            while (a) {
++                if (a._launcherApp) {
++                    this._scrubDismiss();
++                    this._launch(a._launcherApp);
++                    return;
++                }
++                a = a.get_parent();
++            }
++        }
++        this._scrubDismiss();
++    }
++
++    _scrubDismiss() {
++        this._activeLetter = null;
++        this._lastScrubXY = null;
++        if (this._scrubOverlay) {
++            this._scrubOverlay.destroy_all_children();
++            this._scrubOverlay.visible = false;
++            this._scrubOverlay.translation_x = 0;
++            this._scrubOverlay.translation_y = 0;
 +        }
 +    }
 +
@@ -275,6 +431,7 @@ index 0000000..1111111
 +
 +    vfunc_unmap() {
 +        this._closeFolderPopup();
++        this._scrubDismiss();
 +        super.vfunc_unmap();
 +    }
 +
