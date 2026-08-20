@@ -1164,11 +1164,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1784349334,
-        "narHash": "sha256-Jemgc5fqSbK8jBTaJSPvNUsTTdGbYuswLh3WUXdTVx0=",
+        "lastModified": 1787244242,
+        "narHash": "sha256-d2gCsua0IoX6Q0GTWvAA2mKKLrt0jcxUtBy2Snl3RA0=",
         "ref": "refs/heads/main",
-        "rev": "2468497bb30abf2b6bb04ec400e2644072ea43c4",
-        "revCount": 24,
+        "rev": "63d386e872946e0426738f3a8253329bd9b58b49",
+        "revCount": 25,
         "type": "git",
         "url": "ssh://git@github.com/syntheit/jotter.git"
       },
