@@ -109,6 +109,7 @@ in
       stage_optional /run/secrets/cloudflare_account_id     /var/lib/deus-granter/cf-account-id      0444
       stage_optional /run/secrets/cloudflare_zone_id        /var/lib/deus-granter/cf-zone-id         0444
       stage_optional /run/secrets/deus_malli_nix_write_key  /var/lib/deus-keys/malli-nix-write       0400
+      stage_optional /run/secrets/deus_github_app_key       /var/lib/deus-keys/github-app-key        0400
       # nanomdm API key (ADE enqueue auth + webhook ?token= secret).
       # Best-effort: until it's added to secrets/conduit.yaml the file is
       # absent and deus-server leaves the ADE orchestrator disabled.
@@ -386,6 +387,14 @@ in
           # invokes `ssh git@github.com` and the wrapper picks the key.
           repoURL = "git@github.com:NRE-Product/malli-nix.git";
           repoSSHCommand = "ssh -i /var/lib/deus/malli-nix-write -o IdentitiesOnly=yes -o UserKnownHostsFile=/var/lib/deus/known_hosts -o StrictHostKeyChecking=accept-new";
+          # GitHub App auth (malli-granter): with all three set, the granter
+          # mints installation tokens and pushes over HTTPS as the App, which
+          # is in malli-nix's ruleset bypass — so registry/roles/secrets writes
+          # land on the branch-protected main. repoURL is reused (converted to
+          # https internally); repoSSHCommand above is inert in app mode.
+          githubAppId = "4640298";
+          githubAppInstallationId = "154761960";
+          githubAppKeyFile = "/var/lib/deus/github-app-key";
         };
 
         # ── ADE / zero-touch orchestrator ──
@@ -624,6 +633,10 @@ in
         # can't traverse. Copy it into /var/lib/deus where deus owns the
         # tree, with strict perms so SSH accepts it as an identity file.
         "C+ /var/lib/deus/malli-nix-write 0600 deus deus - /etc/deus-keys/malli-nix-write"
+        # GitHub App private key, same bind-mount → deus-owned copy pattern.
+        # The granter reads it to mint installation tokens for pushing to
+        # malli-nix (github-app auth mode; replaces the deploy-key push).
+        "C+ /var/lib/deus/github-app-key 0600 deus deus - /etc/deus-keys/github-app-key"
 
         # SSH-push deploys: the deus user runs `ssh tars@m-XXXX sudo
         # darwin-rebuild …` to deploy. Reuse the fleet user's
