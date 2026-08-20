@@ -206,6 +206,14 @@ in
         hostPath = "/var/lib/deus-granter";
         isReadOnly = true;
       };
+      # Signed ADE bootstrap pkg + payload, served read-only by the
+      # in-container Caddy on :8088 (bootstrap.matv.io/pkg/* → conduit
+      # reverse_proxy → vista-host DNAT → here). Files staged on the vista
+      # HOST; migrated off conduit's local file_server 2026-08.
+      "/var/lib/malli-bootstrap" = {
+        hostPath = "/var/lib/malli-bootstrap";
+        isReadOnly = true;
+      };
       # registry.nix is no longer the inventory source — deus-server
       # now reads from headscale (deus v0.12+). Roles live in
       # /var/lib/deus/roles.json (small JSON, operator-edited),
@@ -445,18 +453,20 @@ in
           # the fleet runs the tailscaled daemon, not the GUI app.
           profilesDir = lib.optionalString haveProfiles "/var/lib/deus-tokens/profiles";
 
-          # Bootstrap pkg (InstallEnterpriseApplication). Fill in once the
-          # signed pkg is built + uploaded to bootstrap.matv.io/pkg/ (see
-          # the Caddy vhost below). All three are required together:
+          # Bootstrap pkg (InstallEnterpriseApplication). Rebuild + re-sign
+          # in malli-nix, stage on the vista HOST (served by the in-container
+          # Caddy :8088 via the /var/lib/malli-bootstrap bind-mount), re-hash:
           #   nix build '.#bootstrap-ade-pkg'   # in malli-nix (unsigned)
-          #   nix run '.#sign-bootstrap-pkg' -- installer.p12 result signed.pkg
-          #   scp signed.pkg matv@conduit:/var/lib/malli-bootstrap/malli-ade-bootstrap-0.1.0.pkg
+          #   nix run '.#sign-bootstrap-pkg' -- installer.pem result signed.pkg
+          #   scp signed.pkg vista:/tmp && ssh vista sudo install -m0644 \
+          #       /tmp/signed.pkg /var/lib/malli-bootstrap/malli-ade-bootstrap-0.1.0.pkg
           #   md5sum signed.pkg ; stat -c%s signed.pkg
           pkgURL = "https://bootstrap.matv.io/pkg/malli-ade-bootstrap-0.1.0.pkg";
           # Payload-free pkg (postinstall fetches the payload tarball from
           # /pkg/malli-bootstrap-payload.tar.gz). Re-hash on every rebuild.
-          pkgMD5 = "7d31b997f937e75927785ee13929d902";
-          pkgMD5Size = 12098;
+          # retire-lima cutover 2026-08-20 (11-step lima-free deus f9176c3a).
+          pkgMD5 = "a69ae09dc43307baa05791741b436041";
+          pkgMD5Size = 12089;
         };
         # headscaleCommand defaults to `headscale nodes list -o json`,
         # which is exactly what we want; the unix socket is world-
@@ -492,7 +502,24 @@ in
       # private-net container has its own netns + firewall. (2222 is already
       # opened by the sshd below.) Reached from the vista host / conduit via the
       # DNAT rules on the host side.
-      networking.firewall.allowedTCPPorts = [ 8085 8086 9418 ];
+      networking.firewall.allowedTCPPorts = [ 8085 8086 8088 9418 ];
+
+      # ── Static file server for the ADE bootstrap pkg + payload ────
+      # Serves /var/lib/malli-bootstrap (host bind-mount, ro) on :8088.
+      # conduit's public Caddy reverse_proxies bootstrap.matv.io/pkg/* →
+      # vista:8088 (host DNAT → this container). Plain HTTP; TLS terminates
+      # at conduit. handle_path strips the /pkg prefix so /pkg/foo maps to
+      # /var/lib/malli-bootstrap/foo. Migrated off conduit's file_server 2026-08.
+      services.caddy.enable = true;
+      services.caddy.virtualHosts.":8088".extraConfig = ''
+        handle_path /pkg/* {
+          root * /var/lib/malli-bootstrap
+          file_server
+        }
+        handle {
+          respond "not found" 404
+        }
+      '';
 
       # ── Tailscale (INSIDE the nspawn — self-contained) ────
       # The container joins the malli tailnet as its OWN node ("deus-vista")
@@ -1074,7 +1101,7 @@ in
       || iptables -t nat -A POSTROUTING -s 10.100.1.0/24 ! -d 10.100.1.0/24 -j MASQUERADE
     iptables -C FORWARD -i ve-headscale -j ACCEPT 2>/dev/null || iptables -A FORWARD -i ve-headscale -j ACCEPT
     iptables -C FORWARD -o ve-headscale -j ACCEPT 2>/dev/null || iptables -A FORWARD -o ve-headscale -j ACCEPT
-    for p in 8085 8086 9418 2222; do
+    for p in 8085 8086 8088 9418 2222; do
       iptables -t nat -C PREROUTING -p tcp --dport $p -j DNAT --to-destination 10.100.1.2:$p 2>/dev/null \
         || iptables -t nat -A PREROUTING -p tcp --dport $p -j DNAT --to-destination 10.100.1.2:$p
     done
