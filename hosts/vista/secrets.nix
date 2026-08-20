@@ -82,6 +82,14 @@
     format = "binary";
     mode = "0400";
   };
+  # GitHub App private key (malli-granter App) the granter uses to mint
+  # installation tokens and push to malli-nix via the ruleset bypass,
+  # replacing the branch-protection-blocked deploy-key direct push.
+  sops.secrets.deus_github_app_key = {
+    sopsFile = ../../secrets/vista/deus_github_app_key;
+    format = "binary";
+    mode = "0400";
+  };
   sops.secrets.deus_fleet_age_key = lib.mkIf (builtins.pathExists ../../secrets/vista/deus_fleet_age_key) {
     sopsFile = ../../secrets/vista/deus_fleet_age_key;
     format = "binary";
