@@ -36,26 +36,30 @@ let
           # the nix-builder-vm profile pins all three at normal priority
           virtualisation.cores = lib.mkForce 8;
           virtualisation.memorySize = lib.mkForce 8192;
-          virtualisation.diskSize = lib.mkForce (100 * 1024);
+          virtualisation.diskSize = lib.mkForce (60 * 1024);
 
-          # Auto-GC INSIDE the guest. The stock darwin.linux-builder ships NO gc
-          # timer, so every fajita aarch64 rebuild piles up in the guest store
-          # and the qcow2 grows toward its 100 GiB ceiling until the mini's APFS
-          # container fills and the VM's /nix goes read-only (this is exactly
-          # what wedged the builder 2026-07-18). Weekly GC keeping 14 days is the
-          # real safety net. min-free/max-free make the daemon also GC when the
-          # guest store gets low — but note the guest can't see the *host* APFS
-          # running out, so it can't rely on that alone; the timer is primary.
+          # Auto-GC INSIDE the guest. This builder takes ALL of harbor's
+          # offloaded aarch64 phone-app builds, piling up dead store paths at
+          # ~20 GB/day. A weekly GC timer was WAY too slow: the 59 GiB guest
+          # filled to read-only in ~2 days, long before GC ever fired — that
+          # was the real "fills every couple days" root cause (diagnosed
+          # 2026-08-20). The PRIMARY safety net is now continuous, reactive GC
+          # via min-free/max-free below: the nix daemon evicts dead paths
+          # mid-build whenever free space drops under min-free (15 GiB),
+          # capping guest usage around 30-40 GiB with zero timer involvement.
+          # The daily GC + 3-day retention below is a belt-and-suspenders
+          # backstop only. Note the guest can't see the *host* APFS running
+          # out, so it can't rely on that alone.
           nix.gc = {
             automatic = true;
-            dates = "weekly";
-            options = "--delete-older-than 14d";
+            dates = "daily";
+            options = "--delete-older-than 3d";
           };
           # The nix-builder-vm profile already pins min-free/max-free at normal
           # priority, so these need mkForce (same as the sizing options above).
           nix.settings = {
-            min-free = lib.mkForce (1024 * 1024 * 1024); # 1 GiB
-            max-free = lib.mkForce (5 * 1024 * 1024 * 1024); # 5 GiB
+            min-free = lib.mkForce (15 * 1024 * 1024 * 1024); # 15 GiB
+            max-free = lib.mkForce (30 * 1024 * 1024 * 1024); # 30 GiB
           };
         }
       )
@@ -111,18 +115,19 @@ in
   launchd.daemons.linux-builder-watchdog = {
     script = ''
       state=/var/lib/linux-builder/watchdog-failures
-      # Success requires BOTH sshd reachable AND /nix writable. The remote
-      # check (test -w /nix + a touch/rm probe) catches the ghost-file /
-      # disk-full aftermath: when the host APFS container fills, the guest's
-      # /nix remounts read-only but sshd keeps answering on 31022 — a plain
-      # `ssh ... true` would still "succeed" and the watchdog would never
-      # fire. If ssh reaches the guest but the writable-check fails, this `if`
-      # is false and we fall through to the same failure-counter path below,
-      # so reachable-but-read-only is treated as a failure and restarts after 3.
+      # Health check is sshd-reachability only: a plain `ssh ... true`. Do NOT
+      # try to probe /nix writability here — the ssh `builder` user is non-root
+      # and /nix in the guest is root:root 0755, so a `test -w /nix` / touch
+      # probe as that user always false-fails, wedging the watchdog into a
+      # force-restart loop every ~6 min (observed in production). The disk-full
+      # / read-only-store scenario is instead guarded by (a) the separate
+      # linux-builder-disk-watchdog below (host `df` + ghost-file detection) and
+      # (b) the qcow2 size cap + guest GC that keep the host from filling in the
+      # first place.
       if /usr/bin/ssh -o ConnectTimeout=10 -o BatchMode=yes \
            -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
            -i /etc/nix/builder_ed25519 -p 31022 builder@localhost \
-           'test -w /nix && touch /nix/.rwtest 2>/dev/null && rm -f /nix/.rwtest' \
+           true \
            2>/dev/null; then
         rm -f "$state"
         exit 0
@@ -131,7 +136,7 @@ in
       echo "$n" > "$state"
       if [ "$n" -ge 3 ]; then
         rm -f "$state"
-        echo "$(/bin/date '+%Y-%m-%dT%H:%M:%S') watchdog: 3 consecutive failures (sshd unreachable or /nix read-only), force-restarting builder" >> /var/lib/linux-builder/watchdog.log
+        echo "$(/bin/date '+%Y-%m-%dT%H:%M:%S') watchdog: 3 consecutive failures (sshd unreachable), force-restarting builder" >> /var/lib/linux-builder/watchdog.log
         /usr/bin/pkill -9 -f qemu-system-aarch64 || true
         /bin/launchctl kickstart -k system/org.nixos.linux-builder
       fi
