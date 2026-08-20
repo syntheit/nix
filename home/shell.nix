@@ -11,6 +11,7 @@ let
   # tmux session on that host (default session "1"; an arg naming a dir under
   # ~/Projects auto-cds there; "nix" -> ~/nix).
   sessionHosts = {
+    f = "fajita";
     h = "harbor";
     m = "mantle";
     r = "raven";
@@ -19,7 +20,8 @@ let
 
   # swift roams (cafe wifi) -> mosh; the LAN machines talk over plain ssh.
   # harbor is remote for everyone, so it is always mosh.
-  transportFor = target: if hostName == "swift" || target == "harbor" then "mosh" else "ssh";
+  # fajita is a roaming phone on Tailscale -> always mosh (survives cell/wifi handoff).
+  transportFor = target: if hostName == "swift" || target == "harbor" || target == "fajita" then "mosh" else "ssh";
 
   mkSessionFn =
     letter: target:

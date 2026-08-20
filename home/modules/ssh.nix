@@ -63,6 +63,12 @@
         IdentityFile = "~/.ssh/mainkey";
         User = "daniel";
       };
+      # fajita — OnePlus 6T phone on Tailscale. Used by the `f` session command (mosh).
+      "fajita" = {
+        HostName = "100.125.151.79";
+        IdentityFile = "~/.ssh/mainkey";
+        User = "daniel";
+      };
       # On mantle (always home), reach raven's VM over the LAN by hopping
       # through the phone's own sshd — deterministic, ~3ms, no Tailscale
       # double-NAT hole-punch to go stale. Everyone else uses Tailscale.
