@@ -10,7 +10,7 @@
 #
 #   Caddy  headscale.matv.io / mini.themalli.ai → vista:8085 (Headscale)
 #          bootstrap.matv.io  (device ADE paths) → vista:8086 (deus)
-#          bootstrap.matv.io  /pkg/*             → local file_server (pkg stays here)
+#          bootstrap.matv.io  /pkg/*             → vista:8088 (pkg served from vista nspawn)
 #          mdm/scep/enroll.matv.io               → mantle 10.100.0.3
 #   socat  :5000 / :5001  → vista (docker + zot registries)
 #          :8086 (deus)   → vista   [fleet tailnet 100.64.0.1 + mantle ADE webhook via wg]
@@ -47,12 +47,9 @@ let
   };
 in
 {
-  # Signed ADE bootstrap pkg is still SERVED FROM conduit by Caddy (file_server
-  # below) — Daniel scp's the nix-built + signed pkg here. Only the dir stays on
-  # conduit; the deus ADE logic that references the pkg URL runs on vista.
-  systemd.tmpfiles.rules = [
-    "d /var/lib/malli-bootstrap 0755 root root -"
-  ];
+  # ADE bootstrap pkg serving moved off conduit into the vista headscale
+  # nspawn (2026-08). conduit now only reverse_proxies /pkg/* → vista:8088;
+  # no local file_server / hosting dir here anymore.
 
   # ── Tailscale (on host) ─────────────────────────────────────
   # conduit stays a malli-tailnet node (100.64.0.1) so it can socat-forward the
@@ -121,9 +118,12 @@ in
       handle /healthz {
         reverse_proxy ${vista}:8086
       }
-      handle_path /pkg/* {
-        root * /var/lib/malli-bootstrap
-        file_server
+      # Static pkg/payload serving migrated off conduit's local disk into the
+      # vista headscale nspawn (2026-08). Forward /pkg/* verbatim over wg →
+      # vista host DNAT → in-container Caddy :8088, which does the single
+      # /pkg strip. conduit is now a pure relay for this vhost.
+      handle /pkg/* {
+        reverse_proxy ${vista}:8088
       }
       handle {
         respond "not found" 404
