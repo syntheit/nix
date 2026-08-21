@@ -15,6 +15,7 @@
     --build:#7a5bd6; --build-soft:rgba(122,91,214,.13);
     --task:#b5771a; --task-soft:rgba(181,119,26,.14);
     --fb:#bd4159; --fb-soft:rgba(189,65,89,.13);
+    --wd:#5457c9; --wd-soft:rgba(84,87,201,.14);
     --shadow:0 1px 2px rgba(20,30,50,.05), 0 8px 24px -12px rgba(20,30,50,.14);
     --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
     --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
@@ -30,6 +31,7 @@
       --build:#a488ee; --build-soft:rgba(164,136,238,.16);
       --task:#e2a63e; --task-soft:rgba(226,166,62,.15);
       --fb:#e56d85; --fb-soft:rgba(229,109,133,.15);
+      --wd:#8f92ee; --wd-soft:rgba(143,146,238,.16);
       --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
     }
   }
@@ -103,12 +105,13 @@
   .nixcell{min-width:250px}
   .sol{display:flex;align-items:baseline;gap:.5em}
   .sdot{width:8px;height:8px;border-radius:50%;flex:none;transform:translateY(-.05em)}
-  .sdot.native{background:var(--ok)} .sdot.pwa{background:var(--pwa)} .sdot.task{background:var(--task)} .sdot.fb{background:var(--fb)}
+  .sdot.native{background:var(--ok)} .sdot.pwa{background:var(--pwa)} .sdot.task{background:var(--task)} .sdot.fb{background:var(--fb)} .sdot.wd{background:var(--wd)}
   .sol b{font-weight:600}
   .meta{color:var(--text-faint);font-size:.8rem;margin-top:3px;padding-left:1.3em}
   .tag{font-family:var(--mono);font-size:.62rem;text-transform:uppercase;letter-spacing:.06em;padding:.16em .5em;border-radius:5px;margin-left:.3em;white-space:nowrap}
   .tag.native{background:var(--ok-soft);color:var(--ok)} .tag.pwa{background:var(--pwa-soft);color:var(--pwa)}
   .tag.task{background:var(--task-soft);color:var(--task)} .tag.fb{background:var(--fb-soft);color:var(--fb)} .tag.build{background:var(--build-soft);color:var(--build)}
+  .tag.wd{background:var(--wd-soft);color:var(--wd)} .tag.own{background:var(--accent-soft);color:var(--accent)}
   tr.hide{display:none}
   .filters{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
   .chip{font-family:var(--mono);font-size:.74rem;letter-spacing:.03em;padding:.42em .8em;border-radius:20px;border:1px solid var(--border-strong);
@@ -140,31 +143,33 @@
 <div class="wrap">
   <div class="eyebrow">OnePlus 6T · Mobile NixOS · GNOME Shell Mobile</div>
   <h1>fajita — phone build board</h1>
-  <p class="lede">Every use case from the plan, plus the researched path for each thing we're <b>building</b>. OnePlus/Nix is the daily driver; the iPhone stays in the bag for the shrinking set of holdouts. Live doc — this page is kept current as we ship.</p>
-  <div class="updated">last updated: 2026-07-13 · GNOME Mobile (Mutter) migration merged · 16 PWAs live · research complete (10 agents)</div>
+  <p class="lede">Every use case from the plan, and how it's handled on the phone. Where a PWA or stale project used to sit, there's now a <b>native GTK4 app we built</b> — a whole fleet of them. OnePlus/Nix is the daily driver; the iPhone stays in the bag for the shrinking set of holdouts. Live doc — this page is kept current as we ship.</p>
+  <div class="updated">last updated: 2026-08-18 · native app fleet shipped (Courier · Paloma · Jotter · Anchorage · Warden · Bourse · Mimick · Riff · Mirador · Relay) · Waydroid on-demand for chat</div>
 
   <div class="stats">
-    <div class="tile"><div class="n">26<small>/ 31</small></div><div class="l">handled <b>on the phone</b></div></div>
-    <div class="tile"><div class="n"><span class="dot" style="background:var(--ok)"></span>12</div><div class="l">native Linux apps</div></div>
-    <div class="tile"><div class="n"><span class="dot" style="background:var(--pwa)"></span>14</div><div class="l">web-apps (PWA)</div></div>
-    <div class="tile"><div class="n"><span class="dot" style="background:var(--build)"></span>6</div><div class="l">native apps to build</div></div>
-    <div class="tile"><div class="n"><span class="dot" style="background:var(--fb)"></span>2</div><div class="l">iPhone holdouts</div></div>
+    <div class="tile"><div class="n">30<small>/ 32</small></div><div class="l">handled <b>on the phone</b></div></div>
+    <div class="tile"><div class="n"><span class="dot" style="background:var(--ok)"></span>19</div><div class="l">native Linux apps</div></div>
+    <div class="tile"><div class="n"><span class="dot" style="background:var(--build)"></span>10</div><div class="l">built or forked by us</div></div>
+    <div class="tile"><div class="n"><span class="dot" style="background:var(--wd)"></span>3</div><div class="l">Android via Waydroid</div></div>
+    <div class="tile"><div class="n"><span class="dot" style="background:var(--pwa)"></span>6</div><div class="l">web-apps (PWA)</div></div>
   </div>
 
   <div class="cov">
-    <div class="cov-head"><span>Coverage · 31 use cases</span><span>OnePlus / NixOS</span></div>
+    <div class="cov-head"><span>Coverage · 32 use cases</span><span>OnePlus / NixOS</span></div>
     <div class="bar" aria-label="coverage">
-      <span style="flex:12;background:var(--ok)" title="12 native"></span>
-      <span style="flex:14;background:var(--pwa)" title="14 PWA"></span>
-      <span style="flex:3;background:var(--task)" title="3 task"></span>
+      <span style="flex:19;background:var(--ok)" title="19 native"></span>
+      <span style="flex:3;background:var(--wd)" title="3 Android · Waydroid"></span>
+      <span style="flex:6;background:var(--pwa)" title="6 PWA"></span>
+      <span style="flex:2;background:var(--task)" title="2 task"></span>
       <span style="flex:2;background:var(--fb)" title="2 fallback"></span>
     </div>
     <div class="cov-key">
-      <span><i class="sw" style="background:var(--ok)"></i> Native app · 12</span>
-      <span><i class="sw" style="background:var(--pwa)"></i> PWA · 14</span>
-      <span><i class="sw" style="background:var(--task)"></i> Config/task · 3</span>
+      <span><i class="sw" style="background:var(--ok)"></i> Native app · 19</span>
+      <span><i class="sw" style="background:var(--wd)"></i> Android · Waydroid · 3</span>
+      <span><i class="sw" style="background:var(--pwa)"></i> PWA · 6</span>
+      <span><i class="sw" style="background:var(--task)"></i> Config/task · 2</span>
       <span><i class="sw" style="background:var(--fb)"></i> iPhone fallback · 2</span>
-      <span><i class="sw" style="background:var(--build)"></i> native build queued · 6</span>
+      <span><i class="sw" style="background:var(--build)"></i> built or forked by us · 10</span>
     </div>
   </div>
 
@@ -174,8 +179,8 @@
   <div class="devices">
     <div class="dev primary">
       <div class="dev-top"><h3>OnePlus · NixOS</h3><span class="role r-pri">Daily driver</span></div>
-      <p>Everything native + PWAs. Fully declarative, yours, hackable — the actual project.</p>
-      <ul><li>All comms, notes, media, maps, auth</li><li>Finance &amp; bookmarks as web-apps (→ going native)</li><li>26 / 31 use cases live here</li></ul>
+      <p>Native apps we built + a few PWAs. Fully declarative, yours, hackable — the actual project.</p>
+      <ul><li>Comms, notes, media, finance now native or on-device</li><li>Official-only chat runs in Waydroid on-demand</li><li>30 / 32 use cases live here</li></ul>
     </div>
     <div class="dev fb">
       <div class="dev-top"><h3>iPhone · iOS</h3><span class="role r-fb">In-bag fallback</span></div>
@@ -188,70 +193,71 @@
       <ul><li>Covers everything natively</li><li>Better privacy than iOS</li><li>…but another OS to maintain, and not the project</li></ul>
     </div>
   </div>
-  <div class="thesis"><b>The play:</b> daily-drive OnePlus/Nix; close holdouts one by one — WireGuard VPN, native note/media clients, mautrix bridges — until the iPhone is only needed to sync the Garmin.</div>
+  <div class="thesis"><b>The play:</b> daily-drive OnePlus/Nix; close holdouts one by one. The note/media/finance clients are now shipped as our own native apps, and official-only chat (WhatsApp/Slack/Discord) runs in Waydroid on-demand — so the iPhone is down to just Garmin watch sync and a couple of official-only banking apps.</div>
 
   <!-- USE CASE TABLE -->
   <h2><span class="num">02</span>Use case by use case</h2>
-  <p class="sub">What's actually on the phone now. Tap a status to filter. The <span style="color:var(--build)">violet "→ native"</span> notes point at the build roadmap below.</p>
+  <p class="sub">What's actually on the phone now. Tap a status to filter. Apps we built ourselves carry an <span style="color:var(--accent)">"ours"</span> tag; a <span style="color:var(--build)">violet "→ native"</span> note marks the few things still being built.</p>
   <div class="filters" id="filters">
-    <button class="chip" data-f="all" aria-pressed="true">All · 31</button>
-    <button class="chip" data-f="native" aria-pressed="false"><i class="sw" style="background:var(--ok)"></i>Native · 12</button>
-    <button class="chip" data-f="pwa" aria-pressed="false"><i class="sw" style="background:var(--pwa)"></i>PWA · 14</button>
-    <button class="chip" data-f="task" aria-pressed="false"><i class="sw" style="background:var(--task)"></i>Task · 3</button>
+    <button class="chip" data-f="all" aria-pressed="true">All · 32</button>
+    <button class="chip" data-f="native" aria-pressed="false"><i class="sw" style="background:var(--ok)"></i>Native · 19</button>
+    <button class="chip" data-f="wd" aria-pressed="false"><i class="sw" style="background:var(--wd)"></i>Android · 3</button>
+    <button class="chip" data-f="pwa" aria-pressed="false"><i class="sw" style="background:var(--pwa)"></i>PWA · 6</button>
+    <button class="chip" data-f="task" aria-pressed="false"><i class="sw" style="background:var(--task)"></i>Task · 2</button>
     <button class="chip" data-f="fb" aria-pressed="false"><i class="sw" style="background:var(--fb)"></i>Fallback · 2</button>
   </div>
   <div class="twrap"><table><thead><tr>
     <th>Use</th><th>Pixel · GrapheneOS</th><th>iPhone · iOS</th><th class="nix">OnePlus · NixOS</th>
   </tr></thead><tbody id="tbody">
     <tr class="cat"><td colspan="4">Communication</td></tr>
-    <tr data-s="task"><td class="use">Email</td><td class="ref">Thunderbird</td><td class="ref">Apple Mail</td>
-      <td class="nixcell"><div class="sol"><span class="sdot task"></span><b>Geary</b><span class="tag task">in config · deploy pending</span></div><div class="meta">Swapped in for Thunderbird (unusable at phone width). Folds to single pane, full IMAP.</div></td></tr>
+    <tr data-s="native"><td class="use">Email</td><td class="ref">Thunderbird</td><td class="ref">Apple Mail</td>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Courier</b><span class="tag native">native</span><span class="tag own">ours</span></div><div class="meta">Own GTK4/libadwaita client — IMAP/SMTP, offline SQLite+FTS5, privacy-first HTML rendering. Backs daniel@matv.io.</div></td></tr>
     <tr data-s="native"><td class="use">Matrix</td><td class="ref">FluffyChat</td><td class="ref">FluffyChat</td>
       <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Fractal</b><span class="tag native">native</span></div><div class="meta">Fractal for Matrix (real E2EE, matrix-rust-sdk); Chatty kept for SMS/MMS. Neither does Matrix calls.</div></td></tr>
-    <tr data-s="native"><td class="use">Discord</td><td class="ref">Official</td><td class="ref">Official</td>
-      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Vesktop</b><span class="tag native">native</span></div></td></tr>
-    <tr data-s="pwa"><td class="use">Slack</td><td class="ref">Official</td><td class="ref">Official</td>
-      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>PWA</b><span class="tag pwa">dsf 1.3</span></div><div class="meta">No mobile web → desktop-scaled. <span style="color:var(--build)">→ mautrix-slack bridge into Matrix</span></div></td></tr>
-    <tr data-s="pwa"><td class="use">Telegram</td><td class="ref">Official</td><td class="ref">Official</td>
-      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>PWA</b><span class="tag pwa">wired</span></div><div class="meta">web.telegram.org/k — responsive. <span style="color:var(--build)">→ native (Paper Plane fork / grammers)</span></div></td></tr>
-    <tr data-s="pwa"><td class="use">WhatsApp</td><td class="ref">Official</td><td class="ref">Official</td>
-      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>Web PWA</b><span class="tag pwa">dsf 1.3</span></div><div class="meta">Desktop companion web. <span style="color:var(--build)">→ mautrix-whatsapp bridge</span>; calls → iPhone</div></td></tr>
+    <tr data-s="wd"><td class="use">Discord</td><td class="ref">Official</td><td class="ref">Official</td>
+      <td class="nixcell"><div class="sol"><span class="sdot wd"></span><b>Waydroid</b><span class="tag wd">android · on-demand</span></div><div class="meta">Official Android app in an on-demand Waydroid container.</div></td></tr>
+    <tr data-s="wd"><td class="use">Slack</td><td class="ref">Official</td><td class="ref">Official</td>
+      <td class="nixcell"><div class="sol"><span class="sdot wd"></span><b>Waydroid</b><span class="tag wd">android · on-demand</span></div><div class="meta">Official Android app, on-demand — far better than the desktop-scaled web.</div></td></tr>
+    <tr data-s="native"><td class="use">Telegram</td><td class="ref">Official</td><td class="ref">Official</td>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Paloma</b><span class="tag native">native</span><span class="tag own">ours</span></div><div class="meta">Own GTK4/libadwaita client over TDLib — chats, media, albums, replies, voice.</div></td></tr>
+    <tr data-s="wd"><td class="use">WhatsApp</td><td class="ref">Official</td><td class="ref">Official</td>
+      <td class="nixcell"><div class="sol"><span class="sdot wd"></span><b>Waydroid</b><span class="tag wd">android · on-demand</span></div><div class="meta">Official Android app — real voice/video calls; companion-linked to the iPhone.</div></td></tr>
     <tr data-s="pwa"><td class="use">Google Voice</td><td class="ref">Official</td><td class="ref">Official</td>
       <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>PWA</b><span class="tag pwa">wired</span></div></td></tr>
 
     <tr class="cat"><td colspan="4">Notes, web &amp; auth</td></tr>
     <tr data-s="native"><td class="use">Browser</td><td class="ref">Edge</td><td class="ref">Orion</td>
       <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Firefox</b><span class="tag native">native</span></div><div class="meta">+ Epiphany / Brave / Chromium</div></td></tr>
-    <tr data-s="pwa"><td class="use">Memos</td><td class="ref">MoeMemos</td><td class="ref">MoeMemos</td>
-      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>PWA</b><span class="tag build">→ native</span></div><div class="meta">notes.matv.io · <span style="color:var(--build)">libadwaita client (one-shot)</span></div></td></tr>
-    <tr data-s="pwa"><td class="use">Linkding</td><td class="ref">Linkdy</td><td class="ref">Linkdy</td>
-      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>PWA</b><span class="tag build">→ native</span></div><div class="meta">links.matv.io · <span style="color:var(--build)">libadwaita client (linkding-rs crate)</span></div></td></tr>
+    <tr data-s="native"><td class="use">Memos</td><td class="ref">MoeMemos</td><td class="ref">MoeMemos</td>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Jotter</b><span class="tag native">native</span><span class="tag own">ours</span></div><div class="meta">Own GTK4/libadwaita Memos client — notes.matv.io. Markdown compose, tags, pin/archive.</div></td></tr>
+    <tr data-s="native"><td class="use">Linkding</td><td class="ref">Linkdy</td><td class="ref">Linkdy</td>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Anchorage</b><span class="tag native">native</span><span class="tag own">ours</span></div><div class="meta">Own GTK4/libadwaita Linkding client — links.matv.io. Paste-URL auto-fill, tag search.</div></td></tr>
     <tr data-s="pwa"><td class="use">Retrospend</td><td class="ref">PWA</td><td class="ref">PWA</td>
       <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>PWA</b><span class="tag pwa">wired</span></div><div class="meta">retrospend.app</div></td></tr>
     <tr data-s="native"><td class="use">AI</td><td class="ref">Claude/GPT app</td><td class="ref">Claude/GPT app</td>
-      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>claude-code</b> CLI<span class="tag native">native</span></div><div class="meta">+ claude.ai PWA</div></td></tr>
-    <tr data-s="pwa"><td class="use">Bitwarden</td><td class="ref">Official</td><td class="ref">Official</td>
-      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>PWA</b><span class="tag pwa">wired</span></div><div class="meta">vault.matv.io (self-hosted Vaultwarden)</div></td></tr>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>claude-code</b> CLI<span class="tag native">native</span></div><div class="meta">the CLI is the app · + claude.ai PWA.</div></td></tr>
+    <tr data-s="native"><td class="use">Bitwarden</td><td class="ref">Official</td><td class="ref">Official</td>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Warden</b><span class="tag native">native</span><span class="tag own">ours</span></div><div class="meta">Own GTK4/libadwaita client over rbw — PIN unlock, TOTP countdown, generator. vault.matv.io.</div></td></tr>
     <tr data-s="native"><td class="use">2FA</td><td class="ref">Aegis</td><td class="ref">Ente Auth</td>
       <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Authenticator</b><span class="tag native">native</span></div></td></tr>
 
     <tr class="cat"><td colspan="4">Media</td></tr>
     <tr data-s="native"><td class="use">Music</td><td class="ref">Spotify</td><td class="ref">Spotify</td>
-      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Spot</b><span class="tag native">native</span></div><div class="meta">librespot · Premium (fixed from wrong `riff` pkg)</div></td></tr>
-    <tr data-s="pwa"><td class="use">YouTube</td><td class="ref">Official</td><td class="ref">Official</td>
-      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>Invidious PWA</b><span class="tag build">→ native</span></div><div class="meta">self-hosted on vista · <span style="color:var(--build)">fork Delfin for native</span> · + Clapper for links</div></td></tr>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Riff</b><span class="tag native">native</span><span class="tag own">our fork</span></div><div class="meta">Mobile-first fork of the Riff Spotify client (librespot) — podcasts, Connect remote, playlists.</div></td></tr>
+    <tr data-s="native"><td class="use">YouTube</td><td class="ref">Official</td><td class="ref">Official</td>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Mirador</b><span class="tag native">native</span><span class="tag own">ours</span></div><div class="meta">Own GTK4/libadwaita Invidious/YouTube client — talks to self-hosted Invidious on vista. + Clapper for links.</div></td></tr>
     <tr data-s="native"><td class="use">Jellyfin</td><td class="ref">Official</td><td class="ref">Official</td>
       <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Delfin</b><span class="tag native">native</span></div></td></tr>
-    <tr data-s="pwa"><td class="use">Immich</td><td class="ref">Official</td><td class="ref">Official</td>
-      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>PWA</b><span class="tag task">Mimick held</span></div><div class="meta">photos.matv.io · <span style="color:var(--build)">Mimick packaged (packages/mimick) but HELD — needs gtk4 ≥ 4.22; pinned nixpkgs has 4.20.3. Re-enable after a nixpkgs bump.</span></div></td></tr>
+    <tr data-s="native"><td class="use">Immich</td><td class="ref">Official</td><td class="ref">Official</td>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Mimick</b><span class="tag native">native</span><span class="tag own">our fork</span></div><div class="meta">Our feature-added fork toward iOS/Android-app parity — bottom-nav, lightbox+video, multi-select, backup, places map. photos.matv.io.</div></td></tr>
     <tr data-s="task"><td class="use">Camera</td><td class="ref">Stock</td><td class="ref">Stock</td>
-      <td class="nixcell"><div class="sol"><span class="sdot task"></span><b>Snapshot</b><span class="tag task">quality WIP</span></div><div class="meta">libcamera IPAs missing · iPhone for real shots</div></td></tr>
+      <td class="nixcell"><div class="sol"><span class="sdot task"></span><b>Snapshot + custom pipeline</b><span class="tag task">quality WIP</span></div><div class="meta">Progress: AF/VCM bound, low-light AGC/exposure, CCM tuning. IMX519 C-PHY still the blocker; iPhone for the shot that matters.</div></td></tr>
     <tr data-s="native"><td class="use">Voice Notes</td><td class="ref">Stock</td><td class="ref">Stock</td>
       <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Sound Recorder</b><span class="tag native">native</span></div></td></tr>
 
     <tr class="cat"><td colspan="4">Maps &amp; fitness</td></tr>
-    <tr data-s="native"><td class="use">Maps</td><td class="ref">Google Maps</td><td class="ref">Google Maps</td>
-      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>GNOME Maps</b> + OrganicMaps<span class="tag native">native</span></div><div class="meta">+ Google Maps as Chromium PWA</div></td></tr>
+    <tr data-s="pwa"><td class="use">Maps</td><td class="ref">Google Maps</td><td class="ref">Google Maps</td>
+      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>Google Maps PWA</b><span class="tag build">→ native</span></div><div class="meta">GNOME Maps + OrganicMaps also installed (native). Own app being scoped.</div></td></tr>
     <tr data-s="fb"><td class="use">Garmin</td><td class="ref">Official</td><td class="ref">Official</td>
       <td class="nixcell"><div class="sol"><span class="sdot fb"></span><b>iPhone</b><span class="tag fb">fallback</span></div><div class="meta">no Linux client, no BT watch sync</div></td></tr>
     <tr data-s="pwa"><td class="use">Strava</td><td class="ref">Official</td><td class="ref">Official</td>
@@ -260,8 +266,8 @@
     <tr class="cat"><td colspan="4">Finance &amp; news</td></tr>
     <tr data-s="pwa"><td class="use">Fidelity</td><td class="ref">Official</td><td class="ref">Official</td>
       <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>PWA</b><span class="tag pwa">wired</span></div><div class="meta">digital.fidelity.com — verify fit on device</div></td></tr>
-    <tr data-s="pwa"><td class="use">Stocks</td><td class="ref">Yahoo Finance</td><td class="ref">Yahoo Finance</td>
-      <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>Yahoo PWA</b><span class="tag pwa">wired</span></div><div class="meta">no good native app (Merkato = maybe, see roadmap)</div></td></tr>
+    <tr data-s="native"><td class="use">Stocks</td><td class="ref">Yahoo Finance</td><td class="ref">Yahoo Finance</td>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Bourse</b><span class="tag native">native</span><span class="tag own">ours</span></div><div class="meta">Own GTK4/libadwaita watchlist — Yahoo Finance, markets/futures strip, drag-reorder, after-hours.</div></td></tr>
     <tr data-s="pwa"><td class="use">WSJ</td><td class="ref">Official</td><td class="ref">Official</td>
       <td class="nixcell"><div class="sol"><span class="sdot pwa"></span><b>PWA</b><span class="tag pwa">wired</span></div></td></tr>
     <tr data-s="fb"><td class="use">Misc banking</td><td class="ref">Official apps</td><td class="ref">Official apps</td>
@@ -274,44 +280,64 @@
       <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>GNOME Calendar</b><span class="tag native">native</span></div><div class="meta">needs Online-Accounts login</div></td></tr>
     <tr data-s="native"><td class="use">Contacts</td><td class="ref">Stock</td><td class="ref">Stock</td>
       <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>GNOME Contacts</b><span class="tag native">native</span></div></td></tr>
+    <tr data-s="native"><td class="use">Terminal</td><td class="ref">Termux</td><td class="ref">Blink · Termius</td>
+      <td class="nixcell"><div class="sol"><span class="sdot native"></span><b>Relay</b><span class="tag native">native</span><span class="tag own">ours</span></div><div class="meta">Own GTK4/libadwaita/VTE mobile terminal — touch selection, on-screen key bar, kinetic scroll, mosh session persistence.</div></td></tr>
     <tr data-s="task"><td class="use">VPN</td><td class="ref">Windscribe</td><td class="ref">Windscribe</td>
-      <td class="nixcell"><div class="sol"><span class="sdot task"></span><b>WireGuard</b><span class="tag task">config</span></div><div class="meta">Windscribe WG config → wg-quick (mtu 1280). Works on cell. See decisions.</div></td></tr>
+      <td class="nixcell"><div class="sol"><span class="sdot task"></span><b>WireGuard</b><span class="tag task">config</span><span class="tag build">→ own frontend</span></div><div class="meta">Windscribe WG config → wg-quick (mtu 1280). Own libadwaita Windscribe frontend planned.</div></td></tr>
   </tbody></table></div>
 
-  <!-- BUILD ROADMAP -->
-  <h2><span class="num">03</span>Build-your-own roadmap</h2>
-  <p class="sub">Researched (GitHub/forums, July 2026), ordered roughly by effort. Where a decent abandoned project exists, we pick it up rather than start cold.</p>
+  <!-- APPS WE BUILT -->
+  <h2><span class="num">03</span>Apps we built</h2>
+  <p class="sub">Self-hosted-first. Where a PWA or a stale project used to sit, there's now a native GTK4/libadwaita app — most written from scratch, a couple forked and reshaped for the phone.</p>
   <div class="cards">
-    <div class="card lead"><div class="ch"><h4>Linkding client<span class="k">Rust · GTK4 · libadwaita</span></h4><span class="effort e-sm">one-shot</span></div>
-      <p>Clean token-auth REST, and the <b>linkding-rs</b> crate already wraps it — the API layer is done. No libadwaita client exists = clean gap. MVP: paste-URL → auto-title (<code>/check</code>) → save; list/search; tag filter; open.</p>
-      <div class="verdict"><b>Verdict:</b> 🛠 building now — autonomous agent in <code>~/Projects/linkding-gtk</code>. This is the template for the Memos sibling.</div>
-      <div class="links"><a href="https://linkding.link/api/">API</a><a href="https://github.com/zbrox/linkding-rs">linkding-rs</a><a href="https://github.com/vkhitrin/cosmicding">cosmicding (libcosmic ref)</a></div></div>
+    <div class="card lead"><div class="ch"><h4>Courier — email<span class="k">GTK4 · libadwaita</span></h4><span class="effort e-sm">shipped</span></div>
+      <p>From-scratch mobile email client — <b>IMAP/SMTP</b>, offline <b>SQLite+FTS5</b> search, privacy-first HTML rendering. Written from the ground up for phone width.</p>
+      <div class="verdict"><b>Verdict:</b> ✅ shipped, in the app grid, backs daniel@matv.io (Zoho app-password).</div></div>
 
-    <div class="card lead"><div class="ch"><h4>Memos client<span class="k">Rust · GTK4 · libadwaita</span></h4><span class="effort e-sm">one-shot</span></div>
-      <p>API is REST-over-grpc-gateway (<code>/api/v1</code>), <b>PAT auth</b>, tags inline on each memo — plain <code>reqwest</code>+<code>serde</code>, no gRPC toolchain. No native client exists. MVP: quick-capture, list, search (CEL filter), tags, attachments (base64).</p>
-      <div class="verdict"><b>Verdict:</b> build it — but <b>pin to your server version</b>, the API renames across releases.</div>
-      <div class="links"><a href="https://usememos.com/docs/api/latest">API</a><a href="https://github.com/mudkipme/MoeMemos">MoeMemos (feature ref)</a><a href="https://github.com/memospot/memospot">memospot (crib models)</a></div></div>
+    <div class="card lead"><div class="ch"><h4>Paloma — Telegram<span class="k">Rust · GTK4 · TDLib</span></h4><span class="effort e-sm">shipped</span></div>
+      <p>From-scratch native Telegram client over <b>TDLib</b> — login, chats, media, albums, replies, read receipts, voice.</p>
+      <div class="verdict"><b>Verdict:</b> ✅ shipped on-device.</div>
+      <div class="links"><a href="https://github.com/syntheit/paloma">paloma</a></div></div>
 
-    <div class="card"><div class="ch"><h4>Immich viewer<span class="k">adopt Mimick · Rust/GTK4</span></h4><span class="effort e-sm">package</span></div>
-      <p><b>Mimick is already mobile-ready</b> — real libadwaita breakpoints (OverlaySplitView; 2-col grids at 360px; swipe lightbox), rated "Perfect" for phones, and shipped for <b>aarch64 on Flathub</b> so it runs on the 6T today. Plain gtk4-rs; the viewer (<code>src/library/</code>) is cleanly separated from the sync engine, behind a Library-View toggle. Min server Immich v3.0.0+.</p>
-      <div class="verdict"><b>Verdict:</b> ✅ packaged at <code>packages/mimick</code> (builds green x86_64; aarch64 on the fajita rebuild) &amp; wired into fajita. Next: verify on-device → drop the PWA. Upstream nixpkgs PR is the nice follow-up (viewer-side issues #83/#77/#80).</div>
-      <div class="links"><a href="https://github.com/nicx17/mimick">Mimick</a><a href="https://flathub.org/apps/dev.nicx.mimick">Flathub (aarch64)</a><a href="https://linuxphoneapps.org/apps/dev.nicx.mimick/">linuxphoneapps</a></div></div>
+    <div class="card lead"><div class="ch"><h4>Jotter — Memos<span class="k">Rust · GTK4 · libadwaita</span></h4><span class="effort e-sm">shipped</span></div>
+      <p>From-scratch Memos client — timeline, Markdown compose, inline <b>#tags</b>, pin/archive, adaptive breakpoint.</p>
+      <div class="verdict"><b>Verdict:</b> ✅ shipped.</div>
+      <div class="links"><a href="https://github.com/syntheit/jotter">jotter</a></div></div>
 
-    <div class="card"><div class="ch"><h4>Invidious client<span class="k">fork Delfin · Rust/relm4</span></h4><span class="effort e-md">fork</span></div>
-      <p><b>Delfin</b> (Jellyfin client) is Rust/relm4/GTK4 with an <b>mpv</b> backend and an isolated <code>jellyfin_api</code> module — swap it for <code>invidious_api</code>. mpv plays Invidious' <code>dashUrl</code> natively; API is mostly no-auth (you self-host, so you control tokens). ~60–70% of the shell/player transfers.</p>
-      <div class="verdict"><b>Verdict:</b> fork Delfin (your idea — confirmed sound). No GTK Invidious client exists.</div>
-      <div class="links"><a href="https://codeberg.org/avery42/delfin">Delfin</a><a href="https://docs.invidious.io/api/">Invidious API</a></div></div>
+    <div class="card lead"><div class="ch"><h4>Anchorage — Linkding<span class="k">Rust · GTK4 · libadwaita</span></h4><span class="effort e-sm">shipped</span></div>
+      <p>From-scratch Linkding bookmark client — paste-URL auto-fill via <code>/check</code>, tag search, archive.</p>
+      <div class="verdict"><b>Verdict:</b> ✅ shipped.</div>
+      <div class="links"><a href="https://github.com/syntheit/anchorage">anchorage</a></div></div>
 
-    <div class="card"><div class="ch"><h4>Email — Geary now<span class="k">GTK3 · libhandy</span></h4><span class="effort e-sm">deploy</span></div>
-      <p><b>Geary</b> is the only mail app that folds to a single-pane touch reading pane, does full IMAP, and is in nixpkgs (aarch64). GTK3/slow-maint but works today. Back it with a <b>SnappyMail PWA</b>. GTK4/libadwaita options (Envelope, Stamp) are prototypes — track for later.</p>
-      <div class="verdict"><b>Verdict:</b> ✅ swapped into the config (replaces Thunderbird) — live on the next fajita rebuild. Revisit Stamp/Envelope in 6–12 mo.</div>
-      <div class="links"><a href="https://linuxphoneapps.org/apps/org.gnome.geary/">Geary</a><a href="https://snappymail.eu/">SnappyMail</a><a href="https://gitlab.gnome.org/felinira/envelope">Envelope (track)</a></div></div>
+    <div class="card lead"><div class="ch"><h4>Warden — Bitwarden<span class="k">GTK4 · libadwaita · rbw</span></h4><span class="effort e-sm">shipped</span></div>
+      <p>From-scratch Vaultwarden client over <b>rbw</b> — PIN unlock, custom pinentry, generator, TOTP countdown, entry edit.</p>
+      <div class="verdict"><b>Verdict:</b> ✅ shipped.</div>
+      <div class="links"><a href="https://github.com/syntheit/warden">warden</a></div></div>
 
-    <div class="card"><div class="ch"><h4>All-purpose chat app<span class="k">Matrix + mautrix + fork Fractal</span></h4><span class="effort e-lg">big</span></div>
-      <p>Your "Beeper-vibe" app: run <b>mautrix bridges</b> (WhatsApp/Telegram/Slack) on your homeserver — <b>mautrix-whatsapp <em>is</em> the self-hosted WhatsApp companion server</b> — and put a libadwaita Matrix client in front. Fork <b>Fractal 13</b> (Rust/GTK4/matrix-rust-sdk, e2ee done) and tighten it for mobile. Native Telegram alone = fork <b>Paper Plane</b> (own the tdlib pkg) or <b>grammers</b> (pure-Rust, no UI).</p>
-      <div class="verdict"><b>Verdict:</b> bridges + Fractal fork = the real path. Paper Plane if you want Telegram-native first.</div>
-      <div class="links"><a href="https://gitlab.gnome.org/World/fractal">Fractal</a><a href="https://github.com/mautrix/whatsapp">mautrix-whatsapp</a><a href="https://github.com/paper-plane-developers/paper-plane">Paper Plane</a><a href="https://codeberg.org/Lonami/grammers">grammers</a></div></div>
+    <div class="card lead"><div class="ch"><h4>Bourse — stocks<span class="k">GTK4 · libadwaita · Yahoo</span></h4><span class="effort e-sm">shipped</span></div>
+      <p>From-scratch stocks watchlist — Yahoo unofficial API (no key), markets/futures strip, drag-reorder, after-hours, fundamentals.</p>
+      <div class="verdict"><b>Verdict:</b> ✅ shipped.</div>
+      <div class="links"><a href="https://github.com/syntheit/bourse">bourse</a></div></div>
+
+    <div class="card"><div class="ch"><h4>Mimick — Immich<span class="k">fork · Rust/GTK4</span></h4><span class="effort e-sm">shipped</span></div>
+      <p>Forked and heavily extended toward the iOS/Android Immich apps — bottom-nav, lightbox+video, multi-select, GPhotos-style search, backup + cloud badges, galleries, places map.</p>
+      <div class="verdict"><b>Verdict:</b> ✅ shipped &amp; wired into fajita; replaced the PWA.</div>
+      <div class="links"><a href="https://github.com/nicx17/mimick">mimick (upstream)</a></div></div>
+
+    <div class="card"><div class="ch"><h4>Riff — music<span class="k">fork · Rust/GTK4 · librespot</span></h4><span class="effort e-sm">shipped</span></div>
+      <p>Mobile-first fork of the Riff Spotify client — full podcasts, Connect remote-queue, song swipe, playlist auth via librespot internal API.</p>
+      <div class="verdict"><b>Verdict:</b> ✅ shipped (vendored at <code>packages/riff</code>).</div></div>
+
+    <div class="card lead"><div class="ch"><h4>Mirador — YouTube<span class="k">Rust · GTK4 · libadwaita</span></h4><span class="effort e-sm">shipped</span></div>
+      <p>From-scratch native Invidious/YouTube client for the phone — points at the self-hosted Invidious instance on vista; Clapper handles one-off links.</p>
+      <div class="verdict"><b>Verdict:</b> ✅ shipped &amp; wired into fajita — retires the Invidious PWA.</div></div>
+
+    <div class="card lead"><div class="ch"><h4>Relay — terminal<span class="k">Rust · GTK4 · VTE</span></h4><span class="effort e-sm">shipped</span></div>
+      <p>From-scratch mobile terminal emulator — touch text selection, on-screen key bar, kinetic scrollback, pinch-to-zoom, and mosh persistence so sessions survive sleep and Wi-Fi/cellular handoffs.</p>
+      <div class="verdict"><b>Verdict:</b> ✅ shipped &amp; wired into fajita.</div></div>
   </div>
+
+  <div class="thesis"><b>Still on the bench:</b> <b>Maps</b> native app (scoping) · <b>Windscribe</b> libadwaita frontend · <b>Camera</b> image quality (ongoing).</div>
 
   <!-- DECISIONS -->
   <h2><span class="num">04</span>Decisions &amp; config</h2>
@@ -321,21 +347,21 @@
       <p>Skip the Windscribe client: generate a <b>WireGuard config</b> (account → Config Generator) → <code>networking.wg-quick</code> with <b><code>mtu = 1280</code></b> + <code>persistentKeepalive = 25</code> (the cellular gotchas) + <code>AllowedIPs = 0.0.0.0/0</code> (auto kill-switch). Windscribe already ships <code>arm64</code> debs, so a real aarch64 client is a trivial flake fix later.</p></div>
     <div class="card"><div class="ch"><h4>PWA icons</h4><span class="effort e-sm">polish</span></div>
       <p>Vendor icon files in the repo → install into the hicolor theme (<code>hicolor/512x512/apps/pwa-&lt;id&gt;.png</code>) → <code>Icon = "pwa-&lt;id&gt;"</code>, wrapped with <code>symlinkJoin</code>. Prior art: <b>nix-chromium-webapps</b>. Self-hosted apps have manifest icons; brands from dashboardicons.com (full-color, not simple-icons glyphs).</p></div>
-    <div class="card"><div class="ch"><h4>Stocks</h4><span class="effort e-md">maybe</span></div>
-      <p>No maintained native GTK4 stocks app that's also phone-adaptive <em>and</em> in nixpkgs. <b>Merkato</b> (active, Rust/GTK4, no API key) is the only candidate but is flagged "Desktop Only" — would need packaging + on-device width testing. <b>Keep the Yahoo PWA</b> unless you want to try it.</p></div>
+    <div class="card"><div class="ch"><h4>Stocks</h4><span class="effort e-sm">shipped</span></div>
+      <p>Turned out no maintained native GTK4 stocks app was both phone-adaptive <em>and</em> in nixpkgs — so we built our own. <b>Bourse</b> (from-scratch GTK4/libadwaita, Yahoo unofficial API, no key) replaced the Yahoo PWA: watchlist, markets/futures strip, drag-reorder, after-hours, fundamentals. See §03.</p></div>
     <div class="card"><div class="ch"><h4>Matrix client</h4><span class="effort e-sm">decided</span></div>
-      <p><b>Fractal</b> for Matrix — the only GTK4/libadwaita client with real E2EE (cross-signing + verification via matrix-rust-sdk). <b>Chatty</b> stays for SMS/MMS only (its Matrix is experimental, decrypt failures). Caveats: Fractal has no background notifications and no Matrix calls. Bonus: it already talks to mautrix bridges (portals = normal rooms) — the fork base for the all-purpose app.</p></div>
+      <p><b>Fractal</b> for Matrix — the only GTK4/libadwaita client with real E2EE (cross-signing + verification via matrix-rust-sdk). <b>Chatty</b> stays for SMS/MMS only (its Matrix is experimental, decrypt failures). Caveats: Fractal has no background notifications and no Matrix calls.</p></div>
   </div>
 
   <!-- WAYDROID RESEARCH -->
-  <h2><span class="num">05</span>Waydroid — Android container research</h2>
-  <p class="sub">Can Waydroid replace the iPhone holdouts (Garmin, WhatsApp calls) or fill gaps (better Slack/Discord)? Researched July 2026 against postmarketOS/mobile-nixos aarch64 SDM845.</p>
+  <h2><span class="num">05</span>Waydroid — Android container, on-demand</h2>
+  <p class="sub">We <b>adopted Waydroid on-demand</b> for the three official-only chat apps — <b>WhatsApp, Slack and Discord</b> — each running as its own official Android app in a single GNOME window. Here's the setup and the tradeoffs we accepted. Checkpoints 1–6 (kernel, module, DPI, single-window, notification forwarding, close-to-quit) are done; APK-provisioning and the battery A/B remain.</p>
   <div class="cards">
 
-    <div class="card lead"><div class="ch"><h4>Overall viability<span class="k">SDM845 · GNOME Mobile · NixOS</span></h4><span class="effort e-md">partial</span></div>
+    <div class="card lead"><div class="ch"><h4>Overall viability<span class="k">SDM845 · GNOME Mobile · NixOS</span></h4><span class="effort e-sm">in use</span></div>
       <p>Waydroid is a real, maintained project that runs a full Android (LineageOS) system inside an LXC container on the host Linux kernel — no emulation, native aarch64. <b>On a phone it works but is not seamless.</b> The problems are specific: push notifications are broken without Google services, Waydroid blocks suspend (killing battery unless you stop the session when not in use), Bluetooth passthrough does not exist (so Garmin sync is impossible), and Play Integrity fails entirely (banking, Garmin Connect).</p>
       <p>On aarch64 hardware like the 6T you use the <b>ARM image natively</b> — no x86 translation layer needed, which is a genuine advantage over desktop setups. Freedreno (the open Mesa driver for Adreno) can provide GPU acceleration inside the container; the SDM845's Adreno 630 is supported by Freedreno in the host, but container-side GPU passthrough for older Adreno requires extra setup and is not guaranteed out of the box.</p>
-      <div class="verdict"><b>Bottom line:</b> Viable for casual, non-notification-dependent Android apps when you actively open the session. Not viable as a background-running notification sink. Does not replace the iPhone for Garmin or banking. The mautrix-bridge path remains a better fit for Slack/WhatsApp/Discord on this phone.</div></div>
+      <div class="verdict"><b>Bottom line:</b> It <b>is in use here</b> — WhatsApp, Slack and Discord run as official Android apps, one GNOME window each, <b>on-demand</b>. A GNOME Shell "close-to-quit" extension force-stops an app on swipe-up-close and stops the whole session ~30s after the last window closes, which contains the battery cost. Config lives in <code>hosts/fajita/waydroid.nix</code> + <code>waydroid-watcher/</code>. Still not a background notification sink, and still doesn't cover Garmin or banking — the iPhone keeps those.</div></div>
 
     <div class="card"><div class="ch"><h4>Kernel &amp; setup requirements</h4><span class="effort e-md">non-trivial</span></div>
       <p>The host kernel needs: <code>CONFIG_ANDROID_BINDER_IPC</code>, <code>CONFIG_ANDROID_BINDERFS</code>, <code>CONFIG_PSI=y</code>. Ashmem is no longer required (replaced by memfd since waydroid 1.2.1 / kernel 5.18+). The SDM845 kernel in postmarketOS (<code>linux-postmarketos-qcom-sdm845</code>, now on 7.1) tracks mainline closely enough that binder and PSI are likely present, but you need to verify — <code>waydroid checkconfig</code> will tell you what is missing.</p>
@@ -347,28 +373,28 @@
       <p>Waydroid ships a de-googled LineageOS image. Without Google Play Services, apps that rely on FCM (Slack, WhatsApp, Discord) get zero push notifications — the app has to be in the foreground. <b>microG</b> is the partial fix: it re-implements the FCM endpoint and can forward push to the apps, but it is fragile.</p>
       <p>Waydroid 1.6.0 (November 2025) added <b>D-Bus notification forwarding</b> from Android to the Linux desktop — so notifications that arrive inside the container can bubble up to GNOME Shell. This is real and useful <em>when microG is working</em>. The catch: the UbuntuHandbook reviewer found the feature "seems not working" with the default LineageOS image out of the box. The companion Python package <code>gbinder-python &gt;= 1.3.0</code> is required or the session manager crashes on picture notifications.</p>
       <p>The deeper problem: microG's FCM stack has a known regression (issue #2896, May 2025) where updating to microG 0.3.7.250932 breaks push for WhatsApp and others, with "cloud messaging: disconnected" in diagnostics. No confirmed fix as of July 2026. Even when microG works, <b>the Android container must stay running in the background</b> for notifications to arrive — which conflicts badly with the suspend/battery issue below.</p>
-      <div class="verdict"><b>Bottom line on notifications:</b> broken out of the box, partially fixable with microG, currently regressed in microG 0.3.7, and fundamentally in tension with mobile power management. Do not count on reliable background push from any of the target apps.</div></div>
+      <div class="verdict"><b>Bottom line on notifications:</b> broken out of the box, partially fixable with microG, currently regressed in microG 0.3.7, and fundamentally in tension with mobile power management. <b>This is exactly why we run Waydroid on-demand, not in the background</b> — you open WhatsApp/Slack/Discord when you want them; we don't rely on reliable background push from the container.</div></div>
 
     <div class="card"><div class="ch"><h4>Battery &amp; suspend</h4><span class="effort e-lg">significant</span></div>
       <p>This is the hardest problem for mobile use. When the Waydroid session is active, it holds a wakelock that prevents the phone from entering deep suspend. In practice: screen can wake every 5-10 minutes on its own, battery drains fast. One PinePhone report saw a drop from 75% to 61% in minutes just from the container running. The Librem 5 (3 GB RAM) hits memory pressure immediately — Android starts killing foreground apps when ZRAM fills, which is the baseline condition on a 6 GB 6T once you have Linux apps + the Android container loaded.</p>
-      <p>Known workarounds: <code>waydroid prop set persist.waydroid.suspend false</code> turns off container-internal suspend but does not fix the host wakelock. The practical approach everyone lands on: <b>stop the Waydroid session when not actively using it</b> (<code>waydroid session stop</code> or a helper script), start it when you need an Android app, stop it after. This defeats the whole point of background notifications.</p>
+      <p>Known workarounds: <code>waydroid prop set persist.waydroid.suspend false</code> turns off container-internal suspend but does not fix the host wakelock. The practical approach everyone lands on: <b>stop the Waydroid session when not actively using it</b> (<code>waydroid session stop</code> or a helper script), start it when you need an Android app, stop it after. <b>This is exactly the on-demand model we adopted</b> — our <code>waydroid-watcher</code> force-stops the app on swipe-up-close and stops the whole session ~30s after the last window closes, so the wakelock is only held while you're actively using a chat app.</p>
       <p>RAM baseline: an idle Android container uses roughly 600-900 MB on top of everything else. On the 6T (6 GB RAM) this is workable if you are not running many other things, but you will feel it.</p></div>
 
     <div class="card"><div class="ch"><h4>DPI / scaling on a phone screen</h4><span class="effort e-sm">solvable</span></div>
       <p>Waydroid defaults to a tablet-style layout at whatever DPI the host reports. For a phone screen you need to set the DPI and resolution explicitly: <code>waydroid prop set persist.sf.lcd_density 420</code> (or similar for the 6T's ~402 ppi screen) and make sure the container sees the correct display dimensions. Without this, apps render at desktop scale and are unusable as phone apps — tiny tap targets, text overflowing, etc.</p>
       <p>Single-window mode (the default in Waydroid) runs one Android app fullscreen, which maps well to a phone. Multi-window mode requires enabling freeform windows in Android Developer Options and works better on a tablet form factor. For phone use, stick with single-window.</p></div>
 
-    <div class="card"><div class="ch"><h4>Per-app verdicts</h4><span class="effort e-md">mixed</span></div>
-      <p><b>Slack</b> — The Android app runs and is far better than the desktop-scaled PWA. The show-stopper is notifications: Slack requires FCM push to get messages in the background. With microG working it is possible but unreliable (microG regression, container must stay awake). <span style="color:var(--build)">Better path: mautrix-slack bridge into Fractal — native app, always-on, no Android container.</span></p>
-      <p><b>WhatsApp</b> — Runs under Waydroid. Can make and receive voice/video calls (the Android version supports this, the web version does not — this is the one genuine advantage Waydroid gives you over the current PWA). Notifications via microG: same unreliable situation as Slack. The mautrix-whatsapp bridge handles text well; calls are the remaining gap, and Waydroid could plug that gap if you accept a "start the session to call" workflow. <span style="color:var(--build)">Narrow use case for Waydroid: WhatsApp calls only, start-on-demand.</span></p>
-      <p><b>Discord</b> — Runs and reportedly works well for chat. There is a separate known issue where Discord does not properly register for FCM push even with microG (GmsCore issue #540). Notifications are therefore unreliable. Meanwhile Vesktop (native Linux) is already in the config and works. <span style="color:var(--fb)">No benefit over current Vesktop setup; skip Waydroid for Discord.</span></p>
+    <div class="card"><div class="ch"><h4>Per-app verdicts</h4><span class="effort e-sm">adopted</span></div>
+      <p><b>Slack</b> — The Android app runs and is far better than the desktop-scaled PWA, so this is <b>now running here via Waydroid on-demand</b>. The one caveat is notifications: Slack relies on FCM push, which is unreliable inside the container — so we treat it as an app you open, not a background push sink. <span style="color:var(--wd)">Live: official Slack, on-demand.</span></p>
+      <p><b>WhatsApp</b> — <b>Now running here via Waydroid on-demand.</b> The Android version makes and receives real voice/video calls (the web version can't — the genuine win over the old PWA); the app is companion-linked to the iPhone number. Notifications via microG are unreliable, so it's a "open it to call/chat" workflow, which the close-to-quit watcher handles cleanly. <span style="color:var(--wd)">Live: official WhatsApp, on-demand.</span></p>
+      <p><b>Discord</b> — <b>Now running here via Waydroid on-demand.</b> The Android app works well for chat; there is a known issue where Discord doesn't reliably register for FCM push even with microG (GmsCore #540), so notifications aren't dependable — again fine for an app you open when you want it. <span style="color:var(--wd)">Live: official Discord, on-demand.</span></p>
       <p><b>Garmin Connect</b> — Two blockers, both fatal. First: Bluetooth passthrough does not exist in Waydroid — the Android container has no access to the host Bluetooth adapter, so watch sync (the whole reason for the app) is impossible. Second: Garmin Connect requires at minimum Device Integrity in Play Integrity API; Waydroid cannot pass even Basic Integrity without additional hacks, and those hacks are fragile. Even on GrapheneOS (a hardened real Android), Garmin Connect has active Play Integrity problems. <span style="color:var(--fb)">Waydroid cannot replace iPhone for Garmin. iPhone stays.</span></p>
-      <div class="verdict"><b>Summary:</b> Waydroid has one plausible use on this phone — WhatsApp voice/video calls, run on demand. Everything else is better served by the existing native/PWA/bridge stack. The battery and notification problems make it a poor background process.</div></div>
+      <div class="verdict"><b>Summary:</b> Waydroid is <b>adopted on-demand</b> for WhatsApp, Slack and Discord — official Android apps, one GNOME window each, force-stopped on close so the battery cost is bounded. Garmin stays on the iPhone (Bluetooth + Play Integrity are still fatal), and the container remains a poor fit for background push — which is exactly why we run it on-demand.</div></div>
 
   </div>
 
   <footer>
-    <p class="mono">fajita phone build board · self-hosted on harbor · research: 11 agents, July 2026</p>
+    <p class="mono">fajita phone build board · self-hosted on harbor · updated 2026-08-18</p>
     <p>Sources are linked inline per item. Hardware-level open issues (sensors, camera IPAs, DPMS wake) tracked separately in <code>hosts/fajita/TODO.md</code>.</p>
   </footer>
 </div>

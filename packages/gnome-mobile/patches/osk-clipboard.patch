@@ -1,0 +1,1639 @@
+diff --git a/data/theme/gnome-shell-sass/widgets/_keyboard.scss b/data/theme/gnome-shell-sass/widgets/_keyboard.scss
+index deff4dd69..229ba9ea2 100644
+--- a/data/theme/gnome-shell-sass/widgets/_keyboard.scss
++++ b/data/theme/gnome-shell-sass/widgets/_keyboard.scss
+@@ -161,3 +161,131 @@ $default_key_bg_color: if($variant=='light', darken($key_bg_color, 11%), darken(
+     &:checked { @include button(checked, $c:$key_bg_color, $tc:$osd_fg_color); }
+   }
+ }
++
++// fajita: clipboard/edit icon buttons on the suggestion row + edit bar.
++// Symbolic St.Icons auto-recolor to fg (monochrome). Compact, centered.
++.word-suggestion-paste,
++.word-suggestion-clip,
++.word-suggestion-edit {
++  color: $osd_fg_color;
++  border-radius: $base_border_radius - 2px;
++  padding: 4px 8px;
++  @include button(undecorated, $c:$key_bg_color, $tc:$osd_fg_color);
++  &:hover { @include button(hover, $c:$key_bg_color, $tc:$osd_fg_color); }
++  &:active { @include button(active, $c:$key_bg_color, $tc:$osd_fg_color); }
++  // when edit mode is on, the edit toggle stays visibly pressed
++  &.active { @include button(checked, $c:$key_bg_color, $tc:$osd_fg_color); }
++
++  .word-suggestion-icon { icon-size: 1.25em; }
++}
++
++// fajita: edit bar — evenly spaced symbolic buttons; the Select toggle's ON
++// state (.selected) gets a distinct accent background.
++.word-suggestions-editbar {
++  spacing: 2px;
++  padding-left: 4px;
++  padding-right: 4px;
++
++  .edit-key {
++    color: $osd_fg_color;
++    border-radius: $base_border_radius - 2px;
++    padding: 4px 6px;
++    @include button(undecorated, $c:$key_bg_color, $tc:$osd_fg_color);
++    &:hover { @include button(hover, $c:$key_bg_color, $tc:$osd_fg_color); }
++    &:active { @include button(active, $c:$key_bg_color, $tc:$osd_fg_color); }
++
++    .edit-key-icon { icon-size: 1.25em; }
++  }
++
++  // Select toggle ON — accent-filled so it's clearly distinct from OFF.
++  .edit-key-toggle.selected {
++    background-color: -st-accent-color;
++    color: -st-accent-fg-color;
++    &:hover { background-color: st-lighten(-st-accent-color, 5%); }
++    &:active { background-color: st-lighten(-st-accent-color, 5%); }
++  }
++}
++
++// fajita: clip-panel icon buttons (close/pin/delete) recolor to fg.
++.clipboard-card-icon { icon-size: 1.125em; }
++
++// fajita: Phase 3 — clipboard-history panel (Gboard-style). Bounded heights
++// only; the scroll view is height-clamped so it can never drive an unbounded
++// or NaN allocation into the key area.
++.clipboard-panel {
++  spacing: 6px;
++  padding: 6px 8px;
++
++  .clipboard-panel-header {
++    spacing: 8px;
++    padding: 2px 2px 4px 2px;
++
++    .clipboard-panel-title {
++      @extend %title_4;
++      color: $osd_fg_color;
++      font-weight: bold;
++    }
++
++    .clipboard-panel-close {
++      color: $osd_fg_color;
++      border-radius: $base_border_radius;
++      padding: 2px 10px;
++      @include button(undecorated, $c:$key_bg_color, $tc:$osd_fg_color);
++      &:hover { @include button(hover, $c:$key_bg_color, $tc:$osd_fg_color); }
++      &:active { @include button(active, $c:$key_bg_color, $tc:$osd_fg_color); }
++    }
++  }
++
++  .clipboard-panel-scroll {
++    height: 180px;
++  }
++
++  .clipboard-panel-list {
++    spacing: 4px;
++    padding-right: 4px;
++  }
++
++  .clipboard-section-label {
++    @extend %caption;
++    color: transparentize($osd_fg_color, 0.4);
++    font-weight: bold;
++    padding: 4px 2px 2px 2px;
++  }
++
++  .clipboard-panel-empty {
++    color: transparentize($osd_fg_color, 0.4);
++    padding: 24px;
++  }
++
++  .clipboard-card {
++    spacing: 4px;
++    border-radius: $base_border_radius;
++    background-color: transparentize($key_bg_color, 0.4);
++    padding: 2px 4px;
++
++    &.clipboard-card-pinned {
++      background-color: transparentize($key_bg_color, 0.15);
++    }
++
++    .clipboard-card-preview {
++      color: $osd_fg_color;
++      padding: 6px 8px;
++      border-radius: $base_border_radius - 2px;
++      &:hover { @include button(hover, $c:$key_bg_color, $tc:$osd_fg_color); }
++      &:active { @include button(active, $c:$key_bg_color, $tc:$osd_fg_color); }
++    }
++
++    .clipboard-card-text {
++      color: $osd_fg_color;
++    }
++
++    .clipboard-card-pin-btn,
++    .clipboard-card-delete {
++      color: $osd_fg_color;
++      padding: 4px 8px;
++      border-radius: $base_border_radius - 2px;
++      &:hover { @include button(hover, $c:$key_bg_color, $tc:$osd_fg_color); }
++      &:active { @include button(active, $c:$key_bg_color, $tc:$osd_fg_color); }
++    }
++  }
++}
+diff --git a/js/js-resources.gresource.xml b/js/js-resources.gresource.xml
+index f5909ddd1..ec1e61572 100644
+--- a/js/js-resources.gresource.xml
++++ b/js/js-resources.gresource.xml
+@@ -17,6 +17,7 @@
+     <file>misc/animationUtils.js</file>
+     <file>misc/breakManager.js</file>
+     <file>misc/brightnessManager.js</file>
++    <file>misc/clipboardHistory.js</file>
+     <file>misc/config.js</file>
+     <file>misc/dateUtils.js</file>
+     <file>misc/dbusErrors.js</file>
+@@ -61,6 +62,7 @@
+     <file>ui/boxpointer.js</file>
+     <file>ui/calendar.js</file>
+     <file>ui/checkBox.js</file>
++    <file>ui/clipboardManager.js</file>
+     <file>ui/closeDialog.js</file>
+     <file>ui/ctrlAltTab.js</file>
+     <file>ui/dash.js</file>
+diff --git a/js/misc/clipboardHistory.js b/js/misc/clipboardHistory.js
+new file mode 100644
+index 000000000..da8048d0f
+--- /dev/null
++++ b/js/misc/clipboardHistory.js
+@@ -0,0 +1,164 @@
++// clipboardHistory.js
++//
++// Pure, framework-free clipboard-history model. Deliberately free of any
++// gi:// imports so it can be re-platformed (tests, other shells) later. All
++// GNOME/Clutter/GLib glue lives in ui/clipboardManager.js.
++
++export const TERMINAL_APP_IDS = new Set([
++    'org.gnome.Console',
++    'org.gnome.Ptyxis',
++    'foot',
++    'io.matv.Relay',
++]);
++
++export function isTerminalAppId(id) {
++    return !!id && TERMINAL_APP_IDS.has(id);
++}
++
++// Max unpinned entries retained; pinned entries are exempt from this cap.
++export const HISTORY_CAP = 20;
++
++// Secret markers checked (case-insensitively, as substrings) against every
++// mimetype string so password-manager clips (Warden/Bitwarden/KDE) never
++// enter history.
++const SECRET_MARKERS = [
++    'x-kde-passwordmanagerhint',
++    'application/x-secret',
++    'x-kde-password',
++    'password',
++];
++
++export function shouldSkipClipboard(mimetypes, text) {
++    // Empty / whitespace-only / null → skip.
++    if (text === null || text === undefined)
++        return true;
++    if (String(text).trim() === '')
++        return true;
++
++    // Secret markers → skip. Null-safe: non-array is treated as empty.
++    const mimes = Array.isArray(mimetypes) ? mimetypes : [];
++    for (const mime of mimes) {
++        if (mime === null || mime === undefined)
++            continue;
++        const lower = String(mime).toLowerCase();
++        for (const marker of SECRET_MARKERS) {
++            if (lower.includes(marker))
++                return true;
++        }
++    }
++
++    return false;
++}
++
++export class ClipboardHistory {
++    constructor() {
++        // Each item: { text, pinned, ts } where ts is epoch milliseconds.
++        this._items = [];
++    }
++
++    add(text, ts = Date.now()) {
++        if (text === null || text === undefined)
++            return;
++        if (String(text).trim() === '')
++            return;
++
++        // Exact-string dedup: pull any existing entry with the same text,
++        // preserving its pinned flag, then re-insert fresh at the top.
++        let preservedPinned = false;
++        const idx = this._items.findIndex(i => i.text === text);
++        if (idx !== -1) {
++            preservedPinned = !!this._items[idx].pinned;
++            this._items.splice(idx, 1);
++        }
++
++        this._items.unshift({ text, pinned: preservedPinned || false, ts });
++
++        // Trim: keep ALL pinned items (exempt from cap) plus at most
++        // HISTORY_CAP newest unpinned items. Drop the oldest unpinned beyond
++        // the cap without reordering anything else.
++        let unpinnedSeen = 0;
++        this._items = this._items.filter(item => {
++            if (item.pinned)
++                return true;
++            unpinnedSeen++;
++            return unpinnedSeen <= HISTORY_CAP;
++        });
++    }
++
++    togglePin(text) {
++        const item = this._items.find(i => i.text === text);
++        if (!item)
++            return undefined;
++        item.pinned = !item.pinned;
++        return item.pinned;
++    }
++
++    remove(text) {
++        const idx = this._items.findIndex(i => i.text === text);
++        if (idx !== -1)
++            this._items.splice(idx, 1);
++    }
++
++    clear() {
++        // Remove all unpinned items; keep pinned.
++        this._items = this._items.filter(i => i.pinned);
++    }
++
++    // fajita: Phase 3 — drop unpinned entries older than maxAgeMs (pinned are
++    // exempt). Called on panel-open so stale clips auto-clear (~1 h). A missing
++    // or non-finite ts is treated as fresh (kept) so legacy entries survive.
++    purge(maxAgeMs) {
++        if (!Number.isFinite(maxAgeMs) || maxAgeMs <= 0)
++            return;
++        const cutoff = Date.now() - maxAgeMs;
++        this._items = this._items.filter(item => {
++            if (item.pinned)
++                return true;
++            if (!Number.isFinite(item.ts))
++                return true;
++            return item.ts >= cutoff;
++        });
++    }
++
++    items() {
++        // New array, pinned-first (existing relative order), then unpinned
++        // (existing relative order). Internal state is not mutated.
++        const pinned = this._items.filter(i => i.pinned);
++        const unpinned = this._items.filter(i => !i.pinned);
++        return [...pinned, ...unpinned];
++    }
++
++    get length() {
++        return this._items.length;
++    }
++
++    toJSON() {
++        return {
++            version: 1,
++            items: this._items.map(i => ({
++                text: i.text,
++                pinned: !!i.pinned,
++                ts: i.ts,
++            })),
++        };
++    }
++
++    static fromJSON(obj) {
++        const history = new ClipboardHistory();
++        if (!obj || !Array.isArray(obj.items))
++            return history;
++
++        for (const raw of obj.items) {
++            if (!raw || typeof raw.text !== 'string')
++                continue;
++            const ts = Number.isFinite(raw.ts) ? raw.ts : Date.now();
++            history._items.push({
++                text: raw.text,
++                pinned: !!raw.pinned,
++                ts,
++            });
++        }
++
++        return history;
++    }
++}
+diff --git a/js/ui/clipboardManager.js b/js/ui/clipboardManager.js
+new file mode 100644
+index 000000000..025080509
+--- /dev/null
++++ b/js/ui/clipboardManager.js
+@@ -0,0 +1,356 @@
++// clipboardManager.js
++//
++// GNOME Shell glue around the pure ClipboardHistory model. Owns the
++// St.Clipboard, the owner-changed watch, the virtual keyboard device used to
++// inject copy/paste/cut chords into the focused app, and persistence.
++//
++// CRASH SAFETY: every public method and every callback is guarded so nothing
++// throws out into the shell. The keyboard must keep working even if any
++// clipboard op fails.
++
++import Clutter from 'gi://Clutter';
++import Gio from 'gi://Gio';
++import GLib from 'gi://GLib';
++import Meta from 'gi://Meta';
++import St from 'gi://St';
++import * as ClipboardHistoryModule from '../misc/clipboardHistory.js';
++
++let _default = null;
++
++export function getDefault() {
++    if (!_default)
++        _default = new ClipboardManager();
++    return _default;
++}
++
++class ClipboardManager {
++    constructor() {
++        this._clipboard = St.Clipboard.get_default();
++        this._history = new ClipboardHistoryModule.ClipboardHistory();
++        this._loadHistory();
++        this._lastSetByUs = null;
++        this._vdev = null;
++        this._saveTimeoutId = 0;
++        this._hasContent = false;
++
++        try {
++            this._selection = global.display.get_selection();
++            this._ownerChangedId = this._selection.connect('owner-changed',
++                this._onOwnerChanged.bind(this));
++        } catch (e) {
++            console.warn(`clipboardManager: owner-changed connect: ${e}`);
++        }
++
++        // Prime _hasContent from whatever is already on the clipboard.
++        try {
++            this.readCurrent(() => {});
++        } catch (e) {
++            console.warn(`clipboardManager: initial readCurrent: ${e}`);
++        }
++    }
++
++    _ensureVdev() {
++        if (this._vdev)
++            return this._vdev;
++        try {
++            const seat = global.stage.context.get_backend().get_default_seat();
++            this._vdev = seat.create_virtual_device(
++                Clutter.InputDeviceType.KEYBOARD_DEVICE);
++        } catch (e) {
++            console.warn(`clipboardManager: _ensureVdev: ${e}`);
++            this._vdev = null;
++        }
++        return this._vdev;
++    }
++
++    _sendChord(mods, keyval) {
++        const vdev = this._ensureVdev();
++        if (!vdev)
++            return;
++        try {
++            const t = () => Clutter.get_current_event_time() * 1000; // µs
++            for (const m of mods)
++                vdev.notify_keyval(t(), m, Clutter.KeyState.PRESSED);
++            vdev.notify_keyval(t(), keyval, Clutter.KeyState.PRESSED);
++            vdev.notify_keyval(t(), keyval, Clutter.KeyState.RELEASED);
++            for (const m of [...mods].reverse())
++                vdev.notify_keyval(t(), m, Clutter.KeyState.RELEASED);
++        } catch (e) {
++            console.warn(`clipboardManager: _sendChord: ${e}`);
++        }
++    }
++
++    _focusIsTerminal() {
++        try {
++            const w = global.display.focus_window;
++            const id = w && (w.get_gtk_application_id?.() ||
++                w.get_sandboxed_app_id?.() || w.get_wm_class?.());
++            return ClipboardHistoryModule.isTerminalAppId(id);
++        } catch (e) {
++            return false;
++        }
++    }
++
++    paste() {
++        try {
++            if (this._focusIsTerminal())
++                this._sendChord([Clutter.KEY_Control_L, Clutter.KEY_Shift_L], Clutter.KEY_v);
++            else
++                this._sendChord([Clutter.KEY_Control_L], Clutter.KEY_v);
++        } catch (e) {
++            console.warn(`clipboardManager: paste: ${e}`);
++        }
++    }
++
++    copy() {
++        try {
++            if (this._focusIsTerminal())
++                this._sendChord([Clutter.KEY_Control_L, Clutter.KEY_Shift_L], Clutter.KEY_c);
++            else
++                this._sendChord([Clutter.KEY_Control_L], Clutter.KEY_c);
++        } catch (e) {
++            console.warn(`clipboardManager: copy: ${e}`);
++        }
++    }
++
++    cut() {
++        try {
++            if (this._focusIsTerminal())
++                this._sendChord([Clutter.KEY_Control_L, Clutter.KEY_Shift_L], Clutter.KEY_x);
++            else
++                this._sendChord([Clutter.KEY_Control_L], Clutter.KEY_x);
++        } catch (e) {
++            console.warn(`clipboardManager: cut: ${e}`);
++        }
++    }
++
++    selectAll() {
++        try {
++            this._sendChord([Clutter.KEY_Control_L], Clutter.KEY_a);
++        } catch (e) {
++            console.warn(`clipboardManager: selectAll: ${e}`);
++        }
++    }
++
++    extendLeft() {
++        try {
++            this._sendChord([Clutter.KEY_Shift_L], Clutter.KEY_Left);
++        } catch (e) {
++            console.warn(`clipboardManager: extendLeft: ${e}`);
++        }
++    }
++
++    extendRight() {
++        try {
++            this._sendChord([Clutter.KEY_Shift_L], Clutter.KEY_Right);
++        } catch (e) {
++            console.warn(`clipboardManager: extendRight: ${e}`);
++        }
++    }
++
++    // fajita: Phase 2 edit bar — plain caret movement (no modifier), used when
++    // the edit-bar Select toggle is OFF. With Select ON the bar calls
++    // extendLeft()/extendRight() instead (Shift+Arrow).
++    moveLeft() {
++        try {
++            this._sendChord([], Clutter.KEY_Left);
++        } catch (e) {
++            console.warn(`clipboardManager: moveLeft: ${e}`);
++        }
++    }
++
++    moveRight() {
++        try {
++            this._sendChord([], Clutter.KEY_Right);
++        } catch (e) {
++            console.warn(`clipboardManager: moveRight: ${e}`);
++        }
++    }
++
++    // fajita: word-level caret jumps — Ctrl+Arrow. Used by the edit-bar arrow
++    // auto-repeat once a hold escalates from character to word granularity.
++    moveWordLeft() {
++        try {
++            this._sendChord([Clutter.KEY_Control_L], Clutter.KEY_Left);
++        } catch (e) {
++            console.warn(`clipboardManager: moveWordLeft: ${e}`);
++        }
++    }
++
++    moveWordRight() {
++        try {
++            this._sendChord([Clutter.KEY_Control_L], Clutter.KEY_Right);
++        } catch (e) {
++            console.warn(`clipboardManager: moveWordRight: ${e}`);
++        }
++    }
++
++    // fajita: word-level selection extend — Ctrl+Shift+Arrow.
++    extendWordLeft() {
++        try {
++            this._sendChord([Clutter.KEY_Control_L, Clutter.KEY_Shift_L], Clutter.KEY_Left);
++        } catch (e) {
++            console.warn(`clipboardManager: extendWordLeft: ${e}`);
++        }
++    }
++
++    extendWordRight() {
++        try {
++            this._sendChord([Clutter.KEY_Control_L, Clutter.KEY_Shift_L], Clutter.KEY_Right);
++        } catch (e) {
++            console.warn(`clipboardManager: extendWordRight: ${e}`);
++        }
++    }
++
++    pasteText(text) {
++        try {
++            if (text === null || text === undefined || text === '')
++                return;
++            this._lastSetByUs = text;
++            this._clipboard.set_text(St.ClipboardType.CLIPBOARD, text);
++            this.paste();
++        } catch (e) {
++            console.warn(`clipboardManager: pasteText: ${e}`);
++        }
++    }
++
++    readCurrent(cb) {
++        try {
++            this._clipboard.get_text(St.ClipboardType.CLIPBOARD, (_c, text) => {
++                try {
++                    this._hasContent = !!(text && text.trim() !== '');
++                } catch (e) {}
++                if (cb) {
++                    try {
++                        cb(text);
++                    } catch (e) {
++                        console.warn(`clipboardManager: readCurrent cb: ${e}`);
++                    }
++                }
++            });
++        } catch (e) {
++            console.warn(`clipboardManager: readCurrent: ${e}`);
++            if (cb) {
++                try {
++                    cb(null);
++                } catch (e2) {
++                    console.warn(`clipboardManager: readCurrent cb: ${e2}`);
++                }
++            }
++        }
++    }
++
++    hasContent() {
++        return this._hasContent;
++    }
++
++    get history() {
++        return this._history;
++    }
++
++    _onOwnerChanged(_sel, type, _source) {
++        try {
++            if (type !== Meta.SelectionType.SELECTION_CLIPBOARD)
++                return;
++
++            let mimetypes = [];
++            try {
++                mimetypes = this._clipboard.get_mimetypes(St.ClipboardType.CLIPBOARD) || [];
++            } catch (e) {
++                mimetypes = [];
++            }
++
++            this._clipboard.get_text(St.ClipboardType.CLIPBOARD, (_c, text) => {
++                try {
++                    this._ingest(mimetypes, text);
++                } catch (e) {
++                    console.warn(`clipboardManager: ingest: ${e}`);
++                }
++            });
++        } catch (e) {
++            console.warn(`clipboardManager: _onOwnerChanged: ${e}`);
++        }
++    }
++
++    _ingest(mimetypes, text) {
++        this._hasContent = !!(text && text.trim() !== '');
++
++        // Self-write guard: do NOT re-ingest our own pasteText() write.
++        if (text === this._lastSetByUs) {
++            this._lastSetByUs = null;
++            return;
++        }
++
++        if (ClipboardHistoryModule.shouldSkipClipboard(mimetypes, text))
++            return;
++
++        this._history.add(text);
++        this._scheduleSave();
++    }
++
++    _historyPath() {
++        return GLib.build_filenamev([
++            GLib.get_user_data_dir(), 'gnome-shell', 'fajita-clipboard.json']);
++    }
++
++    _loadHistory() {
++        try {
++            const path = this._historyPath();
++            const file = Gio.File.new_for_path(path);
++            const [ok, contents] = file.load_contents(null);
++            if (!ok)
++                return;
++            const text = new TextDecoder().decode(contents);
++            const parsed = JSON.parse(text);
++            this._history = ClipboardHistoryModule.ClipboardHistory.fromJSON(parsed);
++        } catch (e) {
++            // Missing file / parse failure is normal on first run; keep the
++            // empty instance and stay quiet.
++            console.debug(`clipboardManager: _loadHistory: ${e}`);
++        }
++    }
++
++    _scheduleSave() {
++        try {
++            if (this._saveTimeoutId) {
++                GLib.source_remove(this._saveTimeoutId);
++                this._saveTimeoutId = 0;
++            }
++            this._saveTimeoutId = GLib.timeout_add(
++                GLib.PRIORITY_DEFAULT, 500, () => {
++                    this._saveTimeoutId = 0;
++                    this._saveHistory();
++                    return GLib.SOURCE_REMOVE;
++                });
++        } catch (e) {
++            console.warn(`clipboardManager: _scheduleSave: ${e}`);
++        }
++    }
++
++    _saveHistory() {
++        try {
++            const json = JSON.stringify(this._history.toJSON());
++            const file = Gio.File.new_for_path(this._historyPath());
++
++            const dir = file.get_parent();
++            try {
++                dir.make_directory_with_parents(null);
++            } catch (e) {
++                // Directory already exists — fine.
++            }
++
++            const bytes = new GLib.Bytes(new TextEncoder().encode(json));
++            file.replace_contents_bytes_async(bytes, null, false,
++                Gio.FileCreateFlags.REPLACE_DESTINATION, null,
++                (obj, res) => {
++                    try {
++                        obj.replace_contents_finish(res);
++                    } catch (e) {
++                        console.warn(`clipboardManager: save failed: ${e}`);
++                    }
++                });
++        } catch (e) {
++            console.warn(`clipboardManager: _saveHistory: ${e}`);
++        }
++    }
++}
+diff --git a/js/ui/keyboard.js b/js/ui/keyboard.js
+index 2034fc24c..bdd45565a 100644
+--- a/js/ui/keyboard.js
++++ b/js/ui/keyboard.js
+@@ -3,6 +3,7 @@ import Gio from 'gi://Gio';
+ import GLib from 'gi://GLib';
+ import GObject from 'gi://GObject';
+ import Meta from 'gi://Meta';
++import Pango from 'gi://Pango';
+ import Graphene from 'gi://Graphene';
+ import IBus from 'gi://IBus';
+ import Shell from 'gi://Shell';
+@@ -16,9 +17,18 @@ import * as Main from './main.js';
+ import * as PageIndicators from './pageIndicators.js';
+ import * as PopupMenu from './popupMenu.js';
+ import * as SwipeTracker from './swipeTracker.js';
++import * as ClipboardManager from './clipboardManager.js';
+ 
+ const KEYBOARD_ANIMATION_TIME = 150;
+ const KEY_LONG_PRESS_TIME = 250;
++// fajita: edit-bar arrow press-and-hold auto-repeat (see _startArrowRepeat).
++// Initial delay before the first repeat, then the repeat interval; after
++// ARROW_REPEAT_ESCALATE repeats the granularity escalates char→word and the
++// interval tightens to ARROW_REPEAT_WORD_INTERVAL_MS.
++const ARROW_REPEAT_INITIAL_DELAY_MS = 350;
++const ARROW_REPEAT_INTERVAL_MS = 90;
++const ARROW_REPEAT_WORD_INTERVAL_MS = 70;
++const ARROW_REPEAT_ESCALATE = 8;
+ // fajita: spacebar long-press cursor slide — logical px of drag per cursor step
+ const SPACE_CURSOR_SLIDE_PX = 12;
+ // fajita: swipe typing — kill switch and trail dot spacing threshold
+@@ -2150,6 +2160,16 @@ export const Keyboard = GObject.registerClass({
+             this.disconnect(this._keyboardHeightNotifyId);
+             this._keyboardHeightNotifyId = 0;
+         }
++
++        // fajita: disconnect the clipboard owner-changed watcher so it can't
++        // poke a disposed paste button after the keyboard actor is rebuilt.
++        if (this._clipboardOwnerChangedId) {
++            global.display.get_selection().disconnect(this._clipboardOwnerChangedId);
++            this._clipboardOwnerChangedId = 0;
++        }
++
++        // fajita: kill any in-flight edit-bar arrow auto-repeat timeout.
++        this._stopArrowRepeat();
+     }
+ 
+     _setupKeyboard() {
+@@ -2161,7 +2181,144 @@ export const Keyboard = GObject.registerClass({
+         this._currentPage = null;
+ 
+         this._suggestions = new Suggestions();
+-        this.add_child(this._suggestions);
++
++        // fajita: clipboard — wrap the prediction strip in a horizontal row so a
++        // leading paste button can sit to the LEFT of the 3 pills without being a
++        // child of the Suggestions BoxLayout (whose clear()/add() logic assumes
++        // exactly its 3 pill buttons). The wrapper is what the keyboard adds; the
++        // strip keeps expanding to fill. All clipboard code is guarded so a
++        // failure degrades to just the plain strip.
++        this._suggestionsRow = new St.BoxLayout({
++            style_class: 'word-suggestions-row',
++            orientation: Clutter.Orientation.HORIZONTAL,
++        });
++        this._suggestions.x_expand = true;
++
++        try {
++            this._clipboardManager = ClipboardManager.getDefault();
++
++            this._pasteButton = new St.Button({
++                style_class: 'word-suggestion-paste',
++                reactive: true,
++                can_focus: false,
++                x_expand: false,
++                y_align: Clutter.ActorAlign.CENTER,
++                visible: false,
++            });
++            this._pasteButton.set_child(new St.Icon({
++                icon_name: 'edit-paste-symbolic',
++                icon_size: 20,
++                style_class: 'word-suggestion-icon',
++            }));
++            this._pasteButton.connect('clicked', () => {
++                try {
++                    this._clipboardManager.paste();
++                } catch (e) {
++                    console.warn(`keyboard: paste button: ${e}`);
++                }
++            });
++            // fajita: Phase 3 — long-press the 📋 button opens the clipboard
++            // history panel (tap still pastes the latest clip, above). ONE
++            // persistent gesture for the button's whole life (never churned).
++            const pasteLongPress = new Clutter.LongPressGesture({
++                name: 'clipboard-panel-open',
++                long_press_duration_ms: 500,
++            });
++            pasteLongPress.connect('notify::state', () => {
++                if (pasteLongPress.state !== Clutter.GestureState.RECOGNIZING)
++                    return;
++                try {
++                    this._openClipboardPanel();
++                } catch (e) {
++                    console.warn(`keyboard: clipboard long-press: ${e}`);
++                }
++            });
++            this._pasteButton.add_action(pasteLongPress);
++            this._suggestionsRow.add_child(this._pasteButton);
++
++            // fajita: Phase 3 discoverability — an always-present clipboard
++            // manager button on the suggestion row (next to paste). TAP opens
++            // the history panel (long-press-on-paste still opens it too, but
++            // this makes it findable). Guarded like everything else.
++            this._clipManagerButton = new St.Button({
++                style_class: 'word-suggestion-clip',
++                reactive: true,
++                can_focus: false,
++                x_expand: false,
++                y_align: Clutter.ActorAlign.CENTER,
++            });
++            this._clipManagerButton.set_child(new St.Icon({
++                icon_name: 'document-open-recent-symbolic',
++                icon_size: 20,
++                style_class: 'word-suggestion-icon',
++            }));
++            this._clipManagerButton.connect('clicked', () => {
++                try {
++                    this._openClipboardPanel();
++                } catch (e) {
++                    console.warn(`keyboard: clip manager button: ${e}`);
++                }
++            });
++            this._suggestionsRow.add_child(this._clipManagerButton);
++
++            this._clipboardOwnerChangedId =
++                global.display.get_selection().connect('owner-changed',
++                    (_sel, type) => {
++                        if (type === Meta.SelectionType.SELECTION_CLIPBOARD)
++                            this._updatePasteButton();
++                    });
++        } catch (e) {
++            console.warn(`keyboard: clipboard init failed: ${e}`);
++        }
++
++        // fajita: Phase 2 edit bar — a caret/edit-mode toggle button sits after
++        // the 📋 paste button. Tapping it swaps the 3-pill prediction strip for
++        // a slim edit bar (caret move / select / copy / cut / paste). All of it
++        // is guarded: if construction throws, we fall back to just the strip and
++        // the keyboard still types normally.
++        this._editMode = false;
++        this._selecting = false;
++        this._arrowRepeatId = 0;
++        this._arrowRepeatCount = 0;
++        this._editBar = null;
++        this._editButton = null;
++        try {
++            if (this._clipboardManager) {
++                this._editButton = new St.Button({
++                    style_class: 'word-suggestion-edit',
++                    reactive: true,
++                    can_focus: false,
++                    x_expand: false,
++                    y_align: Clutter.ActorAlign.CENTER,
++                });
++                this._editButton.set_child(new St.Icon({
++                    icon_name: 'document-edit-symbolic',
++                    icon_size: 20,
++                    style_class: 'word-suggestion-icon',
++                }));
++                this._editButton.connect('clicked', () => {
++                    try {
++                        this._toggleEditMode();
++                    } catch (e) {
++                        console.warn(`keyboard: edit toggle: ${e}`);
++                    }
++                });
++                this._suggestionsRow.add_child(this._editButton);
++
++                this._editBar = this._buildEditBar();
++                if (this._editBar) {
++                    this._editBar.visible = false;
++                    this._suggestionsRow.add_child(this._editBar);
++                }
++            }
++        } catch (e) {
++            console.warn(`keyboard: edit bar init failed: ${e}`);
++            this._editBar = null;
++            this._editButton = null;
++        }
++
++        this._suggestionsRow.add_child(this._suggestions);
++        this.add_child(this._suggestionsRow);
+ 
+         this._aspectContainer = new AspectContainer({
+             layout_manager: new Clutter.BinLayout(),
+@@ -2187,6 +2344,27 @@ export const Keyboard = GObject.registerClass({
+         this._emojiSelection.hide();
+         this._aspectContainer.add_child(this._emojiSelection);
+ 
++        // fajita: Phase 3 — clipboard-history panel. Mounted as a bin child of
++        // _aspectContainer alongside the key grid + emoji surface (same pattern
++        // as _emojiSelection), so it inherits the bounded, aspect-sized key-area
++        // box and can never blow up the allocation. Hidden by default; shown by
++        // _setClipboardPanelActive(true). Guarded so a build failure degrades to
++        // the normal keyboard.
++        this._clipboardPanel = null;
++        this._clipboardPanelActive = false;
++        try {
++            if (this._clipboardManager) {
++                this._clipboardPanel = this._buildClipboardPanel();
++                if (this._clipboardPanel) {
++                    this._clipboardPanel.hide();
++                    this._aspectContainer.add_child(this._clipboardPanel);
++                }
++            }
++        } catch (e) {
++            console.warn(`keyboard: clipboard panel init failed: ${e}`);
++            this._clipboardPanel = null;
++        }
++
+         this._updateKeys();
+ 
+         this._keyboardController.connectObject(
+@@ -2374,7 +2552,7 @@ export const Keyboard = GObject.registerClass({
+                 groups.push('url');
+             break;
+         case Clutter.InputContentPurpose.TERMINAL:
+-            this._suggestions.visible = this._suggestionsVisible && !Main.inputMethod.terminalMode;
++            this._suggestions.visible = this._suggestionsVisible && !Main.inputMethod.terminalMode && !this._editMode;
+             // For terminals, we replace the whole list with their extended counterparts
+             groups = groups.map(g => `${g}-extended`);
+             break;
+@@ -2847,6 +3025,10 @@ export const Keyboard = GObject.registerClass({
+     }
+ 
+     _setActiveLevel(activeLevel) {
++        // fajita: Phase 3 — a real key press dismisses the clipboard panel.
++        if (this._clipboardPanelActive)
++            this._closeClipboardPanel();
++
+         const layers = this._layers;
+         let currentPage = layers[activeLevel];
+ 
+@@ -2895,6 +3077,7 @@ export const Keyboard = GObject.registerClass({
+         this._animateShow();
+ 
+         this._setEmojiActive(false);
++        this._closeClipboardPanel();
+         this._setActiveLevel('default');
+ 
+         this._panGesture.enabled = true;
+@@ -2927,6 +3110,7 @@ export const Keyboard = GObject.registerClass({
+ 
+         Main.layoutManager.keyboardBox.show();
+         this._keyboardVisible = true;
++        this._updatePasteButton?.();
+ 
+         if (this._focusWindow && !Main.overview.visible)
+             this._animateWindow(this._focusWindow, true);
+@@ -2988,6 +3172,14 @@ export const Keyboard = GObject.registerClass({
+     }
+ 
+     _animateHide() {
++        // fajita: Phase 3 — tear down the clipboard panel when the OSK hides so
++        // it never re-appears over the next field in a stale state. Also drop
++        // edit mode so the prediction strip isn't left suppressed/misplaced over
++        // the next field the keyboard shows for.
++        if (this._editMode)
++            this._exitEditMode();
++        this._closeClipboardPanel();
++
+         // Drop the keyboard strut: maximized windows re-fit the full work
+         // area while the keyboard slides out.
+         Main.layoutManager.untrackChrome(this);
+@@ -3041,6 +3233,651 @@ export const Keyboard = GObject.registerClass({
+         this._gestureInProgress = false;
+     }
+ 
++    // fajita: Phase 2 — build the edit bar actor. Plain BoxLayout with bounded,
++    // content-sized buttons (x_expand fills the strip evenly). All buttons use
++    // monochrome symbolic St.Icons (auto-recolored to fg). Arrows are
++    // press-and-hold auto-repeat with char→word escalation (see _mkArrowButton).
++    // Returns the actor, or null on failure so the caller degrades.
++    _buildEditBar() {
++        const bar = new St.BoxLayout({
++            style_class: 'word-suggestions-editbar',
++            orientation: Clutter.Orientation.HORIZONTAL,
++            x_expand: true,
++        });
++
++        const mkIconBtn = (iconName, styleClass, onClick) => {
++            const btn = new St.Button({
++                style_class: styleClass,
++                reactive: true,
++                can_focus: false,
++                x_expand: true,
++                y_align: Clutter.ActorAlign.CENTER,
++            });
++            btn.set_child(new St.Icon({
++                icon_name: iconName,
++                icon_size: 20,
++                style_class: 'edit-key-icon',
++            }));
++            btn.connect('clicked', () => {
++                try {
++                    onClick();
++                } catch (e) {
++                    console.warn(`keyboard: editbar action (${iconName}): ${e}`);
++                }
++            });
++            bar.add_child(btn);
++            return btn;
++        };
++
++        const m = () => this._clipboardManager;
++
++        // Caret left / right: press-and-hold auto-repeat with char→word
++        // escalation. On press fire once immediately (extend if Select is on,
++        // else move), then repeat after an initial delay.
++        bar.add_child(this._mkArrowButton('go-previous-symbolic', -1));
++        bar.add_child(this._mkArrowButton('go-next-symbolic', 1));
++
++        // Select toggle — flips selecting state and reflects on/off visually.
++        this._selectToggle = mkIconBtn('object-select-symbolic',
++            'edit-key edit-key-toggle', () => {
++                this._selecting = !this._selecting;
++                this._updateSelectToggle();
++            });
++        // Select All.
++        mkIconBtn('edit-select-all-symbolic', 'edit-key', () => {
++            m().selectAll();
++            // Entering an all-selection means subsequent arrows should extend.
++            this._selecting = true;
++            this._updateSelectToggle();
++        });
++        // Cut / Copy / Paste.
++        mkIconBtn('edit-cut-symbolic', 'edit-key', () => m().cut());
++        mkIconBtn('edit-copy-symbolic', 'edit-key', () => m().copy());
++        mkIconBtn('edit-paste-symbolic', 'edit-key', () => m().paste());
++        // fajita: Phase 3 — open the clipboard-history panel from the edit bar
++        // (discoverability). Leaves edit mode first so the strip is restored
++        // underneath when the panel later closes.
++        mkIconBtn('document-open-recent-symbolic', 'edit-key edit-key-clip', () => {
++            this._exitEditMode();
++            this._openClipboardPanel();
++        });
++        // Done — leave edit mode, restore the normal strip.
++        mkIconBtn('window-close-symbolic', 'edit-key edit-key-done', () => {
++            this._exitEditMode();
++        });
++
++        return bar;
++    }
++
++    // fajita: Phase 2/1+2 — build one auto-repeating caret arrow. dir = -1 (left)
++    // or +1 (right). A LongPressGesture with long_press_duration_ms:0 gives a
++    // reliable touch press/release edge via its inherited `pressed` boolean
++    // (PressGesture): pressed→true on finger-down, →false on up/leave/cancel.
++    // On press we fire once immediately, then after ARROW_REPEAT_INITIAL_DELAY_MS
++    // start a GLib repeat; after ARROW_REPEAT_ESCALATE repeats we escalate from
++    // character- to word-granularity and tighten the interval. Every timeout is
++    // stored on this._arrowRepeatId and removed on release/leave/cancel, on exit
++    // edit mode, on panel close, and on destroy (see _stopArrowRepeat).
++    _mkArrowButton(iconName, dir) {
++        const btn = new St.Button({
++            style_class: 'edit-key edit-key-arrow',
++            reactive: true,
++            can_focus: false,
++            x_expand: true,
++            y_align: Clutter.ActorAlign.CENTER,
++        });
++        btn.set_child(new St.Icon({
++            icon_name: iconName,
++            icon_size: 20,
++            style_class: 'edit-key-icon',
++        }));
++
++        const gesture = new Clutter.LongPressGesture({
++            name: 'edit-arrow-hold',
++            long_press_duration_ms: 0,
++        });
++        gesture.connect('notify::pressed', () => {
++            try {
++                if (gesture.pressed)
++                    this._startArrowRepeat(dir);
++                else
++                    this._stopArrowRepeat();
++            } catch (e) {
++                console.warn(`keyboard: arrow hold: ${e}`);
++                this._stopArrowRepeat();
++            }
++        });
++        // Safety net: if the gesture is cancelled (e.g. finger slides off), the
++        // pressed prop drops to false and the handler above stops the repeat.
++        // We also stop on any state that isn't RECOGNIZING as a belt-and-braces.
++        gesture.connect('notify::state', () => {
++            try {
++                if (gesture.state === Clutter.GestureState.CANCELLED ||
++                    gesture.state === Clutter.GestureState.COMPLETED)
++                    this._stopArrowRepeat();
++            } catch (e) {
++                this._stopArrowRepeat();
++            }
++        });
++        btn.add_action(gesture);
++        return btn;
++    }
++
++    // fajita: fire one caret step for the current dir/granularity.
++    _fireArrowStep(dir, word) {
++        const m = this._clipboardManager;
++        if (!m)
++            return;
++        if (this._selecting) {
++            if (word)
++                dir < 0 ? m.extendWordLeft() : m.extendWordRight();
++            else
++                dir < 0 ? m.extendLeft() : m.extendRight();
++        } else {
++            if (word)
++                dir < 0 ? m.moveWordLeft() : m.moveWordRight();
++            else
++                dir < 0 ? m.moveLeft() : m.moveRight();
++        }
++    }
++
++    // fajita: begin a press-and-hold caret repeat. Fires once immediately, then
++    // schedules the accelerating/escalating repeat loop.
++    _startArrowRepeat(dir) {
++        // Never stack two repeats (a second finger, or a missed release).
++        this._stopArrowRepeat();
++        this._arrowRepeatCount = 0;
++
++        try {
++            this._fireArrowStep(dir, false);
++        } catch (e) {
++            console.warn(`keyboard: arrow first step: ${e}`);
++        }
++
++        this._arrowRepeatId = GLib.timeout_add(GLib.PRIORITY_DEFAULT,
++            ARROW_REPEAT_INITIAL_DELAY_MS, () => this._arrowRepeatTick(dir));
++    }
++
++    _arrowRepeatTick(dir) {
++        try {
++            this._arrowRepeatCount++;
++            const word = this._arrowRepeatCount >= ARROW_REPEAT_ESCALATE;
++            this._fireArrowStep(dir, word);
++
++            // After the first (initial-delay) tick, reschedule at the steady
++            // interval, tightening once we've escalated to word granularity.
++            const interval = word
++                ? ARROW_REPEAT_WORD_INTERVAL_MS : ARROW_REPEAT_INTERVAL_MS;
++            this._arrowRepeatId = GLib.timeout_add(GLib.PRIORITY_DEFAULT,
++                interval, () => this._arrowRepeatTick(dir));
++        } catch (e) {
++            console.warn(`keyboard: arrow repeat tick: ${e}`);
++            this._arrowRepeatId = 0;
++            return GLib.SOURCE_REMOVE;
++        }
++        return GLib.SOURCE_REMOVE;
++    }
++
++    // fajita: stop any in-flight caret repeat. Idempotent; safe to call from
++    // release/leave/cancel, _exitEditMode, panel close, and _onDestroy.
++    _stopArrowRepeat() {
++        if (this._arrowRepeatId) {
++            GLib.source_remove(this._arrowRepeatId);
++            this._arrowRepeatId = 0;
++        }
++        this._arrowRepeatCount = 0;
++    }
++
++    // fajita: Phase 2 — reflect the Select toggle's on/off state via a CSS class
++    // (styled elsewhere) so the user can see whether arrows extend or move.
++    _updateSelectToggle() {
++        if (!this._selectToggle)
++            return;
++        try {
++            if (this._selecting)
++                this._selectToggle.add_style_class_name('selected');
++            else
++                this._selectToggle.remove_style_class_name('selected');
++        } catch (e) {
++            console.warn(`keyboard: _updateSelectToggle: ${e}`);
++        }
++    }
++
++    // fajita: Phase 2 — toggle between the prediction strip and the edit bar.
++    _toggleEditMode() {
++        if (this._editMode)
++            this._exitEditMode();
++        else
++            this._enterEditMode();
++    }
++
++    _enterEditMode() {
++        if (!this._editBar || this._editMode)
++            return;
++        try {
++            this._editMode = true;
++            // Remember what the strip/paste button were doing so exit restores
++            // EXACTLY the prior state.
++            this._suggestionsPrevVisible = this._suggestions
++                ? this._suggestions.visible : false;
++            this._pastePrevVisible = this._pasteButton
++                ? this._pasteButton.visible : false;
++
++            if (this._suggestions)
++                this._suggestions.visible = false;
++            if (this._pasteButton)
++                this._pasteButton.visible = false;
++            this._editBar.visible = true;
++
++            if (this._editButton)
++                this._editButton.add_style_class_name('active');
++        } catch (e) {
++            console.warn(`keyboard: _enterEditMode: ${e}`);
++        }
++    }
++
++    _exitEditMode() {
++        if (!this._editMode)
++            return;
++        try {
++            this._editMode = false;
++            this._stopArrowRepeat();
++            this._selecting = false;
++            this._updateSelectToggle();
++            if (this._editBar)
++                this._editBar.visible = false;
++            // Restore the strip to its pre-edit visibility, then let the normal
++            // machinery (setSuggestionsVisible / _updatePasteButton) take over on
++            // the next update. The paste button is recomputed authoritatively.
++            if (this._suggestions)
++                this._suggestions.visible = !!this._suggestionsPrevVisible;
++            if (this._editButton)
++                this._editButton.remove_style_class_name('active');
++            this._updatePasteButton?.();
++        } catch (e) {
++            console.warn(`keyboard: _exitEditMode: ${e}`);
++        }
++    }
++
++    _updatePasteButton() {
++        if (!this._pasteButton || !this._clipboardManager)
++            return;
++        // fajita: while the edit bar is up, don't reveal the strip/paste button
++        // underneath it. The paste button will be recomputed on exit.
++        if (this._editMode)
++            return;
++        try {
++            this._clipboardManager.readCurrent(text => {
++                if (!this._pasteButton)
++                    return;
++                const hasText = !!(text && text.trim() !== '');
++                this._pasteButton.visible = hasText;
++                // Make sure the strip row itself is shown when we have paste
++                // content, so paste is reachable even with no predictions. Do
++                // NOT force it visible when the keyboard is hidden or in a
++                // terminal (predictions are suppressed there anyway).
++                if (hasText && this._keyboardVisible &&
++                    !(Main.inputMethod && Main.inputMethod.terminalMode)) {
++                    if (this._suggestions)
++                        this._suggestions.visible = true;
++                }
++            });
++        } catch (e) {
++            console.warn(`keyboard: _updatePasteButton: ${e}`);
++        }
++    }
++
++    // fajita: Phase 3 — build the clipboard-history panel actor. A plain
++    // vertical St.BoxLayout: a header row (title + close) on top, then a
++    // bounded St.ScrollView whose direct child is an St.Viewport (StScrollable
++    // requirement) wrapping the vertical list of clip cards. Returns the actor
++    // or null on failure so the caller degrades to the normal keyboard.
++    _buildClipboardPanel() {
++        const panel = new St.BoxLayout({
++            style_class: 'clipboard-panel',
++            orientation: Clutter.Orientation.VERTICAL,
++            x_expand: true,
++            y_expand: true,
++        });
++
++        // Header: title + close/back control.
++        const header = new St.BoxLayout({
++            style_class: 'clipboard-panel-header',
++            orientation: Clutter.Orientation.HORIZONTAL,
++            x_expand: true,
++        });
++        const title = new St.Label({
++            style_class: 'clipboard-panel-title',
++            text: _('Clipboard'),
++            x_expand: true,
++            y_align: Clutter.ActorAlign.CENTER,
++        });
++        const closeButton = new St.Button({
++            style_class: 'clipboard-panel-close',
++            can_focus: false,
++            x_expand: false,
++            y_align: Clutter.ActorAlign.CENTER,
++        });
++        closeButton.set_child(new St.Icon({
++            icon_name: 'window-close-symbolic',
++            icon_size: 18,
++            style_class: 'clipboard-card-icon',
++        }));
++        closeButton.connect('clicked', () => {
++            try {
++                this._closeClipboardPanel();
++            } catch (e) {
++                console.warn(`keyboard: clipboard close: ${e}`);
++            }
++        });
++        header.add_child(title);
++        header.add_child(closeButton);
++        panel.add_child(header);
++
++        // Scrollable list. The ScrollView's height is clamped in CSS
++        // (.clipboard-panel-scroll { height: ... }); its direct child MUST be a
++        // StScrollable — use an St.Viewport wrapper (never the BoxLayout list
++        // directly, and never this panel as the scroll child).
++        this._clipboardList = new St.BoxLayout({
++            style_class: 'clipboard-panel-list',
++            orientation: Clutter.Orientation.VERTICAL,
++            x_expand: true,
++            y_align: Clutter.ActorAlign.START,
++        });
++        const viewport = new St.Viewport({
++            layout_manager: new Clutter.BinLayout(),
++            x_expand: true,
++            y_expand: true,
++        });
++        viewport.add_child(this._clipboardList);
++
++        this._clipboardScroll = new St.ScrollView({
++            style_class: 'clipboard-panel-scroll',
++            clip_to_allocation: true,
++            overlay_scrollbars: true,
++            x_expand: true,
++            y_expand: true,
++            hscrollbar_policy: St.PolicyType.NEVER,
++            vscrollbar_policy: St.PolicyType.EXTERNAL,
++            child: viewport,
++        });
++
++        // Touch pan (finger drag scrolls the list) — same safe pattern as the
++        // agenda widget: only recognize when there is overflow, and yield at
++        // the ends so the gesture never traps.
++        const panGesture = new Clutter.PanGesture({
++            pan_axis: Clutter.PanAxis.Y,
++            max_n_points: 1,
++        });
++        panGesture.connect('may-recognize',
++            this._clipboardPanMayRecognize.bind(this));
++        panGesture.connect('pan-update',
++            this._onClipboardPanUpdate.bind(this));
++        this._clipboardScroll.add_action(panGesture);
++
++        panel.add_child(this._clipboardScroll);
++
++        // Empty-state label (shown when there are no items).
++        this._clipboardEmptyLabel = new St.Label({
++            style_class: 'clipboard-panel-empty',
++            text: _('No clipboard history'),
++            x_expand: true,
++            x_align: Clutter.ActorAlign.CENTER,
++            y_align: Clutter.ActorAlign.CENTER,
++        });
++        this._clipboardEmptyLabel.visible = false;
++        panel.add_child(this._clipboardEmptyLabel);
++
++        return panel;
++    }
++
++    _clipboardPanMayRecognize(gesture) {
++        try {
++            const adjustment = this._clipboardScroll?.vadjustment;
++            if (!adjustment || adjustment.upper <= adjustment.page_size)
++                return false;
++
++            const beginCoords = gesture.get_begin_centroid_abs();
++            if (!this._clipboardScroll.get_transformed_extents()
++                .contains_point(beginCoords))
++                return true;
++
++            const coords = gesture.get_centroid_abs();
++            const delta = coords.y - beginCoords.y;
++            const end = adjustment.upper - adjustment.page_size;
++            const epsilon = 0.5;
++            if (delta < 0 && adjustment.value >= end - epsilon)
++                return false;
++            if (delta > 0 && adjustment.value <= adjustment.lower + epsilon)
++                return false;
++            return true;
++        } catch (e) {
++            return false;
++        }
++    }
++
++    _onClipboardPanUpdate(gesture) {
++        try {
++            const delta = gesture.get_delta();
++            const adjustment = this._clipboardScroll?.vadjustment;
++            if (!adjustment)
++                return;
++            const height = Math.max(this._clipboardScroll.height, 1);
++            adjustment.value -= delta.get_y() / height * adjustment.page_size;
++        } catch (e) {
++            console.warn(`keyboard: clipboard pan: ${e}`);
++        }
++    }
++
++    // fajita: Phase 3 — build one clip card. Preview clamped to ~2 lines and
++    // ellipsized so a huge clip can never blow up the allocation. Tap = paste +
++    // close; long-press = toggle pin; the ✕ affordance deletes.
++    _buildClipboardCard(item) {
++        const card = new St.BoxLayout({
++            style_class: item.pinned
++                ? 'clipboard-card clipboard-card-pinned'
++                : 'clipboard-card',
++            orientation: Clutter.Orientation.HORIZONTAL,
++            x_expand: true,
++        });
++
++        const previewButton = new St.Button({
++            style_class: 'clipboard-card-preview',
++            can_focus: false,
++            x_expand: true,
++            y_align: Clutter.ActorAlign.CENTER,
++        });
++        const previewLabel = new St.Label({
++            style_class: 'clipboard-card-text',
++            text: this._clipboardPreviewText(item.text),
++            x_expand: true,
++        });
++        previewLabel.clutter_text.single_line_mode = true;
++        previewLabel.clutter_text.line_wrap = false;
++        previewLabel.clutter_text.ellipsize = Pango.EllipsizeMode.END;
++        previewButton.set_child(previewLabel);
++
++        // Tap = paste this clip, then close the panel.
++        previewButton.connect('clicked', () => {
++            try {
++                this._clipboardManager.pasteText(item.text);
++                this._closeClipboardPanel();
++            } catch (e) {
++                console.warn(`keyboard: clipboard card paste: ${e}`);
++            }
++        });
++
++        // Long-press = toggle pin (moves between Pinned / Recent). Rebuild list.
++        const cardLongPress = new Clutter.LongPressGesture({
++            name: 'clipboard-card-pin',
++            long_press_duration_ms: 500,
++        });
++        cardLongPress.connect('notify::state', () => {
++            if (cardLongPress.state !== Clutter.GestureState.RECOGNIZING)
++                return;
++            try {
++                this._clipboardManager.history.togglePin(item.text);
++                this._refreshClipboardList();
++            } catch (e) {
++                console.warn(`keyboard: clipboard pin: ${e}`);
++            }
++        });
++        previewButton.add_action(cardLongPress);
++        card.add_child(previewButton);
++
++        // Pin indicator (also a tap-target for pin toggle, for discoverability).
++        const pinButton = new St.Button({
++            style_class: 'clipboard-card-pin-btn',
++            can_focus: false,
++            x_expand: false,
++            y_align: Clutter.ActorAlign.CENTER,
++        });
++        pinButton.set_child(new St.Icon({
++            icon_name: item.pinned ? 'view-pin-symbolic' : 'non-starred-symbolic',
++            icon_size: 18,
++            style_class: 'clipboard-card-icon',
++        }));
++        pinButton.connect('clicked', () => {
++            try {
++                this._clipboardManager.history.togglePin(item.text);
++                this._refreshClipboardList();
++            } catch (e) {
++                console.warn(`keyboard: clipboard pin btn: ${e}`);
++            }
++        });
++        card.add_child(pinButton);
++
++        // Delete affordance.
++        const deleteButton = new St.Button({
++            style_class: 'clipboard-card-delete',
++            can_focus: false,
++            x_expand: false,
++            y_align: Clutter.ActorAlign.CENTER,
++        });
++        deleteButton.set_child(new St.Icon({
++            icon_name: 'user-trash-symbolic',
++            icon_size: 18,
++            style_class: 'clipboard-card-icon',
++        }));
++        deleteButton.connect('clicked', () => {
++            try {
++                this._clipboardManager.history.remove(item.text);
++                this._refreshClipboardList();
++            } catch (e) {
++                console.warn(`keyboard: clipboard delete: ${e}`);
++            }
++        });
++        card.add_child(deleteButton);
++
++        return card;
++    }
++
++    // fajita: Phase 3 — clamp a clip preview to a bounded length before it ever
++    // reaches the label, so a multi-megabyte clip can't create a giant actor.
++    _clipboardPreviewText(text) {
++        const s = String(text ?? '').replace(/\s+/g, ' ').trim();
++        const MAX = 140;
++        return s.length > MAX ? `${s.slice(0, MAX)}…` : s;
++    }
++
++    // fajita: Phase 3 — (re)populate the list from history: a "Pinned" section
++    // then a "Recent" section (history.items() is already pinned-first). Shows
++    // the empty-state label when there is nothing. Fully guarded.
++    _refreshClipboardList() {
++        if (!this._clipboardList)
++            return;
++        try {
++            this._clipboardList.destroy_all_children();
++
++            const items = this._clipboardManager.history.items() || [];
++            const pinned = items.filter(i => i.pinned);
++            const recent = items.filter(i => !i.pinned);
++
++            if (items.length === 0) {
++                if (this._clipboardEmptyLabel)
++                    this._clipboardEmptyLabel.visible = true;
++                if (this._clipboardScroll)
++                    this._clipboardScroll.visible = false;
++                return;
++            }
++            if (this._clipboardEmptyLabel)
++                this._clipboardEmptyLabel.visible = false;
++            if (this._clipboardScroll)
++                this._clipboardScroll.visible = true;
++
++            const addSection = (labelText, sectionItems) => {
++                if (sectionItems.length === 0)
++                    return;
++                const sectionLabel = new St.Label({
++                    style_class: 'clipboard-section-label',
++                    text: labelText,
++                    x_expand: true,
++                });
++                this._clipboardList.add_child(sectionLabel);
++                for (const item of sectionItems) {
++                    const card = this._buildClipboardCard(item);
++                    if (card)
++                        this._clipboardList.add_child(card);
++                }
++            };
++
++            addSection(_('Pinned'), pinned);
++            addSection(_('Recent'), recent);
++        } catch (e) {
++            console.warn(`keyboard: _refreshClipboardList: ${e}`);
++        }
++    }
++
++    // fajita: Phase 3 — show the panel in place of the key grid (emoji pattern).
++    _setClipboardPanelActive(active) {
++        if (!this._clipboardPanel)
++            return;
++        this._clipboardPanelActive = active;
++        try {
++            this._clipboardPanel.visible = active;
++            // Hide the key grid + emoji surface underneath while the panel is up.
++            if (this._currentLayout)
++                this._currentLayout.visible = !active && !this._emojiActive;
++            if (this._emojiSelection && active)
++                this._emojiSelection.visible = false;
++        } catch (e) {
++            console.warn(`keyboard: _setClipboardPanelActive: ${e}`);
++        }
++    }
++
++    _openClipboardPanel() {
++        if (!this._clipboardPanel) {
++            // No panel (build failed) — degrade gracefully: just paste.
++            try {
++                this._clipboardManager?.paste();
++            } catch (e) {}
++            return;
++        }
++        try {
++            // Auto-clear unpinned clips older than ~1 h on open.
++            this._clipboardManager.history.purge(3600 * 1000);
++            this._refreshClipboardList();
++            this._setClipboardPanelActive(true);
++        } catch (e) {
++            console.warn(`keyboard: _openClipboardPanel: ${e}`);
++            this._setClipboardPanelActive(false);
++        }
++    }
++
++    _closeClipboardPanel() {
++        if (!this._clipboardPanelActive)
++            return;
++        try {
++            this._stopArrowRepeat();
++            this._setClipboardPanelActive(false);
++            // Restore the key grid (unless emoji is active, which it won't be).
++            if (this._currentLayout)
++                this._currentLayout.visible = !this._emojiActive;
++        } catch (e) {
++            console.warn(`keyboard: _closeClipboardPanel: ${e}`);
++        }
++    }
++
+     resetSuggestions() {
+         if (this._suggestions)
+             this._suggestions.clear();
+@@ -3048,6 +3885,12 @@ export const Keyboard = GObject.registerClass({
+ 
+     setSuggestionsVisible(visible) {
+         this._suggestionsVisible = visible;
++        // fajita: while the Phase-2 edit bar is up, keep the strip hidden under
++        // it; remember the requested state so _exitEditMode restores it.
++        if (this._editMode) {
++            this._suggestionsPrevVisible = this._suggestionsVisible;
++            return;
++        }
+         this._suggestions.visible = this._suggestionsVisible;
+     }
+ 
+@@ -3055,6 +3898,12 @@ export const Keyboard = GObject.registerClass({
+         if (!this._suggestions)
+             return;
+         this._suggestions.add(text, callback, forgetCallback);
++        // fajita: don't un-hide the strip while the Phase-2 edit bar is up; the
++        // content is added but stays hidden until edit mode exits.
++        if (this._editMode) {
++            this._suggestionsPrevVisible = true;
++            return;
++        }
+         this._suggestions.show();
+     }
+ 

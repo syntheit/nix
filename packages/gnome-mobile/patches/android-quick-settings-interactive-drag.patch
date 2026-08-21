@@ -1,0 +1,336 @@
+diff --git a/js/ui/calendar.js b/js/ui/calendar.js
+index cc6ce2788..2c990cc94 100644
+--- a/js/ui/calendar.js
++++ b/js/ui/calendar.js
+@@ -815,6 +815,27 @@ class CalendarMessageList extends St.Widget {
+         return minimumHeight;
+     }
+ 
++    allowsQuickSettingsPan(gesture) {
++        const beginCoords = gesture.get_begin_centroid_abs();
++        if (!this.get_transformed_extents().contains_point(beginCoords))
++            return true;
++
++        const coords = gesture.get_centroid_abs();
++        const delta = coords.y - beginCoords.y;
++        const adj = this._scrollView.vadjustment;
++
++        // Keep scrollable notification motion in the message list. At either
++        // edge, hand outward motion to the containing quick-settings shade.
++        const end = Math.max(adj.upper - adj.page_size, adj.lower);
++        const epsilon = 0.5;
++        if (delta < 0)
++            return adj.value >= end - epsilon;
++        if (delta > 0)
++            return adj.value <= adj.lower + epsilon;
++
++        return false;
++    }
++
+     maybeCollapseMessageGroupForEvent(event) {
+         if (!this._messageView.expandedGroup)
+             return Clutter.EVENT_PROPAGATE;
+diff --git a/js/ui/quickSettings.js b/js/ui/quickSettings.js
+index b33f99174..77c92a991 100644
+--- a/js/ui/quickSettings.js
++++ b/js/ui/quickSettings.js
+@@ -18,10 +18,10 @@ import {PopupAnimation} from './boxpointer.js';
+ 
+ const DIM_BRIGHTNESS = -0.4;
+ const POPUP_ANIMATION_TIME = 400;
+-const QUICK_SETTINGS_EXPAND_DRAG_THRESHOLD = 48;
+-const QUICK_SETTINGS_COLLAPSE_DRAG_THRESHOLD = 72;
+-const QUICK_SETTINGS_EXPAND_VELOCITY = 0.5;
++const QUICK_SETTINGS_EXPAND_VELOCITY = 0.35;
+ const QUICK_SETTINGS_CLOSE_VELOCITY = 0.9;
++const QUICK_SETTINGS_EXPAND_POSITION_THRESHOLD = 0.5;
++const QUICK_SETTINGS_MIN_SNAP_TIME = 100;
+ const QUICK_SETTINGS_SNAP_TIME = 220;
+ const QUICK_SETTINGS_EXPAND_TIME = 280;
+ 
+@@ -1066,6 +1066,8 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+             pan_axis: Clutter.PanAxis.Y,
+             max_n_points: 1,
+         });
++        this._panGesture.connect(
++            'may-recognize', this._panMayRecognize.bind(this));
+         this._panGesture.connect('recognize', this._panBegin.bind(this));
+         this._panGesture.connect('pan-update', this._panUpdate.bind(this));
+         this._panGesture.connect('end', this._panEnd.bind(this));
+@@ -1073,101 +1075,138 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+         this._boxPointer.add_action(this._panGesture);
+     }
+ 
++    _panMayRecognize(gesture) {
++        // Submenus may contain their own scroll views and sliders (notably the
++        // flashlight strength control); never steal their gesture sequence.
++        if (this._activeMenu?.isOpen)
++            return false;
++
++        const event = gesture.get_point_event(-1);
++        let target = event ? global.stage.get_event_actor(event) : null;
++        while (target) {
++            if (target instanceof Slider ||
++                target.has_style_class_name?.('slider-bin'))
++                return false;
++            target = target.get_parent();
++        }
++
++        return this._messageList.allowsQuickSettingsPan(gesture);
++    }
++
+     _panBegin(gesture) {
+         this.box.remove_transition('translation-y');
++        this._grid.remove_transition('height');
+ 
+         this._panHeight = this.box.allocation.get_height() + this.box.margin_top;
+-        this._panStartedExpanded = this._expanded;
+-        this._panExpandedDuringGesture = false;
+-        this._panDownDistance = 0;
++        this._panCollapsedHeight = this._getGridPreferredHeight(false);
++        this._panExpandedHeight = this._getGridPreferredHeight(true);
++        this._panCanExpand =
++            this._panExpandedHeight > this._panCollapsedHeight;
++        this._panExpansionDistance = Math.max(
++            this._panExpandedHeight - this._panCollapsedHeight, 1);
++        this._panStartedExpanded = this._expanded && this._panCanExpand;
++        this._panInitialProgress = this._panStartedExpanded ? 1 : 0;
++        this._panProgress = this._panInitialProgress;
++        this._panDragDistance = 0;
++
++        // Keep every row allocated while dragging and reveal it through the
++        // grid's clip. Its explicit height becomes the live expansion value,
++        // so the shade and notification list follow the finger as well.
++        const layout = this._grid.layout_manager;
++        layout.expanded = true;
++        layout.layout_changed();
++        this._grid.clip_to_allocation = true;
++        this._setPanExpansionProgress(this._panProgress);
+     }
+ 
+     _panUpdate(gesture) {
+         const latestDeltaVec = gesture.get_delta();
+         const deltaY = latestDeltaVec.get_y();
+-
+-        if (!this._panStartedExpanded && !this._panExpandedDuringGesture &&
+-            deltaY > 0) {
+-            this._panDownDistance += deltaY;
+-            if (this._panDownDistance >= QUICK_SETTINGS_EXPAND_DRAG_THRESHOLD) {
+-                this._panExpandedDuringGesture = true;
+-                this._setExpanded(true, true);
+-            }
+-            return;
+-        }
+-
+-        if (this._panExpandedDuringGesture)
+-            return;
+-
+-        this.box.translation_y += deltaY;
+-        if (this.box.translation_y > 0)
+-            this.box.translation_y = 0;
++        this._panDragDistance += deltaY;
++
++        const requestedProgress = this._panInitialProgress +
++            this._panDragDistance / this._panExpansionDistance;
++        this._setPanExpansionProgress(
++            this._panCanExpand ? requestedProgress : 0);
++
++        // Once a gesture that began collapsed passes the collapsed snap point,
++        // continue the same motion by sliding the whole shade off screen.
++        // An expanded gesture deliberately stops at the collapsed position;
++        // only a fast upward fling dismisses it completely.
++        this.box.translation_y = !this._panStartedExpanded &&
++            requestedProgress < 0
++            ? Math.max(this._panDragDistance, -this._panHeight)
++            : 0;
+     }
+ 
+     _panEnd(gesture) {
+         const velocityY = gesture.get_velocity().get_y();
++        const remainingHeight = Math.max(
++            this._panHeight - Math.abs(this.box.translation_y), 0);
+ 
+-        if (this._panExpandedDuringGesture) {
+-            this.box.translation_y = 0;
++        // Match Android's two-stage shade: a quick upward fling from the
++        // expanded state dismisses it without first bouncing through compact.
++        if (this._panStartedExpanded &&
++            velocityY < -QUICK_SETTINGS_CLOSE_VELOCITY) {
++            this._closeFromPan(velocityY);
+             return;
+         }
+ 
+-        if (!this._panStartedExpanded &&
+-            velocityY > QUICK_SETTINGS_EXPAND_VELOCITY) {
+-            this.box.translation_y = 0;
+-            this._setExpanded(true, true);
++        if (!this._panStartedExpanded && this._panProgress === 0 &&
++            (velocityY < -QUICK_SETTINGS_CLOSE_VELOCITY ||
++             (remainingHeight < this._panHeight * 0.75 && velocityY <= 0))) {
++            this._closeFromPan(velocityY);
+             return;
+         }
+ 
+-        const remainingHeight = this._panHeight - Math.abs(this.box.translation_y);
+-
+-        // Match Android's two-stage shade: a quick upward fling from the
+-        // expanded state dismisses it, while a deliberate drag returns to the
+-        // compact two-row state. Do not let a slow, long drag fall through to
+-        // the generic close threshold below.
+-        if (this._panStartedExpanded) {
+-            if (velocityY < -QUICK_SETTINGS_CLOSE_VELOCITY) {
+-                this._closeFromPan(velocityY, remainingHeight);
+-                return;
+-            }
++        const expand = this._panCanExpand &&
++            (velocityY > QUICK_SETTINGS_EXPAND_VELOCITY ||
++            (velocityY >= -QUICK_SETTINGS_EXPAND_VELOCITY &&
++             this._panProgress >= QUICK_SETTINGS_EXPAND_POSITION_THRESHOLD));
++        this._snapPanExpansion(expand, velocityY);
++    }
+ 
+-            if (velocityY < -QUICK_SETTINGS_EXPAND_VELOCITY ||
+-                Math.abs(this.box.translation_y) >=
+-                    QUICK_SETTINGS_COLLAPSE_DRAG_THRESHOLD) {
+-                this.box.ease({
+-                    translation_y: 0,
+-                    duration: QUICK_SETTINGS_SNAP_TIME,
+-                    mode: Clutter.AnimationMode.EASE_OUT_QUINT,
+-                });
+-                this._setExpanded(false, true);
+-                return;
+-            }
++    _setPanExpansionProgress(progress) {
++        this._panProgress = Math.clamp(progress, 0, 1);
++        const height = this._panCollapsedHeight +
++            this._panProgress * this._panExpansionDistance;
++        this._grid.set_height(Math.round(height));
++    }
+ 
+-            this.box.ease({
+-                translation_y: 0,
+-                duration: QUICK_SETTINGS_SNAP_TIME,
+-                mode: Clutter.AnimationMode.EASE_OUT_QUINT,
+-            });
+-            return;
+-        }
++    _snapPanExpansion(expanded, velocityY) {
++        const targetProgress = expanded ? 1 : 0;
++        const progressDistance = Math.abs(targetProgress - this._panProgress);
++        const velocityProgress = Math.abs(velocityY) /
++            this._panExpansionDistance;
++        const naturalDuration = velocityProgress > 0.001
++            ? progressDistance / velocityProgress
++            : QUICK_SETTINGS_SNAP_TIME;
++        const duration = progressDistance === 0
++            ? 0
++            : Math.clamp(naturalDuration,
++                QUICK_SETTINGS_MIN_SNAP_TIME, QUICK_SETTINGS_SNAP_TIME);
+ 
+-        if (velocityY < -QUICK_SETTINGS_CLOSE_VELOCITY ||
+-            (remainingHeight < this._panHeight * 0.75 && velocityY <= 0)) {
+-            this._closeFromPan(velocityY, remainingHeight);
+-        } else {
+-            this.box.ease({
+-                translation_y: 0,
+-                duration: QUICK_SETTINGS_SNAP_TIME,
+-                mode: Clutter.AnimationMode.EASE_OUT_QUINT,
+-            });
+-        }
++        this.box.ease({
++            translation_y: 0,
++            duration,
++            mode: Clutter.AnimationMode.EASE_OUT_QUINT,
++        });
++        this._animateExpansionTo(expanded, duration);
+     }
+ 
+-    _closeFromPan(velocityY, remainingHeight) {
++    _closeFromPan(velocityY) {
++        // Grid expansion changes the box allocation during the gesture. Use
++        // whichever height is larger so the closing shade always ends fully
++        // off screen, even if allocation caught up between motion and release.
++        const currentHeight =
++            this.box.allocation.get_height() + this.box.margin_top;
++        const closeHeight = Math.max(this._panHeight, currentHeight);
++        const remainingHeight = Math.max(
++            closeHeight - Math.abs(this.box.translation_y), 0);
+         const duration = Math.clamp(
+             remainingHeight / Math.max(Math.abs(velocityY), 0.01), 160, 400);
+         this.box.ease({
+-            translation_y: -this._panHeight,
++            translation_y: -closeHeight,
+             duration,
+             mode: Clutter.AnimationMode.EASE_OUT_EXPO,
+             onStopped: () => {
+@@ -1178,7 +1217,7 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+     }
+ 
+     _panCancel(gesture) {
+-        this.box.translation_y = 0;
++        this._snapPanExpansion(this._panStartedExpanded, 0);
+     }
+ 
+     addItem(item, colSpan = 1) {
+@@ -1230,9 +1269,33 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+         if (this._expanded === expanded && layout.expanded === expanded)
+             return;
+ 
++        this._animateExpansionTo(
++            expanded, animate ? QUICK_SETTINGS_EXPAND_TIME : 0);
++    }
++
++    _getGridPreferredHeight(expanded) {
++        const layout = this._grid.layout_manager;
++        const currentExpanded = layout.expanded;
++        const currentHeight = this._grid.get_height();
++
++        this._grid.remove_transition('height');
++        this._grid.set_height(-1);
++        layout.expanded = expanded;
++        layout.layout_changed();
++        const [, height] = this._grid.get_preferred_height(-1);
++
++        layout.expanded = currentExpanded;
++        layout.layout_changed();
++        this._grid.set_height(currentHeight);
++        return height;
++    }
++
++    _animateExpansionTo(expanded, duration) {
++        const layout = this._grid.layout_manager;
+         this._grid.remove_transition('height');
+ 
+         const oldHeight = this._grid.get_height();
++        const targetHeight = this._getGridPreferredHeight(expanded);
+         this._expanded = expanded;
+ 
+         if (!expanded)
+@@ -1245,21 +1308,22 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+             this._grid.clip_to_allocation = !expanded;
+         };
+ 
+-        if (!animate || !this.actor.visible || oldHeight <= 0) {
++        if (duration <= 0 || !this.actor.visible || oldHeight <= 0) {
+             finish();
+             return;
+         }
+ 
+-        layout.expanded = expanded;
++        // Keep overflow rows alive during either direction of the animation.
++        // Clipping the interpolated height reveals or conceals them at the
++        // moving edge instead of making them disappear at animation start.
++        layout.expanded = true;
+         layout.layout_changed();
+-        this._grid.set_height(-1);
+-        const [, targetHeight] = this._grid.get_preferred_height(-1);
+         this._grid.set_height(oldHeight);
+         this._grid.clip_to_allocation = true;
+ 
+         this._grid.ease({
+             height: targetHeight,
+-            duration: QUICK_SETTINGS_EXPAND_TIME,
++            duration,
+             mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
+             onStopped: finish,
+         });

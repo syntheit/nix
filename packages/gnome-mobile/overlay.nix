@@ -93,6 +93,7 @@ in
           ./patches/agenda-hairlines.patch # keep hour separators and current-time marker at true 1px height instead of GridLayout row-fill thickness
           ./patches/agenda-scroll-actions.patch # vertically scroll the agenda through the day via an explicit St.Viewport; date/event buttons open GNOME Calendar
           ./patches/solar-widget.patch # compact local sunrise/sunset card using Shell's weather location, libgweather astronomy, and a segmented daylight-progress track
+          ./patches/weather-widget-lockscreen-complications.patch # compact five-hour Weather card + lock-screen next-event/weather/solar dot rows
           ./patches/appgrid-folder-drop.patch # drop an app onto an EXISTING folder now adds it (FolderIcon.acceptDrop persists to the folder's apps list instead of the throwing reorder path); guard _removeItem so redisplay can't throw "not part of the IconGridLayout". MUST stay after enable-appgrid-reorder + today-view (same file)
           ./patches/appgrid-drag-null-app.patch # drag-begin builds a placeholder AppIcon from lookup_app(id); Waydroid/PWA/folder ids don't resolve → AppIcon(null) threw & aborted the drag. Prefer source.app + null-guard. MUST stay after appgrid-folder-drop (same file)
           ./patches/appgrid-home-on-empty.patch # phone: closing the last window in the app-switcher lands on the home app-grid instead of an empty picker (adds a last-window-removed → APP_GRID transition; upstream has none). MUST stay after ios-home-appswitcher + today-view (same file)
@@ -103,6 +104,13 @@ in
           ./patches/android-quick-settings-collapse.patch # two-row Android-style collapsed grid with an animated expand control
           ./patches/android-quick-settings-pull-expand.patch # pull down to reveal overflow rows; swipe up to collapse before closing
           ./patches/android-quick-settings-content-height.patch # keep auxiliary controls expanded-only and give notifications the collapsed shade remainder
+          ./patches/android-quick-settings-gesture-polish.patch # gesture-only expansion; fast up-fling closes, deliberate up-drag collapses
+          ./patches/android-quick-settings-interactive-drag.patch # finger-tracked expansion with position/velocity snapping
+          ./patches/android-quick-settings-haptics.patch # subtle feedbackd pulse on tile activation and expansion snap changes
+          ./patches/android-quick-settings-initial-clip.patch # clip collapsed overflow before the first allocation/open
+          ./patches/mobile-control-polish.patch # stable DND/rotation icons and fully passive top-bar indicators
+          ./patches/osk-clipboard.patch # clipboard foundation + Phase 1: in-shell history engine (owner-changed capture, cap/dedup/pin, secret-mimetype gating, async-persist) + terminal-aware paste/copy/cut chords via one Clutter virtual device + always-there 📋 paste button leading the OSK suggestion strip. New js/misc/clipboardHistory.js (pure) + js/ui/clipboardManager.js (glue); does not touch the 3-pill prediction logic
+          ./patches/text-select.patch # long-press any on-screen text → highlight → Copy (MVP, line granularity). New js/ui/textSelect.js: ultra-conservative global Clutter.LongPressGesture on the stage (yields to all app/shell gestures, cancel-on-move), app-id blocklist + TEXT_SELECT_ENABLED kill-switch, AT-SPI (native GTK) → OCR fallback via fajita-textgrab-{atspi,ocr} helpers, scrim+highlight+Copy pill, set_text→clipboard-history. Crash/input-safe (every step try/catch → console.warn, fail-safe no-op)
         ];
         prePatch = ''
           cp -r ${libshew} subprojects/libshew

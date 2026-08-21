@@ -9,6 +9,17 @@ let
     modifications = final: prev: {
       antigravity = inputs.antigravity.packages.${final.stdenv.hostPlatform.system}.default;
       direnv = prev.direnv.overrideAttrs { doCheck = false; };
+      passes = prev.passes.overrideAttrs (_: {
+        src = inputs.passes;
+      });
+      # Clapper is fajita's default video player but nixpkgs ships it without
+      # gst-libav, so it can't decode DTS audio (and lacks the ffmpeg catch-all
+      # for exotic codecs). Add gst-libav to the UNWRAPPED package; the wrapped
+      # `clapper` re-inherits clapper-unwrapped.buildInputs and wrapGAppsHook4's
+      # --prefix bakes the plugin dir into the launcher automatically.
+      clapper-unwrapped = prev.clapper-unwrapped.overrideAttrs (old: {
+        buildInputs = old.buildInputs ++ [ final.gst_all_1.gst-libav ];
+      });
     };
     additions =
       final: _prev:
@@ -38,6 +49,8 @@ let
         courier = inputs.courier.packages.${final.stdenv.hostPlatform.system}.default;
         calculator = inputs.calculator.packages.${final.stdenv.hostPlatform.system}.default;
         bourse = inputs.bourse.packages.${final.stdenv.hostPlatform.system}.default;
+        mirador = inputs.mirador.packages.${final.stdenv.hostPlatform.system}.default;
+        relay = inputs.relay.packages.${final.stdenv.hostPlatform.system}.default;
         paloma = inputs.paloma.packages.${final.stdenv.hostPlatform.system}.default;
         # Runtime launcher: injects the Telegram api_id/api_hash from sops-decrypted
         # files (/run/secrets/paloma_api_{id,hash}) into the env before exec'ing the
