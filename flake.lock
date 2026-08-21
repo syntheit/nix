@@ -250,16 +250,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1787340456,
-        "narHash": "sha256-e7mYQZRkZPhv/5ov8GqlD7+G87nnF94hWb/Jf92P9Hc=",
+        "lastModified": 1787346388,
+        "narHash": "sha256-6GJ5JTUJ0YSWlNw7w2IzlceNZ7Ioq1xM7rSuvriJQ4I=",
         "ref": "refs/heads/main",
-        "rev": "9eea3f399b75cc31bfe218f5c0822ebbe6cf8861",
-        "revCount": 27,
+        "rev": "f904f765daf6f0ffe20439369db770b6e5a1a9c1",
+        "revCount": 28,
         "type": "git",
         "url": "file:///home/matv/Projects/courier"
       },
       "original": {
-        "rev": "9eea3f399b75cc31bfe218f5c0822ebbe6cf8861",
+        "rev": "f904f765daf6f0ffe20439369db770b6e5a1a9c1",
         "type": "git",
         "url": "file:///home/matv/Projects/courier"
       }
@@ -1268,16 +1268,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1787339685,
-        "narHash": "sha256-FjhrnCjYiIojRp4WEaGUyeqzO5vOPZPDRKK02Gu6mkQ=",
+        "lastModified": 1787345436,
+        "narHash": "sha256-qw6GMqjkTgH3L8ASfsMJtfH7pR4175I2GyF25cxGx10=",
         "ref": "refs/heads/main",
-        "rev": "57ecf2edbebcd90dc02eebfacc865cd1121f1bad",
-        "revCount": 24,
+        "rev": "1d99da178deaf6f6232d4a8ba9c322dfbbd01953",
+        "revCount": 25,
         "type": "git",
         "url": "file:///home/matv/Projects/mirador"
       },
       "original": {
-        "rev": "57ecf2edbebcd90dc02eebfacc865cd1121f1bad",
+        "rev": "1d99da178deaf6f6232d4a8ba9c322dfbbd01953",
         "type": "git",
         "url": "file:///home/matv/Projects/mirador"
       }
@@ -1654,11 +1654,11 @@
         "nixpkgs": "nixpkgs_4"
       },
       "locked": {
-        "lastModified": 1787267204,
-        "narHash": "sha256-SyMXFIIFPy8qfTKkL84n6HuOwTpgny89YkK70FATBvI=",
+        "lastModified": 1787345912,
+        "narHash": "sha256-rGZmHMvbw1ot62PCIX4sl3qiNCzX+cJH5wP2r8TaKJE=",
         "ref": "refs/heads/main",
-        "rev": "9137a587fbe5ba55826a7d61bb5ac4e70b388cee",
-        "revCount": 46,
+        "rev": "43f2c55e81e8fc388243008a5b692d0b085c2e37",
+        "revCount": 48,
         "type": "git",
         "url": "ssh://git@github.com/syntheit/paloma.git"
       },
@@ -1670,16 +1670,16 @@
     "passes": {
       "flake": false,
       "locked": {
-        "lastModified": 1787341069,
-        "narHash": "sha256-aXoXx+Rh1cFl45n7XcY5obDgMj5umdTomuIsj+hC9+0=",
+        "lastModified": 1787347408,
+        "narHash": "sha256-NcboqP9hLQfUbRSKMvhisOdoJIAByt0DEQeBbHS+sII=",
         "owner": "syntheit",
         "repo": "passes",
-        "rev": "d6a7d5b71d4d8b5ee59a1073d601b845c06cf9f8",
+        "rev": "285fa0ef68f5bc1c235cb290bb1944f8b75ad2f4",
         "type": "github"
       },
       "original": {
         "owner": "syntheit",
-        "ref": "d6a7d5b",
+        "ref": "285fa0e",
         "repo": "passes",
         "type": "github"
       }
@@ -1711,16 +1711,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1787340616,
-        "narHash": "sha256-ftgy7AMTh7ho3zrw2lbrsQZFw1aj9zts+Vz5FUOUp2w=",
+        "lastModified": 1787346995,
+        "narHash": "sha256-AeB2n4B1J4dnRbHS/LjEfwR7Eha2C8kb4OvMafnf268=",
         "ref": "refs/heads/main",
-        "rev": "24fc3a5b86e422fe347d87e07429a92b413d38ba",
-        "revCount": 26,
+        "rev": "12421b4e84bdea12bb58a1805539c727a10be76e",
+        "revCount": 27,
         "type": "git",
         "url": "file:///home/matv/Projects/relay"
       },
       "original": {
-        "rev": "24fc3a5b86e422fe347d87e07429a92b413d38ba",
+        "rev": "12421b4e84bdea12bb58a1805539c727a10be76e",
         "type": "git",
         "url": "file:///home/matv/Projects/relay"
       }

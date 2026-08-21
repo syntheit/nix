@@ -129,7 +129,7 @@
     # Passes — personal fork handles PKPass imports with unsafe or long serial
     # numbers and registers the app as a handler for PKPass/esPass files.
     passes = {
-      url = "github:syntheit/passes/d6a7d5b";
+      url = "github:syntheit/passes/285fa0e";
       flake = false;
     };
 
@@ -171,7 +171,7 @@
     # Courier — native GTK4/libadwaita mobile email client (IMAP/SMTP, offline SQLite, privacy-first HTML).
     # Pinned to a committed rev because the local worktree carries WIP; drop ?rev= to track HEAD once clean.
     courier = {
-      url = "git+file:///home/matv/Projects/courier?rev=9eea3f399b75cc31bfe218f5c0822ebbe6cf8861";
+      url = "git+file:///home/matv/Projects/courier?rev=f904f765daf6f0ffe20439369db770b6e5a1a9c1";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     # Calculator — native GTK4/libadwaita Google-Calculator-style app (mobile-first).
@@ -187,7 +187,7 @@
     # Mirador — native GTK4/libadwaita mobile Invidious/YouTube client.
     # Pinned to a committed rev (local worktree may carry WIP); drop ?rev= to track HEAD once clean.
     mirador = {
-      url = "git+file:///home/matv/Projects/mirador?rev=57ecf2edbebcd90dc02eebfacc865cd1121f1bad";
+      url = "git+file:///home/matv/Projects/mirador?rev=1d99da178deaf6f6232d4a8ba9c322dfbbd01953";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     # Paloma — native GTK4/libadwaita Telegram client (over TDLib). api_id/api_hash
@@ -205,7 +205,7 @@
     # persistence, touch selection). Pinned to a committed rev; drop ?rev= to
     # track HEAD once clean.
     relay = {
-      url = "git+file:///home/matv/Projects/relay?rev=24fc3a5b86e422fe347d87e07429a92b413d38ba";
+      url = "git+file:///home/matv/Projects/relay?rev=12421b4e84bdea12bb58a1805539c727a10be76e";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };

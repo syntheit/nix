@@ -159,7 +159,7 @@ new file mode 100644
 index 000000000..da8048d0f
 --- /dev/null
 +++ b/js/misc/clipboardHistory.js
-@@ -0,0 +1,164 @@
+@@ -0,0 +1,163 @@
 +// clipboardHistory.js
 +//
 +// Pure, framework-free clipboard-history model. Deliberately free of any
@@ -169,7 +169,6 @@ index 000000000..da8048d0f
 +export const TERMINAL_APP_IDS = new Set([
 +    'org.gnome.Console',
 +    'org.gnome.Ptyxis',
-+    'foot',
 +    'io.matv.Relay',
 +]);
 +
