@@ -265,6 +265,26 @@
   # the ceiling — we then run `plymouth quit` UNCONDITIONALLY. Worst case
   # plymouthd lives ~20 s longer than the old code, never forever. `-`-prefixed
   # oneshot semantics preserved; genuine stage-1/panic output is a separate path.
+  # Belt-and-suspenders for the boot-brightness udev rule above: if the backlight
+  # ADD event fires in stage-1 (before the stage-2 udev rule is live), a oneshot
+  # forces a visible level once the panel device exists — so the plymouth flake
+  # is actually lit during boot rather than drawn onto a dark panel. Runs in
+  # parallel at sysinit (doesn't block boot); gnome-shell readjusts once up.
+  systemd.services.fajita-boot-brightness = {
+    description = "Force a visible panel brightness during early boot";
+    wantedBy = [ "sysinit.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = "${pkgs.writeShellScript "fajita-boot-brightness" ''
+        bl=/sys/class/backlight/ae94000.dsi.0/brightness
+        for i in $(${pkgs.coreutils}/bin/seq 1 80); do
+          if [ -e "$bl" ]; then echo 512 > "$bl" 2>/dev/null && exit 0; fi
+          ${pkgs.coreutils}/bin/sleep 0.1
+        done
+      ''}";
+    };
+  };
+
   systemd.services.fajita-plymouth-quit = {
     description = "Quit the Plymouth boot splash once GNOME Shell has painted";
     wantedBy = [ "graphical.target" ];
@@ -742,6 +762,15 @@
     KERNEL=="fastrpc-sdsp",        GROUP="fastrpc", MODE="0660"
     KERNEL=="fastrpc-cdsp",        GROUP="fastrpc", MODE="0660"
     KERNEL=="fastrpc-sdsp_secure", GROUP="fastrpc", MODE="0660"
+
+    # THE BOOT-SPLASH-IS-BLACK ROOT CAUSE (2026-08-21): the s6e3fc2x01 DSI panel
+    # comes up at ~1/1023 brightness ("an invisible brightness", see
+    # power-button-brightness.md) and nothing raises it until gnome-shell's
+    # autobacklight starts. So plymouth draws the flake correctly onto a panel
+    # that's electrically on but backlit to near-zero → looks black the whole
+    # boot. Force a visible level the instant the backlight device appears;
+    # gnome-shell readjusts once it's up.
+    SUBSYSTEM=="backlight", KERNEL=="ae94000.dsi.0", ACTION=="add", ATTR{brightness}="512"
   '';
   # 2) System mimeapps — tel: / sms: / http: defaults so Phosh launchers route
   #    to the right apps (Calls, Chatty, Epiphany).
