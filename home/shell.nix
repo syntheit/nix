@@ -157,7 +157,8 @@ ${sessionCheat}
   Alt-v             split vertical
   Alt--             split horizontal
   Alt-t             new window (tab)
-  Alt-1..5          switch to window N
+  Alt-1..9          switch to window N
+  Alt-0             switch to window 10
   Alt-n / Alt-p     next / prev window
   Alt-w             close pane
   Alt-f             toggle pane fullscreen
