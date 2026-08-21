@@ -1,61 +1,57 @@
 # nixos-flake — animated blue NixOS snowflake boot splash (fajita).
-# Plymouth "script" plugin. Resolution-agnostic: the flake is centered
-# by measuring the framebuffer and image at runtime and scaled to a
-# fraction of the screen's smaller dimension, so it lands correctly on
-# the 1080x2340 portrait DSI panel regardless of the native scanout size.
-# Background is flat black (0x000000) to match the stage-2 still and the
-# GNOME lock/shell dark theme. Animation is a slow opacity "breathe"
-# (~0.4 Hz) — deliberately NO rotation (plymouth renders at the panel's
-# native orientation on this device; a spin would only amplify any
-# rotation/mirroring artifact — see Phase 1b note).
+# Plymouth "script" plugin.
+#
+# ★ ROOT-CAUSE FIX (2026-08-21): on this device plymouth executes the theme
+# script (~13.69s) BEFORE the DRM display is activated (~13.73s), so
+# Window.GetWidth()/GetHeight() return 0 at script load. The old version scaled
+# the flake by `0.28 * shortEdge`, i.e. 0.28 * 0 = 0 → a 0x0 image → an
+# invisible sprite → a black boot even though the renderer/theme/master/scanout
+# were all fine. So: DO NOT derive the size from the Window at load time. Scale
+# to a fixed pixel size, and (re)center every refresh using the Window dims with
+# a 1080x2340 fallback (valid once the display is up). Draw once immediately too.
 
-# Flat black background, top == bottom so there is no gradient.
+# Flat black background (matches the LOGO-partition flake + GNOME dark theme).
 Window.SetBackgroundTopColor(0, 0, 0);
 Window.SetBackgroundBottomColor(0, 0, 0);
 
-# Load the snowflake and scale it to ~28% of the screen's SHORTER edge,
-# preserving aspect. Measuring at runtime keeps this panel-size agnostic.
-flake.source = Image("nix-snowflake.png");
-screen.width  = Window.GetWidth();
-screen.height = Window.GetHeight();
-short_edge = screen.width;
-if (screen.height < screen.width)
-    short_edge = screen.height;
-target = short_edge * 0.28;
-scale = target / flake.source.GetWidth();
-flake.image  = flake.source.Scale(flake.source.GetWidth() * scale,
-                                   flake.source.GetHeight() * scale);
+# Fixed-size flake (~340px ≈ 31% of the 1080px panel) — no Window-dependent
+# scaling, so it can never collapse to 0.
+flake.image  = Image("nix-snowflake.png").Scale(340, 340);
 flake.sprite = Sprite(flake.image);
-flake.sprite.SetX(Window.GetX() + screen.width  / 2 - flake.image.GetWidth()  / 2);
-flake.sprite.SetY(Window.GetY() + screen.height / 2 - flake.image.GetHeight() / 2);
+flake.sprite.SetOpacity(1);
 
-# Opacity breathe. angle advances every refresh tick; plymouth ticks the
-# refresh function ~50 Hz, so (2*pi/50)*0.4 gives ~0.4 Hz.
 progress = 0;
 fun refresh_callback ()
 {
+    w = Window.GetWidth();
+    h = Window.GetHeight();
+    if (w < 1) w = 1080;      # fallback: Window not sized yet
+    if (h < 1) h = 2340;
+    flake.sprite.SetX(w / 2 - flake.image.GetWidth()  / 2);
+    flake.sprite.SetY(h / 2 - flake.image.GetHeight() / 2);
+
+    # Gentle opacity breathe (~0.4 Hz), floor 0.35 so it never fully vanishes.
     progress += (2 * 3.14159265 / 50) * 0.4;
-    min_opacity = 0.35;
-    opacity = (Math.Cos(progress) + 1) / 2;   # 0..1
-    opacity = opacity * (1 - min_opacity) + min_opacity;   # min..1
-    flake.sprite.SetOpacity(opacity);
+    opacity = (Math.Cos(progress) + 1) / 2;            # 0..1
+    flake.sprite.SetOpacity(opacity * 0.65 + 0.35);    # 0.35..1
 }
-Plymouth.SetRefreshFunction(refresh_callback);
+# Position + show the flake immediately (in case refresh ticks are sparse on a
+# command-mode panel), then keep it centered/breathing.
+refresh_callback ();
+Plymouth.SetRefreshFunction (refresh_callback);
 
 # On quit, leave the flake fully opaque for the handoff frame.
 fun quit_callback ()
 {
     flake.sprite.SetOpacity(1);
 }
-Plymouth.SetQuitFunction(quit_callback);
+Plymouth.SetQuitFunction (quit_callback);
 
-# Minimal message hooks — keep boot/error messages renderable (do not
-# suppress genuine failure output; real panics/stage-1 errors are their
-# own path and unaffected).
+# Minimal message hook — keep boot/error messages renderable.
 message_sprite = Sprite();
 message_sprite.SetPosition(10, 10, 10000);
 fun message_callback (text)
 {
     message_sprite.SetImage(Image.Text(text, 1, 1, 1));
 }
-Plymouth.SetMessageFunction(message_callback);
+Plymouth.SetMessageFunction (message_callback);

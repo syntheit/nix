@@ -236,6 +236,21 @@
   # plugin path exist before it starts, so it selects the DRM renderer.
   systemd.services.plymouth-start.after = [ "systemd-tmpfiles-setup.service" ];
 
+  # COMMAND-MODE DSI FIX (2026-08-21): with plugins + theme + script all correct,
+  # plymouth's DRM renderer still stalls after ~3 page-flips on this command-mode
+  # DSI panel at cold boot — the flip-complete/TE sync isn't running continuously
+  # until the panel is warm (proven: the flake renders fine at SHUTDOWN). Route
+  # around it by forcing plymouth onto its FRAMEBUFFER renderer: it writes frames
+  # straight to /dev/fb0 (msmdrmfb) — the same path the text console uses, which
+  # DOES display on this panel — with no flip to stall on. Shadow the plugin dir
+  # (NixOS points /etc/plymouth/plugins at the package's lib/plymouth) with a
+  # mirror that drops the DRM renderer, so plymouth selects fbdev.
+  environment.etc."plymouth/plugins".source = lib.mkForce (pkgs.runCommand "plymouth-plugins-fbdev" { } ''
+    cp -rs ${config.boot.plymouth.package}/lib/plymouth $out
+    chmod -R u+w $out
+    rm -f $out/renderers/drm.so
+  '');
+
   # ── Phase 2: the boot.img-resident early stages (needs a REFLASH) ─────────
   # Stage-1 (initrd) mruby splash logo. mobile-nixos renders this SVG as a big
   # centered logo at 80% width on black via its stage-1 LVGL/lvgui renderer,
@@ -293,15 +308,27 @@
   # is actually lit during boot rather than drawn onto a dark panel. Runs in
   # parallel at sysinit (doesn't block boot); gnome-shell readjusts once up.
   systemd.services.fajita-boot-brightness = {
-    description = "Force a visible panel brightness during early boot";
+    description = "Hold a visible panel brightness through the plymouth window";
     wantedBy = [ "sysinit.target" ];
     serviceConfig = {
-      Type = "oneshot";
+      # simple, not oneshot — it runs a ~25s hold loop and must NOT block boot.
+      Type = "simple";
       ExecStart = "${pkgs.writeShellScript "fajita-boot-brightness" ''
         bl=/sys/class/backlight/ae94000.dsi.0/brightness
-        for i in $(${pkgs.coreutils}/bin/seq 1 80); do
-          if [ -e "$bl" ]; then echo 512 > "$bl" 2>/dev/null && exit 0; fi
-          ${pkgs.coreutils}/bin/sleep 0.1
+        log=/run/fajita-brightness.log
+        # The flake shows fine at SHUTDOWN (warm panel) but not at cold boot —
+        # the cold panel enable resets the backlight to ~0 right around when
+        # plymouth draws its frame, so the flake is drawn but unlit → black.
+        # HOLD a visible level through the whole plymouth window (re-set every
+        # 0.25s for ~25s); gnome-shell's autobacklight takes over afterward.
+        # Also record the observed value each tick so the timeline is provable.
+        for i in $(${pkgs.coreutils}/bin/seq 1 100); do
+          if [ -e "$bl" ]; then
+            cur=$(${pkgs.coreutils}/bin/cat "$bl" 2>/dev/null)
+            echo "$(${pkgs.coreutils}/bin/cut -d' ' -f1 /proc/uptime) observed=$cur set=512" >> "$log"
+            echo 512 > "$bl" 2>/dev/null
+          fi
+          ${pkgs.coreutils}/bin/sleep 0.25
         done
       ''}";
     };
