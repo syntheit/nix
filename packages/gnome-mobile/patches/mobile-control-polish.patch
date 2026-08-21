@@ -1,0 +1,86 @@
+diff --git a/js/ui/dateMenu.js b/js/ui/dateMenu.js
+index 7795832..a3d85d7 100644
+--- a/js/ui/dateMenu.js
++++ b/js/ui/dateMenu.js
+@@ -867,6 +867,8 @@ class DateMenuButton extends PanelMenu.Button {
+         // fajita: the clock is a passive label on mobile — no tap-to-open
+         // calendar/notifications. Swipe down on the panel for QS instead.
+         this._clickGesture.enabled = false;
++        this.reactive = false;
++        this.can_focus = false;
+ 
+         this._clockDisplay = new St.Label({style_class: 'clock'});
+         this._clockDisplay.clutter_text.y_align = Clutter.ActorAlign.CENTER;
+diff --git a/js/ui/panel.js b/js/ui/panel.js
+index 0b45575..6b885f4 100644
+--- a/js/ui/panel.js
++++ b/js/ui/panel.js
+@@ -399,6 +399,8 @@ class QuickSettings extends PanelMenu.Button {
+         // the panel — only the tap affordance is removed so stray taps while
+         // handling the phone don't drop the sheet open.
+         this._clickGesture.enabled = false;
++        this.reactive = false;
++        this.can_focus = false;
+ 
+         this._setupIndicators().catch(error =>
+             logError(error, 'Failed to setup quick settings'));
+diff --git a/js/ui/status/autoRotate.js b/js/ui/status/autoRotate.js
+index c99c5c7..dd69e79 100644
+--- a/js/ui/status/autoRotate.js
++++ b/js/ui/status/autoRotate.js
+@@ -13,6 +13,7 @@ class AutoRotateToggle extends QuickToggle {
+     _init() {
+         super._init({
+             title: _('Auto Rotate'),
++            iconName: 'rotation-allowed-symbolic',
+         });
+ 
+         this._settings = new Gio.Settings({
+@@ -21,20 +22,12 @@ class AutoRotateToggle extends QuickToggle {
+         this._settings.bind('orientation-lock',
+             this, 'checked',
+             Gio.SettingsBindFlags.INVERT_BOOLEAN);
+-        this._sync();
+-        this._settings.connect('changed::orientation-lock', () => this._sync());
+ 
+         this.connect('clicked', () => {
+             this._settings.set_boolean('orientation-lock',
+                 !this._settings.get_boolean('orientation-lock'));
+         });
+     }
+-
+-    _sync() {
+-        this.iconName = this._settings.get_boolean('orientation-lock')
+-            ? 'rotation-locked-symbolic'
+-            : 'rotation-allowed-symbolic';
+-    }
+ });
+ 
+ export const Indicator = GObject.registerClass(
+diff --git a/js/ui/status/doNotDisturb.js b/js/ui/status/doNotDisturb.js
+index fe313d2..0c0204e 100644
+--- a/js/ui/status/doNotDisturb.js
++++ b/js/ui/status/doNotDisturb.js
+@@ -8,7 +8,7 @@ class DoNotDisturbToggle extends QuickToggle {
+     constructor() {
+         super({
+             title: _('Do Not Disturb'),
+-            iconName: 'notifications-disabled-symbolic',
++            iconName: 'action-unavailable-symbolic',
+             toggleMode: true,
+         });
+ 
+@@ -26,7 +26,7 @@ class Indicator extends SystemIndicator {
+     constructor() {
+         super();
+         this._indicator = this._addIndicator();
+-        this._indicator.icon_name = 'notifications-disabled-symbolic';
++        this._indicator.icon_name = 'action-unavailable-symbolic';
+ 
+         const toggle = new DoNotDisturbToggle();
+         toggle.bind_property('checked',
+@@ -36,4 +36,3 @@ class Indicator extends SystemIndicator {
+         this.quickSettingsItems.push(toggle);
+     }
+ });
+-

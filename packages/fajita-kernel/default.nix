@@ -181,6 +181,16 @@ let
 
       CONFIG_GPIO_SHARED_PROXY=y
 
+      # Defer fbcon takeover so the bootloader cont_splash (our LOGO-partition
+      # flake) stays on the panel and plymouth (DRM) owns the display. Without
+      # this, fbcon grabs the framebuffer the instant the kernel boots, prints
+      # console text over the splash, and plymouth renders INVISIBLY — the root
+      # cause of the "initial text then black" boot (diagnosed 2026-08-21). This
+      # is the standard NixOS-with-plymouth setting; mobile-nixos left it off
+      # assuming a kernel fbcon logo as the early splash, which this device's
+      # bootloader simplefb can't blit anyway.
+      CONFIG_FRAMEBUFFER_CONSOLE_DEFERRED_TAKEOVER=y
+
       # Disable LOCALVERSION_AUTO to make modDirVersion predictable
       CONFIG_LOCALVERSION_AUTO=n
       EOF

@@ -126,6 +126,29 @@
     };
   };
 
+  # Route image types at GNOME's image viewer (Loupe). Without this, HEIC/AVIF
+  # opened in Mimick (the Immich client) and WebP in Gradia (a screenshot tool)
+  # because their .desktop files claim those types. Loupe renders all of them
+  # via glycin (libheif/libavif/libjxl/libwebp). Explicit defaults win.
+  xdg.mimeApps = {
+    enable = true;
+    defaultApplications =
+      let loupe = "org.gnome.Loupe.desktop";
+      in {
+        "image/jpeg" = loupe;
+        "image/png" = loupe;
+        "image/gif" = loupe;
+        "image/webp" = loupe;
+        "image/tiff" = loupe;
+        "image/bmp" = loupe;
+        "image/svg+xml" = loupe;
+        "image/heif" = loupe;
+        "image/heic" = loupe;
+        "image/avif" = loupe;
+        "image/jxl" = loupe;
+      };
+  };
+
   home.packages = with pkgs; [
     bat
     btop

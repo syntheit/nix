@@ -1,0 +1,21 @@
+diff --git a/js/ui/quickSettings.js b/js/ui/quickSettings.js
+index 77c92a991..a8772aeeb 100644
+--- a/js/ui/quickSettings.js
++++ b/js/ui/quickSettings.js
+@@ -1148,6 +1148,7 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+         // expanded state dismisses it without first bouncing through compact.
+         if (this._panStartedExpanded &&
+             velocityY < -QUICK_SETTINGS_CLOSE_VELOCITY) {
++            triggerQuickSettingsHaptic();
+             this._closeFromPan(velocityY);
+             return;
+         }
+@@ -1191,6 +1192,8 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+             duration,
+             mode: Clutter.AnimationMode.EASE_OUT_QUINT,
+         });
++        if (expanded !== this._panStartedExpanded)
++            triggerQuickSettingsHaptic();
+         this._animateExpansionTo(expanded, duration);
+     }
+ 

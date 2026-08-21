@@ -126,6 +126,13 @@
       flake = false;
     };
 
+    # Passes — personal fork handles PKPass imports with unsafe or long serial
+    # numbers and registers the app as a handler for PKPass/esPass files.
+    passes = {
+      url = "github:syntheit/passes/d6a7d5b";
+      flake = false;
+    };
+
     malli-nix = {
       url = "git+ssh://git@github.com/NRE-Product/malli-nix.git";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -164,7 +171,7 @@
     # Courier — native GTK4/libadwaita mobile email client (IMAP/SMTP, offline SQLite, privacy-first HTML).
     # Pinned to a committed rev because the local worktree carries WIP; drop ?rev= to track HEAD once clean.
     courier = {
-      url = "git+file:///home/matv/Projects/courier?rev=2587fac0bd646a6622efc66185cbcb1ab3a2a7cd";
+      url = "git+file:///home/matv/Projects/courier?rev=9eea3f399b75cc31bfe218f5c0822ebbe6cf8861";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     # Calculator — native GTK4/libadwaita Google-Calculator-style app (mobile-first).
@@ -177,11 +184,28 @@
       url = "git+file:///home/matv/Projects/bourse?rev=cb6fb484de2ccee653076e137101d780575a0a95";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Mirador — native GTK4/libadwaita mobile Invidious/YouTube client.
+    # Pinned to a committed rev (local worktree may carry WIP); drop ?rev= to track HEAD once clean.
+    mirador = {
+      url = "git+file:///home/matv/Projects/mirador?rev=57ecf2edbebcd90dc02eebfacc865cd1121f1bad";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     # Paloma — native GTK4/libadwaita Telegram client (over TDLib). api_id/api_hash
     # are injected at RUNTIME from sops, not baked at build time (see
     # overlays/default.nix paloma-wrapped + hosts' secrets).
     paloma = {
       url = "git+ssh://git@github.com/syntheit/paloma.git";
+      # Do NOT follow the system nixpkgs: paloma pins its own nixpkgs to the rev
+      # whose `pkgs.tdlib` (1.8.65) matches tdlib-rs 1.4's frozen bindings. The
+      # system nixpkgs moved to tdlib 1.8.66 which renamed a Message field
+      # (is_paid_ton_ -> is_paid_gram_suggested_post); following it made the
+      # generated deserializer panic (missing field) and the app crash on load.
+    };
+    # Relay — native GTK4/libadwaita/VTE mobile terminal (Termius-feel, mosh
+    # persistence, touch selection). Pinned to a committed rev; drop ?rev= to
+    # track HEAD once clean.
+    relay = {
+      url = "git+file:///home/matv/Projects/relay?rev=24fc3a5b86e422fe347d87e07429a92b413d38ba";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };

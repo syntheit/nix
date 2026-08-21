@@ -22,7 +22,7 @@ index 8cafbbd..db87c99 100644
  .quick-toggle {
    &:checked { @extend %default_button;}
 diff --git a/js/ui/panel.js b/js/ui/panel.js
-index ab9d751..a3e5ff3 100644
+index ab9d751..85c515d 100644
 --- a/js/ui/panel.js
 +++ b/js/ui/panel.js
 @@ -1,5 +1,6 @@
@@ -32,7 +32,12 @@ index ab9d751..a3e5ff3 100644
  import GLib from 'gi://GLib';
  import GObject from 'gi://GObject';
  import Graphene from 'gi://Graphene';
-@@ -11,8 +12,9 @@ import * as CtrlAltTab from './ctrlAltTab.js';
+@@ -7,12 +8,14 @@ import Meta from 'gi://Meta';
+ import St from 'gi://St';
+ 
+ import * as Config from '../misc/config.js';
++import * as SystemActions from '../misc/systemActions.js';
+ import * as CtrlAltTab from './ctrlAltTab.js';
  import * as DND from './dnd.js';
  import * as PopupMenu from './popupMenu.js';
  import * as PanelMenu from './panelMenu.js';
@@ -43,7 +48,7 @@ index ab9d751..a3e5ff3 100644
  import * as Util from '../misc/util.js';
  
  import * as RemoteAccessStatus from './status/remoteAccess.js';
-@@ -40,6 +42,85 @@ import {ScreenRecordingIndicator, ScreenSharingIndicator} from './status/remoteA
+@@ -40,6 +43,96 @@ import {ScreenRecordingIndicator, ScreenSharingIndicator} from './status/remoteA
  const BUTTON_DND_ACTIVATION_TIMEOUT = 250;
  
  const INACTIVE_WORKSPACE_DOT_SCALE = 0.75;
@@ -68,6 +73,19 @@ index ab9d751..a3e5ff3 100644
 +    }
 +}
 +
++const SHELL_ACTIONS = {
++    'lock-screen': () => SystemActions.getDefault().activateLockScreen(),
++    'screen-record': () => {
++        if (Main.screenshotUI.screencast_in_progress) {
++            Main.screenshotUI.stopScreencast();
++            return;
++        }
++
++        Screenshot.showScreenRecordingUI();
++    },
++    'screenshot': () => Screenshot.showScreenshotUI(),
++};
++
 +const CustomQuickSettingsTile = GObject.registerClass(
 +class CustomQuickSettingsTile extends QuickToggle {
 +    _init(tile) {
@@ -85,7 +103,7 @@ index ab9d751..a3e5ff3 100644
 +        this.connect('clicked', () => this._activate());
 +        Main.sessionMode.connectObject('updated', () => this._sync(), this);
 +
-+        if (tile.type === 'shell' && tile.action === 'screen-record') {
++        if (tile.action === 'screen-record') {
 +            Main.screenshotUI.connectObject(
 +                'notify::screencast-in-progress', () => this._sync(), this);
 +        }
@@ -94,8 +112,7 @@ index ab9d751..a3e5ff3 100644
 +
 +    _sync() {
 +        this.reactive = Main.sessionMode.hasWindows;
-+        if (this._tile.type === 'shell' &&
-+            this._tile.action === 'screen-record') {
++        if (this._tile.action === 'screen-record') {
 +            this.checked = Main.screenshotUI.screencast_in_progress;
 +            this.iconName = this.checked
 +                ? 'screencast-stop-symbolic'
@@ -109,19 +126,18 @@ index ab9d751..a3e5ff3 100644
 +            return;
 +        }
 +
-+        if (this._tile.type !== 'shell' ||
-+            this._tile.action !== 'screen-record')
++        if (this._tile.type !== 'shell')
 +            return;
 +
 +        Main.panel.closeQuickSettings();
-+        if (Main.screenshotUI.screencast_in_progress) {
-+            Main.screenshotUI.stopScreencast();
-+            return;
-+        }
-+
 +        const laters = global.compositor.get_laters();
 +        laters.add(Meta.LaterType.BEFORE_REDRAW, () => {
-+            Screenshot.showScreenRecordingUI();
++            try {
++                SHELL_ACTIONS[this._tile.action]?.();
++            } catch (error) {
++                logError(error,
++                    `Failed to run Quick Settings action ${this._tile.action}`);
++            }
 +            return GLib.SOURCE_REMOVE;
 +        });
 +    }
@@ -129,7 +145,7 @@ index ab9d751..a3e5ff3 100644
  
  const WorkspaceDot = GObject.registerClass({
      Properties: {
-@@ -291,6 +372,13 @@ class QuickSettings extends PanelMenu.Button {
+@@ -291,6 +384,13 @@ class QuickSettings extends PanelMenu.Button {
          this.add_child(this._indicators);
  
          this.setMenu(new QuickSettingsMenu(this));
@@ -143,7 +159,7 @@ index ab9d751..a3e5ff3 100644
  
          // fajita: no tap-to-open on the top bar. The QS sheet (which also holds
          // the notification list on mobile) stays reachable by swiping down on
-@@ -366,35 +454,106 @@ class QuickSettings extends PanelMenu.Button {
+@@ -366,35 +466,106 @@ class QuickSettings extends PanelMenu.Button {
  
          // add our quick settings items before any external ones
          const sibling = this.menu.getFirstItem();
@@ -270,7 +286,7 @@ index ab9d751..a3e5ff3 100644
      }
  
      _addItemsBefore(items, sibling, colSpan = 1) {
-@@ -415,7 +574,24 @@ class QuickSettings extends PanelMenu.Button {
+@@ -415,7 +586,24 @@ class QuickSettings extends PanelMenu.Button {
  
          // Insert before background apps if it exists
          sibling = this._backgroundApps?.quickSettingsItems?.at(-1) ?? null;
@@ -297,7 +313,7 @@ index ab9d751..a3e5ff3 100644
  });
  
 diff --git a/js/ui/popupMenu.js b/js/ui/popupMenu.js
-index 8bbc521..602ccea 100644
+index 8bbc521..7bb8edd 100644
 --- a/js/ui/popupMenu.js
 +++ b/js/ui/popupMenu.js
 @@ -1,6 +1,7 @@
@@ -376,7 +392,7 @@ index 8bbc521..602ccea 100644
  function isPopupMenuItemVisible(child) {
      if (child._delegate instanceof PopupMenuSection) {
          if (child._delegate.isEmpty())
-@@ -790,21 +851,18 @@ export class PopupMenuBase extends Signals.EventEmitter {
+@@ -790,21 +852,18 @@ export class PopupMenuBase extends Signals.EventEmitter {
  
      addSettingsAction(title, desktopFile) {
          let menuItem = this.addAction(title, () => {
@@ -406,13 +422,38 @@ index 8bbc521..602ccea 100644
      }
  
 diff --git a/js/ui/quickSettings.js b/js/ui/quickSettings.js
-index 940317f..d46ad31 100644
+index 940317f..adba70c 100644
 --- a/js/ui/quickSettings.js
 +++ b/js/ui/quickSettings.js
-@@ -130,6 +130,30 @@ export const QuickToggle = GObject.registerClass({
+@@ -19,6 +19,22 @@ import {PopupAnimation} from './boxpointer.js';
+ const DIM_BRIGHTNESS = -0.4;
+ const POPUP_ANIMATION_TIME = 400;
+ 
++export function triggerQuickSettingsHaptic() {
++    Gio.DBus.session.call(
++        'org.sigxcpu.Feedback',
++        '/org/sigxcpu/Feedback',
++        'org.sigxcpu.Feedback',
++        'TriggerFeedback',
++        new GLib.Variant('(ssa{sv}i)', [
++            'org.gnome.Shell', 'quick-settings-activated', {}, -1,
++        ]),
++        null,
++        Gio.DBusCallFlags.NONE,
++        -1,
++        null,
++        null);
++}
++
+ export const QuickSettingsItem = GObject.registerClass({
+     Properties: {
+         'has-menu': GObject.ParamSpec.boolean(
+@@ -130,6 +146,32 @@ export const QuickToggle = GObject.registerClass({
              GObject.BindingFlags.SYNC_CREATE,
              (bind, source) => [true, source !== null],
              null);
++
++        this.connect('clicked', triggerQuickSettingsHaptic);
 +
 +        this._longPressAction = null;
 +        this._longPressGesture = new Clutter.LongPressGesture({
@@ -440,7 +481,7 @@ index 940317f..d46ad31 100644
      }
  
      get label() {
-@@ -179,9 +203,11 @@ export const QuickMenuToggle = GObject.registerClass({
+@@ -179,9 +221,11 @@ export const QuickMenuToggle = GObject.registerClass({
          const contents = new QuickToggle({
              x_expand: true,
          });
@@ -452,7 +493,7 @@ index 940317f..d46ad31 100644
          this._box.add_child(separator);
  
          this._menuButton = new St.Button({
-@@ -217,9 +243,11 @@ export const QuickMenuToggle = GObject.registerClass({
+@@ -217,9 +261,11 @@ export const QuickMenuToggle = GObject.registerClass({
              contents, 'icon-name',
              GObject.BindingFlags.SYNC_CREATE);
  
@@ -466,7 +507,7 @@ index 940317f..d46ad31 100644
          this.bind_property('menu-button-accessible-name',
              this._menuButton, 'accessible-name',
              GObject.BindingFlags.SYNC_CREATE);
-@@ -238,6 +266,17 @@ export const QuickMenuToggle = GObject.registerClass({
+@@ -238,6 +284,17 @@ export const QuickMenuToggle = GObject.registerClass({
                  this.menu.open();
          });
      }
@@ -484,7 +525,7 @@ index 940317f..d46ad31 100644
  });
  
  export const QuickSlider = GObject.registerClass({
-@@ -582,6 +621,9 @@ const QuickSettingsLayout = GObject.registerClass({
+@@ -582,6 +639,9 @@ const QuickSettingsLayout = GObject.registerClass({
          if (found)
              this.nColumns = cols;
  
@@ -494,7 +535,7 @@ index 940317f..d46ad31 100644
          if (changed)
              this.layout_changed();
      }
-@@ -894,6 +936,13 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+@@ -894,6 +954,13 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
          this._completeAddItem(item, colSpan);
      }
  

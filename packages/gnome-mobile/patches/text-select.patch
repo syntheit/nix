@@ -1,0 +1,2387 @@
+diff --git a/js/js-resources.gresource.xml b/js/js-resources.gresource.xml
+index ec1e61572..cb7af7076 100644
+--- a/js/js-resources.gresource.xml
++++ b/js/js-resources.gresource.xml
+@@ -122,6 +122,7 @@
+     <file>ui/swipeTracker.js</file>
+     <file>ui/switcherPopup.js</file>
+     <file>ui/switchMonitor.js</file>
++    <file>ui/textSelect.js</file>
+     <file>ui/unlockDialog.js</file>
+     <file>ui/userWidget.js</file>
+     <file>ui/welcomeDialog.js</file>
+diff --git a/js/ui/main.js b/js/ui/main.js
+index 763fb3a72..0abd1992d 100644
+--- a/js/ui/main.js
++++ b/js/ui/main.js
+@@ -35,6 +35,7 @@ import * as LookingGlass from './lookingGlass.js';
+ import * as NotificationDaemon from './notificationDaemon.js';
+ import * as WindowAttentionHandler from './windowAttentionHandler.js';
+ import * as Screenshot from './screenshot.js';
++import * as TextSelect from './textSelect.js';
+ import * as ScreenShield from './screenShield.js';
+ import * as SessionMode from './sessionMode.js';
+ import * as ShellDBus from './shellDBus.js';
+@@ -90,6 +91,7 @@ export let uiGroup = null;
+ export let magnifier = null;
+ export let xdndHandler = null;
+ export let keyboard = null;
++export let textSelect = null;
+ export let layoutManager = null;
+ export let kbdA11yDialog = null;
+ export let inputMethod = null;
+@@ -264,6 +266,14 @@ async function _initializeUI() {
+     messageTray = new MessageTray.MessageTray();
+     panel = new Panel.Panel();
+     keyboard = new Keyboard.KeyboardManager();
++
++    // fajita: long-press any on-screen text → highlight → Copy. Gated by its
++    // own TEXT_SELECT_ENABLED kill-switch; crash/input-safe (see textSelect.js).
++    try {
++        textSelect = new TextSelect.TextSelectManager();
++    } catch (e) {
++        console.warn(`Failed to start text-select feature: ${e}`);
++    }
+     notificationDaemon = new NotificationDaemon.NotificationDaemon();
+     windowAttentionHandler = new WindowAttentionHandler.WindowAttentionHandler();
+     componentManager = new Components.ComponentManager();
+diff --git a/js/ui/textSelect.js b/js/ui/textSelect.js
+new file mode 100644
+index 000000000..8df3b764c
+--- /dev/null
++++ b/js/ui/textSelect.js
+@@ -0,0 +1,2334 @@
++// fajita: GLOBAL long-press-to-select-text-and-Copy for GNOME Shell Mobile 49.
++//
++// Fail-safe philosophy: a bug in this file could break tapping/scrolling across
++// the WHOLE phone. So every step is wrapped in try/catch that logs a
++// console.warn(...) and degrades to "do nothing". Nothing is ever allowed to
++// throw out of a signal handler or async callback. The gesture is ultra
++// conservative: it is a plain Clutter.LongPressGesture on the stage that we
++// NEVER mark can_not_cancel — so it yields to (is cancelled by) every app
++// scroll/pan and every shell swipe tracker. If in doubt, we no-op.
++
++import Clutter from 'gi://Clutter';
++import Gio from 'gi://Gio';
++import GLib from 'gi://GLib';
++import Shell from 'gi://Shell';
++import St from 'gi://St';
++
++import * as Main from './main.js';
++import * as ClipboardManager from './clipboardManager.js';
++
++// fajita: KILL SWITCH — flip to false to disable the whole feature in one line.
++const TEXT_SELECT_ENABLED = true;
++// fajita: DIAGNOSTICS — when true, emit concise `textSelect:` traces to the
++// journal (gesture recognize + chosen backend, AT-SPI/OCR results, overlay
++// shown vs skipped). Never logs full copied text (privacy) — only lengths /
++// counts. Flip to false to silence.
++const TEXT_SELECT_DEBUG = true;
++
++const LONG_PRESS_MS = 550;          // still-hold duration to recognize
++const CANCEL_THRESHOLD_PX = 8;      // movement beyond this cancels (scroll wins)
++const HELPER_TIMEOUT_MS = 2500;     // per-helper watchdog; kill + no-op on timeout
++const PREVIEW_MAX = 48;             // chars of text shown in the Copy pill
++const WORD_SNAP_MAX_PX = 96;   // fajita: F7 — ~2 line-heights; nearest-word fallback beyond this = "no word"
++
++const OCR_HELPER_TIMEOUT_MS = 4000;
++const OCR_BAND_HALF_W = 480;
++const OCR_BAND_HALF_H = 260;
++const HANDLE_SIZE = 28;
++const HANDLE_HIT_SLOP = 22;
++
++// App ids where the feature must NOT fire (overview/app-grid/shell itself).
++// fajita: matched case-insensitively against the lowercased app id.
++const APP_ID_BLOCKLIST = new Set([
++    'org.gnome.shell',
++]);
++
++// Known web/Waydroid/Chromium ids that must ALWAYS use OCR (never AT-SPI).
++// fajita: lowercase substring/prefix fragments — an app id is OCR-only if its
++// lowercased id contains any of these (so com.android.*, firefox/Firefox/
++// org.mozilla.firefox, all chromium variants, waydroid all route to OCR).
++const OCR_ONLY_IDS = [
++    'firefox', 'mozilla',
++    'epiphany',
++    'chromium', 'chrome',
++    'waydroid', 'com.android', 'org.waydroid',
++    // fajita: Courier renders HTML mail bodies in WebKitGTK, so AT-SPI text
++    // extraction is unreliable there → force OCR. Matched case-insensitively
++    // as a substring, so this catches the app-id io.matv.Courier.
++    'io.matv.courier',
++];
++
++// fajita: AT-SPI CALIBRATION — the AT-SPI helper's coordinate space is an
++// unverified guess. This knob must be verified on the first on-device run
++// (does the copied text match the finger? is the highlight on the line?):
++//   • ATSPI_COORDS_PHYSICAL — best-guess for now. When true we send PHYSICAL
++//     (device-pixel) window-local coords to the helper and interpret returned
++//     boxes as physical (map back to logical with / scale). When false we
++//     treat everything as logical. FLIP THIS if the copied text / highlight is
++//     off by the display scale factor.
++const ATSPI_COORDS_PHYSICAL = false;
++
++export class TextSelectManager {
++    constructor() {
++        // fajita: initialize every field to a safe "nothing wired" state.
++        this._gesture = null;
++        this._recognizeId = 0;
++        this._mayRecognizeId = 0;
++        this._overlayActors = [];
++        this._overlaySignals = [];
++        this._cancellable = null;
++        this._timeoutId = 0;
++        this._inflightProc = null;   // fajita: F4 — force_exit()-able tracked helper proc
++        this._dismissTimeoutId = 0;  // fajita: F8 — defense-in-depth auto-dismiss timer
++        this._loadingWatchdogId = 0; // fajita: F2 — force-teardown if stuck in loading phase
++        this._lockedChangedId = 0;   // fajita: F3 — Main.screenShield 'locked-changed'
++        this._sessionUpdatedId = 0;  // fajita: F3 — Main.sessionMode 'updated'
++        // fajita: F2 — bumped on every teardown/disable/new-recognize so a late
++        // async helper result can't build an overlay after we've moved on.
++        this._generation = 0;
++        this._enabled = false;
++
++        this._phase = null;
++        this._words = [];
++        this._order = [];
++        this._orderPos = [];
++        this._selStart = 0;
++        this._selEnd = 0;
++        this._dragging = null;
++        this._selActors = [];
++        this._handleActors = [];
++        this._selectedText = '';
++        this._lastDragPos = -1;
++        this._noWordsTimeoutId = 0;
++        this._scrim = null;
++        this._loadingPill = null;
++        this._selPill = null;
++        this._startHandleCenter = null;
++        this._endHandleCenter = null;
++
++        // fajita: KILL SWITCH — do not wire ANYTHING if disabled.
++        if (!TEXT_SELECT_ENABLED)
++            return;
++
++        try {
++            this.enable();
++        } catch (e) {
++            console.warn(`textSelect: enable() threw, staying disabled: ${e}`);
++            try {
++                this.disable();
++            } catch (e2) {
++                console.warn(`textSelect: disable() after failed enable threw: ${e2}`);
++            }
++        }
++    }
++
++    enable() {
++        // fajita: guard the whole body; on any failure fail safe by disabling.
++        try {
++            // Promisify screenshot_area. Idempotent/harmless if already done,
++            // but wrap anyway so a double-promisify can never break us.
++            try {
++                Gio._promisify(Shell.Screenshot.prototype, 'screenshot_area');
++            } catch (e) {
++                console.warn(`textSelect: promisify screenshot_area failed: ${e}`);
++            }
++
++            // Prime the clipboard manager so its owner-changed watch is live and
++            // auto-ingests our set_text into clipboard history later.
++            try {
++                ClipboardManager.getDefault();
++            } catch (e) {
++                console.warn(`textSelect: priming ClipboardManager failed: ${e}`);
++            }
++
++            // fajita: a plain long-press gesture. We NEVER call can_not_cancel(),
++            // so the shell/app trackers freely cancel it — the conservative,
++            // yield-to-everything behavior we want. cancel_threshold gives us
++            // "still hold" for free: any movement past 8px cancels.
++            this._gesture = new Clutter.LongPressGesture({
++                long_press_duration_ms: LONG_PRESS_MS,
++                cancel_threshold: CANCEL_THRESHOLD_PX,
++                required_button: Clutter.BUTTON_PRIMARY,
++            });
++
++            // fajita: F3 — refuse to even reach RECOGNIZING outside normal/overview
++            // mode (lock screen, unlock dialog, system-modal dialogs), so the
++            // haptic + screenshot/OCR work never runs there. Returning false from
++            // may-recognize blocks the gesture (see switcherPopup.js pattern).
++            this._mayRecognizeId = this._gesture.connect('may-recognize', () => {
++                try {
++                    return !!(Main.actionMode &
++                        (Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW));
++                } catch (e) {
++                    console.warn(`textSelect: may-recognize predicate threw: ${e}`);
++                    return false;
++                }
++            });
++
++            this._recognizeId = this._gesture.connect('recognize', () => {
++                try {
++                    this._onRecognize();
++                } catch (e) {
++                    console.warn(`textSelect: _onRecognize threw: ${e}`);
++                }
++            });
++
++            global.stage.add_action(this._gesture);
++            this._enabled = true;
++
++            // fajita: F3 — tear the overlay down (and cancel in-flight OCR) the
++            // moment the session locks or the shell mode leaves NORMAL/OVERVIEW,
++            // so nothing we drew can sit above the lock shield. screenshot.js
++            // closes its overlay on sessionMode 'updated' the same way.
++            try {
++                this._lockedChangedId = Main.screenShield?.connect(
++                    'locked-changed', () => {
++                        try {
++                            this._onLockOrModeChange();
++                        } catch (e) {
++                            console.warn(`textSelect: locked-changed handler threw: ${e}`);
++                        }
++                    }) ?? 0;
++            } catch (e) {
++                console.warn(`textSelect: connect locked-changed failed: ${e}`);
++            }
++            try {
++                this._sessionUpdatedId = Main.sessionMode?.connect(
++                    'updated', () => {
++                        try {
++                            this._onLockOrModeChange();
++                        } catch (e) {
++                            console.warn(`textSelect: sessionMode updated handler threw: ${e}`);
++                        }
++                    }) ?? 0;
++            } catch (e) {
++                console.warn(`textSelect: connect sessionMode updated failed: ${e}`);
++            }
++        } catch (e) {
++            console.warn(`textSelect: enable() failed, disabling: ${e}`);
++            try {
++                this.disable();
++            } catch (e2) {
++                console.warn(`textSelect: disable() after enable failure threw: ${e2}`);
++            }
++        }
++    }
++
++    disable() {
++        // fajita: tear everything down, guarding each step independently so one
++        // failure can't strand the rest.
++        this._enabled = false;
++        this._generation++;   // fajita: F2 — invalidate any in-flight continuation
++
++        try {
++            if (this._gesture) {
++                try {
++                    if (this._recognizeId) {
++                        this._gesture.disconnect(this._recognizeId);
++                        this._recognizeId = 0;
++                    }
++                } catch (e) {
++                    console.warn(`textSelect: disconnect recognize failed: ${e}`);
++                }
++                try {
++                    if (this._mayRecognizeId) {
++                        this._gesture.disconnect(this._mayRecognizeId);
++                        this._mayRecognizeId = 0;
++                    }
++                } catch (e) {
++                    console.warn(`textSelect: disconnect may-recognize failed: ${e}`);
++                }
++                try {
++                    global.stage.remove_action(this._gesture);
++                } catch (e) {
++                    console.warn(`textSelect: remove_action failed: ${e}`);
++                }
++                this._gesture = null;
++            }
++        } catch (e) {
++            console.warn(`textSelect: disable() gesture teardown threw: ${e}`);
++        }
++
++        // fajita: F3 — disconnect the lock/session watchers.
++        try {
++            if (this._lockedChangedId) {
++                Main.screenShield?.disconnect(this._lockedChangedId);
++                this._lockedChangedId = 0;
++            }
++        } catch (e) {
++            console.warn(`textSelect: disconnect locked-changed failed: ${e}`);
++        }
++        try {
++            if (this._sessionUpdatedId) {
++                Main.sessionMode?.disconnect(this._sessionUpdatedId);
++                this._sessionUpdatedId = 0;
++            }
++        } catch (e) {
++            console.warn(`textSelect: disconnect sessionMode updated failed: ${e}`);
++        }
++
++        // fajita: F2 — clear the loading-phase watchdog.
++        this._clearLoadingWatchdog();
++
++        try {
++            this._teardownOverlay();
++        } catch (e) {
++            console.warn(`textSelect: teardown overlay in disable failed: ${e}`);
++        }
++
++        try {
++            this._cancellable?.cancel();
++        } catch (e) {
++            console.warn(`textSelect: cancelling in-flight subprocess failed: ${e}`);
++        }
++        this._cancellable = null;
++
++        try {
++            if (this._timeoutId) {
++                GLib.source_remove(this._timeoutId);
++                this._timeoutId = 0;
++            }
++        } catch (e) {
++            console.warn(`textSelect: clearing timeout in disable failed: ${e}`);
++        }
++
++        try {
++            this._inflightProc?.force_exit?.();
++        } catch (e) {
++            // ignore
++        }
++        this._inflightProc = null;
++
++        try {
++            if (this._dismissTimeoutId) {
++                GLib.source_remove(this._dismissTimeoutId);
++                this._dismissTimeoutId = 0;
++            }
++        } catch (e) {
++            // ignore
++        }
++
++        try {
++            if (this._noWordsTimeoutId) {
++                GLib.source_remove(this._noWordsTimeoutId);
++                this._noWordsTimeoutId = 0;
++            }
++        } catch (e) {
++            // ignore
++        }
++    }
++
++    _onRecognize() {
++        // fajita: guarded; on any surprise, no-op.
++        try {
++            if (!this._enabled)
++                return;
++
++            // fajita: F3 — only ever fire in normal/overview desktop mode. This
++            // keeps us off the lock screen, unlock dialog, and system-modal
++            // dialogs — we must never screenshot/OCR lock-screen content.
++            if (!(Main.actionMode &
++                    (Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW)))
++                return;
++
++            // A second long-press while an overlay is up just dismisses it.
++            if (this._overlayActors && this._overlayActors.length > 0) {
++                this._teardownOverlay();
++                return;
++            }
++
++            // fajita: F4 — a new recognize supersedes any in-flight helper. Cancel
++            // the previous resolve (kill its subprocess + watchdog) before we start
++            // a fresh one, so overlapping holds can't leak procs/timers.
++            this._cancelInflight();
++
++            // fajita: F2 — this recognize owns a fresh generation. Any async
++            // continuation captures `gen` and bails unless it still matches.
++            this._generation++;
++            const gen = this._generation;
++
++            let p = null;
++            try {
++                p = this._gesture.get_coords_abs();
++            } catch (e) {
++                console.warn(`textSelect: get_coords_abs failed: ${e}`);
++                return;
++            }
++            if (!p)
++                return;
++
++            const sx = p.x;
++            const sy = p.y;
++            if (typeof sx !== 'number' || typeof sy !== 'number')
++                return;
++
++            // Never fire while the overview/app-grid is showing.
++            try {
++                if (Main.overview?.visible)
++                    return;
++            } catch (e) {
++                console.warn(`textSelect: overview visibility check failed: ${e}`);
++            }
++
++            // fajita: F3/F7 — require a real app window UNDER the point. If the
++            // point isn't over any window frame, _windowAt returns null → no-op.
++            const win = this._windowAt(sx, sy);
++            if (!win)
++                return;
++
++            // Resolve app id from the best available accessor.
++            let gtkId = null;
++            let sandboxId = null;
++            let wmClass = null;
++            try {
++                gtkId = win.get_gtk_application_id?.() ?? null;
++            } catch (e) {
++                gtkId = null;
++            }
++            try {
++                sandboxId = win.get_sandboxed_app_id?.() ?? null;
++            } catch (e) {
++                sandboxId = null;
++            }
++            try {
++                wmClass = win.get_wm_class?.() ?? null;
++            } catch (e) {
++                wmClass = null;
++            }
++
++            // fajita: F9 — normalize to lowercase and match the blocklist
++            // case-insensitively; no-op cleanly for a shell/blocklisted window.
++            const appId = gtkId || sandboxId || wmClass || null;
++            if (appId && APP_ID_BLOCKLIST.has(String(appId).toLowerCase()))
++                return;
++            if (wmClass && APP_ID_BLOCKLIST.has(String(wmClass).toLowerCase()))
++                return;
++
++            // Frame rect origin for window-local coord conversion.
++            let frame = null;
++            try {
++                frame = win.get_frame_rect?.();
++            } catch (e) {
++                frame = null;
++            }
++            if (!frame)
++                return;
++
++            // fajita: route decision (F5/F9). Known browser/web/Waydroid ids are
++            // OCR-only; everything else falls through to OCR too (AT-SPI is
++            // bypassed for interactive selection — see below).
++            const isOcrOnly =
++                this._isOcrOnlyId(gtkId) ||
++                this._isOcrOnlyId(wmClass) ||
++                this._isOcrOnlyId(sandboxId);
++
++            this._dbg(`recognize appId=${appId ?? '(none)'} wmClass=${wmClass ?? '(none)'} isOcrOnly=${isOcrOnly}`);
++            // fajita: AT-SPI is intentionally bypassed for interactive selection.
++            // _resolveAtspi/_onAtspiResult remain in the file but are now dead.
++            this._dbg('atspi bypassed for interactive selection');
++
++            // fajita: F1 — do NOT freeze here. _resolveOcr captures the clean
++            // region screenshot FIRST, then raises the freeze (scrim+spinner+
++            // haptic) itself, so OCR never sees our own dimming scrim.
++            this._resolveOcr(sx, sy, gen);
++        } catch (e) {
++            console.warn(`textSelect: _onRecognize outer threw: ${e}`);
++            try {
++                this._teardownOverlay();
++            } catch (e2) {
++                console.warn(`textSelect: teardown after recognize failure threw: ${e2}`);
++            }
++        }
++    }
++
++    _showFreeze(sx, sy, gen) {
++        // fajita: synchronous instant-freeze on recognize (before OCR completes).
++        // NOTE: we deliberately do NOT call this._teardownOverlay() here — it
++        // bumps this._generation, which would desync the `gen` this call was
++        // given and make every subsequent async continuation bail. _onRecognize
++        // already early-returns when an overlay is present, so nothing should be
++        // up; we defensively clear stray actors inline WITHOUT bumping generation.
++        try {
++            if (!this._enabled || gen !== this._generation)
++                return;
++
++            // Defensive inline clear (no generation bump, no _dismissTimeoutId touch).
++            try {
++                const strayActors = this._overlayActors || [];
++                for (const a of strayActors) {
++                    try {
++                        a?.destroy();
++                    } catch (e) {
++                        // ignore
++                    }
++                }
++            } catch (e) {
++                // ignore
++            }
++            try {
++                const straySignals = this._overlaySignals || [];
++                for (const entry of straySignals) {
++                    try {
++                        const [actor, id] = entry;
++                        if (actor && id)
++                            actor.disconnect(id);
++                    } catch (e) {
++                        // ignore
++                    }
++                }
++            } catch (e) {
++                // ignore
++            }
++            this._overlayActors = [];
++            this._overlaySignals = [];
++            // fajita: F5 — reset dangling state too (no generation bump).
++            this._phase = null;
++            this._scrim = null;
++            this._startHandleCenter = null;
++            this._endHandleCenter = null;
++            this._dragging = null;
++
++            const monitor =
++                this._monitorForPoint(sx, sy) ??
++                Main.layoutManager?.primaryMonitor ?? null;
++            const mx = monitor ? monitor.x : 0;
++            const my = monitor ? monitor.y : 0;
++            const mw = monitor ? monitor.width : (global.stage?.width ?? 0);
++            const mh = monitor ? monitor.height : (global.stage?.height ?? 0);
++
++            const uiGroup = Main.layoutManager?.uiGroup;
++            if (!uiGroup)
++                return;
++
++            // Full-screen reactive scrim owns ALL input for the selection UI.
++            const scrim = new St.Widget({
++                reactive: true,
++                can_focus: true,
++                x: mx,
++                y: my,
++                width: mw,
++                height: mh,
++                style: 'background-color: rgba(0,0,0,0.35);',
++            });
++            uiGroup.add_child(scrim);
++            this._overlayActors.push(scrim);
++            this._scrim = scrim;
++
++            // Route ALL input through phase dispatchers. Each connect guarded.
++            try {
++                this._overlaySignals.push([
++                    scrim,
++                    scrim.connect('button-press-event', (_a, event) => this._onScrimButtonPress(event)),
++                ]);
++            } catch (e) {
++                console.warn(`textSelect: scrim button-press connect failed: ${e}`);
++            }
++            try {
++                this._overlaySignals.push([
++                    scrim,
++                    scrim.connect('motion-event', (_a, event) => this._onScrimMotion(event)),
++                ]);
++            } catch (e) {
++                console.warn(`textSelect: scrim motion connect failed: ${e}`);
++            }
++            try {
++                this._overlaySignals.push([
++                    scrim,
++                    scrim.connect('button-release-event', (_a, event) => this._onScrimButtonRelease(event)),
++                ]);
++            } catch (e) {
++                console.warn(`textSelect: scrim button-release connect failed: ${e}`);
++            }
++            try {
++                this._overlaySignals.push([
++                    scrim,
++                    scrim.connect('touch-event', (_a, event) => this._onScrimTouch(event)),
++                ]);
++            } catch (e) {
++                console.warn(`textSelect: scrim touch connect failed: ${e}`);
++            }
++            try {
++                this._overlaySignals.push([
++                    scrim,
++                    scrim.connect('key-press-event', (_a, event) => this._onScrimKey(event)),
++                ]);
++            } catch (e) {
++                console.warn(`textSelect: scrim key connect failed: ${e}`);
++            }
++
++            // "Selecting…" indicator, built DIRECTLY as an St.Label so
++            // this._loadingPill.text = '...' works later.
++            try {
++                const pill = new St.Label({
++                    text: 'Selecting…',
++                    style: 'background-color: rgba(40,40,40,0.95); color: white; ' +
++                        'border-radius: 14px; padding: 6px 12px;',
++                });
++                uiGroup.add_child(pill);
++                this._overlayActors.push(pill);
++                this._loadingPill = pill;
++
++                // Clamp near the touch point (same clamp math as _showOverlay).
++                let px = Number.isFinite(sx) ? sx : mx + mw / 2;
++                let py = Number.isFinite(sy) ? sy : my + mh / 2;
++                let pw = 0;
++                let ph = 0;
++                try {
++                    const [, natW] = pill.get_preferred_width(-1);
++                    const [, natH] = pill.get_preferred_height(-1);
++                    pw = natW || 0;
++                    ph = natH || 0;
++                } catch (e) {
++                    pw = 120;
++                    ph = 32;
++                }
++                if (px + pw > mx + mw)
++                    px = mx + mw - pw - 8;
++                if (px < mx + 8)
++                    px = mx + 8;
++                if (py + ph > my + mh)
++                    py = py - ph - 16;
++                if (py < my + 8)
++                    py = my + 8;
++                pill.set_position(Math.round(px), Math.round(py));
++            } catch (e) {
++                console.warn(`textSelect: freeze loading pill create failed: ${e}`);
++            }
++
++            this._phase = 'loading';
++            this._haptic();
++
++            // fajita: F2 — the reactive scrim owns touch during 'loading' and the
++            // only success-branch dismiss is armed in _onOcrWords. Arm a ~6s
++            // watchdog the moment the scrim goes up so a stalled/failed OCR can
++            // never wedge input: if we're still 'loading' when it fires, tear down.
++            try {
++                if (this._loadingWatchdogId) {
++                    GLib.source_remove(this._loadingWatchdogId);
++                    this._loadingWatchdogId = 0;
++                }
++                this._loadingWatchdogId = GLib.timeout_add(
++                    GLib.PRIORITY_DEFAULT, 6000, () => {
++                        this._loadingWatchdogId = 0;
++                        try {
++                            if (this._phase === 'loading')
++                                this._teardownOverlay();
++                        } catch (e) {
++                            // ignore
++                        }
++                        return GLib.SOURCE_REMOVE;
++                    });
++            } catch (e) {
++                console.warn(`textSelect: arming loading watchdog failed: ${e}`);
++            }
++
++            this._dbg('recognize freeze shown');
++        } catch (e) {
++            console.warn(`textSelect: _showFreeze threw: ${e}`);
++        }
++    }
++
++    _clearLoadingWatchdog() {
++        // fajita: F2 — guarded clear of the loading-phase watchdog.
++        try {
++            if (this._loadingWatchdogId) {
++                GLib.source_remove(this._loadingWatchdogId);
++                this._loadingWatchdogId = 0;
++            }
++        } catch (e) {
++            // ignore
++        }
++    }
++
++    _failClose(where) {
++        // fajita: F2 — a single failure exit for the OCR resolve path: log and
++        // tear down. Safe to call even when no scrim is up (teardown is a no-op
++        // that just bumps generation + clears empty arrays).
++        try {
++            this._dbg(`failClose: ${where}`);
++        } catch (e) {
++            // ignore
++        }
++        try {
++            this._teardownOverlay();
++        } catch (e) {
++            console.warn(`textSelect: _failClose teardown threw: ${e}`);
++        }
++    }
++
++    _onLockOrModeChange() {
++        // fajita: F3 — if the session locked, or we left NORMAL/OVERVIEW, cancel
++        // in-flight OCR and tear the overlay down so nothing sits above the lock
++        // shield. Bumping generation via teardown also kills pending async work.
++        try {
++            let locked = false;
++            try {
++                locked = !!Main.screenShield?.locked;
++            } catch (e) {
++                locked = false;
++            }
++
++            let normal = false;
++            try {
++                normal = !!(Main.actionMode &
++                    (Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW));
++            } catch (e) {
++                normal = false;
++            }
++
++            if (locked || !normal) {
++                this._dbg(`lock/mode change -> teardown (locked=${locked} normal=${normal})`);
++                try {
++                    this._cancelInflight();
++                } catch (e) {
++                    // ignore
++                }
++                this._teardownOverlay();
++            }
++        } catch (e) {
++            console.warn(`textSelect: _onLockOrModeChange threw: ${e}`);
++        }
++    }
++
++    _cancelInflight() {
++        // fajita: F4 — cancel/clean any in-flight helper resolve: cancel the
++        // shared cancellable, remove the shared watchdog, force-exit the tracked
++        // subprocess. Safe to call when nothing is in flight.
++        try {
++            this._cancellable?.cancel();
++        } catch (e) {
++            // ignore
++        }
++        this._cancellable = null;
++
++        try {
++            if (this._timeoutId) {
++                GLib.source_remove(this._timeoutId);
++                this._timeoutId = 0;
++            }
++        } catch (e) {
++            // ignore
++        }
++
++        try {
++            this._inflightProc?.force_exit?.();
++        } catch (e) {
++            // ignore
++        }
++        this._inflightProc = null;
++    }
++
++    _isOcrOnlyId(id) {
++        // fajita: F9 — case-insensitive substring match against OCR_ONLY_IDS.
++        try {
++            if (!id)
++                return false;
++            const low = String(id).toLowerCase();
++            return OCR_ONLY_IDS.some(frag => low.includes(frag));
++        } catch (e) {
++            return false;
++        }
++    }
++
++    _onAtspiResult(parsed, frame, sx, sy, scale, gen) {
++        // fajita: AT-SPI success path. boxes are window-local px; we add the
++        // frame origin. When ATSPI_COORDS_PHYSICAL, the helper returns physical
++        // (device-pixel) boxes → divide by scale to get logical stage coords
++        // (F5). We prioritize the CORRECTNESS OF THE COPIED TEXT over
++        // pixel-perfect highlight placement, so a slightly-off box is fine.
++        try {
++            if (!this._enabled || gen !== this._generation)
++                return;
++
++            const s = Number(scale) || 1;
++            const text = (parsed && typeof parsed.text === 'string') ? parsed.text : '';
++            this._dbg(`atspi result empty=${!text || !text.trim()} len=${text ? text.length : 0}`);
++            if (!text || !text.trim()) {
++                // Nothing useful → fall back to OCR.
++                this._resolveOcr(sx, sy, gen);
++                return;
++            }
++
++            const rects = [];
++            try {
++                const boxes = Array.isArray(parsed.boxes) ? parsed.boxes : [];
++                for (const b of boxes) {
++                    if (!b)
++                        continue;
++                    let bx = Number(b.x);
++                    let by = Number(b.y);
++                    let bw = Number(b.w);
++                    let bh = Number(b.h);
++                    if (![bx, by, bw, bh].every(Number.isFinite))
++                        continue;
++                    if (ATSPI_COORDS_PHYSICAL) {
++                        bx /= s;
++                        by /= s;
++                        bw /= s;
++                        bh /= s;
++                    }
++                    rects.push({
++                        x: frame.x + bx,
++                        y: frame.y + by,
++                        w: bw,
++                        h: bh,
++                    });
++                }
++            } catch (e) {
++                console.warn(`textSelect: AT-SPI box mapping failed: ${e}`);
++            }
++
++            // Union box for pill placement (fall back to touch point).
++            let pillX = sx;
++            let pillY = sy;
++            if (rects.length > 0) {
++                const union = this._unionRect(rects);
++                pillX = union.x;
++                pillY = union.y + union.h + 8;
++            }
++
++            // fajita: F6 — text found → buzz once now, as the overlay shows.
++            this._haptic();
++
++            this._showOverlay({
++                text,
++                highlightRects: rects,
++                pillX,
++                pillY,
++                gen,
++            });
++        } catch (e) {
++            console.warn(`textSelect: _onAtspiResult threw: ${e}`);
++            this._teardownOverlay();
++        }
++    }
++
++    _windowAt(sx, sy) {
++        // fajita: hit-test the stage point against window frame rects, topmost
++        // first (window actors are bottom-to-top, so iterate in REVERSE).
++        try {
++            let actors = [];
++            try {
++                actors = global.get_window_actors() || [];
++            } catch (e) {
++                actors = [];
++            }
++
++            for (let i = actors.length - 1; i >= 0; i--) {
++                const actor = actors[i];
++                if (!actor)
++                    continue;
++
++                let w = null;
++                try {
++                    w = actor.meta_window ?? actor.get_meta_window?.() ?? null;
++                } catch (e) {
++                    w = null;
++                }
++                if (!w)
++                    continue;
++
++                // Skip hidden / not-showing windows (guarded — may not exist).
++                try {
++                    if (w.is_hidden?.())
++                        continue;
++                } catch (e) {
++                    // ignore: treat as not-hidden
++                }
++                try {
++                    if (w.showing_on_its_workspace && !w.showing_on_its_workspace())
++                        continue;
++                } catch (e) {
++                    // ignore: treat as showing
++                }
++
++                let frame = null;
++                try {
++                    frame = w.get_frame_rect?.();
++                } catch (e) {
++                    frame = null;
++                }
++                if (!frame)
++                    continue;
++
++                if (sx >= frame.x && sx < frame.x + frame.width &&
++                    sy >= frame.y && sy < frame.y + frame.height) {
++                    return w;
++                }
++            }
++
++            // fajita: F7 — NO focus-window fallback. If the point is outside all
++            // window frames, return null → clean no-op (never hit-test a window
++            // that doesn't actually contain the finger).
++            return null;
++        } catch (e) {
++            console.warn(`textSelect: _windowAt threw: ${e}`);
++            return null;
++        }
++    }
++
++    _monitorForPoint(sx, sy) {
++        // fajita: find the logical monitor containing the point; fall back to
++        // the primary. geometry_scale from this is our capture scale.
++        try {
++            let monitors = [];
++            try {
++                monitors = Main.layoutManager?.monitors || [];
++            } catch (e) {
++                monitors = [];
++            }
++
++            for (const m of monitors) {
++                if (!m)
++                    continue;
++                if (sx >= m.x && sx < m.x + m.width &&
++                    sy >= m.y && sy < m.y + m.height) {
++                    return m;
++                }
++            }
++
++            try {
++                return Main.layoutManager?.primaryMonitor ?? null;
++            } catch (e) {
++                return null;
++            }
++        } catch (e) {
++            console.warn(`textSelect: _monitorForPoint threw: ${e}`);
++            try {
++                return Main.layoutManager?.primaryMonitor ?? null;
++            } catch (e2) {
++                return null;
++            }
++        }
++    }
++
++    _resolveAtspi(pid, lx, ly, onResult, onFail) {
++        // fajita: spawn the AT-SPI grabber async with a cancellable + watchdog.
++        // Latch `done` so the timeout and the completion callback can never
++        // both fire the result.
++        let done = false;
++        let cancellable = null;
++        let timeoutId = 0;
++        let proc = null;
++
++        const finish = (ok, parsed) => {
++            if (done)
++                return;
++            done = true;
++            // fajita: F4 — clear this._timeoutId against the ORIGINAL id BEFORE
++            // zeroing the local, then remove the source once, so a later
++            // disable()/cancel can't source_remove a dead id (GLib critical).
++            const tid = timeoutId;
++            if (this._timeoutId === tid)
++                this._timeoutId = 0;
++            try {
++                if (tid) {
++                    GLib.source_remove(tid);
++                }
++            } catch (e) {
++                // ignore
++            }
++            timeoutId = 0;
++            if (this._cancellable === cancellable)
++                this._cancellable = null;
++            if (this._inflightProc === proc)
++                this._inflightProc = null;
++
++            try {
++                if (ok && parsed && typeof parsed.text === 'string' && parsed.text.trim())
++                    onResult(parsed);
++                else
++                    onFail();
++            } catch (e) {
++                console.warn(`textSelect: AT-SPI finish callback threw: ${e}`);
++                try {
++                    onFail();
++                } catch (e2) {
++                    console.warn(`textSelect: AT-SPI onFail threw: ${e2}`);
++                }
++            }
++        };
++
++        try {
++            cancellable = new Gio.Cancellable();
++            this._cancellable = cancellable;
++
++            proc = new Gio.Subprocess({
++                argv: [
++                    'fajita-textgrab-atspi',
++                    '--pid', String(pid),
++                    '--x', String(lx),
++                    '--y', String(ly),
++                    '--granularity', 'line',
++                ],
++                flags: Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE,
++            });
++            proc.init(null);
++            this._inflightProc = proc;   // fajita: F4 — track for force_exit on supersede/disable
++
++            timeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, HELPER_TIMEOUT_MS, () => {
++                try {
++                    cancellable?.cancel();
++                } catch (e) {
++                    // ignore
++                }
++                try {
++                    proc?.force_exit?.();
++                } catch (e) {
++                    // ignore
++                }
++                timeoutId = 0;
++                finish(false, null);
++                return GLib.SOURCE_REMOVE;
++            });
++            this._timeoutId = timeoutId;
++
++            proc.communicate_utf8_async(null, cancellable, (p, res) => {
++                try {
++                    const [, stdout] = p.communicate_utf8_finish(res);
++                    const parsed = this._parseJson(stdout);
++                    finish(true, parsed);
++                } catch (e) {
++                    console.warn(`textSelect: AT-SPI communicate finish failed: ${e}`);
++                    finish(false, null);
++                }
++            });
++        } catch (e) {
++            console.warn(`textSelect: _resolveAtspi spawn failed: ${e}`);
++            finish(false, null);
++        }
++    }
++
++    async _resolveOcr(sx, sy, gen) {
++        // fajita: screenshot a small region around the touch point, OCR it, and
++        // hit-test the touch point against line boxes in a SINGLE consistent
++        // "region-pixel" space. Getting the RIGHT LINE copied is the #1
++        // correctness requirement, so all math stays in region-pixel space.
++        try {
++            if (!this._enabled || gen !== this._generation)
++                return;
++
++            const monitor = this._monitorForPoint(sx, sy);
++            if (!monitor) {
++                this._failClose('resolveOcr: no monitor');
++                return;
++            }
++
++            const s = Number(monitor.geometry_scale) || 1;
++
++            // Region rect in LOGICAL px, clamped to the monitor logical rect.
++            let rx = sx - OCR_BAND_HALF_W;
++            let ry = sy - OCR_BAND_HALF_H;
++            let rw = 2 * OCR_BAND_HALF_W;
++            let rh = 2 * OCR_BAND_HALF_H;
++
++            const mx = monitor.x;
++            const my = monitor.y;
++            const mw = monitor.width;
++            const mh = monitor.height;
++
++            if (rx < mx) {
++                rw -= (mx - rx);
++                rx = mx;
++            }
++            if (ry < my) {
++                rh -= (my - ry);
++                ry = my;
++            }
++            if (rx + rw > mx + mw)
++                rw = (mx + mw) - rx;
++            if (ry + rh > my + mh)
++                rh = (my + mh) - ry;
++
++            if (rw <= 0 || rh <= 0) {
++                this._failClose('resolveOcr: degenerate region');
++                return;
++            }
++
++            this._dbg('region captured WxH=' + rw + 'x' + rh + ' logical');
++
++            // Capture the region → PNG bytes.
++            let pngBytes = null;
++            try {
++                const shooter = new Shell.Screenshot();
++                // fajita: F10 — cursor is excluded by default (the promisified
++                // screenshot_area uses NO_CURSORS); no setter needed.
++                const stream = Gio.MemoryOutputStream.new_resizable();
++                await shooter.screenshot_area(rx, ry, rw, rh, stream);
++                // fajita: F1 — steal_as_bytes() returns null unless the stream is
++                // CLOSED first (mirrors gnome-shell's own screenshot.js). Without
++                // this the OCR path gets empty PNG bytes and silently dies.
++                stream.close(null);
++                pngBytes = stream.steal_as_bytes();
++            } catch (e) {
++                console.warn(`textSelect: screenshot_area failed: ${e}`);
++                this._failClose('resolveOcr: screenshot_area threw');
++                return;
++            }
++            if (!pngBytes || pngBytes.get_size?.() === 0) {
++                this._failClose('resolveOcr: empty screenshot bytes');
++                return;
++            }
++
++            // fajita: F2 — the await above yielded; re-check we still own this gen.
++            // gen-mismatch/disabled means we were superseded/torn-down already —
++            // a plain gen-guard return (do NOT tear down a newer generation).
++            if (!this._enabled || gen !== this._generation)
++                return;
++
++            // fajita: F1 — overlay (scrim+spinner+haptic) goes up only AFTER the
++            // clean region screenshot is captured, so OCR never sees our own scrim.
++            this._showFreeze(sx, sy, gen);
++
++            this._runOcrHelper(pngBytes, (parsed) => {
++                if (!this._enabled || gen !== this._generation)
++                    return;
++                try {
++                    this._onOcrWords(parsed, sx, sy, rx, ry, s, gen);
++                } catch (e) {
++                    console.warn(`textSelect: _onOcrWords threw: ${e}`);
++                    this._teardownOverlay();
++                }
++            });
++        } catch (e) {
++            console.warn(`textSelect: _resolveOcr threw: ${e}`);
++            this._teardownOverlay();
++        }
++    }
++
++    _runOcrHelper(pngBytes, onResult) {
++        // fajita: spawn the OCR helper with the PNG on stdin (binary), async,
++        // with a cancellable + watchdog. Same `done` latch discipline as AT-SPI.
++        let done = false;
++        let cancellable = null;
++        let timeoutId = 0;
++        let proc = null;
++
++        const finish = (parsed) => {
++            if (done)
++                return;
++            done = true;
++            // fajita: F4 — clear this._timeoutId against the ORIGINAL id BEFORE
++            // zeroing the local, then remove the source once, so a later
++            // disable()/cancel can't source_remove a dead id (GLib critical).
++            const tid = timeoutId;
++            if (this._timeoutId === tid)
++                this._timeoutId = 0;
++            try {
++                if (tid) {
++                    GLib.source_remove(tid);
++                }
++            } catch (e) {
++                // ignore
++            }
++            timeoutId = 0;
++            if (this._cancellable === cancellable)
++                this._cancellable = null;
++            if (this._inflightProc === proc)
++                this._inflightProc = null;
++
++            try {
++                onResult(parsed);
++            } catch (e) {
++                console.warn(`textSelect: OCR onResult threw: ${e}`);
++            }
++        };
++
++        try {
++            cancellable = new Gio.Cancellable();
++            this._cancellable = cancellable;
++
++            proc = new Gio.Subprocess({
++                argv: [
++                    'fajita-textgrab-ocr',
++                    '--lang', 'eng+spa',
++                    '--upscale', '2',
++                ],
++                flags: Gio.SubprocessFlags.STDIN_PIPE |
++                    Gio.SubprocessFlags.STDOUT_PIPE |
++                    Gio.SubprocessFlags.STDERR_PIPE,
++            });
++            proc.init(null);
++            this._inflightProc = proc;   // fajita: F4 — track for force_exit on supersede/disable
++
++            timeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, OCR_HELPER_TIMEOUT_MS, () => {
++                try {
++                    cancellable?.cancel();
++                } catch (e) {
++                    // ignore
++                }
++                try {
++                    proc?.force_exit?.();
++                } catch (e) {
++                    // ignore
++                }
++                timeoutId = 0;
++                finish(null);
++                return GLib.SOURCE_REMOVE;
++            });
++            this._timeoutId = timeoutId;
++
++            // fajita: PNG is binary → use communicate_async (bytes), not utf8.
++            proc.communicate_async(pngBytes, cancellable, (p, res) => {
++                try {
++                    const [, stdoutBytes] = p.communicate_finish(res);
++                    let text = '';
++                    try {
++                        const data = stdoutBytes
++                            ? (stdoutBytes.toArray ? stdoutBytes.toArray() : stdoutBytes.get_data())
++                            : null;
++                        if (data)
++                            text = new TextDecoder().decode(data);
++                    } catch (e) {
++                        console.warn(`textSelect: OCR stdout decode failed: ${e}`);
++                        text = '';
++                    }
++                    const parsed = this._parseJson(text);
++                    finish(parsed);
++                } catch (e) {
++                    console.warn(`textSelect: OCR communicate finish failed: ${e}`);
++                    finish(null);
++                }
++            });
++        } catch (e) {
++            console.warn(`textSelect: _runOcrHelper spawn failed: ${e}`);
++            finish(null);
++        }
++    }
++
++    _onOcrResult(parsed, sx, sy, rx, ry, s, gen) {
++        // fajita: pick the line whose PNG-pixel box contains the touch point,
++        // mapped into region-pixel space. All comparisons live in that one
++        // space so the RIGHT line is chosen. Then map the chosen box back to
++        // stage coords for the highlight.
++        try {
++            if (!this._enabled || gen !== this._generation)
++                return;
++
++            const lines = (parsed && Array.isArray(parsed.lines)) ? parsed.lines : [];
++            this._dbg(`ocr result lines=${lines.length}`);
++            if (lines.length === 0) {
++                this._dbg('overlay skipped: no OCR text at point');
++                this._teardownOverlay();
++                return;
++            }
++
++            // Touch point in region-PIXEL space.
++            const tpx = (sx - rx) * s;
++            const tpy = (sy - ry) * s;
++
++            const normalized = [];
++            for (const ln of lines) {
++                if (!ln)
++                    continue;
++                const bx = Number(ln.x);
++                const by = Number(ln.y);
++                const bw = Number(ln.w);
++                const bh = Number(ln.h);
++                const t = (typeof ln.text === 'string') ? ln.text : '';
++                if (![bx, by, bw, bh].every(Number.isFinite))
++                    continue;
++                normalized.push({ x: bx, y: by, w: bw, h: bh, text: t });
++            }
++            if (normalized.length === 0) {
++                this._dbg('overlay skipped: no OCR text at point');
++                this._teardownOverlay();
++                return;
++            }
++
++            // Prefer the line whose box CONTAINS the touch point.
++            let chosen = null;
++            for (const b of normalized) {
++                if (tpx >= b.x && tpx < b.x + b.w &&
++                    tpy >= b.y && tpy < b.y + b.h) {
++                    chosen = b;
++                    break;
++                }
++            }
++
++            // Otherwise pick the nearest line by vertical-center distance.
++            if (!chosen) {
++                let best = Infinity;
++                for (const b of normalized) {
++                    const cy = b.y + b.h / 2;
++                    const d = Math.abs(cy - tpy);
++                    if (d < best) {
++                        best = d;
++                        chosen = b;
++                    }
++                }
++            }
++
++            if (!chosen || !chosen.text || !chosen.text.trim()) {
++                this._dbg('overlay skipped: no OCR text at point');
++                this._teardownOverlay();
++                return;
++            }
++
++            // Map chosen box (region-pixel) back to STAGE coords for highlight.
++            const stageX = rx + chosen.x / s;
++            const stageY = ry + chosen.y / s;
++            const stageW = chosen.w / s;
++            const stageH = chosen.h / s;
++
++            const highlightRects = [{
++                x: stageX,
++                y: stageY,
++                w: stageW,
++                h: stageH,
++            }];
++
++            const pillX = stageX;
++            const pillY = stageY + stageH + 8;
++
++            // fajita: F6 — text found → buzz once now, as the overlay shows.
++            this._haptic();
++
++            this._showOverlay({
++                text: chosen.text,
++                highlightRects,
++                pillX,
++                pillY,
++                gen,
++            });
++        } catch (e) {
++            console.warn(`textSelect: _onOcrResult threw: ${e}`);
++            this._teardownOverlay();
++        }
++    }
++
++    _onOcrWords(parsed, sx, sy, rx, ry, s, gen) {
++        try {
++            if (!this._enabled || gen !== this._generation)
++                return;
++
++            const words = (parsed && Array.isArray(parsed.words)) ? parsed.words : [];
++            this._words = [];
++            for (const word of words) {
++                if (!word)
++                    continue;
++                const t = (typeof word.text === 'string') ? word.text.trim() : '';
++                if (!t)
++                    continue;
++                const wx = Number(word.x);
++                const wy = Number(word.y);
++                const ww = Number(word.w);
++                const wh = Number(word.h);
++                if (![wx, wy, ww, wh].every(Number.isFinite))
++                    continue;
++                if (ww <= 0 || wh <= 0)
++                    continue;
++                // Map region-PIXEL box → STAGE coords once.
++                const stageX = rx + wx / s;
++                const stageY = ry + wy / s;
++                const stageW = ww / s;
++                const stageH = wh / s;
++                if (![stageX, stageY, stageW, stageH].every(Number.isFinite))
++                    continue;
++                if (stageW <= 0 || stageH <= 0)
++                    continue;
++                const lineNo = Number(word.line);
++                this._words.push({
++                    text: t,
++                    line: Number.isFinite(lineNo) ? lineNo : 0,
++                    x: stageX,
++                    y: stageY,
++                    w: stageW,
++                    h: stageH,
++                    cx: stageX + stageW / 2,
++                    cy: stageY + stageH / 2,
++                });
++            }
++
++            this._dbg('ocr words=' + this._words.length);
++
++            if (this._words.length === 0) {
++                try {
++                    if (this._loadingPill)
++                        this._loadingPill.text = 'No text found';
++                } catch (e) {
++                    // ignore
++                }
++                this._phase = 'empty';
++                // fajita: F2 — left the loading phase; kill its watchdog.
++                this._clearLoadingWatchdog();
++                this._dbg('no words -> dismiss');
++                try {
++                    if (this._noWordsTimeoutId) {
++                        GLib.source_remove(this._noWordsTimeoutId);
++                        this._noWordsTimeoutId = 0;
++                    }
++                    this._noWordsTimeoutId = GLib.timeout_add(
++                        GLib.PRIORITY_DEFAULT, 900, () => {
++                            this._noWordsTimeoutId = 0;
++                            try {
++                                this._teardownOverlay();
++                            } catch (e) {
++                                // ignore
++                            }
++                            return GLib.SOURCE_REMOVE;
++                        });
++                } catch (e) {
++                    // ignore
++                }
++                return;
++            }
++
++            // Re-check gen/enabled before building the selection model.
++            if (!this._enabled || gen !== this._generation)
++                return;
++
++            // Reading order: sort a COPY of indices by (line asc, then cx asc).
++            const idx = this._words.map((_, i) => i);
++            this._order = idx.slice().sort((a, b) => {
++                const wa = this._words[a];
++                const wb = this._words[b];
++                if (wa.line !== wb.line)
++                    return wa.line - wb.line;
++                return wa.cx - wb.cx;
++            });
++            this._orderPos = new Array(this._words.length);
++            this._order.forEach((wi, pos) => {
++                this._orderPos[wi] = pos;
++            });
++
++            // Initial selection = the word under the touch point.
++            const wi0 = this._wordAtPoint(sx, sy);
++            if (wi0 < 0) {
++                // fajita: F7 — no word within the snap cap of the touch point →
++                // treat like empty OCR: show "No text found" and self-dismiss,
++                // matching the empty-words UX (fall back to bare teardown if the
++                // loading pill is gone).
++                if (this._loadingPill) {
++                    try {
++                        this._loadingPill.text = 'No text found';
++                    } catch (e) {
++                        // ignore
++                    }
++                    this._phase = 'empty';
++                    // fajita: F2 — left the loading phase; kill its watchdog.
++                    this._clearLoadingWatchdog();
++                    this._dbg('no word at point -> dismiss');
++                    try {
++                        if (this._noWordsTimeoutId) {
++                            GLib.source_remove(this._noWordsTimeoutId);
++                            this._noWordsTimeoutId = 0;
++                        }
++                        this._noWordsTimeoutId = GLib.timeout_add(
++                            GLib.PRIORITY_DEFAULT, 900, () => {
++                                this._noWordsTimeoutId = 0;
++                                try {
++                                    this._teardownOverlay();
++                                } catch (e) {
++                                    // ignore
++                                }
++                                return GLib.SOURCE_REMOVE;
++                            });
++                    } catch (e) {
++                        // ignore
++                    }
++                } else {
++                    this._teardownOverlay();
++                }
++                return;
++            }
++            const pos0 = this._orderPos[wi0];
++            if (!Number.isFinite(pos0)) {
++                this._teardownOverlay();
++                return;
++            }
++            this._selStart = pos0;
++            this._selEnd = pos0;
++
++            // Remove the loading pill.
++            try {
++                this._loadingPill?.destroy();
++            } catch (e) {
++                // ignore
++            }
++            try {
++                if (this._loadingPill) {
++                    const lp = this._loadingPill;
++                    this._overlayActors = this._overlayActors.filter(a => a !== lp);
++                }
++            } catch (e) {
++                // ignore
++            }
++            this._loadingPill = null;
++
++            this._phase = 'select';
++            // fajita: F2 — left the loading phase; kill its watchdog.
++            this._clearLoadingWatchdog();
++            // (Haptic already fired at freeze — do NOT double-buzz.)
++            // fajita: F8 — arm the 20s defense-in-depth auto-dismiss ONCE now
++            // that an interactive selection is ready (renders may re-run on drag,
++            // so we must NOT arm this inside _renderSelection).
++            this._armAutoDismiss();
++            this._renderSelection();
++        } catch (e) {
++            console.warn(`textSelect: _onOcrWords threw: ${e}`);
++            this._teardownOverlay();
++        }
++    }
++
++    _wordAtPoint(px, py, isDrag = false) {
++        try {
++            if (!Array.isArray(this._words) || this._words.length === 0)
++                return -1;
++            // Containing word first (an exact hit is NOT distance-capped).
++            for (let i = 0; i < this._words.length; i++) {
++                const w = this._words[i];
++                if (!w)
++                    continue;
++                if (px >= w.x && px < w.x + w.w &&
++                    py >= w.y && py < w.y + w.h)
++                    return i;
++            }
++            // Else nearest by center distance (squared).
++            let best = Infinity;
++            let bestIdx = -1;
++            for (let i = 0; i < this._words.length; i++) {
++                const w = this._words[i];
++                if (!w)
++                    continue;
++                const dx = px - w.cx;
++                const dy = py - w.cy;
++                const d = dx * dx + dy * dy;
++                if (d < best) {
++                    best = d;
++                    bestIdx = i;
++                }
++            }
++            // fajita: F7 — cap the nearest-word fallback so a far tap/drag can't
++            // yank to a distant word. Beyond the cap: for a drag, -1 means "hold
++            // last valid position" (caller no-ops); for the initial pick, -1
++            // routes to the "No text found" dismiss.
++            if (bestIdx >= 0 && best > WORD_SNAP_MAX_PX * WORD_SNAP_MAX_PX) {
++                void isDrag;
++                return -1;
++            }
++            return bestIdx;
++        } catch (e) {
++            return -1;
++        }
++    }
++
++    _armAutoDismiss() {
++        // fajita: F8 — defense-in-depth. Force-tear-down the overlay after
++        // ~20s no matter what, so nothing can persist indefinitely.
++        try {
++            if (this._dismissTimeoutId) {
++                GLib.source_remove(this._dismissTimeoutId);
++                this._dismissTimeoutId = 0;
++            }
++            this._dismissTimeoutId = GLib.timeout_add(
++                GLib.PRIORITY_DEFAULT, 20000, () => {
++                    this._dismissTimeoutId = 0;
++                    try {
++                        this._teardownOverlay();
++                    } catch (e) {
++                        // ignore
++                    }
++                    return GLib.SOURCE_REMOVE;
++                });
++        } catch (e) {
++            console.warn(`textSelect: arming auto-dismiss failed: ${e}`);
++        }
++    }
++
++    _clearSelActors() {
++        try {
++            const toRemove = [];
++            for (const a of (this._selActors || [])) {
++                if (a)
++                    toRemove.push(a);
++                try {
++                    a?.destroy();
++                } catch (e) {
++                    // ignore
++                }
++            }
++            for (const a of (this._handleActors || [])) {
++                if (a)
++                    toRemove.push(a);
++                try {
++                    a?.destroy();
++                } catch (e) {
++                    // ignore
++                }
++            }
++            try {
++                const set = new Set(toRemove);
++                this._overlayActors = (this._overlayActors || []).filter(a => !set.has(a));
++                // fajita: also disconnect + drop any _overlaySignals entries whose
++                // actor is one of the sel/handle actors being removed (e.g. the
++                // per-render Copy pill's 'clicked' handler), so the array stays
++                // bounded across long drags. The scrim lives only in _overlayActors
++                // (never in _selActors/_handleActors), so its handlers are untouched.
++                this._overlaySignals = (this._overlaySignals || []).filter(entry => {
++                    try {
++                        const [actor, id] = entry;
++                        if (actor && set.has(actor)) {
++                            try {
++                                actor.disconnect(id);
++                            } catch (e) {
++                                // ignore
++                            }
++                            return false;
++                        }
++                    } catch (e) {
++                        // ignore
++                    }
++                    return true;
++                });
++            } catch (e) {
++                // ignore
++            }
++            this._selActors = [];
++            this._handleActors = [];
++        } catch (e) {
++            console.warn(`textSelect: _clearSelActors threw: ${e}`);
++        }
++    }
++
++    _renderSelection() {
++        try {
++            if (!this._enabled || this._phase !== 'select')
++                return;
++
++            this._clearSelActors();
++
++            const uiGroup = Main.layoutManager?.uiGroup;
++            if (!uiGroup)
++                return;
++
++            const lo = Math.min(this._selStart, this._selEnd);
++            const hi = Math.max(this._selStart, this._selEnd);
++
++            // Collect selected words (in this._words order).
++            const selected = [];
++            for (let wi = 0; wi < this._words.length; wi++) {
++                const pos = this._orderPos[wi];
++                if (Number.isFinite(pos) && pos >= lo && pos <= hi)
++                    selected.push(this._words[wi]);
++            }
++
++            // One translucent highlight rect per selected word.
++            for (const w of selected) {
++                if (!w)
++                    continue;
++                if (![w.x, w.y, w.w, w.h].every(Number.isFinite))
++                    continue;
++                if (w.w <= 0 || w.h <= 0)
++                    continue;
++                try {
++                    const hl = new St.Widget({
++                        reactive: false,
++                        x: Math.round(w.x),
++                        y: Math.round(w.y),
++                        width: Math.round(w.w),
++                        height: Math.round(w.h),
++                        style: 'background-color: rgba(80,150,255,0.35); ' +
++                            'border: 1px solid rgba(120,180,255,0.9); ' +
++                            'border-radius: 3px;',
++                    });
++                    uiGroup.add_child(hl);
++                    this._selActors.push(hl);
++                    this._overlayActors.push(hl);
++                } catch (e) {
++                    console.warn(`textSelect: selection highlight create failed: ${e}`);
++                }
++            }
++
++            // Find first/last words by orderPos == lo / hi.
++            let firstWord = null;
++            let lastWord = null;
++            for (let wi = 0; wi < this._words.length; wi++) {
++                const pos = this._orderPos[wi];
++                if (pos === lo)
++                    firstWord = this._words[wi];
++                if (pos === hi)
++                    lastWord = this._words[wi];
++            }
++
++            // Monitor for handle clamping.
++            // fajita: F6 — prefer the point-based monitor; primaryMonitor is
++            // almost always truthy so listing it first made the point fallback
++            // dead code.
++            const monitor =
++                this._monitorForPoint(
++                    firstWord ? firstWord.cx : 0,
++                    firstWord ? firstWord.cy : 0) ??
++                Main.layoutManager?.primaryMonitor ??
++                null;
++            const mx = monitor ? monitor.x : 0;
++            const my = monitor ? monitor.y : 0;
++            const mw = monitor ? monitor.width : (global.stage?.width ?? 0);
++            const mh = monitor ? monitor.height : (global.stage?.height ?? 0);
++
++            this._startHandleCenter = null;
++            this._endHandleCenter = null;
++
++            const makeHandle = (wx, wy, isStart) => {
++                if (![wx, wy].every(Number.isFinite))
++                    return;
++                let hx = wx;
++                let hy = wy;
++                // Clamp handle onto the monitor.
++                if (hx < mx)
++                    hx = mx;
++                if (hx > mx + mw - HANDLE_SIZE)
++                    hx = mx + mw - HANDLE_SIZE;
++                if (hy < my)
++                    hy = my;
++                if (hy > my + mh - HANDLE_SIZE)
++                    hy = my + mh - HANDLE_SIZE;
++                if (![hx, hy].every(Number.isFinite))
++                    return;
++                try {
++                    const handle = new St.Widget({
++                        reactive: false,
++                        width: HANDLE_SIZE,
++                        height: HANDLE_SIZE,
++                        style: 'background-color: rgba(40,120,255,0.95); ' +
++                            'border: 2px solid rgba(255,255,255,0.95); ' +
++                            'border-radius: ' + (HANDLE_SIZE / 2) + 'px;',
++                    });
++                    handle.set_position(Math.round(hx), Math.round(hy));
++                    uiGroup.add_child(handle);
++                    this._handleActors.push(handle);
++                    this._overlayActors.push(handle);
++                    const center = { x: hx + HANDLE_SIZE / 2, y: hy + HANDLE_SIZE / 2 };
++                    if (isStart)
++                        this._startHandleCenter = center;
++                    else
++                        this._endHandleCenter = center;
++                } catch (e) {
++                    console.warn(`textSelect: handle create failed: ${e}`);
++                }
++            };
++
++            if (firstWord)
++                makeHandle(
++                    firstWord.x - HANDLE_SIZE / 2,
++                    firstWord.y + firstWord.h - HANDLE_SIZE / 2 + 4,
++                    true);
++            if (lastWord)
++                makeHandle(
++                    lastWord.x + lastWord.w - HANDLE_SIZE / 2,
++                    lastWord.y + lastWord.h - HANDLE_SIZE / 2 + 4,
++                    false);
++
++            // Compute selected text: group by line, sort within line by cx,
++            // join words with spaces, join lines (asc) with '\n'.
++            try {
++                const byLine = new Map();
++                for (const w of selected) {
++                    if (!w)
++                        continue;
++                    const key = w.line;
++                    if (!byLine.has(key))
++                        byLine.set(key, []);
++                    byLine.get(key).push(w);
++                }
++                const lineKeys = Array.from(byLine.keys()).sort((a, b) => a - b);
++                const lineStrings = [];
++                for (const key of lineKeys) {
++                    const arr = byLine.get(key).slice().sort((a, b) => a.cx - b.cx);
++                    lineStrings.push(arr.map(w => w.text).join(' '));
++                }
++                this._selectedText = lineStrings.join('\n');
++            } catch (e) {
++                console.warn(`textSelect: selected-text build failed: ${e}`);
++                this._selectedText = '';
++            }
++
++            // Copy pill — rebuilt fresh each render so it stays topmost.
++            try {
++                const preview = this._previewText(this._selectedText);
++                const pill = new St.Button({
++                    reactive: true,
++                    can_focus: true,
++                    style: 'background-color: rgba(40,40,40,0.95); ' +
++                        'color: white; border-radius: 18px; padding: 8px 16px;',
++                });
++                const box = new St.BoxLayout({ vertical: false });
++                const copyLabel = new St.Label({ text: 'Copy' });
++                box.add_child(copyLabel);
++                if (preview) {
++                    const previewLabel = new St.Label({
++                        text: `  ${preview}`,
++                        style: 'color: rgba(255,255,255,0.7);',
++                    });
++                    try {
++                        previewLabel.clutter_text.set_single_line_mode(true);
++                        previewLabel.clutter_text.set_ellipsize(3); // PANGO_ELLIPSIZE_END
++                    } catch (e) {
++                        // ignore
++                    }
++                    box.add_child(previewLabel);
++                }
++                pill.set_child(box);
++                uiGroup.add_child(pill);
++                this._selActors.push(pill);
++                this._overlayActors.push(pill);
++                this._selPill = pill;
++
++                // Position below the selection union, clamped on-screen.
++                const selRects = [];
++                for (const w of selected) {
++                    if (w && [w.x, w.y, w.w, w.h].every(Number.isFinite))
++                        selRects.push({ x: w.x, y: w.y, w: w.w, h: w.h });
++                }
++                const union = this._unionRect(selRects);
++                let px = Number.isFinite(union.x) ? union.x : mx + mw / 2;
++                let py = Number.isFinite(union.y + union.h)
++                    ? union.y + union.h + 8
++                    : my + mh / 2;
++                let pw = 0;
++                let ph = 0;
++                try {
++                    const [, natW] = pill.get_preferred_width(-1);
++                    const [, natH] = pill.get_preferred_height(-1);
++                    pw = natW || 0;
++                    ph = natH || 0;
++                } catch (e) {
++                    pw = 120;
++                    ph = 40;
++                }
++                if (px + pw > mx + mw)
++                    px = mx + mw - pw - 8;
++                if (px < mx + 8)
++                    px = mx + 8;
++                if (py + ph > my + mh)
++                    py = py - ph - 16;
++                if (py < my + 8)
++                    py = my + 8;
++                pill.set_position(Math.round(px), Math.round(py));
++
++                this._overlaySignals.push([
++                    pill,
++                    pill.connect('clicked', () => {
++                        try {
++                            this._copyText(this._selectedText);
++                        } catch (e) {
++                            console.warn(`textSelect: copy on click threw: ${e}`);
++                        }
++                        this._dbg('copy len=' + (this._selectedText ? this._selectedText.length : 0));
++                        try {
++                            this._teardownOverlay();
++                        } catch (e) {
++                            console.warn(`textSelect: teardown after copy threw: ${e}`);
++                        }
++                    }),
++                ]);
++            } catch (e) {
++                console.warn(`textSelect: copy pill create failed: ${e}`);
++            }
++
++            this._dbg('selection words=' + selected.length);
++        } catch (e) {
++            console.warn(`textSelect: _renderSelection threw: ${e}`);
++        }
++    }
++
++    _eventCoords(event) {
++        try {
++            const [x, y] = event.get_coords();
++            if (Number.isFinite(x) && Number.isFinite(y))
++                return [x, y];
++        } catch (e) {
++            // ignore
++        }
++        return null;
++    }
++
++    _onScrimButtonPress(event) {
++        try {
++            if (this._phase === 'loading')
++                return Clutter.EVENT_STOP;
++            if (this._phase === 'empty') {
++                this._teardownOverlay();
++                return Clutter.EVENT_STOP;
++            }
++            if (this._phase === 'select') {
++                const c = this._eventCoords(event);
++                if (!c)
++                    return Clutter.EVENT_STOP;
++                const [x, y] = c;
++                const slop = HANDLE_SIZE / 2 + HANDLE_HIT_SLOP;
++                const slopSq = slop * slop;
++                const hitStart = (() => {
++                    const ctr = this._startHandleCenter;
++                    if (!ctr)
++                        return false;
++                    const dx = x - ctr.x;
++                    const dy = y - ctr.y;
++                    return dx * dx + dy * dy <= slopSq;
++                })();
++                const hitEnd = (() => {
++                    const ctr = this._endHandleCenter;
++                    if (!ctr)
++                        return false;
++                    const dx = x - ctr.x;
++                    const dy = y - ctr.y;
++                    return dx * dx + dy * dy <= slopSq;
++                })();
++                if (hitStart) {
++                    this._dragging = 'start';
++                    this._lastDragPos = this._selStart;
++                    return Clutter.EVENT_STOP;
++                }
++                if (hitEnd) {
++                    this._dragging = 'end';
++                    this._lastDragPos = this._selEnd;
++                    return Clutter.EVENT_STOP;
++                }
++                this._teardownOverlay();
++                return Clutter.EVENT_STOP;
++            }
++            return Clutter.EVENT_STOP;
++        } catch (e) {
++            console.warn(`textSelect: _onScrimButtonPress threw: ${e}`);
++            return Clutter.EVENT_STOP;
++        }
++    }
++
++    _onScrimMotion(event) {
++        try {
++            if (!this._dragging)
++                return Clutter.EVENT_STOP;
++            const c = this._eventCoords(event);
++            if (!c)
++                return Clutter.EVENT_STOP;
++            const [x, y] = c;
++            const wi = this._wordAtPoint(x, y, true);
++            if (wi < 0)
++                return Clutter.EVENT_STOP;
++            const pos = this._orderPos[wi];
++            if (!Number.isFinite(pos))
++                return Clutter.EVENT_STOP;
++            if (pos === this._lastDragPos)
++                return Clutter.EVENT_STOP;
++            this._lastDragPos = pos;
++            if (this._dragging === 'start')
++                this._selStart = pos;
++            else
++                this._selEnd = pos;
++            this._renderSelection();
++            return Clutter.EVENT_STOP;
++        } catch (e) {
++            console.warn(`textSelect: _onScrimMotion threw: ${e}`);
++            return Clutter.EVENT_STOP;
++        }
++    }
++
++    _onScrimButtonRelease(event) {
++        try {
++            if (this._dragging) {
++                this._dragging = null;
++                this._lastDragPos = -1;
++                return Clutter.EVENT_STOP;
++            }
++            return Clutter.EVENT_STOP;
++        } catch (e) {
++            console.warn(`textSelect: _onScrimButtonRelease threw: ${e}`);
++            return Clutter.EVENT_STOP;
++        }
++    }
++
++    _onScrimTouch(event) {
++        try {
++            const type = event.type();
++            if (type === Clutter.EventType.TOUCH_BEGIN)
++                return this._onScrimButtonPress(event);
++            if (type === Clutter.EventType.TOUCH_UPDATE)
++                return this._onScrimMotion(event);
++            if (type === Clutter.EventType.TOUCH_END ||
++                type === Clutter.EventType.TOUCH_CANCEL)
++                return this._onScrimButtonRelease(event);
++        } catch (e) {
++            // ignore
++        }
++        return Clutter.EVENT_STOP;
++    }
++
++    _onScrimKey(_event) {
++        try {
++            this._teardownOverlay();
++        } catch (e) {
++            // ignore
++        }
++        return Clutter.EVENT_STOP;
++    }
++
++    _showOverlay({ text, highlightRects, pillX, pillY, gen }) {
++        // fajita: build a dismiss-on-tap scrim + highlight rect(s) + a floating
++        // Copy pill. The scrim is reactive so a tap-away tears down, but it does
++        // NOT trap input beyond that single dismiss. Everything guarded.
++        try {
++            // fajita: F2 — never build a scrim after teardown/disable/second-press.
++            if (!this._enabled)
++                return;
++            if (gen !== undefined && gen !== this._generation)
++                return;
++
++            this._teardownOverlay();
++            this._dbg(`overlay shown rects=${Array.isArray(highlightRects) ? highlightRects.length : 0} textLen=${typeof text === 'string' ? text.length : 0}`);
++
++            const monitor =
++                Main.layoutManager?.primaryMonitor ?? null;
++            const mx = monitor ? monitor.x : 0;
++            const my = monitor ? monitor.y : 0;
++            const mw = monitor ? monitor.width : (global.stage?.width ?? 0);
++            const mh = monitor ? monitor.height : (global.stage?.height ?? 0);
++
++            const uiGroup = Main.layoutManager?.uiGroup;
++            if (!uiGroup)
++                return;
++
++            // Dismiss scrim.
++            const scrim = new St.Widget({
++                reactive: true,
++                can_focus: true,
++                x: mx,
++                y: my,
++                width: mw,
++                height: mh,
++                style: 'background-color: rgba(0,0,0,0.25);',
++            });
++            uiGroup.add_child(scrim);
++            this._overlayActors.push(scrim);
++
++            const dismiss = () => {
++                try {
++                    this._teardownOverlay();
++                } catch (e) {
++                    console.warn(`textSelect: dismiss teardown threw: ${e}`);
++                }
++                return Clutter.EVENT_STOP;
++            };
++
++            try {
++                this._overlaySignals.push([
++                    scrim,
++                    scrim.connect('button-press-event', () => dismiss()),
++                ]);
++            } catch (e) {
++                console.warn(`textSelect: scrim button-press connect failed: ${e}`);
++            }
++            try {
++                this._overlaySignals.push([
++                    scrim,
++                    scrim.connect('touch-event', () => dismiss()),
++                ]);
++            } catch (e) {
++                console.warn(`textSelect: scrim touch connect failed: ${e}`);
++            }
++            try {
++                this._overlaySignals.push([
++                    scrim,
++                    scrim.connect('key-press-event', () => dismiss()),
++                ]);
++            } catch (e) {
++                console.warn(`textSelect: scrim key connect failed: ${e}`);
++            }
++
++            // Highlight rects.
++            const rects = Array.isArray(highlightRects) ? highlightRects : [];
++            for (const r of rects) {
++                if (!r)
++                    continue;
++                const rx = Number(r.x);
++                const ry = Number(r.y);
++                const rw = Number(r.w);
++                const rh = Number(r.h);
++                if (![rx, ry, rw, rh].every(Number.isFinite))
++                    continue;
++                if (rw <= 0 || rh <= 0)
++                    continue;
++                try {
++                    const hl = new St.Widget({
++                        reactive: false,
++                        x: rx,
++                        y: ry,
++                        width: Math.round(rw),
++                        height: Math.round(rh),
++                        style: 'background-color: rgba(80,150,255,0.35); ' +
++                            'border: 1px solid rgba(120,180,255,0.9); ' +
++                            'border-radius: 3px;',
++                    });
++                    uiGroup.add_child(hl);
++                    this._overlayActors.push(hl);
++                } catch (e) {
++                    console.warn(`textSelect: highlight rect create failed: ${e}`);
++                }
++            }
++
++            // Copy pill.
++            try {
++                const preview = this._previewText(text);
++                const pill = new St.Button({
++                    reactive: true,
++                    can_focus: true,
++                    style: 'background-color: rgba(40,40,40,0.95); ' +
++                        'color: white; border-radius: 18px; padding: 8px 16px;',
++                });
++                const box = new St.BoxLayout({ vertical: false });
++                const copyLabel = new St.Label({ text: 'Copy' });
++                box.add_child(copyLabel);
++                if (preview) {
++                    const previewLabel = new St.Label({
++                        text: `  ${preview}`,
++                        style: 'color: rgba(255,255,255,0.7);',
++                    });
++                    try {
++                        previewLabel.clutter_text.set_single_line_mode(true);
++                        previewLabel.clutter_text.set_ellipsize(3); // PANGO_ELLIPSIZE_END
++                    } catch (e) {
++                        // ignore: best-effort ellipsize
++                    }
++                    box.add_child(previewLabel);
++                }
++                pill.set_child(box);
++                uiGroup.add_child(pill);
++                this._overlayActors.push(pill);
++
++                // Clamp the pill on-screen once we know its size.
++                let px = Number.isFinite(pillX) ? pillX : mx + mw / 2;
++                let py = Number.isFinite(pillY) ? pillY : my + mh / 2;
++                let pw = 0;
++                let ph = 0;
++                try {
++                    const [, natW] = pill.get_preferred_width(-1);
++                    const [, natH] = pill.get_preferred_height(-1);
++                    pw = natW || 0;
++                    ph = natH || 0;
++                } catch (e) {
++                    pw = 120;
++                    ph = 40;
++                }
++
++                if (px + pw > mx + mw)
++                    px = mx + mw - pw - 8;
++                if (px < mx + 8)
++                    px = mx + 8;
++                // If it would overflow the bottom, place it above the line.
++                if (py + ph > my + mh)
++                    py = py - ph - 16;
++                if (py < my + 8)
++                    py = my + 8;
++
++                pill.set_position(Math.round(px), Math.round(py));
++
++                this._overlaySignals.push([
++                    pill,
++                    pill.connect('clicked', () => {
++                        try {
++                            this._copyText(text);
++                        } catch (e) {
++                            console.warn(`textSelect: copy on click threw: ${e}`);
++                        }
++                        try {
++                            this._teardownOverlay();
++                        } catch (e) {
++                            console.warn(`textSelect: teardown after copy threw: ${e}`);
++                        }
++                    }),
++                ]);
++            } catch (e) {
++                console.warn(`textSelect: Copy pill create failed: ${e}`);
++            }
++
++            // fajita: F8 — defense-in-depth. Force-tear-down the overlay after
++            // ~20s no matter what, so nothing can persist indefinitely.
++            try {
++                if (this._dismissTimeoutId) {
++                    GLib.source_remove(this._dismissTimeoutId);
++                    this._dismissTimeoutId = 0;
++                }
++                this._dismissTimeoutId = GLib.timeout_add(
++                    GLib.PRIORITY_DEFAULT, 20000, () => {
++                        this._dismissTimeoutId = 0;
++                        try {
++                            this._teardownOverlay();
++                        } catch (e) {
++                            // ignore
++                        }
++                        return GLib.SOURCE_REMOVE;
++                    });
++            } catch (e) {
++                console.warn(`textSelect: arming auto-dismiss failed: ${e}`);
++            }
++        } catch (e) {
++            console.warn(`textSelect: _showOverlay threw: ${e}`);
++            this._teardownOverlay();
++        }
++    }
++
++    _copyText(text) {
++        // fajita: ONLY set_text — never paste. The primed ClipboardManager
++        // records it into history via its owner-changed watch.
++        try {
++            if (typeof text !== 'string' || text.length === 0)
++                return;
++            St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, text);
++        } catch (e) {
++            console.warn(`textSelect: _copyText failed: ${e}`);
++        }
++    }
++
++    _teardownOverlay() {
++        // fajita: disconnect stored signals + destroy overlay actors, each
++        // guarded so a single failure can't strand the rest.
++
++        // fajita: F2 — any async continuation still in flight is now stale.
++        this._generation++;
++
++        // fajita: F8 — clear the defense-in-depth auto-dismiss timer.
++        try {
++            if (this._dismissTimeoutId) {
++                GLib.source_remove(this._dismissTimeoutId);
++                this._dismissTimeoutId = 0;
++            }
++        } catch (e) {
++            // ignore
++        }
++
++        // fajita: F2 — clear the loading-phase watchdog.
++        this._clearLoadingWatchdog();
++
++        try {
++            const signals = this._overlaySignals || [];
++            for (const entry of signals) {
++                try {
++                    const [actor, id] = entry;
++                    if (actor && id)
++                        actor.disconnect(id);
++                } catch (e) {
++                    // ignore
++                }
++            }
++        } catch (e) {
++            console.warn(`textSelect: teardown signal disconnect threw: ${e}`);
++        }
++        this._overlaySignals = [];
++
++        try {
++            const actors = this._overlayActors || [];
++            for (const a of actors) {
++                try {
++                    a?.destroy();
++                } catch (e) {
++                    // ignore
++                }
++            }
++        } catch (e) {
++            console.warn(`textSelect: teardown actor destroy threw: ${e}`);
++        }
++        this._overlayActors = [];
++
++        // fajita: clear the "no words found" auto-dismiss timer.
++        try {
++            if (this._noWordsTimeoutId) {
++                GLib.source_remove(this._noWordsTimeoutId);
++                this._noWordsTimeoutId = 0;
++            }
++        } catch (e) {
++            // ignore
++        }
++
++        // fajita: reset all interactive-selection state.
++        this._phase = null;
++        this._dragging = null;
++        this._words = [];
++        this._order = [];
++        this._orderPos = [];
++        this._selStart = 0;
++        this._selEnd = 0;
++        this._selActors = [];
++        this._handleActors = [];
++        this._selectedText = '';
++        this._lastDragPos = -1;
++        this._scrim = null;
++        this._loadingPill = null;
++        this._selPill = null;
++        this._startHandleCenter = null;
++        this._endHandleCenter = null;
++    }
++
++    _haptic() {
++        // fajita: subtle feedbackd pulse via DBus, same as the QS haptic here.
++        try {
++            Gio.DBus.session.call(
++                'org.sigxcpu.Feedback',
++                '/org/sigxcpu/Feedback',
++                'org.sigxcpu.Feedback',
++                'TriggerFeedback',
++                new GLib.Variant('(ssa{sv}i)',
++                    ['org.gnome.Shell', 'button-press', {}, -1]),
++                null,
++                Gio.DBusCallFlags.NONE,
++                -1,
++                null,
++                null
++            );
++        } catch (e) {
++            console.warn(`textSelect: _haptic failed: ${e}`);
++        }
++    }
++
++    _dbg(msg) {
++        // fajita: DIAGNOSTICS — guarded console.warn; logging must never throw.
++        try {
++            if (TEXT_SELECT_DEBUG)
++                console.warn(`textSelect: ${msg}`);
++        } catch (e) {
++            // ignore
++        }
++    }
++
++    _parseJson(str) {
++        // fajita: safe JSON parse → object or null.
++        try {
++            if (typeof str !== 'string' || str.length === 0)
++                return null;
++            return JSON.parse(str);
++        } catch (e) {
++            return null;
++        }
++    }
++
++    _previewText(text) {
++        // fajita: first PREVIEW_MAX chars, single line, for the pill preview.
++        try {
++            if (typeof text !== 'string')
++                return '';
++            const oneLine = text.replace(/\s+/g, ' ').trim();
++            if (oneLine.length <= PREVIEW_MAX)
++                return oneLine;
++            return `${oneLine.slice(0, PREVIEW_MAX)}…`;
++        } catch (e) {
++            return '';
++        }
++    }
++
++    _unionRect(rects) {
++        // fajita: bounding box of a list of {x,y,w,h}.
++        let minX = Infinity;
++        let minY = Infinity;
++        let maxX = -Infinity;
++        let maxY = -Infinity;
++        for (const r of rects) {
++            if (!r)
++                continue;
++            minX = Math.min(minX, r.x);
++            minY = Math.min(minY, r.y);
++            maxX = Math.max(maxX, r.x + r.w);
++            maxY = Math.max(maxY, r.y + r.h);
++        }
++        if (!Number.isFinite(minX))
++            return { x: 0, y: 0, w: 0, h: 0 };
++        return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
++    }
++}

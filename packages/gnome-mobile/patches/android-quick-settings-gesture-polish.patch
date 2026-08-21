@@ -1,0 +1,238 @@
+diff --git a/data/theme/gnome-shell-sass/widgets/_quick-settings.scss b/data/theme/gnome-shell-sass/widgets/_quick-settings.scss
+index 4f4717a03..51f51f8c0 100644
+--- a/data/theme/gnome-shell-sass/widgets/_quick-settings.scss
++++ b/data/theme/gnome-shell-sass/widgets/_quick-settings.scss
+@@ -82,18 +82,6 @@
+   n-columns: 4;
+ }
+ 
+-.quick-settings-expand-button.button {
+-  min-width: 48px;
+-  min-height: 32px;
+-  padding: 0;
+-  // Clutter actor margins cannot be negative; -8px wraps the preferred
+-  // height through G_MAXUINT and makes the entire shade request full height.
+-  margin-top: 0;
+-  margin-bottom: 0;
+-
+-  StIcon { icon-size: $scalable_icon_size; }
+-}
+-
+ .quick-toggle, .quick-toggle-has-menu {
+   border-radius: $forced_circular_radius;
+   min-width: 12em;
+diff --git a/js/ui/quickSettings.js b/js/ui/quickSettings.js
+index 13722eea8..b33f99174 100644
+--- a/js/ui/quickSettings.js
++++ b/js/ui/quickSettings.js
+@@ -21,6 +21,9 @@ const POPUP_ANIMATION_TIME = 400;
+ const QUICK_SETTINGS_EXPAND_DRAG_THRESHOLD = 48;
+ const QUICK_SETTINGS_COLLAPSE_DRAG_THRESHOLD = 72;
+ const QUICK_SETTINGS_EXPAND_VELOCITY = 0.5;
++const QUICK_SETTINGS_CLOSE_VELOCITY = 0.9;
++const QUICK_SETTINGS_SNAP_TIME = 220;
++const QUICK_SETTINGS_EXPAND_TIME = 280;
+ 
+ export function triggerQuickSettingsHaptic() {
+     Gio.DBus.session.call(
+@@ -1006,21 +1009,6 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+         this._grid.add_child(placeholder);
+ 
+         this._expanded = false;
+-        this._expandIcon = new St.Icon({
+-            icon_name: 'pan-down-symbolic',
+-            style_class: 'popup-menu-arrow',
+-        });
+-        this._expandButton = new St.Button({
+-            style_class: 'button quick-settings-expand-button',
+-            child: this._expandIcon,
+-            x_align: Clutter.ActorAlign.CENTER,
+-            can_focus: true,
+-            accessible_name: _('Show more quick settings'),
+-        });
+-        this._expandButton.connect('clicked', () =>
+-            this._setExpanded(!this._expanded, true));
+-        this._expandButton.hide();
+-        this._innerBox.add_child(this._expandButton);
+ 
+         this._messageList = new Calendar.CalendarMessageList();
+         this._innerBox.add_child(this._messageList);
+@@ -1131,40 +1119,64 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+             return;
+         }
+ 
+-        if (this._panStartedExpanded &&
+-            (velocityY < -QUICK_SETTINGS_EXPAND_VELOCITY ||
+-             Math.abs(this.box.translation_y) >=
+-                QUICK_SETTINGS_COLLAPSE_DRAG_THRESHOLD)) {
++        const remainingHeight = this._panHeight - Math.abs(this.box.translation_y);
++
++        // Match Android's two-stage shade: a quick upward fling from the
++        // expanded state dismisses it, while a deliberate drag returns to the
++        // compact two-row state. Do not let a slow, long drag fall through to
++        // the generic close threshold below.
++        if (this._panStartedExpanded) {
++            if (velocityY < -QUICK_SETTINGS_CLOSE_VELOCITY) {
++                this._closeFromPan(velocityY, remainingHeight);
++                return;
++            }
++
++            if (velocityY < -QUICK_SETTINGS_EXPAND_VELOCITY ||
++                Math.abs(this.box.translation_y) >=
++                    QUICK_SETTINGS_COLLAPSE_DRAG_THRESHOLD) {
++                this.box.ease({
++                    translation_y: 0,
++                    duration: QUICK_SETTINGS_SNAP_TIME,
++                    mode: Clutter.AnimationMode.EASE_OUT_QUINT,
++                });
++                this._setExpanded(false, true);
++                return;
++            }
++
+             this.box.ease({
+                 translation_y: 0,
+-                duration: 160,
++                duration: QUICK_SETTINGS_SNAP_TIME,
+                 mode: Clutter.AnimationMode.EASE_OUT_QUINT,
+             });
+-            this._setExpanded(false, true);
+             return;
+         }
+ 
+-        const remainingHeight = this._panHeight - Math.abs(this.box.translation_y);
+-
+-        if (velocityY < -0.9 || (remainingHeight < this._panHeight * 0.75 && velocityY <= 0)) {
+-            this.box.ease({
+-                translation_y: -this._panHeight,
+-                duration: Math.clamp(remainingHeight / Math.abs(velocityY), 160, 450),
+-                mode: Clutter.AnimationMode.EASE_OUT_EXPO,
+-                onStopped: () => {
+-                    this.close(false);
+-                    this.box.translation_y = 0;
+-                },
+-            });
++        if (velocityY < -QUICK_SETTINGS_CLOSE_VELOCITY ||
++            (remainingHeight < this._panHeight * 0.75 && velocityY <= 0)) {
++            this._closeFromPan(velocityY, remainingHeight);
+         } else {
+             this.box.ease({
+                 translation_y: 0,
+-                duration: Math.clamp((this._panHeight - remainingHeight) / Math.abs(velocityY), 100, 250),
++                duration: QUICK_SETTINGS_SNAP_TIME,
+                 mode: Clutter.AnimationMode.EASE_OUT_QUINT,
+             });
+         }
+     }
+ 
++    _closeFromPan(velocityY, remainingHeight) {
++        const duration = Math.clamp(
++            remainingHeight / Math.max(Math.abs(velocityY), 0.01), 160, 400);
++        this.box.ease({
++            translation_y: -this._panHeight,
++            duration,
++            mode: Clutter.AnimationMode.EASE_OUT_EXPO,
++            onStopped: () => {
++                this.close(false);
++                this.box.translation_y = 0;
++            },
++        });
++    }
++
+     _panCancel(gesture) {
+         this.box.translation_y = 0;
+     }
+@@ -1185,31 +1197,30 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+         const layout = this._grid.layout_manager;
+         layout.collapsedRows = rows;
+         this._setExpanded(false, false);
+-        this._syncExpandButton();
++        this._syncExpansion();
+     }
+ 
+     setItemCollapseManaged(item, managed) {
+         const layout = this._grid.layout_manager;
+         layout.child_set_property(
+             this._grid, item, 'collapse-managed', managed);
+-        item.connect('notify::visible', () => this._syncExpandButton());
++        item.connect('notify::visible', () => this._syncExpansion());
+         layout.layout_changed();
+-        this._syncExpandButton();
++        this._syncExpansion();
+     }
+ 
+     setItemExpandedOnly(item, expandedOnly) {
+         const layout = this._grid.layout_manager;
+         layout.child_set_property(
+             this._grid, item, 'expanded-only', expandedOnly);
+-        item.connect('notify::visible', () => this._syncExpandButton());
++        item.connect('notify::visible', () => this._syncExpansion());
+         layout.layout_changed();
+-        this._syncExpandButton();
++        this._syncExpansion();
+     }
+ 
+-    _syncExpandButton() {
++    _syncExpansion() {
+         const layout = this._grid.layout_manager;
+         const hasOverflow = layout.hasCollapsedChildren(this._grid);
+-        this._expandButton.visible = hasOverflow;
+         if (!hasOverflow)
+             this._setExpanded(false, false);
+     }
+@@ -1220,13 +1231,9 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+             return;
+ 
+         this._grid.remove_transition('height');
+-        this._expandIcon.remove_transition('rotation-angle-z');
+ 
+         const oldHeight = this._grid.get_height();
+         this._expanded = expanded;
+-        this._expandButton.accessible_name = expanded
+-            ? _('Show fewer quick settings')
+-            : _('Show more quick settings');
+ 
+         if (!expanded)
+             this._activeMenu?.close(PopupAnimation.NONE);
+@@ -1236,11 +1243,9 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+             layout.layout_changed();
+             this._grid.set_height(-1);
+             this._grid.clip_to_allocation = !expanded;
+-            this._expandButton.reactive = true;
+         };
+ 
+         if (!animate || !this.actor.visible || oldHeight <= 0) {
+-            this._expandIcon.rotation_angle_z = expanded ? 180 : 0;
+             finish();
+             return;
+         }
+@@ -1251,19 +1256,13 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+         const [, targetHeight] = this._grid.get_preferred_height(-1);
+         this._grid.set_height(oldHeight);
+         this._grid.clip_to_allocation = true;
+-        this._expandButton.reactive = false;
+ 
+         this._grid.ease({
+             height: targetHeight,
+-            duration: 250,
+-            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
++            duration: QUICK_SETTINGS_EXPAND_TIME,
++            mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
+             onStopped: finish,
+         });
+-        this._expandIcon.ease({
+-            rotation_angle_z: expanded ? 180 : 0,
+-            duration: 250,
+-            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+-        });
+     }
+ 
+     placeItemBefore(item, sibling) {
+@@ -1275,7 +1274,7 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+         // layout, so "above" places a late external tile before its sibling.
+         this._grid.set_child_above_sibling(item, sibling);
+         this._grid.layout_manager.layout_changed();
+-        this._syncExpandButton();
++        this._syncExpansion();
+     }
+ 
+     insertItemBefore(item, sibling, colSpan = 1) {

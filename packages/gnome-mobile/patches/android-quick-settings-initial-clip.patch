@@ -1,0 +1,19 @@
+diff --git a/js/ui/quickSettings.js b/js/ui/quickSettings.js
+index a8772aeeb..b2d1d83a3 100644
+--- a/js/ui/quickSettings.js
++++ b/js/ui/quickSettings.js
+@@ -1269,8 +1269,13 @@ export const QuickSettingsMenu = class extends PopupMenu.PopupMenu {
+ 
+     _setExpanded(expanded, animate) {
+         const layout = this._grid.layout_manager;
+-        if (this._expanded === expanded && layout.expanded === expanded)
++        if (this._expanded === expanded && layout.expanded === expanded) {
++            // setCollapsedRows() runs while both values are already false on
++            // first construction. Still establish the collapsed clip before
++            // the first allocation so overflow actors cannot overlap it.
++            this._grid.clip_to_allocation = !expanded;
+             return;
++        }
+ 
+         this._animateExpansionTo(
+             expanded, animate ? QUICK_SETTINGS_EXPAND_TIME : 0);

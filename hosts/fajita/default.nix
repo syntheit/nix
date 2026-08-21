@@ -19,6 +19,7 @@
     ./quick-settings.nix # declarative Android-style quick-settings layout/actions
     ./waydroid.nix # Waydroid on-demand app layer — see ~/fajita-notes/waydroid-apps.md
     ./battery-logger.nix # always-on power sampler → /var/lib/battery-log
+    ./text-select.nix # long-press screen-text OCR → Copy (fajita-textgrab-ocr + ocrs)
   ];
 
   # Four logical columns. The first two rows mirror Android's compact phone
@@ -30,84 +31,56 @@
     columns = 4;
     rows = 5;
     collapsedRows = 2;
-    tiles = [
-      {
-        id = "wifi";
-        span = 1;
-      }
-      {
-        id = "bluetooth";
-        span = 1;
-      }
-      {
-        id = "do-not-disturb";
-        span = 1;
-        longPressDesktopId = "gnome-notifications-panel.desktop";
-      }
-      {
-        id = "flashlight";
-        span = 1;
-      }
-      {
-        id = "hotspot";
-        span = 1;
-        longPressDesktopId = "gnome-wifi-panel.desktop";
-      }
-      {
-        id = "bitwarden";
-        type = "application";
-        span = 1;
-        title = "Bitwarden";
-        iconName = "security-high-symbolic";
-        desktopId = "io.matv.Warden.desktop";
-      }
-      {
-        id = "calculator";
-        type = "application";
-        span = 1;
-        title = "Calculator";
-        iconName = "accessories-calculator-symbolic";
-        desktopId = "io.matv.Calculator.desktop";
-      }
-      {
-        id = "auto-rotate";
-        span = 1;
-        longPressDesktopId = "gnome-display-panel.desktop";
-      }
-      {
-        id = "mobile-data";
-        span = 1;
-        persistent = true;
-      }
-      {
-        id = "airplane-mode";
-        span = 1;
-      }
-      {
-        id = "mousai";
-        type = "application";
-        span = 1;
-        title = "Mousai";
-        iconName = "audio-x-generic-symbolic";
-        desktopId = "io.github.seadve.Mousai.desktop";
-      }
-      {
-        id = "screen-record";
-        type = "shell";
-        span = 1;
-        title = "Screen Record";
-        iconName = "camera-video-symbolic";
-        action = "screen-record";
-      }
-      {
-        id = "authenticator";
-        type = "application";
-        span = 1;
-        title = "Authenticator";
-        iconName = "dialog-password-symbolic";
-        desktopId = "com.belmoussaoui.Authenticator.desktop";
-      }
+    layout = [
+      "wifi"
+      "bluetooth"
+      "do-not-disturb"
+      "hotspot"
+      "flashlight"
+      "bitwarden"
+      "calculator"
+      "auto-rotate"
+      "mobile-data"
+      "airplane-mode"
+      "mousai"
+      "screen-record"
+      "authenticator"
+      "screenshot"
+      "lock-screen"
     ];
+
+    # Built-ins need no definition unless they override their defaults.
+    # Add or reorder IDs in `layout`; define app/action tiles here by ID.
+    tiles = {
+      do-not-disturb.settings = "notifications";
+      hotspot.settings = "wifi";
+      auto-rotate.settings = "displays";
+      mobile-data.persistent = true;
+
+      bitwarden = {
+        app = "io.matv.Warden.desktop";
+        title = "Bitwarden";
+        icon = "security-high-symbolic";
+      };
+      calculator = {
+        app = "io.matv.Calculator.desktop";
+        title = "Calculator";
+        icon = "accessories-calculator-symbolic";
+      };
+      mousai = {
+        app = "io.github.seadve.Mousai.desktop";
+        title = "Mousai";
+        icon = "audio-x-generic-symbolic";
+      };
+      screen-record.action = "screen-record";
+      authenticator = {
+        app = "com.belmoussaoui.Authenticator.desktop";
+        title = "Authenticator";
+        icon = "dialog-password-symbolic";
+      };
+      screenshot.action = "screenshot";
+      lock-screen.action = "lock-screen";
+    };
   };
 
   networking.hostName = "fajita";
@@ -228,17 +201,96 @@
     splash = lib.mkDefault true;
   };
 
-  # …but make the splash actually END. gdm-mobile never does the plymouth
-  # handoff, so plymouthd stays alive in --mode=boot forever (2026-07-18
-  # battery audit: 2.5% CPU + 2:48 CPU-time six hours after boot, plus the
-  # ask-password forwarders). Tell it to quit once the display manager is up.
+  # ── Unified boot splash: one animated blue NixOS flake ────────────────────
+  # Phase 1 (switch-only) of collapsing the 5 uncoordinated splash "owners"
+  # into a single consistent frame. This covers stage-2: the plymouth theme and
+  # the stage-2 `ply-image` still. (The kernel fbcon logo + stage-1 mruby splash
+  # live in the boot.img and are a later reflash phase.) The theme package
+  # (hosts/fajita/boot-splash) rasterises nixos-icons' blue snowflake and ships
+  # both a plymouth "script" theme and the matching still PNG.
+  boot.plymouth = {
+    themePackages = [ (pkgs.callPackage ./boot-splash { }) ];
+    # Override beautification.nix's `mkDefault "spinner"` with our flake.
+    theme = lib.mkForce "nixos-flake";
+  };
+
+  # ── Phase 2: the boot.img-resident early stages (needs a REFLASH) ─────────
+  # Stage-1 (initrd) mruby splash logo. mobile-nixos renders this SVG as a big
+  # centered logo at 80% width on black via its stage-1 LVGL/lvgui renderer,
+  # which ships a FLAT `logo.white.svg` and does not handle SVG gradients
+  # reliably. So we feed a FLATTENED, self-contained solid-blue NixOS snowflake
+  # (same silhouette as the plymouth/stage-2 flake, gradients stripped → solid
+  # `#5277c3`). Vendored at ./boot-splash/nixos-flake-flat.svg; verified to
+  # rasterise cleanly with resvg. The panel is native-portrait upright, so the
+  # plain (non-BGRT) `else` branch draws it centered without rotation. Result:
+  # stage-1 shows a big centered flat-blue flake on black, matching the rest of
+  # the boot chain, instead of the mobile-nixos white wordmark logo.
+  #
+  # REVERTED 2026-08-21: on-device this BLACK-SCREENED the whole boot (stage-1
+  # AND plymouth). Root cause: mobile-nixos' stage-1 lvgui SVG renderer only
+  # reliably draws the WORDMARK logos it ships (logo.white.svg); a square multi-
+  # path flake makes the stage-1 splash fail and leaves the display in a state
+  # plymouth can't recover, cascading the entire boot to black. Confirmed by
+  # closure diff: this system is byte-identical to the Phase-1 system that showed
+  # the plymouth flake fine, save this one initrd change. The achievable win on
+  # this hardware is the animated plymouth flake (stage-2, above); the kernel
+  # fbcon logo can't render here at all (bootloader simplefb: imageblit fails).
+  # mobile.boot.stage-1.gui.logo = ./boot-splash/nixos-flake-flat.svg;
+
+  # Stage-2 still. mobile-nixos' stage-2-splash.nix blits its own
+  # artwork/splash.stage-2.png via `boot.postBootCommands` (a concatenated
+  # string). Append OUR blit of the same blue flake so the brief stage-2 frame
+  # matches the plymouth theme instead of flashing the mobile-nixos logo. Same
+  # `--clear=0x000000` black background; ply-image centers the image itself.
+  boot.postBootCommands = lib.mkAfter ''
+    ${pkgs.ply-image}/bin/ply-image --clear=0x000000 \
+      ${pkgs.callPackage ./boot-splash { }}/share/fajita-boot-splash/nix-snowflake.png \
+      > /dev/null 2>&1 || true
+  '';
+
+  # …but make the splash actually END — AND not a moment too soon. gdm-mobile
+  # never does the plymouth handoff, so plymouthd would stay alive in
+  # --mode=boot forever (2026-07-18 battery audit: 2.5% CPU + 2:48 CPU-time six
+  # hours after boot, plus the ask-password forwarders). The OLD version quit
+  # the instant display-manager.service came up — which left a black gap + fbcon
+  # terminal-text leak while GNOME Shell was still painting its first frame.
+  #
+  # Fix: keep this a ROOT system service (only root can reliably reach the
+  # root-owned plymouthd control socket — a user-session `plymouth quit` may
+  # silently EACCES and then never quit, which is exactly the lingering-plymouthd
+  # battery bug we must not reintroduce). Order it after display-manager as
+  # before, but then hold the flake up until gnome-shell is actually RUNNING
+  # (visible to root via /proc, so no session-bus access needed), bounded by a
+  # hard 20 s ceiling. Whichever comes first — gnome-shell process present, or
+  # the ceiling — we then run `plymouth quit` UNCONDITIONALLY. Worst case
+  # plymouthd lives ~20 s longer than the old code, never forever. `-`-prefixed
+  # oneshot semantics preserved; genuine stage-1/panic output is a separate path.
   systemd.services.fajita-plymouth-quit = {
-    description = "Quit the Plymouth boot splash after the session takes over";
+    description = "Quit the Plymouth boot splash once GNOME Shell has painted";
     wantedBy = [ "graphical.target" ];
     after = [ "display-manager.service" ];
     serviceConfig = {
       Type = "oneshot";
-      ExecStart = "-${pkgs.plymouth}/bin/plymouth quit";
+      ExecStart = "-${pkgs.writeShellScript "fajita-plymouth-quit" ''
+        # Wait for gnome-shell to be up, capped at 20 s (40 * 0.5 s), so
+        # plymouthd is told to quit within seconds of the shell appearing —
+        # and unconditionally even if it never does.
+        for i in $(${pkgs.coreutils}/bin/seq 1 40); do
+          if ${pkgs.procps}/bin/pgrep -x gnome-shell >/dev/null 2>&1; then
+            # gnome-shell's process appears a beat before it paints the lock
+            # screen; quitting plymouth the instant the process exists risks a
+            # sub-second black flash. Hold ~1.5 s past shell-appearance so the
+            # lock screen paints first for a clean handoff (mirrors the
+            # gnome-mobile-lock/gnome-mobile-vt-hold sleep in gnome-mobile.nix).
+            ${pkgs.coreutils}/bin/sleep 1.5
+            break
+          fi
+          ${pkgs.coreutils}/bin/sleep 0.5
+        done
+        # Root can reach the plymouthd socket; `|| true` only guards the
+        # already-quit case, it is never the sole exit path.
+        ${pkgs.plymouth}/bin/plymouth quit >/dev/null 2>&1 || true
+      ''}";
     };
   };
 
@@ -982,6 +1034,7 @@
       "browser.uidensity" = 2;            # touch density (pmOS value)
       "dom.w3c.touch_events.enabled" = 1; # let pages know about touch
       "apz.allow_zooming" = true;         # pinch-zoom
+      "apz.longpress.enabled" = false;    # fajita: don't fire Gecko's long-press context menu / native touch selection — let the shell's long-press text-grab own it
       # Mobile browser behavior: reopening Firefox after a normal full quit
       # resumes the previous non-private window and its tabs.  Firefox keeps
       # private windows out of sessionstore, and crash recovery remains under
@@ -1019,6 +1072,11 @@
     };
     preferencesStatus = "default"; # let user override per-session
   };
+
+  # JetBrainsMono Nerd Font — the terminal (relay) defaults to it to match the
+  # Ghostty/kitty look on the desktop hosts; NixOS otherwise ships only Adwaita/
+  # Liberation mono on this device.
+  fonts.packages = [ pkgs.nerd-fonts.jetbrains-mono ];
 
   environment.systemPackages = with pkgs; [
     # ─── Browsers ────────────────────────────────────────────────────────────
@@ -1060,11 +1118,14 @@
     gnome-sound-recorder                  # Voice Notes — simple libadwaita recorder (World/vocalis)
     resources                             # System monitor, GNOME Circle, libadwaita
     mission-center                        # alt system monitor, also libadwaita
+    passes                                # digital wallet / boarding passes & event tickets (GTK4/libadwaita)
 
     # ─── Media ───────────────────────────────────────────────────────────────
     clapper                               # libadwaita video player; works as a youtube client too
     totem                                 # GNOME Videos; libadwaita
     vlc                                   # fallback for anything clapper/totem can't handle
+    mpv                                   # ffmpeg-based player — rock-solid playback fallback
+    ffmpeg                                # ffprobe/ffmpeg CLI for probing media on-device
     parabolic                             # yt-dlp GTK4/libadwaita downloader (Nickvision) — video + audio, from nixpkgs
     delfin                                # Jellyfin client, GTK4/libadwaita
     # mimick — Immich client. Its ARM build (vendored image-codec C + LTO link)
@@ -1080,6 +1141,8 @@
     courier                               # Email client (GTK4/libadwaita, IMAP/SMTP, privacy-first) — inputs.courier (local ~/Projects/courier)
     calculator                            # Calculator (GTK4/libadwaita, Google-Calculator-style, mobile-first) — inputs.calculator (local ~/Projects/calculator)
     bourse                                # Bourse (GTK4/libadwaita stocks watchlist, Yahoo Finance, mobile-first) — inputs.bourse (local ~/Projects/bourse)
+    mirador                               # Invidious/YouTube client (GTK4/libadwaita, mobile-first) — inputs.mirador (local ~/Projects/mirador)
+    relay                                 # Terminal (GTK4/libadwaita/VTE, mobile-first: touch selection, key bar, mosh persistence) — inputs.relay (local ~/Projects/relay)
     paloma-wrapped                        # Telegram client (GTK4/libadwaita, TDLib); api creds injected at runtime from sops — inputs.paloma (github syntheit/paloma).
     # YouTube → self-hosted Invidious as a PWA (see pwas.nix). Dropped `pipeline`
     # because it speaks Piped, not Invidious. Clapper below still handles

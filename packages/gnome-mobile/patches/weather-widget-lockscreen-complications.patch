@@ -1,0 +1,762 @@
+--- a/data/org.gnome.shell.gschema.xml.in
++++ b/data/org.gnome.shell.gschema.xml.in
+@@ -79,7 +79,7 @@
+       </description>
+     </key>
+     <key name="today-view-widgets" type="as">
+-      <default>['clock', 'calendar', 'solar']</default>
++      <default>['clock', 'weather', 'calendar', 'solar']</default>
+       <summary>Widgets shown in Today View</summary>
+       <description>
+         Ordered list of registered shell widget identifiers shown on the
+--- a/data/theme/gnome-shell-sass/widgets/_login-lock.scss
++++ b/data/theme/gnome-shell-sass/widgets/_login-lock.scss
+@@ -298,6 +298,46 @@
+     font-weight: 500;
+     text-shadow: 0 1px 5px rgba(0, 0, 0, 0.5);
+   }
++
++  &.lock-screen {
++    .shell-widget-clock-complications {
++      width: 300px;
++      margin-top: 10px;
++      spacing: 4px;
++    }
++
++    .shell-widget-clock-complication {
++      spacing: 8px;
++    }
++
++    .shell-widget-clock-complication-dot {
++      min-width: 6px;
++      min-height: 6px;
++      border-radius: 999px;
++      background-color: rgba(255, 255, 255, 0.78);
++      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
++    }
++
++    .shell-widget-clock-complication.event .shell-widget-clock-complication-dot {
++      background-color: #ff453a;
++    }
++
++    .shell-widget-clock-complication.weather .shell-widget-clock-complication-dot {
++      background-color: #64d2ff;
++    }
++
++    .shell-widget-clock-complication.solar .shell-widget-clock-complication-dot {
++      background-color: #ffd60a;
++    }
++
++    .shell-widget-clock-complication-label {
++      @extend %smaller;
++      max-width: 272px;
++      color: rgba(255, 255, 255, 0.88);
++      font-weight: 600;
++      text-shadow: 0 1px 5px rgba(0, 0, 0, 0.60);
++    }
++  }
+ }
+ 
+ .today-view {
+@@ -316,6 +356,102 @@
+   }
+ }
+ 
++.shell-widget-weather {
++  .shell-widget-weather-button {
++    padding: 0;
++    border: none;
++    border-radius: 0;
++    background-color: transparent;
++    box-shadow: none;
++
++    &:hover,
++    &:focus {
++      background-color: rgba(255, 255, 255, 0.05);
++    }
++
++    &:active {
++      background-color: rgba(255, 255, 255, 0.10);
++    }
++  }
++
++  .shell-widget-weather-content {
++    spacing: 5px;
++  }
++
++  .shell-widget-weather-header {
++    spacing: 8px;
++  }
++
++  .shell-widget-weather-title {
++    @extend %title_3;
++    font-weight: 700;
++  }
++
++  .shell-widget-weather-location {
++    @extend %smaller;
++    max-width: 140px;
++    color: rgba(255, 255, 255, 0.56);
++  }
++
++  .shell-widget-weather-status {
++    @extend %smaller;
++    padding: 16px 0;
++    color: rgba(255, 255, 255, 0.58);
++  }
++
++  .shell-widget-weather-current {
++    spacing: 8px;
++  }
++
++  .shell-widget-weather-current-icon {
++    color: #b9e8ff;
++  }
++
++  .shell-widget-weather-temperature {
++    @extend %numeric;
++    @include fontsize(28pt);
++    font-weight: 600;
++  }
++
++  .shell-widget-weather-current-details {
++    spacing: 1px;
++  }
++
++  .shell-widget-weather-conditions {
++    font-weight: 650;
++  }
++
++  .shell-widget-weather-range {
++    @extend %smaller;
++    color: rgba(255, 255, 255, 0.62);
++    font-weight: 600;
++  }
++
++  .shell-widget-weather-hourly {
++    margin-top: 2px;
++    spacing: 2px;
++  }
++
++  .shell-widget-weather-hour {
++    spacing: 1px;
++  }
++
++  .shell-widget-weather-hour-time {
++    @extend %smaller;
++    color: rgba(255, 255, 255, 0.50);
++  }
++
++  .shell-widget-weather-hour-icon {
++    color: rgba(220, 243, 255, 0.88);
++  }
++
++  .shell-widget-weather-hour-temperature {
++    @extend %numeric;
++    @extend %smaller;
++    font-weight: 700;
++  }
++}
++
+ .shell-widget-solar {
+   spacing: 5px;
+ 
+--- a/js/ui/shellWidgets.js
++++ b/js/ui/shellWidgets.js
+@@ -9,6 +9,7 @@
+ import St from 'gi://St';
+ 
+ import * as Calendar from './calendar.js';
++import * as Main from './main.js';
+ import {formatDateWithCFormatString, formatTime} from '../misc/dateUtils.js';
+ import * as Weather from '../misc/weather.js';
+ 
+@@ -20,6 +21,8 @@
+ const AGENDA_STEP_MINUTES = 60 / AGENDA_STEPS_PER_HOUR;
+ const AGENDA_VISIBLE_STEPS = AGENDA_VISIBLE_HOURS * AGENDA_STEPS_PER_HOUR;
+ const SOLAR_PROGRESS_SEGMENTS = 16;
++const WEATHER_FORECAST_COUNT = 5;
++const WEATHER_FORECAST_SPACING_SECONDS = 60 * 60;
+ 
+ const _widgetRegistry = new Map();
+ let _sharedWeatherClient = null;
+@@ -29,6 +32,131 @@
+     return _sharedWeatherClient;
+ }
+ 
++function _temperatureValue(info, method = 'get_value_temp') {
++    if (!info || typeof info[method] !== 'function')
++        return null;
++
++    const [valid, value] = info[method](GWeather.TemperatureUnit.DEFAULT);
++    return valid && Number.isFinite(value) ? value : null;
++}
++
++function _formatTemperature(value) {
++    return Number.isFinite(value) ? `${Math.round(value)}°` : '—';
++}
++
++function _dateTimeAtLocation(timestamp, location) {
++    let dateTime = GLib.DateTime.new_from_unix_utc(timestamp);
++    const timezone = location?.get_timezone();
++    if (timezone)
++        dateTime = dateTime.to_timezone(timezone);
++    return dateTime;
++}
++
++function _sameLocationDay(timestamp, reference, location) {
++    const dateTime = _dateTimeAtLocation(timestamp, location);
++    return dateTime.get_year() === reference.get_year() &&
++        dateTime.get_month() === reference.get_month() &&
++        dateTime.get_day_of_month() === reference.get_day_of_month();
++}
++
++function _weatherLocationName(location) {
++    return location?.get_city_name() || location?.get_name() ||
++        _('Current Location');
++}
++
++function _weatherConditions(info) {
++    const sky = `${info?.get_sky() ?? ''}`.trim();
++    if (sky && sky !== 'Unknown' && sky !== 'Invalid')
++        return sky;
++
++    const conditions = `${info?.get_conditions() ?? ''}`.trim();
++    return conditions && conditions !== 'Unknown' && conditions !== 'Invalid'
++        ? conditions
++        : _('Conditions unavailable');
++}
++
++function _weatherSnapshot(client) {
++    if (!client?.hasLocation || !client.info?.is_valid())
++        return null;
++
++    const {info} = client;
++    const location = info.location;
++    const currentTemperature = _temperatureValue(info);
++    const forecasts = info.get_forecast_list() ?? [];
++    const now = _dateTimeAtLocation(
++        Math.floor(Date.now() / 1000), location);
++    const nowUnix = Math.floor(Date.now() / 1000);
++    const dailyTemperatures = [];
++    let high = _temperatureValue(info, 'get_value_temp_max');
++    let low = _temperatureValue(info, 'get_value_temp_min');
++    let lastForecastTime = 0;
++    const hourly = [];
++
++    if (currentTemperature !== null)
++        dailyTemperatures.push(currentTemperature);
++
++    for (const forecast of forecasts) {
++        const [valid, timestamp] = forecast.get_value_update();
++        if (!valid || !Number.isFinite(timestamp) || timestamp <= 0)
++            continue;
++
++        if (_sameLocationDay(timestamp, now, location)) {
++            for (const method of [
++                'get_value_temp',
++                'get_value_temp_min',
++                'get_value_temp_max',
++            ]) {
++                const value = _temperatureValue(forecast, method);
++                if (value !== null)
++                    dailyTemperatures.push(value);
++            }
++        }
++
++        if (timestamp < nowUnix ||
++            timestamp - lastForecastTime < WEATHER_FORECAST_SPACING_SECONDS ||
++            hourly.length >= WEATHER_FORECAST_COUNT)
++            continue;
++
++        const temperature = _temperatureValue(forecast);
++        if (temperature === null)
++            continue;
++
++        hourly.push({
++            timestamp,
++            temperature,
++            iconName: forecast.get_symbolic_icon_name(),
++        });
++        lastForecastTime = timestamp;
++    }
++
++    if (dailyTemperatures.length > 0) {
++        high ??= Math.max(...dailyTemperatures);
++        low ??= Math.min(...dailyTemperatures);
++    }
++
++    return {
++        currentTemperature,
++        conditions: _weatherConditions(info),
++        high,
++        hourly,
++        iconName: info.get_symbolic_icon_name(),
++        locationName: _weatherLocationName(location),
++        low,
++    };
++}
++
++function _isAllDayEvent(event) {
++    if (!(event?.date instanceof Date) || !(event?.end instanceof Date))
++        return false;
++
++    const startsAtMidnight = event.date.getHours() === 0 &&
++        event.date.getMinutes() === 0 && event.date.getSeconds() === 0;
++    const endsAtMidnight = event.end.getHours() === 0 &&
++        event.end.getMinutes() === 0 && event.end.getSeconds() === 0;
++    return startsAtMidnight && endsAtMidnight &&
++        event.end.getTime() - event.date.getTime() >= 24 * 60 * 60 * 1000;
++}
++
+ export const ShellWidget = GObject.registerClass(
+ class ShellWidget extends St.BoxLayout {
+     static get id() {
+@@ -189,6 +317,8 @@
+         super(context);
+ 
+         this.add_style_class_name('shell-widget-clock');
++        if (this._context.isOnLockscreen)
++            this.add_style_class_name('lock-screen');
+ 
+         this._timeLabel = new St.Label({
+             style_class: 'shell-widget-clock-time',
+@@ -201,10 +331,196 @@
+         this.add_child(this._timeLabel);
+         this.add_child(this._dateLabel);
+ 
++        this._eventSource = null;
++        this._weatherClient = null;
++        this._lockComplicationsUpdating = false;
++        this._requestedLockDateKey = '';
++        this._lockSolarInfo = null;
++        this._lockSolarLocation = null;
++        this._lockSolarDateKey = '';
++        if (this._context.isOnLockscreen)
++            this._initLockscreenComplications();
++
+         this._wallClock = new GnomeDesktop.WallClock({time_only: true});
+         this._wallClock.connect('notify::clock', () => this.update());
+ 
+-        this.connect('destroy', () => this._wallClock.run_dispose());
++        this.connect('destroy', () => {
++            this._wallClock.run_dispose();
++
++            if (this._weatherChangedId) {
++                this._weatherClient.disconnect(this._weatherChangedId);
++                this._weatherChangedId = 0;
++            }
++
++            if (this._eventSource) {
++                this._eventSource.disconnect(this._eventChangedId);
++                this._eventSource.disconnect(this._calendarChangedId);
++                this._eventSource.destroy();
++                this._eventSource = null;
++            }
++        });
++    }
++
++    _createComplicationRow(styleClass) {
++        const actor = new St.BoxLayout({
++            style_class: `shell-widget-clock-complication ${styleClass}`,
++            x_align: Clutter.ActorAlign.CENTER,
++        });
++        actor.add_child(new St.Widget({
++            style_class: 'shell-widget-clock-complication-dot',
++            width: 6,
++            height: 6,
++            y_align: Clutter.ActorAlign.CENTER,
++            y_expand: false,
++        }));
++        const label = new St.Label({
++            style_class: 'shell-widget-clock-complication-label',
++            x_align: Clutter.ActorAlign.START,
++        });
++        label.clutter_text.ellipsize = Pango.EllipsizeMode.END;
++        label.clutter_text.single_line_mode = true;
++        actor.add_child(label);
++        return {actor, label};
++    }
++
++    _initLockscreenComplications() {
++        this._complicationsBox = new St.BoxLayout({
++            style_class: 'shell-widget-clock-complications',
++            orientation: Clutter.Orientation.VERTICAL,
++            x_align: Clutter.ActorAlign.CENTER,
++        });
++        this._eventComplication = this._createComplicationRow('event');
++        this._weatherComplication = this._createComplicationRow('weather');
++        this._solarComplication = this._createComplicationRow('solar');
++        this._complicationsBox.add_child(this._eventComplication.actor);
++        this._complicationsBox.add_child(this._weatherComplication.actor);
++        this._complicationsBox.add_child(this._solarComplication.actor);
++        this.add_child(this._complicationsBox);
++
++        this._eventSource = new Calendar.DBusEventSource();
++        this._eventChangedId = this._eventSource.connect('changed',
++            () => this.update());
++        this._calendarChangedId = this._eventSource.connect(
++            'notify::has-calendars', () => this.update());
++
++        this._weatherClient = getSharedWeatherClient();
++        this._weatherChangedId = this._weatherClient.connect('changed',
++            () => this.update());
++    }
++
++    _formatNextEvent(event, now) {
++        const summary = event.summary || _('Untitled Event');
++        if (_isAllDayEvent(event))
++            return _('All day · %s').format(summary);
++        if (event.date <= now && event.end > now)
++            return _('Now · %s').format(summary);
++
++        const tomorrow = new Date(now.getFullYear(), now.getMonth(),
++            now.getDate() + 1);
++        const prefix = event.date >= tomorrow
++            ? _('Tomorrow %s').format(formatTime(event.date, {timeOnly: true}))
++            : formatTime(event.date, {timeOnly: true});
++        return _('%s · %s').format(prefix, summary);
++    }
++
++    _syncLockSolarInfo() {
++        if (!this._weatherClient?.hasLocation)
++            return false;
++
++        const location = this._weatherClient.info.location;
++        if (!location)
++            return false;
++
++        const now = _dateTimeAtLocation(
++            Math.floor(Date.now() / 1000), location);
++        const dateKey = `${now.get_year()}-${now.get_month()}-${now.get_day_of_month()}`;
++        const locationChanged = !this._lockSolarLocation ||
++            !this._lockSolarLocation.equal(location);
++        if (this._lockSolarInfo && !locationChanged &&
++            dateKey === this._lockSolarDateKey)
++            return true;
++
++        this._lockSolarInfo = new GWeather.Info({
++            application_id: 'org.gnome.Shell',
++            contact_info:
++                'https://gitlab.gnome.org/GNOME/gnome-shell/-/raw/HEAD/gnome-shell.doap',
++            enabled_providers: GWeather.Provider.NONE,
++        });
++        this._lockSolarInfo.set_location(location);
++        this._lockSolarLocation = location;
++        this._lockSolarDateKey = dateKey;
++        return true;
++    }
++
++    _updateLockscreenComplications() {
++        if (!this._eventSource || this._lockComplicationsUpdating)
++            return;
++
++        this._lockComplicationsUpdating = true;
++        try {
++            const now = new Date();
++            const todayStart = new Date(now.getFullYear(), now.getMonth(),
++                now.getDate());
++            const rangeEnd = new Date(now.getFullYear(), now.getMonth(),
++                now.getDate() + 2);
++            const dateKey = `${todayStart.getFullYear()}-${todayStart.getMonth()}-${todayStart.getDate()}`;
++            if (dateKey !== this._requestedLockDateKey) {
++                this._requestedLockDateKey = dateKey;
++                this._eventSource.requestRange(todayStart, rangeEnd);
++            }
++
++            const nextEvent = this._eventSource.getEvents(todayStart, rangeEnd)
++                .find(event => event?.end instanceof Date && event.end > now);
++            this._eventComplication.actor.visible = Boolean(nextEvent);
++            if (nextEvent)
++                this._eventComplication.label.text =
++                    this._formatNextEvent(nextEvent, now);
++
++            const weather = _weatherSnapshot(this._weatherClient);
++            this._weatherComplication.actor.visible = Boolean(weather);
++            if (weather) {
++                const range = weather.high !== null && weather.low !== null
++                    ? _('H:%s  L:%s').format(
++                        _formatTemperature(weather.high),
++                        _formatTemperature(weather.low))
++                    : '';
++                this._weatherComplication.label.text = [
++                    _formatTemperature(weather.currentTemperature),
++                    range,
++                    weather.conditions,
++                ].filter(Boolean).join(' · ');
++            }
++
++            const solarAvailable = this._syncLockSolarInfo();
++            this._solarComplication.actor.visible = solarAvailable;
++            if (solarAvailable) {
++                const [sunriseValid, sunrise] =
++                    this._lockSolarInfo.get_value_sunrise();
++                const [sunsetValid, sunset] =
++                    this._lockSolarInfo.get_value_sunset();
++                const nowMs = Date.now();
++                const isDaytime = sunriseValid && sunsetValid &&
++                    nowMs >= sunrise * 1000 && nowMs < sunset * 1000;
++                const timestamp = isDaytime ? sunset : sunrise;
++                const valid = isDaytime ? sunsetValid : sunriseValid;
++                this._solarComplication.actor.visible = valid;
++                if (valid) {
++                    const label = isDaytime ? _('Sunset') : _('Sunrise');
++                    const time = formatTime(
++                        _dateTimeAtLocation(timestamp, this._lockSolarLocation),
++                        {timeOnly: true});
++                    this._solarComplication.label.text =
++                        _('%s · %s').format(label, time);
++                }
++            }
++
++            this._complicationsBox.visible =
++                this._eventComplication.actor.visible ||
++                this._weatherComplication.actor.visible ||
++                this._solarComplication.actor.visible;
++        } finally {
++            this._lockComplicationsUpdating = false;
++        }
+     }
+ 
+     update() {
+@@ -216,6 +532,9 @@
+         const date = new Date();
+         const dateFormat = Shell.util_translate_time_string(N_('%A, %B %-d'));
+         this._dateLabel.text = formatDateWithCFormatString(date, dateFormat);
++
++        if (this._context.isOnLockscreen)
++            this._updateLockscreenComplications();
+     }
+ });
+ 
+@@ -470,6 +789,216 @@
+     defaultRefreshInterval: SolarWidget.defaultRefreshInterval,
+ });
+ 
++const WeatherWidget = GObject.registerClass(
++class WeatherWidget extends ShellWidget {
++    static get id() {
++        return 'weather';
++    }
++
++    static get title() {
++        return _('Weather');
++    }
++
++    static get preferredHeight() {
++        return 156;
++    }
++
++    static get defaultRefreshInterval() {
++        return 10 * 60;
++    }
++
++    constructor(context) {
++        super(context);
++
++        this.add_style_class_name('shell-widget-weather');
++        this._weatherClient = getSharedWeatherClient();
++        this._lastSnapshot = null;
++
++        const content = new St.BoxLayout({
++            style_class: 'shell-widget-weather-content',
++            orientation: Clutter.Orientation.VERTICAL,
++            x_expand: true,
++        });
++        this._button = new St.Button({
++            style_class: 'shell-widget-weather-button',
++            can_focus: !this._context.isOnLockscreen,
++            reactive: !this._context.isOnLockscreen,
++            x_expand: true,
++            child: content,
++        });
++        this._button.connect('clicked', () => {
++            if (this._context.isOnLockscreen)
++                return;
++
++            this._weatherClient.activateApp();
++            Main.overview.hide();
++        });
++        this.add_child(this._button);
++
++        const header = new St.BoxLayout({
++            style_class: 'shell-widget-weather-header',
++            x_expand: true,
++        });
++        header.add_child(new St.Label({
++            style_class: 'shell-widget-weather-title',
++            text: _('Weather'),
++            x_align: Clutter.ActorAlign.START,
++            x_expand: true,
++        }));
++        this._locationLabel = new St.Label({
++            style_class: 'shell-widget-weather-location',
++            x_align: Clutter.ActorAlign.END,
++        });
++        this._locationLabel.clutter_text.ellipsize = Pango.EllipsizeMode.END;
++        this._locationLabel.clutter_text.single_line_mode = true;
++        header.add_child(this._locationLabel);
++        content.add_child(header);
++
++        this._statusLabel = new St.Label({
++            style_class: 'shell-widget-weather-status',
++            x_align: Clutter.ActorAlign.CENTER,
++            x_expand: true,
++        });
++        content.add_child(this._statusLabel);
++
++        this._currentBox = new St.BoxLayout({
++            style_class: 'shell-widget-weather-current',
++            x_expand: true,
++        });
++        this._currentIcon = new St.Icon({
++            style_class: 'shell-widget-weather-current-icon',
++            icon_size: 38,
++            y_align: Clutter.ActorAlign.CENTER,
++        });
++        this._temperatureLabel = new St.Label({
++            style_class: 'shell-widget-weather-temperature',
++            y_align: Clutter.ActorAlign.CENTER,
++        });
++        const currentDetails = new St.BoxLayout({
++            style_class: 'shell-widget-weather-current-details',
++            orientation: Clutter.Orientation.VERTICAL,
++            x_expand: true,
++            y_align: Clutter.ActorAlign.CENTER,
++        });
++        this._conditionsLabel = new St.Label({
++            style_class: 'shell-widget-weather-conditions',
++            x_align: Clutter.ActorAlign.START,
++        });
++        this._conditionsLabel.clutter_text.ellipsize = Pango.EllipsizeMode.END;
++        this._conditionsLabel.clutter_text.single_line_mode = true;
++        this._rangeLabel = new St.Label({
++            style_class: 'shell-widget-weather-range',
++            x_align: Clutter.ActorAlign.START,
++        });
++        currentDetails.add_child(this._conditionsLabel);
++        currentDetails.add_child(this._rangeLabel);
++        this._currentBox.add_child(this._currentIcon);
++        this._currentBox.add_child(this._temperatureLabel);
++        this._currentBox.add_child(currentDetails);
++        content.add_child(this._currentBox);
++
++        this._hourlyBox = new St.BoxLayout({
++            style_class: 'shell-widget-weather-hourly',
++            x_expand: true,
++        });
++        content.add_child(this._hourlyBox);
++
++        this._weatherChangedId = this._weatherClient.connect('changed',
++            () => this.update());
++        this.connect('destroy', () => {
++            if (this._weatherChangedId) {
++                this._weatherClient.disconnect(this._weatherChangedId);
++                this._weatherChangedId = 0;
++            }
++        });
++    }
++
++    vfunc_map() {
++        this._weatherClient.update();
++        super.vfunc_map();
++    }
++
++    _renderHourly(snapshot) {
++        this._hourlyBox.destroy_all_children();
++        for (const forecast of snapshot.hourly) {
++            const column = new St.BoxLayout({
++                style_class: 'shell-widget-weather-hour',
++                orientation: Clutter.Orientation.VERTICAL,
++                x_expand: true,
++            });
++            const time = formatTime(
++                _dateTimeAtLocation(forecast.timestamp,
++                    this._weatherClient.info.location),
++                {timeOnly: true, ampm: false});
++            column.add_child(new St.Label({
++                style_class: 'shell-widget-weather-hour-time',
++                text: time,
++                x_align: Clutter.ActorAlign.CENTER,
++            }));
++            column.add_child(new St.Icon({
++                style_class: 'shell-widget-weather-hour-icon',
++                icon_name: forecast.iconName,
++                icon_size: 20,
++                x_align: Clutter.ActorAlign.CENTER,
++            }));
++            column.add_child(new St.Label({
++                style_class: 'shell-widget-weather-hour-temperature',
++                text: _formatTemperature(forecast.temperature),
++                x_align: Clutter.ActorAlign.CENTER,
++            }));
++            this._hourlyBox.add_child(column);
++        }
++    }
++
++    update() {
++        if (!this._weatherClient)
++            return;
++
++        const freshSnapshot = _weatherSnapshot(this._weatherClient);
++        if (freshSnapshot)
++            this._lastSnapshot = freshSnapshot;
++        const snapshot = freshSnapshot ?? this._lastSnapshot;
++
++        this._button.reactive = !this._context.isOnLockscreen &&
++            this._weatherClient.available;
++        this._button.can_focus = this._button.reactive;
++
++        if (!snapshot) {
++            this._locationLabel.text = this._weatherClient.hasLocation
++                ? ''
++                : _('Set a location');
++            this._statusLabel.text = this._weatherClient.loading
++                ? _('Loading…')
++                : _('Weather unavailable');
++            this._statusLabel.visible = true;
++            this._currentBox.visible = false;
++            this._hourlyBox.visible = false;
++            return;
++        }
++
++        this._locationLabel.text = snapshot.locationName;
++        this._statusLabel.visible = false;
++        this._currentBox.visible = true;
++        this._hourlyBox.visible = snapshot.hourly.length > 0;
++        this._currentIcon.icon_name = snapshot.iconName;
++        this._temperatureLabel.text =
++            _formatTemperature(snapshot.currentTemperature);
++        this._conditionsLabel.text = snapshot.conditions;
++        this._rangeLabel.text = snapshot.high !== null && snapshot.low !== null
++            ? _('H:%s  L:%s').format(
++                _formatTemperature(snapshot.high),
++                _formatTemperature(snapshot.low))
++            : '';
++        this._renderHourly(snapshot);
++    }
++});
++
++registerWidget(WeatherWidget.id, context => new WeatherWidget(context), {
++    title: WeatherWidget.title,
++    preferredHeight: WeatherWidget.preferredHeight,
++    defaultRefreshInterval: WeatherWidget.defaultRefreshInterval,
++});
++
+ const AgendaWidget = GObject.registerClass(
+ class AgendaWidget extends ShellWidget {
+     static get id() {
+@@ -743,12 +1272,7 @@
+     }
+ 
+     _isAllDay(event) {
+-        const startsAtMidnight = event.date.getHours() === 0 &&
+-            event.date.getMinutes() === 0 && event.date.getSeconds() === 0;
+-        const endsAtMidnight = event.end.getHours() === 0 &&
+-            event.end.getMinutes() === 0 && event.end.getSeconds() === 0;
+-        return startsAtMidnight && endsAtMidnight &&
+-            event.end.getTime() - event.date.getTime() >= 24 * 60 * 60 * 1000;
++        return _isAllDayEvent(event);
+     }
+ 
+     _eventColor(event) {
