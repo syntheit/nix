@@ -250,16 +250,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1787346388,
-        "narHash": "sha256-6GJ5JTUJ0YSWlNw7w2IzlceNZ7Ioq1xM7rSuvriJQ4I=",
+        "lastModified": 1787347966,
+        "narHash": "sha256-1bv7pP6/swt7YHbHs5FWJEouRz2QhD3FPepkOPUSa3c=",
         "ref": "refs/heads/main",
-        "rev": "f904f765daf6f0ffe20439369db770b6e5a1a9c1",
-        "revCount": 28,
+        "rev": "49d6c3dac5957d3fca215830c0f2a61cdd9f6b48",
+        "revCount": 29,
         "type": "git",
         "url": "file:///home/matv/Projects/courier"
       },
       "original": {
-        "rev": "f904f765daf6f0ffe20439369db770b6e5a1a9c1",
+        "rev": "49d6c3dac5957d3fca215830c0f2a61cdd9f6b48",
         "type": "git",
         "url": "file:///home/matv/Projects/courier"
       }
@@ -1670,16 +1670,16 @@
     "passes": {
       "flake": false,
       "locked": {
-        "lastModified": 1787347408,
-        "narHash": "sha256-NcboqP9hLQfUbRSKMvhisOdoJIAByt0DEQeBbHS+sII=",
+        "lastModified": 1787347997,
+        "narHash": "sha256-o3d59e6Rw5KlSdax+ZukoYURdDmbT+VtOBqUOVlL0xY=",
         "owner": "syntheit",
         "repo": "passes",
-        "rev": "285fa0ef68f5bc1c235cb290bb1944f8b75ad2f4",
+        "rev": "d3bfc6b6a386b768a12582f017818d35ab0c5a53",
         "type": "github"
       },
       "original": {
         "owner": "syntheit",
-        "ref": "285fa0e",
+        "ref": "d3bfc6b",
         "repo": "passes",
         "type": "github"
       }
@@ -1711,16 +1711,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1787346995,
-        "narHash": "sha256-AeB2n4B1J4dnRbHS/LjEfwR7Eha2C8kb4OvMafnf268=",
+        "lastModified": 1787348037,
+        "narHash": "sha256-YlUmcG9Ev082vFq3kEcdLzJtU1LHN5OD3fUGbYqJ2/c=",
         "ref": "refs/heads/main",
-        "rev": "12421b4e84bdea12bb58a1805539c727a10be76e",
-        "revCount": 27,
+        "rev": "2d404c7fe0768f3c37a092c7b6a16222fae9648a",
+        "revCount": 28,
         "type": "git",
         "url": "file:///home/matv/Projects/relay"
       },
       "original": {
-        "rev": "12421b4e84bdea12bb58a1805539c727a10be76e",
+        "rev": "2d404c7fe0768f3c37a092c7b6a16222fae9648a",
         "type": "git",
         "url": "file:///home/matv/Projects/relay"
       }
