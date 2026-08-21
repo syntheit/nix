@@ -1268,16 +1268,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1787345436,
-        "narHash": "sha256-qw6GMqjkTgH3L8ASfsMJtfH7pR4175I2GyF25cxGx10=",
+        "lastModified": 1787348419,
+        "narHash": "sha256-L66PKvN29ZhKxfnWOpgRqxDLjy0zsTo0ETc1jq6Vn+8=",
         "ref": "refs/heads/main",
-        "rev": "1d99da178deaf6f6232d4a8ba9c322dfbbd01953",
-        "revCount": 25,
+        "rev": "249f7d6b72ddc927e696d89b5af943e04c909694",
+        "revCount": 26,
         "type": "git",
         "url": "file:///home/matv/Projects/mirador"
       },
       "original": {
-        "rev": "1d99da178deaf6f6232d4a8ba9c322dfbbd01953",
+        "rev": "249f7d6b72ddc927e696d89b5af943e04c909694",
         "type": "git",
         "url": "file:///home/matv/Projects/mirador"
       }

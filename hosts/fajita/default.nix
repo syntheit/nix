@@ -223,6 +223,18 @@
     theme = lib.mkForce "nixos-flake";
   };
 
+  # ★ THE ROOT CAUSE OF THE BLACK BOOT (2026-08-21, proven via plymouth.debug) ★
+  # mobile-nixos' plymouth.nix forces plymouth-start into sysinit.target with
+  # DefaultDependencies=no, so it starts BEFORE systemd-tmpfiles-setup creates
+  # the /run/plymouth/plugins symlink (timestamps: plymouth-start @12.1s vs
+  # tmpfiles @13.8s). With no plugin dir, plymouth finds no DRM renderer, logs
+  # "No renderer plugins installed, creating non-graphical devices", and falls
+  # back to TEXT mode → the splash is invisible even though DRM/theme/backlight
+  # are all fine. It's a RACE — which is why it rendered once (Phase 1 won the
+  # race) and never again. Ordering plymouth-start after tmpfiles makes the
+  # plugin path exist before it starts, so it selects the DRM renderer.
+  systemd.services.plymouth-start.after = [ "systemd-tmpfiles-setup.service" ];
+
   # ── Phase 2: the boot.img-resident early stages (needs a REFLASH) ─────────
   # Stage-1 (initrd) mruby splash logo. mobile-nixos renders this SVG as a big
   # centered logo at 80% width on black via its stage-1 LVGL/lvgui renderer,
