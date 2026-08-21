@@ -20,6 +20,7 @@
     ./waydroid.nix # Waydroid on-demand app layer — see ~/fajita-notes/waydroid-apps.md
     ./battery-logger.nix # always-on power sampler → /var/lib/battery-log
     ./text-select.nix # long-press screen-text OCR → Copy (fajita-textgrab-ocr + ocrs)
+    ./time-guard.nix # restore persisted NTP time after the invalid PMIC RTC write, before GDM
   ];
 
   # Four logical columns. The first two rows mirror Android's compact phone
