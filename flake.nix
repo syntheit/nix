@@ -169,9 +169,8 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     # Courier — native GTK4/libadwaita mobile email client (IMAP/SMTP, offline SQLite, privacy-first HTML).
-    # Pinned to a committed rev because the local worktree carries WIP; drop ?rev= to track HEAD once clean.
     courier = {
-      url = "git+file:///home/matv/Projects/courier?rev=49d6c3dac5957d3fca215830c0f2a61cdd9f6b48";
+      url = "git+ssh://git@github.com/syntheit/courier.git";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     # Calculator — native GTK4/libadwaita Google-Calculator-style app (mobile-first).

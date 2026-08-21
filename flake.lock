@@ -250,18 +250,17 @@
         ]
       },
       "locked": {
-        "lastModified": 1787347966,
-        "narHash": "sha256-1bv7pP6/swt7YHbHs5FWJEouRz2QhD3FPepkOPUSa3c=",
+        "lastModified": 1787353664,
+        "narHash": "sha256-BRfedwZPLgBpq5WYWvnTieghuZYBP+CZUZwZKu05+T4=",
         "ref": "refs/heads/main",
-        "rev": "49d6c3dac5957d3fca215830c0f2a61cdd9f6b48",
-        "revCount": 29,
+        "rev": "18c74459412f4f94f0bb9e367b7f80f6d8a28c9b",
+        "revCount": 31,
         "type": "git",
-        "url": "file:///home/matv/Projects/courier"
+        "url": "ssh://git@github.com/syntheit/courier.git"
       },
       "original": {
-        "rev": "49d6c3dac5957d3fca215830c0f2a61cdd9f6b48",
         "type": "git",
-        "url": "file:///home/matv/Projects/courier"
+        "url": "ssh://git@github.com/syntheit/courier.git"
       }
     },
     "crane": {
