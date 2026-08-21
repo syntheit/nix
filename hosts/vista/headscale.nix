@@ -465,8 +465,8 @@ in
           # Payload-free pkg (postinstall fetches the payload tarball from
           # /pkg/malli-bootstrap-payload.tar.gz). Re-hash on every rebuild.
           # retire-lima cutover 2026-08-20 (11-step lima-free deus f9176c3a).
-          pkgMD5 = "f806a51ee25a0a23ae53ad8fe6cb46f7";
-          pkgMD5Size = 12371;
+          pkgMD5 = "1cfe3f8290d1623844ec446873ab9247";
+          pkgMD5Size = 12484;
         };
         # headscaleCommand defaults to `headscale nodes list -o json`,
         # which is exactly what we want; the unix socket is world-
