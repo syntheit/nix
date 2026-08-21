@@ -45,22 +45,38 @@
       Type = "oneshot";
       ExecStart = pkgs.writeShellScript "gnome-mobile-vt-hold" ''
         set -u
+        held=0
+        # Give the autologin session the foreground VT only until its shell has
+        # started.  `pgrep -x gnome-shell` never matched the Nix wrapper on
+        # fajita, so the old loop kept switching VTs for its full lifetime.
+        # That starved GDM's greeter of its VT; its launch worker then could not
+        # exit and GDM crashed into an autologin/session-manager restart loop.
+        # A full command-line match handles both the wrapper and the real shell.
         for i in $(seq 1 60); do
           vt=""
           for s in $(${pkgs.systemd}/bin/loginctl list-sessions --no-legend 2>/dev/null | ${pkgs.gawk}/bin/awk '{print $1}'); do
             svc=$(${pkgs.systemd}/bin/loginctl show-session "$s" -p Service --value 2>/dev/null)
             if [ "$svc" = "gdm-autologin" ]; then
               tty=$(${pkgs.systemd}/bin/loginctl show-session "$s" -p TTY --value 2>/dev/null)
+              uid=$(${pkgs.systemd}/bin/loginctl show-session "$s" -p User --value 2>/dev/null)
               vt=$(printf '%s' "$tty" | ${pkgs.gnugrep}/bin/grep -o '[0-9]*')
               break
             fi
           done
           if [ -n "$vt" ]; then
             ${pkgs.kbd}/bin/chvt "$vt" 2>/dev/null || true
-            # once gnome-shell holds the VT, a couple more switches then stop
-            if ${pkgs.procps}/bin/pgrep -x gnome-shell >/dev/null 2>&1; then
+            # Once the user's shell has acquired the VT, reinforce it once and
+            # get out before GDM starts its separate greeter session.
+            if ${pkgs.procps}/bin/pgrep -u "$uid" -f '/bin/gnome-shell' >/dev/null 2>&1; then
               ${pkgs.coreutils}/bin/sleep 1
               ${pkgs.kbd}/bin/chvt "$vt" 2>/dev/null || true
+              exit 0
+            fi
+            # Never keep stealing VTs indefinitely if the shell fails to
+            # start.  Thirty half-second attempts cover the device's
+            # normal shell startup while ending well before GDM's greeter.
+            held=$((held + 1))
+            if [ "$held" -ge 30 ]; then
               exit 0
             fi
           fi
