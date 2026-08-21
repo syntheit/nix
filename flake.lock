@@ -1267,16 +1267,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1787348419,
-        "narHash": "sha256-L66PKvN29ZhKxfnWOpgRqxDLjy0zsTo0ETc1jq6Vn+8=",
+        "lastModified": 1787352457,
+        "narHash": "sha256-3MPOyk2YyEF0z8XUHqz0NrEihTwlHj1qaey3UEJ+FzY=",
         "ref": "refs/heads/main",
-        "rev": "249f7d6b72ddc927e696d89b5af943e04c909694",
-        "revCount": 26,
+        "rev": "7213208cde9169f42497dff8748e02f5c32c7477",
+        "revCount": 28,
         "type": "git",
         "url": "file:///home/matv/Projects/mirador"
       },
       "original": {
-        "rev": "249f7d6b72ddc927e696d89b5af943e04c909694",
+        "rev": "7213208cde9169f42497dff8748e02f5c32c7477",
         "type": "git",
         "url": "file:///home/matv/Projects/mirador"
       }
@@ -1710,16 +1710,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1787348037,
-        "narHash": "sha256-YlUmcG9Ev082vFq3kEcdLzJtU1LHN5OD3fUGbYqJ2/c=",
+        "lastModified": 1787353150,
+        "narHash": "sha256-2j/HTqcqoQfR8ymYdW5ALXsQMqxOOioOHRbR9BAAuMo=",
         "ref": "refs/heads/main",
-        "rev": "2d404c7fe0768f3c37a092c7b6a16222fae9648a",
-        "revCount": 28,
+        "rev": "4977b0ad4242115620f950920ea671e36ddaf843",
+        "revCount": 30,
         "type": "git",
         "url": "file:///home/matv/Projects/relay"
       },
       "original": {
-        "rev": "2d404c7fe0768f3c37a092c7b6a16222fae9648a",
+        "rev": "4977b0ad4242115620f950920ea671e36ddaf843",
         "type": "git",
         "url": "file:///home/matv/Projects/relay"
       }
