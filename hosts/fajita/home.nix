@@ -1,46 +1,37 @@
 { pkgs, inputs, ... }:
 let
-  fajitaFetchPortrait = pkgs.writeText "fajita-fetch-portrait.jsonc" ''
+  # Phone terminals are narrow but tall. Keep Fastfetch's complete default
+  # information set, with the NixOS logo above it rather than beside it.
+  fajitaFetchMobile = pkgs.writeText "fajita-fetch-mobile.jsonc" ''
     {
       "logo": {
         "type": "small",
         "position": "top",
         "padding": { "right": 0 }
       },
-      "display": {
-        "separator": ": ",
-        "key": { "width": 4 }
-      },
       "modules": [
+        "break",
         "title",
         "separator",
-        { "type": "os", "key": "OS", "format": "{name} {version}" },
-        { "type": "kernel", "key": "Kern", "format": "{release}" },
-        { "type": "uptime", "key": "Up" },
-        { "type": "cpu", "key": "SoC", "format": "{name} · {cores-online}c" },
-        { "type": "memory", "key": "RAM", "format": "{used}/{total} ({percentage})" },
-        { "type": "battery", "key": "Batt", "format": "{capacity}% · {status}" },
-        "terminal"
-      ]
-    }
-  '';
-
-  fajitaFetchNarrow = pkgs.writeText "fajita-fetch-narrow.jsonc" ''
-    {
-      "logo": { "type": "none" },
-      "display": {
-        "separator": ": ",
-        "key": { "width": 4 }
-      },
-      "modules": [
-        "title",
-        "separator",
-        { "type": "os", "key": "OS", "format": "{name} {version}" },
-        { "type": "kernel", "key": "Kern", "format": "{release}" },
-        { "type": "uptime", "key": "Up" },
-        { "type": "cpu", "key": "SoC", "format": "{name}" },
-        { "type": "memory", "key": "RAM", "format": "{used}/{total} {percentage}" },
-        { "type": "battery", "key": "Batt", "format": "{capacity}% {status}" }
+        "os",
+        "host",
+        "kernel",
+        "uptime",
+        "packages",
+        "shell",
+        "display",
+        "de",
+        "wm",
+        "terminal",
+        "cpu",
+        "gpu",
+        "memory",
+        "swap",
+        "disk",
+        "localip",
+        "battery",
+        "poweradapter",
+        "locale"
       ]
     }
   '';
@@ -56,10 +47,8 @@ let
 
       if (( columns >= 80 )); then
         exec fastfetch "$@"
-      elif (( columns >= 44 )); then
-        exec fastfetch --config ${fajitaFetchPortrait} "$@"
       else
-        exec fastfetch --config ${fajitaFetchNarrow} "$@"
+        exec fastfetch --config ${fajitaFetchMobile} "$@"
       fi
     '';
   };

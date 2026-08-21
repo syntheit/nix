@@ -129,7 +129,7 @@
     # Passes — personal fork handles PKPass imports with unsafe or long serial
     # numbers and registers the app as a handler for PKPass/esPass files.
     passes = {
-      url = "github:syntheit/passes/285fa0e";
+      url = "github:syntheit/passes/d3bfc6b";
       flake = false;
     };
 
@@ -171,7 +171,7 @@
     # Courier — native GTK4/libadwaita mobile email client (IMAP/SMTP, offline SQLite, privacy-first HTML).
     # Pinned to a committed rev because the local worktree carries WIP; drop ?rev= to track HEAD once clean.
     courier = {
-      url = "git+file:///home/matv/Projects/courier?rev=f904f765daf6f0ffe20439369db770b6e5a1a9c1";
+      url = "git+file:///home/matv/Projects/courier?rev=49d6c3dac5957d3fca215830c0f2a61cdd9f6b48";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     # Calculator — native GTK4/libadwaita Google-Calculator-style app (mobile-first).
@@ -205,7 +205,7 @@
     # persistence, touch selection). Pinned to a committed rev; drop ?rev= to
     # track HEAD once clean.
     relay = {
-      url = "git+file:///home/matv/Projects/relay?rev=12421b4e84bdea12bb58a1805539c727a10be76e";
+      url = "git+file:///home/matv/Projects/relay?rev=2d404c7fe0768f3c37a092c7b6a16222fae9648a";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
