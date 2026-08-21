@@ -1,4 +1,69 @@
 { pkgs, inputs, ... }:
+let
+  fajitaFetchPortrait = pkgs.writeText "fajita-fetch-portrait.jsonc" ''
+    {
+      "logo": {
+        "type": "small",
+        "position": "top",
+        "padding": { "right": 0 }
+      },
+      "display": {
+        "separator": ": ",
+        "key": { "width": 4 }
+      },
+      "modules": [
+        "title",
+        "separator",
+        { "type": "os", "key": "OS", "format": "{name} {version}" },
+        { "type": "kernel", "key": "Kern", "format": "{release}" },
+        { "type": "uptime", "key": "Up" },
+        { "type": "cpu", "key": "SoC", "format": "{name} · {cores-online}c" },
+        { "type": "memory", "key": "RAM", "format": "{used}/{total} ({percentage})" },
+        { "type": "battery", "key": "Batt", "format": "{capacity}% · {status}" },
+        "terminal"
+      ]
+    }
+  '';
+
+  fajitaFetchNarrow = pkgs.writeText "fajita-fetch-narrow.jsonc" ''
+    {
+      "logo": { "type": "none" },
+      "display": {
+        "separator": ": ",
+        "key": { "width": 4 }
+      },
+      "modules": [
+        "title",
+        "separator",
+        { "type": "os", "key": "OS", "format": "{name} {version}" },
+        { "type": "kernel", "key": "Kern", "format": "{release}" },
+        { "type": "uptime", "key": "Up" },
+        { "type": "cpu", "key": "SoC", "format": "{name}" },
+        { "type": "memory", "key": "RAM", "format": "{used}/{total} {percentage}" },
+        { "type": "battery", "key": "Batt", "format": "{capacity}% {status}" }
+      ]
+    }
+  '';
+
+  fajitaFetch = pkgs.writeShellApplication {
+    name = "fajita-fetch";
+    runtimeInputs = with pkgs; [ fastfetch ncurses ];
+    text = ''
+      columns="''${COLUMNS:-}"
+      if [[ ! "$columns" =~ ^[0-9]+$ ]]; then
+        columns="$(tput cols 2>/dev/null || printf '80')"
+      fi
+
+      if (( columns >= 80 )); then
+        exec fastfetch "$@"
+      elif (( columns >= 44 )); then
+        exec fastfetch --config ${fajitaFetchPortrait} "$@"
+      else
+        exec fastfetch --config ${fajitaFetchNarrow} "$@"
+      fi
+    '';
+  };
+in
 {
   imports = [
     inputs.nix-index-database.homeModules.nix-index
@@ -108,24 +173,6 @@
       ../../packages/orion-chrome/js/OrionScroll/OrionScrollParent.sys.mjs;
   };
 
-  # foot is the tmux terminal on fajita. VTE-based terminals (Ptyxis/Console)
-  # can't do single-finger touch scroll inside tmux — VTE has no GtkGestureDrag
-  # for one-finger drag (upstream bug), so swipe-scroll never reaches the pty.
-  # foot handles touch scroll itself and forwards it as wheel events, which tmux
-  # (mouse on) turns into scrollback. Tuned for a phone: readable font, deep
-  # scrollback, and a longer long-press so a scroll drag isn't read as a tap.
-  programs.foot = {
-    enable = true;
-    settings = {
-      main = {
-        font = "monospace:size=11";
-        pad = "6x6";
-      };
-      scrollback.lines = 50000;
-      touch.long-press-delay = 400;
-    };
-  };
-
   # Route image types at GNOME's image viewer (Loupe). Without this, HEIC/AVIF
   # opened in Mimick (the Immich client) and WebP in Gradia (a screenshot tool)
   # because their .desktop files claim those types. Loupe renders all of them
@@ -133,8 +180,15 @@
   xdg.mimeApps = {
     enable = true;
     defaultApplications =
-      let loupe = "org.gnome.Loupe.desktop";
+      let
+        loupe = "org.gnome.Loupe.desktop";
+        firefox = "firefox.desktop";
       in {
+        "text/html" = firefox;
+        "x-scheme-handler/http" = firefox;
+        "x-scheme-handler/https" = firefox;
+        "x-scheme-handler/about" = firefox;
+        "x-scheme-handler/unknown" = firefox;
         "image/jpeg" = loupe;
         "image/png" = loupe;
         "image/gif" = loupe;
@@ -154,6 +208,7 @@
     btop
     claude-code
     codex
+    fajitaFetch
     fastfetch
     fd
     jq

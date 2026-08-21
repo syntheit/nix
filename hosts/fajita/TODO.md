@@ -57,7 +57,7 @@ You can read the actual config to see all of this, but high-level:
 - Apps: Firefox, Brave, Chromium, Epiphany; Signal/Fractal/Chatty/Thunderbird
   /Vesktop; Clapper/Totem/VLC/Riff/Mousai/Delfin; Snapshot/Loupe/Papers
   /Nautilus/Resources/Mission-Center/Authenticator; the GNOME Circle set
-  (Amberol, Blanket, Dialect, Fragments, etc.); Valent; organicmaps
+  (Amberol, Blanket, Dialect, Fragments, etc.); Valent
 - claude-code installed via home.packages
 - Cellular: Claro AR APN profile
 - SSH: Tailscale-only firewall (port 22 not open on WiFi)

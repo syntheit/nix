@@ -62,37 +62,6 @@ let
     };
 
   pwas = [
-    # ─── Chat / comms ────────────────────────────────────────────────────────
-    (mkPwa {
-      id = "gvoice";
-      name = "Google Voice";
-      url = "https://voice.google.com/u/0/messages";
-      profile = "google";
-    })
-
-    # ─── News ────────────────────────────────────────────────────────────────
-    (mkPwa {
-      id = "wsj";
-      name = "WSJ";
-      url = "https://www.wsj.com/";
-      comment = "The Wall Street Journal";
-      icon = ./wsj-icon.png;
-      # Overlay scrollbars: auto-hiding, zero layout width (Fluent style on Linux).
-      # kOverlayScrollbar is FEATURE_DISABLED_BY_DEFAULT on desktop; must be set
-      # explicitly. "FluentOverlayScrollbars" is not a real BASE_FEATURE string.
-      extraArgs = [ "--enable-features=OverlayScrollbar" ];
-      # Title bar kept (not fullscreen): Daniel prefers the window title bar +
-      # GNOME status bar visible over the fullscreen-hides-both tradeoff. The
-      # overlay scrollbars above stay regardless.
-    })
-
-    # ─── Fitness ─────────────────────────────────────────────────────────────
-    (mkPwa {
-      id = "strava";
-      name = "Strava";
-      url = "https://www.strava.com/dashboard";
-    })
-
     # ─── Self-hosted / hosted PWAs ───────────────────────────────────────────
     # Linkding + Memos PWAs dropped — replaced by the native anchorage (Linkding)
     # and jotter (Memos) GTK apps in systemPackages.

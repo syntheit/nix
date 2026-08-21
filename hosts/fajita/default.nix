@@ -199,6 +199,15 @@
   mobile.beautification = {
     silentBoot = lib.mkDefault true;
     splash = lib.mkDefault true;
+    # This device has NO working kernel fbcon logo (bootloader hands the kernel a
+    # simplefb it can't blit — "imageblit: framebuffer not in virtual address
+    # space"). The default useKernelLogo=true wrongly assumes a kernel logo as
+    # the early splash and leaves fbcon taking over VC1 — so plymouth (which
+    # draws on VC1) renders off-screen and the boot looks black even though the
+    # panel is lit and plymouth's show-splash succeeds. useKernelLogo=false
+    # switches to `fbcon=vc:2-6 console=tty0`, keeping fbcon off VC1 so plymouth
+    # actually owns the display. (root cause of the black boot, 2026-08-21).
+    useKernelLogo = false;
   };
 
   # ── Unified boot splash: one animated blue NixOS flake ────────────────────
@@ -593,7 +602,7 @@
   # attention; MDP5 is in maintenance mode. This pairs with the GPU min_freq
   # udev pin for the smoothest Phosh animation we can squeeze out of this kernel.
   # Refs: LWN 957064 (migration path), dri-devel discussion of prefer_mdp5.
-  boot.kernelParams = [ "msm.prefer_mdp5=0" ];
+  boot.kernelParams = [ "msm.prefer_mdp5=0" "plymouth.debug" ];
 
   systemd.services.usb-gadget = {
     description = "USB gadget (CDC-NCM) for ssh-over-USB";
@@ -773,12 +782,12 @@
     SUBSYSTEM=="backlight", KERNEL=="ae94000.dsi.0", ACTION=="add", ATTR{brightness}="512"
   '';
   # 2) System mimeapps — tel: / sms: / http: defaults so Phosh launchers route
-  #    to the right apps (Calls, Chatty, Epiphany).
+  #    to the right apps (Calls, Chatty, Firefox).
   environment.etc."xdg/mimeapps.list".text = ''
     [Default Applications]
-    x-scheme-handler/http=org.gnome.Epiphany.desktop
-    x-scheme-handler/https=org.gnome.Epiphany.desktop
-    text/html=org.gnome.Epiphany.desktop
+    x-scheme-handler/http=firefox.desktop
+    x-scheme-handler/https=firefox.desktop
+    text/html=firefox.desktop
     x-scheme-handler/tel=org.gnome.Calls.desktop
     x-scheme-handler/sms=sm.puri.Chatty.desktop
     image/png=org.gnome.Loupe.desktop
@@ -1005,12 +1014,11 @@
       "org/gnome/Ptyxis" = {
         scrollbar-policy = "always";
       };
-      # Set Ptyxis as the default terminal (xdg-terminal-exec is not installed
-      # on fajita, so the previous exec value silently failed for any app that
-      # tries to open a terminal via the GNOME default-applications key).
+      # Keep Ptyxis as the fallback for apps that request an external terminal.
+      # Relay is the daily terminal, but it is not a drop-in `command …` launcher.
       "org/gnome/desktop/default-applications/terminal" = {
-        exec = "foot";
-        exec-arg = "-e";
+        exec = "ptyxis";
+        exec-arg = "--execute";
       };
     };
   }];
@@ -1123,22 +1131,20 @@
     # https://web.telegram.org via Epiphany ("Install Site as Web Application"
     # in the Phosh menu) until paper-plane is revived upstream.
 
-    # ─── Diagnostics ─────────────────────────────────────────────────────────
-    (pkgs.callPackage ./phone-check { }) # sensor readouts + keyring re-key button
-
     # ─── Phone-to-desktop integration ────────────────────────────────────────
     valent                                # KDE Connect protocol, GTK4/libadwaita (better mobile UX than kdeconnect-kde)
+    budslink                              # Bluetooth earbud battery and ANC controls
 
     # ─── Mobile-friendly GNOME core (libadwaita, adaptive) ───────────────────
     nautilus                              # Files
     loupe                                 # Image viewer
     papers                                # PDF reader (replaces evince; libadwaita)
+    foliate                               # mobile-friendly EPUB/Kindle/CBZ reader with annotations
     snapshot                              # GNOME Camera (libadwaita, GTK4)
     gnome-text-editor                     # libadwaita text editor
     gnome-calendar
     gnome-contacts
     gnome-maps                            # libadwaita, online (GMaps tiles)
-    organicmaps                           # offline OSM nav — AllTrails / hiking replacement
     # gnome-disk-utility dropped — GTK3, no GTK4/libadwaita port upstream.
     # Nautilus handles mount/unmount of external media; for anything heavier
     # ssh in and use parted/fdisk/wipefs.
@@ -1227,6 +1233,12 @@
     htop
     git
     curl
+    python3                              # ad-hoc scripts, local tooling, and API/data parsing
+    wget                                 # direct file downloads when curl's scripting interface is less convenient
+    sqlite                               # inspect/debug local SQLite-backed app data
+    lsof                                 # diagnose open files, ports, and running processes
+    zip
+    unzip
     bat
     ripgrep
     fd
