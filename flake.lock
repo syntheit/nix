@@ -1710,16 +1710,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1787355433,
-        "narHash": "sha256-eBCi7b/VoX5mDN0WUm0+YM7zTP/yEBI2M7Jy4dBLNVo=",
+        "lastModified": 1787359508,
+        "narHash": "sha256-A+1+amnsrZybFCVDnYMY3pdt0Ue86AamVSniFOs9ls4=",
         "ref": "refs/heads/main",
-        "rev": "bd36d3404ef865039ae0213e5b8869548d35daa8",
-        "revCount": 31,
+        "rev": "dd6d219f47a3fcedfdba88f8e98c9776d3c01ea0",
+        "revCount": 32,
         "type": "git",
         "url": "file:///home/matv/Projects/relay"
       },
       "original": {
-        "rev": "bd36d3404ef865039ae0213e5b8869548d35daa8",
+        "rev": "dd6d219f47a3fcedfdba88f8e98c9776d3c01ea0",
         "type": "git",
         "url": "file:///home/matv/Projects/relay"
       }
