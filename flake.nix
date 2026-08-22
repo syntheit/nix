@@ -204,7 +204,7 @@
     # persistence, touch selection). Pinned to a committed rev; drop ?rev= to
     # track HEAD once clean.
     relay = {
-      url = "git+file:///home/matv/Projects/relay?rev=bd36d3404ef865039ae0213e5b8869548d35daa8";
+      url = "git+file:///home/matv/Projects/relay?rev=dd6d219f47a3fcedfdba88f8e98c9776d3c01ea0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };

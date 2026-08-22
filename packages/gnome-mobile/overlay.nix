@@ -128,19 +128,11 @@ in
 
           substituteInPlace js/ui/keyboard.js --replace-fail \
             "            const focus = global.display.focus_window;" \
-            "            const _gd = global.display.focus_window; const focus = (_gd && _gd.maximized_vertically) ? _gd : this._focusWindow; try { log('[osk-refit] gd=' + (_gd ? _gd.get_wm_class() : 'null') + '/mv=' + (_gd ? _gd.maximized_vertically : '-') + ' tracked=' + (this._focusWindow ? this._focusWindow.get_wm_class() : 'null') + '/mv=' + (this._focusWindow ? this._focusWindow.maximized_vertically : '-') + ' chosen=' + (focus ? focus.get_wm_class() : 'null')); } catch (e) {}"
-
-          substituteInPlace js/ui/keyboard.js --replace-fail \
-            "            const wa = focus.get_work_area_current_monitor();" \
-            "            const wa = focus.get_work_area_current_monitor(); try { log('[osk-refit] wa.y=' + wa.y + ' wa.h=' + wa.height); } catch (e) {}"
-
-          substituteInPlace js/ui/keyboard.js --replace-fail \
-            "            const fr = focus.get_frame_rect();" \
-            "            const fr = focus.get_frame_rect(); try { log('[osk-refit] fr.y=' + fr.y + ' fr.h=' + fr.height); } catch (e) {}"
+            "            const _gd = global.display.focus_window; const focus = (_gd && _gd.maximized_vertically) ? _gd : this._focusWindow;"
 
           substituteInPlace js/ui/keyboard.js --replace-fail \
             "                focus.move_resize_frame(false, fr.x, wa.y, fr.width, wa.height);" \
-            "                { focus.unmaximize(Meta.MaximizeFlags.VERTICAL); focus.move_resize_frame(false, fr.x, wa.y, fr.width, wa.height); focus.maximize(Meta.MaximizeFlags.VERTICAL); try { log('[osk-refit] UNMAX+RESIZE+REMAX wa.h=' + wa.height); } catch (e) {} }"
+            "                { focus.unmaximize(Meta.MaximizeFlags.VERTICAL); focus.move_resize_frame(false, fr.x, wa.y, fr.width, wa.height); focus.maximize(Meta.MaximizeFlags.VERTICAL); }"
         '';
         buildInputs = old.buildInputs ++ [
           super.modemmanager # /org/gnome/shell/misc/modemManager.js
