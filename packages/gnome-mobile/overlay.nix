@@ -45,6 +45,15 @@ let
 in
 
 {
+  # gnome-keyring's global prompt queue can be corrupted when a no-prompt
+  # unlock completes while another unlock is active.  That is the
+  # perform_next_unlock() assertion seen during Fajita's boot-lock login.
+  gnome-keyring = super.gnome-keyring.overrideAttrs (old: {
+    patches = (old.patches or [ ]) ++ [
+      ./patches/gnome-keyring-serialize-unlock-completion.patch
+    ];
+  });
+
   gnome-shell =
     (super.gnome-shell.override {
       gnome-settings-daemon = self.gnome-settings-daemon-mobile;
@@ -71,6 +80,7 @@ in
           ./patches/osk-mobile-hide-button.patch # add hide-keyboard button to us-mobile layout (mobile layout omits it; swipe-down has no visual affordance)
           ./patches/powerkey-wake-brightness.patch # panel on BEFORE brightness restore (EINVAL race = wake-to-black); power key = Phosh-style press-state snapshot (replaces debounce+grace)
           ./patches/powerkey-screenshot-chord.patch # Volume-Up + Power = full-screen screenshot + iOS-style flash (coordinates the Vol-Up accelerator via shellDBus; withholds the gsd forward during the chord so the volume never moves / no OSD; suppresses the blank). MUST stay after powerkey-wake-brightness (same file); pairs with shelldbus-volume-chord.patch
+          ./patches/powerkey-startup-guard.patch # ignore power presses until Shell startup + async GDM registration settle; prevents an early LockedHint from switching the VT to GDM. MUST stay after the two power-key patches above (same file)
           ./patches/autobacklight-fajita.patch # oneplus,fajita brightness curves (default linear = pwm 1 in the dark, visually OFF); ALS deadband + write rate-limit + retry
           ./patches/topbar-no-tap.patch # top bar = passive status bar: no tap-to-open calendar/QS (swipe-down still opens QS)
           ./patches/lockscreen-no-blur.patch # lock-screen wallpaper shown sharp + bright (no Gaussian blur/dim); scoped to UnlockDialog only
@@ -111,6 +121,7 @@ in
           ./patches/mobile-control-polish.patch # stable DND/rotation icons and fully passive top-bar indicators
           ./patches/osk-clipboard.patch # clipboard foundation + Phase 1: in-shell history engine (owner-changed capture, cap/dedup/pin, secret-mimetype gating, async-persist) + terminal-aware paste/copy/cut chords via one Clutter virtual device + always-there 📋 paste button leading the OSK suggestion strip. New js/misc/clipboardHistory.js (pure) + js/ui/clipboardManager.js (glue); does not touch the 3-pill prediction logic
           ./patches/text-select.patch # long-press any on-screen text → highlight → Copy (MVP, line granularity). New js/ui/textSelect.js: ultra-conservative global Clutter.LongPressGesture on the stage (yields to all app/shell gestures, cancel-on-move), app-id blocklist + TEXT_SELECT_ENABLED kill-switch, AT-SPI (native GTK) → OCR fallback via fajita-textgrab-{atspi,ocr} helpers, scrim+highlight+Copy pill, set_text→clipboard-history. Crash/input-safe (every step try/catch → console.warn, fail-safe no-op)
+          ./patches/startup-lock-after-gdm.patch # await GDM RegisterSession inside Shell, apply the configured autologin lock, then enable power keys. Replaces the racy external user unit; MUST stay after text-select (same main.js)
         ];
         prePatch = ''
           cp -r ${libshew} subprojects/libshew
