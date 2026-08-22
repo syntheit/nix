@@ -1,0 +1,40 @@
+--- a/js/misc/powerManager.js
++++ b/js/misc/powerManager.js
+@@ -63,6 +63,14 @@
+ 
+ export class PowerManager {
+     constructor() {
++        // Do not let a power-button press during the boot animation blank and
++        // lock the user session before GNOME has finished registering it with
++        // GDM. Raising LockedHint during this window makes GDM fall back to
++        // its standalone greeter and steal the foreground VT. Main explicitly
++        // opens this gate only after RegisterSession has completed and the
++        // configured startup lock has been installed.
++        this._powerKeysReady = false;
++
+         this._idleMonitor = global.backend.get_core_idle_monitor();
+         this._cursorTracker = global.backend.get_cursor_tracker();
+ 
+@@ -1118,10 +1126,20 @@
+         this._updatePowersaveIdleWatch();
+     }
+ 
++    enablePowerKeyEventsAfterStartup() {
++        this._powerKeysReady = true;
++        log('POWERMANAGER: accepting power key events after GDM registration');
++    }
++
+     async powerButtonEvent(event) {
+         const type = event.type();
+         const screenIsOn = this._displayConfigProxy.PowerSaveMode === 0;
+ 
+         const eventTimeMs = event.get_time();
+         const timeNowMs = GLib.get_monotonic_time() / 1000;
++
++        if (!this._powerKeysReady) {
++            log('POWERMANAGER: ignoring power key event before GDM registration');
++            return;
++        }
+ 
+         if (type === Clutter.EventType.KEY_RELEASE) {
+             if (this._powerPressHappened) {

@@ -2,6 +2,26 @@ diff --git a/js/misc/powerManager.js b/js/misc/powerManager.js
 index ce89bed5c..250019a74 100644
 --- a/js/misc/powerManager.js
 +++ b/js/misc/powerManager.js
+@@ -569,8 +569,6 @@ log("POWERMANAGER: turn on this._fadeInTimeout " + this._fadeInTimeout + " this.
+         if (!(await this._fadeOut(fadeTime)))
+             return;
+ 
+-        this._displayConfigProxy.PowerSaveMode = 3;
+-
+         if (!this._adaptiveBacklightInhibited) {
+             try {
+                 await this._sensorDaemonProxy.InhibitAdaptiveBacklightAsync();
+@@ -580,6 +578,10 @@ log("POWERMANAGER: turn on this._fadeInTimeout " + this._fadeInTimeout + " this.
+             }
+         }
+ 
++        // Stop and drain adaptive-backlight writes while the panel is still
++        // powered. A write after DPMS-off can wedge the SDM845 DSI clocks.
++        this._displayConfigProxy.PowerSaveMode = 3;
++
+         Main.screenShield.cancelUnlock();
+     }
+ 
 @@ -597,6 +597,18 @@ log("POWERMANAGER: turn on this._fadeInTimeout " + this._fadeInTimeout + " this.
  
          this._lightbox.remove_all_transitions();

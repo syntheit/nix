@@ -43,36 +43,63 @@ index fed1a6908..fe4bbaa5f 100644
      // Microsoft Surface Pro 2017
      'Microsoft Corporation,Surface Pro,Surface_Pro_1796': {
          minMaxNits: [ 4, 440 ],
-@@ -508,7 +542,27 @@ export class AutoBacklightBrightness extends Signals.EventEmitter {
+@@ -472,6 +506,24 @@ export class AutoBacklightBrightness extends Signals.EventEmitter {
+         } else {
+             this._enabled = false;
+ 
++            // Inhibiting adaptive brightness is the barrier before DPMS-off.
++            // Cancel future animation frames and drain the one D-Bus write that
++            // may already be in flight while the panel is still powered.
++            if (this._smoothUpdateTimeoutId) {
++                GLib.source_remove(this._smoothUpdateTimeoutId);
++                delete this._smoothUpdateTimeoutId;
++            }
++
++            const inFlight = this._inStepPromise;
++            if (inFlight)
++                await inFlight;
++
++            delete this._lastSetPwm;
++            delete this._smoothUpdateFromPerceived;
++            delete this._smoothUpdateToPerceived;
++            delete this._smoothUpdateDurationMs;
++            delete this._smoothUpdateBeginTime;
++
+             this._history = [];
+             delete this._latestLow;
+             delete this._autoPerceived;
+@@ -493,7 +545,7 @@ export class AutoBacklightBrightness extends Signals.EventEmitter {
+         const elapsedTimeMs = (timeNow - this._smoothUpdateBeginTime) / 1000.0;
+         const isFinalUpdate = this._smoothUpdateDurationMs === 0 || elapsedTimeMs >= this._smoothUpdateDurationMs;
+ 
+-        if (this._inStep && !isFinalUpdate)
++        if (this._inStep)
+             return GLib.SOURCE_CONTINUE;
+ 
+         let newPerceived;
+@@ -508,19 +560,20 @@ export class AutoBacklightBrightness extends Signals.EventEmitter {
          if (this._lastSetPwm !== newPwm) {
              this._inStep = true;
  
 -            this._brightnessProxy.SetBrightnessAsync("backlight", this._backlightName, newPwm).catch(e => console.error(e)).finally(() => {
-+            this._brightnessProxy.SetBrightnessAsync("backlight", this._backlightName, newPwm).then(() => {
-+                this._writeRetries = 0;
-+            }).catch(e => {
-+                console.error(e);
-+                // A write can race a DPMS transition: on DSI panels the kernel
-+                // rejects brightness writes while the panel is off/preparing
-+                // (EINVAL -> EPROTO over logind). If that happens on the final
-+                // update the target brightness would silently never be applied -
-+                // on wake-from-blank that means a panel lit at a stale (possibly
-+                // invisible) level. Retry the final value a few times.
-+                if (isFinalUpdate && (this._writeRetries ?? 0) < 3) {
-+                    this._writeRetries = (this._writeRetries ?? 0) + 1;
-+                    GLib.timeout_add(GLib.PRIORITY_DEFAULT, 300, () => {
-+                        log(`AUTOBACKLIGHT: retrying failed brightness write (attempt ${this._writeRetries})`);
-+                        this._brightnessProxy.SetBrightnessAsync("backlight", this._backlightName, newPwm)
-+                            .then(() => (this._writeRetries = 0))
-+                            .catch(e2 => console.error(e2));
-+                        return GLib.SOURCE_REMOVE;
-+                    });
-+                }
-+            }).finally(() => {
++            this._inStepPromise = this._brightnessProxy.SetBrightnessAsync("backlight", this._backlightName, newPwm).catch(e => console.error(e)).finally(() => {
                  this._lastSetPwm = newPwm;
                  this._curPerceived = newPerceived;
  
-@@ -772,7 +826,11 @@ export class AutoBacklightBrightness extends Signals.EventEmitter {
+                 if (isFinalUpdate) {
+                     delete this._lastSetPwm;
+                     delete this._smoothUpdateFromPerceived;
+                     delete this._smoothUpdateToPerceived;
+                     delete this._smoothUpdateDurationMs;
+                     delete this._smoothUpdateBeginTime;
+                     delete this._smoothUpdateTimeoutId;
+                 }
+ 
++                delete this._inStepPromise;
+                 delete this._inStep;
+             });
+         } else {
+@@ -772,7 +825,11 @@ export class AutoBacklightBrightness extends Signals.EventEmitter {
  
          this._history.push([timeNowMs, level]);
  
@@ -85,7 +112,7 @@ index fed1a6908..fe4bbaa5f 100644
              return;
          }
  
-@@ -815,7 +873,14 @@ export class AutoBacklightBrightness extends Signals.EventEmitter {
+@@ -815,7 +872,14 @@ export class AutoBacklightBrightness extends Signals.EventEmitter {
          const autoPerceived = this._nitsToAbsPerceived(autoBrightnessNits);
          const closeToMin = (this._curPerceived - this._minPerceived) > 0.1 && (autoPerceived - this._minPerceived) < 0.1;
          const closeToMax = (this._maxPerceived - this._curPerceived) > 0.1 && (this._maxPerceived - autoPerceived) < 0.1;
@@ -101,3 +128,16 @@ index fed1a6908..fe4bbaa5f 100644
              log(`AUTOBACKLIGHT: ambient brightness went to ${level} lux, adjusting`);
  
              const durationSec =
+@@ -828,10 +892,10 @@ export class AutoBacklightBrightness extends Signals.EventEmitter {
+         }
+     }
+ 
+-    inhibit() {
++    async inhibit() {
+         this._inhibitedCount++;
+         if (this._inhibitedCount === 1)
+-            this._syncEnabled();
++            await this._syncEnabled();
+     }
+ 
+     async uninhibit(setImmediately) {

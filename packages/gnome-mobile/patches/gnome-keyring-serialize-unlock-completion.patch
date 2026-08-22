@@ -1,0 +1,64 @@
+diff --git a/daemon/dbus/gkd-secret-unlock.c b/daemon/dbus/gkd-secret-unlock.c
+index 9d0f217..004055a 100644
+--- a/daemon/dbus/gkd-secret-unlock.c
++++ b/daemon/dbus/gkd-secret-unlock.c
+@@ -76,6 +76,7 @@ struct _GkdSecretUnlock {
+ /* Forward declarations */
+ static void gkd_secret_dispatch_iface (GkdSecretDispatchIface *iface);
+ static void perform_next_unlock (GkdSecretUnlock *self);
++static void start_next_queued_unlock (void);
+ 
+ G_DEFINE_TYPE_WITH_CODE (GkdSecretUnlock, gkd_secret_unlock, G_TYPE_OBJECT,
+ 			 G_IMPLEMENT_INTERFACE (GKD_SECRET_TYPE_DISPATCH, gkd_secret_dispatch_iface));
+@@ -142,10 +143,26 @@ common_unlock_attributes (GckBuilder *builder,
+ 	gck_builder_add_ulong (builder, CKA_G_OBJECT, gck_object_get_handle (collection));
+ }
+ 
++static void
++start_next_queued_unlock (void)
++{
++	GkdSecretUnlock *next;
++
++	/* The queue head owns the active prompt while current is set.  A
++	 * different request may complete without prompting while that operation
++	 * is in flight; it must not dequeue and re-enter the active request. */
++	next = g_queue_peek_head (&unlock_prompt_queue);
++	if (next == NULL || next->current != NULL)
++		return;
++
++	next = g_queue_pop_head (&unlock_prompt_queue);
++	perform_next_unlock (next);
++	g_object_unref (next);
++}
++
+ static gboolean
+ mark_as_complete (GkdSecretUnlock *self, gboolean dismissed)
+ {
+-	GkdSecretUnlock *other;
+ 	const char *value;
+ 	gint i;
+ 	GVariantBuilder builder;
+@@ -171,11 +188,7 @@ mark_as_complete (GkdSecretUnlock *self, gboolean dismissed)
+ 				       NULL);
+ 
+ 	/* Fire off the next item in the unlock prompt queue */
+-	other = g_queue_pop_head (&unlock_prompt_queue);
+-	if (other != NULL) {
+-		perform_next_unlock (other);
+-		g_object_unref (other);
+-	}
++	start_next_queued_unlock ();
+ 
+ 	return TRUE;
+ }
+@@ -224,6 +237,10 @@ on_unlock_complete (GObject *object, GAsyncResult *res, gpointer user_data)
+ 	}
+ 
+ 	g_clear_error (&error);
++
++	/* In particular, advance the queue after an active prompt was dismissed:
++	 * mark_as_complete() could not do that until its async cancellation ran. */
++	start_next_queued_unlock ();
+ 
+ 	/* refed for async call */
+ 	g_object_unref (self);
