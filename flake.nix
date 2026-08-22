@@ -186,7 +186,7 @@
     # Mirador — native GTK4/libadwaita mobile Invidious/YouTube client.
     # Pinned to a committed rev (local worktree may carry WIP); drop ?rev= to track HEAD once clean.
     mirador = {
-      url = "git+file:///home/matv/Projects/mirador?rev=7213208cde9169f42497dff8748e02f5c32c7477";
+      url = "git+file:///home/matv/Projects/mirador?rev=409f57ed7b7f8112b1862001cdfb4e5425f34887";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     # Paloma — native GTK4/libadwaita Telegram client (over TDLib). api_id/api_hash
@@ -204,7 +204,7 @@
     # persistence, touch selection). Pinned to a committed rev; drop ?rev= to
     # track HEAD once clean.
     relay = {
-      url = "git+file:///home/matv/Projects/relay?rev=4977b0ad4242115620f950920ea671e36ddaf843";
+      url = "git+file:///home/matv/Projects/relay?rev=bd36d3404ef865039ae0213e5b8869548d35daa8";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
