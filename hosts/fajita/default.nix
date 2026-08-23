@@ -285,23 +285,12 @@
       > /dev/null 2>&1 || true
   '';
 
-  # …but make the splash actually END — AND not a moment too soon. gdm-mobile
-  # never does the plymouth handoff, so plymouthd would stay alive in
-  # --mode=boot forever (2026-07-18 battery audit: 2.5% CPU + 2:48 CPU-time six
-  # hours after boot, plus the ask-password forwarders). The OLD version quit
-  # the instant display-manager.service came up — which left a black gap + fbcon
-  # terminal-text leak while GNOME Shell was still painting its first frame.
+  # Let GDM exclusively own the Plymouth handoff. GDM 49.2 deactivates
+  # Plymouth and, for autologin, schedules `plymouth quit --retain-splash`.
+  # A former fajita-specific service ran plain `plymouth quit` on the same
+  # ~20-second deadline; that released Plymouth's tty1 and caused GDM's VT
+  # watcher to start a standalone greeter there. Do not add another quit unit.
   #
-  # Fix: keep this a ROOT system service (only root can reliably reach the
-  # root-owned plymouthd control socket — a user-session `plymouth quit` may
-  # silently EACCES and then never quit, which is exactly the lingering-plymouthd
-  # battery bug we must not reintroduce). Order it after display-manager as
-  # before, but then hold the flake up until gnome-shell is actually RUNNING
-  # (visible to root via /proc, so no session-bus access needed), bounded by a
-  # hard 20 s ceiling. Whichever comes first — gnome-shell process present, or
-  # the ceiling — we then run `plymouth quit` UNCONDITIONALLY. Worst case
-  # plymouthd lives ~20 s longer than the old code, never forever. `-`-prefixed
-  # oneshot semantics preserved; genuine stage-1/panic output is a separate path.
   # Belt-and-suspenders for the boot-brightness udev rule above: if the backlight
   # ADD event fires in stage-1 (before the stage-2 udev rule is live), a oneshot
   # forces a visible level once the panel device exists — so the plymouth flake
@@ -330,35 +319,6 @@
           fi
           ${pkgs.coreutils}/bin/sleep 0.25
         done
-      ''}";
-    };
-  };
-
-  systemd.services.fajita-plymouth-quit = {
-    description = "Quit the Plymouth boot splash once GNOME Shell has painted";
-    wantedBy = [ "graphical.target" ];
-    after = [ "display-manager.service" ];
-    serviceConfig = {
-      Type = "oneshot";
-      ExecStart = "-${pkgs.writeShellScript "fajita-plymouth-quit" ''
-        # Wait for gnome-shell to be up, capped at 20 s (40 * 0.5 s), so
-        # plymouthd is told to quit within seconds of the shell appearing —
-        # and unconditionally even if it never does.
-        for i in $(${pkgs.coreutils}/bin/seq 1 40); do
-          if ${pkgs.procps}/bin/pgrep -x gnome-shell >/dev/null 2>&1; then
-            # gnome-shell's process appears a beat before it paints the lock
-            # screen; quitting plymouth the instant the process exists risks a
-            # sub-second black flash. Hold ~1.5 s past shell-appearance so the
-            # lock screen paints first for a clean handoff (mirrors the
-            # gnome-mobile-lock/gnome-mobile-vt-hold sleep in gnome-mobile.nix).
-            ${pkgs.coreutils}/bin/sleep 1.5
-            break
-          fi
-          ${pkgs.coreutils}/bin/sleep 0.5
-        done
-        # Root can reach the plymouthd socket; `|| true` only guards the
-        # already-quit case, it is never the sole exit path.
-        ${pkgs.plymouth}/bin/plymouth quit >/dev/null 2>&1 || true
       ''}";
     };
   };
