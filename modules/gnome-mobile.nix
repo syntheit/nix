@@ -86,67 +86,6 @@
     };
   };
 
-  # GDM sometimes starts its standalone greeter when boot completion releases
-  # Plymouth, even though the autologin session has already registered and is
-  # correctly locked by its own Shell.  On fajita that greeter takes tty1 and
-  # leaves the real mobile lock screen alive but invisible on tty2.  Do not try
-  # to predict the launch with another delay: observe the actual state, let the
-  # greeter become active, then return the foreground to the locked user session.
-  # Keep observing for the whole boot window because an incompletely initialized
-  # greeter can reclaim tty1 after the first correction.  This starts as a
-  # Type=simple service, so it does not hold up graphical.target while monitoring.
-  systemd.services.gnome-mobile-restore-locked-vt = {
-    description = "Restore the locked GNOME mobile session if GDM steals the boot VT";
-    after = [ "display-manager.service" ];
-    wantedBy = [ "graphical.target" ];
-    serviceConfig = {
-      Type = "simple";
-      ExecStart = pkgs.writeShellScript "gnome-mobile-restore-locked-vt" ''
-        set -u
-        restorations=0
-        for i in $(${pkgs.coreutils}/bin/seq 1 120); do
-          user_session=""
-          greeter_active=0
-
-          for session in $(${pkgs.systemd}/bin/loginctl list-sessions --no-legend 2>/dev/null | ${pkgs.gawk}/bin/awk '{print $1}'); do
-            service=$(${pkgs.systemd}/bin/loginctl show-session "$session" -p Service --value 2>/dev/null)
-            if [ "$service" = "gdm-autologin" ]; then
-              user_session="$session"
-            fi
-
-            class=$(${pkgs.systemd}/bin/loginctl show-session "$session" -p Class --value 2>/dev/null)
-            active=$(${pkgs.systemd}/bin/loginctl show-session "$session" -p Active --value 2>/dev/null)
-            if [ "$class" = "greeter" ] && [ "$active" = "yes" ]; then
-              greeter_active=1
-            fi
-          done
-
-          if [ -n "$user_session" ] && [ "$greeter_active" -eq 1 ]; then
-            locked=$(${pkgs.systemd}/bin/loginctl show-session "$user_session" -p LockedHint --value 2>/dev/null)
-            if [ "$locked" = "yes" ]; then
-              echo "GDM greeter stole the boot VT; activating locked session $user_session"
-              ${pkgs.systemd}/bin/loginctl activate "$user_session" || true
-              ${pkgs.coreutils}/bin/sleep 0.5
-              active=$(${pkgs.systemd}/bin/loginctl show-session "$user_session" -p Active --value 2>/dev/null)
-              if [ "$active" = "yes" ]; then
-                restorations=$((restorations + 1))
-                echo "Locked GNOME mobile session $user_session restored to foreground"
-              fi
-            fi
-          fi
-
-          ${pkgs.coreutils}/bin/sleep 0.5
-        done
-
-        if [ "$restorations" -eq 0 ]; then
-          echo "No locked-session/GDM-greeter VT steal observed during boot window"
-        else
-          echo "Boot VT settled on the locked GNOME mobile session after $restorations restoration(s)"
-        fi
-      '';
-    };
-  };
-
   # Autologin is required for a reliable Wayland/DRM session on fajita, but it
   # must still boot locked.  The mobile Shell patch awaits GDM RegisterSession,
   # installs its own lock, and only then enables power-key handling.  Keeping
