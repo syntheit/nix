@@ -406,9 +406,21 @@ in
   # nanomdm needs the SCEP CA cert (ca.pem) to exist first — scep's entrypoint creates it.
   # On mantle the containers bind to the WireGuard IP 10.100.0.4, so wg0 must be
   # up before they start (harbor binds 0.0.0.0/127.0.0.1 so needs no such dep).
+  #
+  # scep is a SOFT dep (wants+after), NOT requires: a transient docker-scep
+  # first-boot failure must not abort nanomdm's start job and leave the MDM
+  # server dead (that caused a ~2.5-day "Enrolling with management server
+  # failed" / 502 outage from the 2026-08-21 reboot — scep failed its first
+  # start, nanomdm's hard Requires aborted its start job, and Restart=on-failure
+  # doesn't re-run a dependency-cancelled job). ca.pem is created once on scep's
+  # first-ever init and persists in the volume, so `after` ordering is enough on
+  # every later boot; nanomdm reads ca.pem off disk and doesn't need scep's
+  # process live to start. wg0 stays a hard requires — nanomdm binds the wg0 IP
+  # 10.100.0.4 and cannot start without it.
   systemd.services.docker-nanomdm = {
     after = [ "docker-scep.service" "docker-networks.service" "wg-quick-wg0.service" ];
-    requires = [ "docker-scep.service" "wg-quick-wg0.service" ];
+    wants = [ "docker-scep.service" ];
+    requires = [ "wg-quick-wg0.service" ];
   };
   systemd.services.docker-scep = {
     after = [ "docker-networks.service" "wg-quick-wg0.service" ];
