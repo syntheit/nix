@@ -465,7 +465,7 @@ in
           # Payload-free pkg (postinstall fetches the payload tarball from
           # /pkg/malli-bootstrap-payload.tar.gz). Re-hash on every rebuild.
           # retire-lima cutover 2026-08-20 (11-step lima-free deus f9176c3a).
-          pkgMD5 = "297b187b3d4419239746c6c7a59d6fd1";
+          pkgMD5 = "6c99aabe0cb00c10a0391c158fb8ff63";
           pkgMD5Size = 12816;
         };
         # headscaleCommand defaults to `headscale nodes list -o json`,
