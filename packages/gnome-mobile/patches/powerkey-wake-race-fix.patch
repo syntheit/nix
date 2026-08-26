@@ -1,0 +1,123 @@
+diff --git a/js/misc/powerManager.js b/js/misc/powerManager.js
+index 378a6d15a..17e675810 100644
+--- a/js/misc/powerManager.js
++++ b/js/misc/powerManager.js
+@@ -71,6 +71,16 @@ export class PowerManager {
+         // configured startup lock has been installed.
+         this._powerKeysReady = false;
+ 
++        // Synchronous authoritative "should the screen be on?" state. The
++        // laggy async D-Bus PowerSaveMode property can't be trusted for
++        // decisions (it stays stuck at 0 while an interleaved fade blanks the
++        // panel), so every screen-state DECISION reads this instead. The
++        // async turn-on/turn-off chains are serialized on _screenTransition
++        // and reconcile against this flag so the LATEST intent always wins.
++        this._intendedScreenOn = true;
++        this._screenTransition = Promise.resolve();
++        this._screenTransitionPending = 0;
++
+         this._idleMonitor = global.backend.get_core_idle_monitor();
+         this._cursorTracker = global.backend.get_cursor_tracker();
+ 
+@@ -92,6 +102,19 @@ export class PowerManager {
+                     console.error(error.message);
+             });
+ 
++        // Adopt DPMS changes made by other writers (e.g. the sensor daemon's
++        // proximity blanking during a call) so power-key decisions stay correct.
++        // While our own transition is in flight the shared PowerSaveMode lags, so
++        // ignore changes then and trust _intendedScreenOn; only sync when settled.
++        this._displayConfigProxy.connect('g-properties-changed', (proxy, changed) => {
++            let props;
++            try { props = changed.deepUnpack(); } catch (e) { return; }
++            if (!('PowerSaveMode' in props))
++                return;
++            if (this._screenTransitionPending > 0) { this._pendingProxyResync = true; return; }
++            this._intendedScreenOn = this._displayConfigProxy.PowerSaveMode === 0;
++        });
++
+         this._upowerProxy = new UpowerProxy(Gio.DBus.system,
+             'org.freedesktop.UPower',
+             '/org/freedesktop/UPower',
+@@ -566,7 +589,39 @@ export class PowerManager {
+         }
+     }
+ 
+-    async _turnOffScreen(fadeTime) {
++    // Serializing wrapper: set intent synchronously (so DECISIONS see the
++    // truth immediately) and chain the async blank onto the shared transition
++    // promise so it can't interleave with a turn-on. The .catch() before the
++    // .then() keeps one failure from wedging the chain forever.
++    _turnOffScreen(fadeTime) {
++        this._intendedScreenOn = false;
++        this._screenTransitionPending++;
++        log("POWERMANAGER: intendedScreenOn -> false");
++        this._screenTransition = this._screenTransition
++            .catch(e => { if (e) console.error("POWERMANAGER: screen transition error: " + e); })
++            .then(() => this._doTurnOffScreen(fadeTime))
++            .finally(() => this._onScreenTransitionSettled());
++        return this._screenTransition;
++    }
++
++    _onScreenTransitionSettled() {
++        this._screenTransitionPending--;
++        if (this._screenTransitionPending === 0 && this._pendingProxyResync) {
++            delete this._pendingProxyResync;
++            // A proximity/external DPMS change arrived mid-transition and was
++            // deferred; adopt the now-settled truth so power-key decisions and
++            // wake-after-call stay correct.
++            this._intendedScreenOn = this._displayConfigProxy.PowerSaveMode === 0;
++            log("POWERMANAGER: resynced intendedScreenOn from proxy after settle -> " + this._intendedScreenOn);
++        }
++    }
++
++    async _doTurnOffScreen(fadeTime) {
++        // A newer wake superseded this queued blank — bail so the final
++        // PowerSaveMode write matches _intendedScreenOn.
++        if (this._intendedScreenOn)
++            return;
++
+         if (this._fadingOut)
+             return;
+ 
+@@ -607,7 +662,26 @@ export class PowerManager {
+         }
+     }
+ 
+-    async _turnOnScreen() {
++    // Serializing wrapper (mirror of _turnOffScreen above): set intent
++    // synchronously, then queue the async wake behind any in-flight
++    // transition so a wake and a blank can't run their fades concurrently.
++    _turnOnScreen() {
++        this._intendedScreenOn = true;
++        this._screenTransitionPending++;
++        log("POWERMANAGER: intendedScreenOn -> true");
++        this._screenTransition = this._screenTransition
++            .catch(e => { if (e) console.error("POWERMANAGER: screen transition error: " + e); })
++            .then(() => this._doTurnOnScreen())
++            .finally(() => this._onScreenTransitionSettled());
++        return this._screenTransition;
++    }
++
++    async _doTurnOnScreen() {
++        // A newer blank superseded this queued wake — bail so we don't power
++        // the panel back on against the latest intent.
++        if (!this._intendedScreenOn)
++            return;
++
+         if (this._fadeInTimeout || this._fadingIn) {
+ log("POWERMANAGER: turn on this._fadeInTimeout " + this._fadeInTimeout + " this._fadingIn " + this._fadingIn);
+             return;
+@@ -1135,7 +1209,11 @@ log("POWERMANAGER: turn on this._fadeInTimeout " + this._fadeInTimeout + " this.
+ 
+     async powerButtonEvent(event) {
+         const type = event.type();
+-        const screenIsOn = this._displayConfigProxy.PowerSaveMode === 0;
++        // Decide from synchronous intent, NOT the laggy async PowerSaveMode
++        // property. PowerSaveMode can be stuck at 0 ("on") while the panel is
++        // physically off after rapid presses — reading it here is exactly what
++        // let a wake no-op and the release then blank the screen.
++        const screenIsOn = this._intendedScreenOn;
+ 
+         const eventTimeMs = event.get_time();
+         const timeNowMs = GLib.get_monotonic_time() / 1000;
