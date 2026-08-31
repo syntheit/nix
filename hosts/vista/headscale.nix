@@ -67,7 +67,14 @@ in
     # roles.json, deus.db, work tree. Previously 0750 root:root, which
     # silently 500'd every TUI request with "permission denied: open
     # /var/lib/deus/roles.json" the first time it was queried.
-    "d /var/lib/deus 0755 root root -"
+    # Owner is deus (not root) so the deus-server orchestrator can create the
+    # temp files ssh-keygen(1) needs to atomically rewrite fleet-known-hosts.
+    # When a Mac rotates its SSH host key (e.g. after a rebuild), deus self-heals
+    # via `ssh-keygen -R <ip>`, which mkstemp()s in this dir. A root-owned dir
+    # made that fail with "mkstemp: Permission denied", so the stale key was
+    # never cleared and every deploy to that host hard-failed host-key checking,
+    # stranding it as un-deployable until the entry was removed by hand.
+    "d /var/lib/deus 0755 deus deus -"
     # 0755 so the container's deus user can traverse to the world-readable token files inside.
     "d /var/lib/deus-tokens 0755 root root -"
     # 0750 — keys are root-only on the host; the container re-permissions for fleet/deus user.
