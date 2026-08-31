@@ -165,8 +165,10 @@ in
     gdk-pixbuf # Basic image formats (PNG, JPEG, BMP, GIF, TIFF, etc.)
     libheif # HEIF and AVIF image formats
     libheif.out # HEIF output plugin
-    nufraw # RAW image format support
-    nufraw-thumbnailer # RAW image thumbnailer
+    # nufraw / nufraw-thumbnailer removed from nixpkgs (UI depended on the
+    # deprecated GTK2 engine) — dropped to unblock evaluation. Restore RAW
+    # thumbnail support with a maintained replacement (e.g. libraw/darktable)
+    # if needed.
     ffmpegthumbnailer # Video thumbnail generation
     poppler-utils # PDF thumbnail generation
     android-tools
