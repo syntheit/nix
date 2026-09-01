@@ -787,8 +787,9 @@ in
       # with the agent itself (in 0.16.10) tries to self-heal but can
       # itself hit the same trap if it spawns during a deploy storm.
       #
-      # This timer polls every 5 min for "deus says offline + headscale
-      # says online" Macs, SSHes in as fleet→tars, and runs the
+      # This timer polls every 5 min for Macs deus marks "degraded"
+      # (headscale-online but the agent heartbeat is stale — the
+      # penalty-box signature), SSHes in as fleet→tars, and runs the
       # bootout/bootstrap dance. fleet user already has SSH access to
       # tars@<mac> (id_ed25519 in /home/fleet/.ssh/) from earlier work.
       systemd.services.deus-fleet-recover = {
@@ -831,28 +832,44 @@ in
               echo "$hs_json" | jq -r '.[] | select(.online == true) | select(.given_name | test("^m-[a-z0-9]+-vm$")) | .given_name'
             )
 
-            # Hosts deus considers offline darwin-side.
-            mapfile -t offline_macs < <(
+            # Macs deus marks "degraded": headscale-online but the
+            # deus-agent heartbeat has gone stale — i.e. the agent is
+            # parked in launchd's EX_CONFIG penalty box (or not loaded).
+            # NOTE: the /hosts API reports health="" (with online=false)
+            # for truly-offline hosts and NEVER the literal "offline";
+            # the recoverable case is "degraded", so filter on that.
+            # (The old "offline" filter matched nothing, so this timer
+            # silently recovered zero Macs on every run.)
+            mapfile -t degraded_macs < <(
               curl -sf -m 10 -H "Authorization: Bearer $TOKEN" "$DEUS_URL/hosts" 2>/dev/null \
-                | jq -r '.[] | select(.kind == "darwin") | select(.health == "offline") | .name' \
+                | jq -r '.[] | select(.kind == "darwin") | select(.health == "degraded") | .name' \
                 | sort -u
             )
 
-            # Candidates: deus-offline Macs whose Mac OR -vm peer is
-            # headscale-online. The VM-online branch is what lets us
-            # reach Macs whose Tailscale daemon got stuck routing
-            # inbound — direct SSH times out, but the peer's Lima
-            # bridge gives us a back door.
+            # Candidates: degraded Macs confirmed headscale-online (as
+            # the Mac itself, or — vestigially, pre-Lima-retirement — via
+            # a "-vm" peer for the Tailscale-stuck back door). The array
+            # loops are length-guarded: an empty mapfile array expanded
+            # as "''${arr[@]:-}" injects one empty element, which under a
+            # bare `arr[$x]=1` throws "bad array subscript" every run
+            # (online_vms is always empty now that Lima is retired).
             declare -A in_macs in_vms
-            for o in "''${online_macs[@]:-}"; do in_macs[$o]=1; done
-            for v in "''${online_vms[@]:-}"; do in_vms[$v]=1; done
+            if ((''${#online_macs[@]})); then
+              for o in "''${online_macs[@]}"; do [ -n "$o" ] && in_macs[$o]=1; done
+            fi
+            if ((''${#online_vms[@]})); then
+              for v in "''${online_vms[@]}"; do [ -n "$v" ] && in_vms[$v]=1; done
+            fi
 
             declare -a candidates=()
-            for h in "''${offline_macs[@]:-}"; do
-              if [ -n "''${in_macs[$h]:-}" ] || [ -n "''${in_vms[$h-vm]:-}" ]; then
-                candidates+=("$h")
-              fi
-            done
+            if ((''${#degraded_macs[@]})); then
+              for h in "''${degraded_macs[@]}"; do
+                [ -n "$h" ] || continue
+                if [ -n "''${in_macs[$h]:-}" ] || [ -n "''${in_vms[$h-vm]:-}" ]; then
+                  candidates+=("$h")
+                fi
+              done
+            fi
 
             if [ "''${#candidates[@]}" -eq 0 ]; then
               log "no candidates"
