@@ -802,10 +802,17 @@ in
         path = with pkgs; [ bash jq curl openssh gawk coreutils ];
         serviceConfig = {
           Type = "oneshot";
-          User = "fleet";
-          Group = "users";
-          StandardOutput = "append:/var/log/deus-fleet-recover.log";
-          StandardError = "append:/var/log/deus-fleet-recover.log";
+          # Runs as deus (not fleet) so it can read the deus deploy key
+          # /var/lib/deus/fleet-key — the only SSH identity authorised on
+          # tars@ across the WHOLE fleet. fleet's personal key was only
+          # ever hand-added to some Macs, so recovery skipped the rest
+          # (notably the 100.64.2.x cohort) with a bogus "ssh timeout … skip".
+          User = "deus";
+          Group = "deus";
+          # deus owns /var/lib/deus, so it can always write the log here.
+          # (under /var/log a deus-run oneshot can't reliably open the file.)
+          StandardOutput = "append:/var/lib/deus/fleet-recover.log";
+          StandardError = "append:/var/lib/deus/fleet-recover.log";
           ExecStart = pkgs.writeShellScript "deus-fleet-recover" ''
             set -uo pipefail
 
@@ -894,7 +901,8 @@ in
             # a new host key and we'd otherwise need manual cleanup.
             SSH_OPTS=(-o ConnectTimeout=5 -o BatchMode=yes
               -o StrictHostKeyChecking=no
-              -o UserKnownHostsFile=/dev/null)
+              -o UserKnownHostsFile=/dev/null
+              -i /var/lib/deus/fleet-key -o IdentitiesOnly=yes)
 
             # ssh_state returns the agent's launchd state string, OR
             # "_SSH_FAIL_" if we couldn't connect at all. Empty
