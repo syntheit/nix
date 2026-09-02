@@ -233,6 +233,33 @@ mobile-nixos.kernel-builder {
     # Patch kept for that future backport. (It fixes rare random freezes /
     # crashdumps on OP6/6T — mainline a1d63493634e.)
     # ./patches/dispcc-sdm845-pixel-clk-parent-enable.patch
+
+    # DISABLED — UNVERIFIED, requires on-device kernel reflash to test.
+    # Do NOT re-enable and flash without a deliberate test cycle.
+    #
+    # Fixes: IMX371 front camera grayscale selfies (all Bayer channels R≈G≈B
+    # in raw output, i.e. the sensor is emitting luminance/phase-detect data
+    # on every colour channel instead of a normal Bayer mosaic).
+    #
+    # Root cause: imx371.c's sensor mode register table ships with PDAF
+    # raw-pixel output enabled. The fix mirrors the values from imx376.c
+    # (the rear sensor driver in the same tree, known-good colour output):
+    #
+    #   0x3F14 = 0x00  (PRIMARY — PDAF raw-pixel output enable; set to 0x01
+    #                   in imx371.c, which is the direct cause of R≈G≈B)
+    #   0x3F3C = 0x00  (PDAF companion / raw-pixel mode select; was 0x01)
+    #   0x3E20 = 0x03  (pixel output type select; was 0x00)
+    #   0xBC41 = 0x03  (sensor output format companion; was 0x01)
+    #
+    # UNVERIFIED — register semantics are inferred from driver-differential
+    # analysis between imx371.c and imx376.c; there is no public IMX371
+    # datasheet to confirm them. Confirmed only by differential vs the
+    # working rear sensor. 0x3F14=0x00 is the primary change; the other
+    # three are companions. If colour is not fully restored after testing,
+    # also mirror 0x3F4C/0x3F4D/0x3F78/0x3F79 (also differ from imx376).
+    #
+    # Investigation report: ~/fajita-notes/camera-project/front-mono-investigation.md
+    # ./patches/imx371-disable-pdaf-raw-output-front-color.patch
   ];
 
   nativeBuildInputs = [ buildPackages.python3 buildPackages.zstd buildPackages.kmod ];
