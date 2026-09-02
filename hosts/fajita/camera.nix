@@ -196,6 +196,21 @@ let
       # multi-zone weighting + a low-contrast hold-position guard are the
       # tuning follow-ups deliberately left out of this minimal change.
       ./camera/patches/17-swstats-af-window-center-third.patch
+      # 18 = OURS, CPU-path color baseline (fajita). With the CCM re-parked
+      # (imx376.yaml STATUS: the CPU CCM STORE_PIXEL path is ~3x/pixel and
+      # dropped the ~5 MP viewfinder to ~5 fps, breaking AF), the shipped look
+      # is a mild flat green-grey cast + low saturation. Saturation is
+      # unreachable here (Adjust::applySaturation only touches combinedMatrix,
+      # which the flat non-CCM debayer branch never reads) and a diagonal CCM
+      # is NOT cheaper -- ccmEnabled is a compile-time template arg so the CCM
+      # branch always pays the full 3x3. The one free lever is the per-channel
+      # WB gains that already feed the flat LUT: a tiny post-gray-world trim
+      # lifts R/B vs the pinned G=1.0 to push the neutral point off green
+      # toward true grey, at zero extra per-pixel cost. Gated on !ccmEnabled
+      # so it is a no-op (and cannot perturb the calibrated matrix's white
+      # point) the moment the CCM/GPU path is enabled -- no double-correction.
+      # A/B: set kGreenCastTrimR/B to 1.0 in the patch for identity.
+      ./camera/patches/18-awb-neutralize-green-cast.patch
     ];
     postInstall = (old.postInstall or "") + ''
       install -Dm644 ${./camera/tuning/imx371.yaml} $out/share/libcamera/ipa/simple/imx371.yaml

@@ -1,0 +1,73 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Daniel <daniel@matv.io>
+Date: Tue, 02 Sep 2026 00:00:00 -0400
+Subject: [PATCH] awb: neutralize the residual green cast in the CPU non-CCM
+ path
+
+FAJITA CPU-COLOR BASELINE (2026-09-02). With the CCM re-parked
+(imx376.yaml STATUS block: the CPU CCM STORE_PIXEL path costs ~3x the
+flat-LUT path and dropped the ~5 MP viewfinder to ~5 fps, breaking AF),
+the shipped rear look is a mild flat green-grey daylight cast + low
+saturation. Saturation is UNREACHABLE on this path -- Adjust's
+applySaturation() only mutates context.combinedMatrix, which the debayer
+reads ONLY when ccmEnabled (if constexpr in STORE_PIXEL); the flat
+non-CCM branch reads params.gains alone. And a diagonal CCM does NOT help:
+ccmEnabled is a COMPILE-TIME template arg, so the CCM branch always does
+the full 3x3 (3 CcmColumn lookups + 6 int adds + 3 gamma-clamp lookups)
+per pixel whether or not the off-diagonals are zero -- a diagonal "CCM" is
+exactly as expensive as the full matrix, not free. So the only genuinely
+zero-per-pixel-cost color lever on the CPU path is the per-channel WB
+gains that already feed the flat LUT.
+
+The gray-world AWB pins gains.g = 1.0 and pulls R/B toward the scene
+mean, which after black-subtraction (patches 12/13) settles the rendered
+channel means around ~163/162/163 -- neutral-but-green-leaning (G leads R
+by a few counts). This applies a tiny fixed trim to the post-gray-world
+gains to lift R and B fractionally relative to G, pushing the neutral
+point off green toward true grey. It is intentionally small (a couple of
+percent) -- gray-world already does the heavy lifting; this only removes
+the residual bias it leaves on this sensor. Tune kGreenCastTrim* by eye.
+
+SCOPING / NO DOUBLE-CORRECTION: gated on !context.ccmEnabled, so it runs
+ONLY on the CPU flat-LUT path shipped today. The moment the CCM is
+re-listed (which also enables the GPU debayer's combinedMatrix path and
+Adjust's saturation), this nudge becomes a no-op and the CCM owns color
+-- there is no path where the trim and a matrix both apply. Even without
+the gate the trim only shifts awb.gains (the single WB value every path
+derives from), so it could never stack as a second correction on top of a
+CCM; the gate just makes that guarantee unconditional and keeps the
+calibrated CCM's white point untouched.
+---
+ src/ipa/simple/algorithms/awb.cpp | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+--- a/src/ipa/simple/algorithms/awb.cpp
++++ b/src/ipa/simple/algorithms/awb.cpp
+@@ -112,6 +112,27 @@
+ 		std::clamp(gains.b(), 1.15f, 2.60f),
+ 	} };
+ 
++	/*
++	 * fajita (IMX376), CPU non-CCM baseline: neutralize the residual
++	 * green-grey cast the gray-world AWB leaves on this sensor. gains.g is
++	 * pinned at 1.0, so lifting R and B by a small fixed factor shifts the
++	 * rendered neutral point off green toward true grey at ZERO extra
++	 * per-pixel cost (these gains feed the flat non-CCM debayer LUT
++	 * directly). Gated on !ccmEnabled: when the CCM/GPU path is enabled the
++	 * calibrated matrix owns colour and this trim must not perturb its
++	 * white point, so it becomes a no-op. A/B by setting both trims to 1.0
++	 * (identity = old behaviour); raise to push further off green.
++	 */
++	if (!context.ccmEnabled) {
++		constexpr float kGreenCastTrimR = 1.015f;
++		constexpr float kGreenCastTrimB = 1.015f;
++		gains = { {
++			std::clamp(gains.r() * kGreenCastTrimR, 1.10f, 2.70f),
++			1.0f,
++			std::clamp(gains.b() * kGreenCastTrimB, 1.15f, 2.60f),
++		} };
++	}
++
+ 	RGB<double> rgbGains{ { 1 / gains.r(), 1 / gains.g(), 1 / gains.b() } };
+ 	context.activeState.awb.temperatureK = estimateCCT(rgbGains);
+ 	metadata.set(controls::ColourTemperature, context.activeState.awb.temperatureK);
