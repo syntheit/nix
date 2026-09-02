@@ -889,6 +889,21 @@ in
             # exported space-separated string does.
             export ONLINE_VMS_LIST="''${online_vms[*]:-}"
 
+            # The nspawn can't resolve bare MagicDNS names (ssh tars@m-XXXX
+            # fails "Could not resolve hostname"), so recovery must SSH by
+            # tailnet IP. Serialize a name→IP map from the headscale snapshot
+            # for the xargs subshells (same reason as ONLINE_VMS_LIST above).
+            export MAC_IPS="$(echo "$hs_json" | jq -r '.[] | (.ip_addresses[]? | select(startswith("100.64."))) as $ip | "\(.given_name)=\($ip)"' | tr '\n' ' ')"
+
+            # mac_ip <given_name> -> its 100.64.x tailnet IP (fails if unknown).
+            mac_ip() {
+              local kv
+              for kv in $MAC_IPS; do
+                case "$kv" in "$1="*) printf '%s' "''${kv#*=}"; return 0;; esac
+              done
+              return 1
+            }
+
             # SSH_OPTS: shared option set for every recovery SSH call.
             # UserKnownHostsFile=/dev/null is critical for the
             # ProxyJump path — Lima's bridge IP is 192.168.5.2 on
@@ -910,9 +925,10 @@ in
             # which is itself a recoverable condition (we just need to
             # bootstrap fresh).
             ssh_state() {
-              local out rc
+              local out rc ip
+              ip=$(mac_ip "$1") || { echo "_SSH_FAIL_"; return; }
               out=$(ssh "''${SSH_OPTS[@]}" \
-                    "tars@$1" \
+                    "tars@$ip" \
                     'sudo /bin/launchctl print system/io.matv.deus-agent 2>/dev/null | awk -F"= *" "/state =/{print \$2; exit}"' \
                     2>/dev/null)
               rc=$?
@@ -928,8 +944,9 @@ in
             # plain SSH connection. Idempotent: bootout no-ops if the
             # unit isn't loaded, bootstrap no-ops if it already is.
             direct_bootstrap() {
+              local ip; ip=$(mac_ip "$1") || return 1
               ssh "''${SSH_OPTS[@]}" \
-                  "tars@$1" '
+                  "tars@$ip" '
                 sudo /bin/launchctl bootout system/io.matv.deus-agent 2>/dev/null || true
                 sudo /bin/launchctl bootout system/io.matv.deus-agent-watchdog 2>/dev/null || true
                 sleep 1
@@ -1011,7 +1028,7 @@ in
               esac
             }
 
-            export -f ssh_state direct_bootstrap rescue_via_vm has_vm_peer recover_one
+            export -f ssh_state direct_bootstrap rescue_via_vm has_vm_peer recover_one mac_ip
             printf '%s\n' "''${candidates[@]}" \
               | xargs -P 8 -I {} bash -c 'recover_one "$@"' _ {} \
               | while IFS= read -r line; do log "$line"; done
