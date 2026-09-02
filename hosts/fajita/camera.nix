@@ -343,6 +343,8 @@ in
     # Phase 2: fajita-focus — manual/auto focus via the lc898217xc VCM
     # (contrast hill-climb over `cam` captures; see packages/fajita-camera-tools)
     (pkgs.callPackage ../../packages/fajita-camera-tools { })
+    # Read-only GPU-debayer feasibility probe: surfaceless EGL + dma-buf import check for the Adreno 630; safe to run on-device (does not touch the camera pipeline).
+    (pkgs.callPackage ../../packages/fajita-egl-probe { })
     # Megapixels: DROPPED as a user-facing app (2026-07-17, Daniel's call,
     # verified on-device) — it bypasses the entire tuned+AF libcamera path
     # (raw V4L2: no black level, no AWB, no AF, crude preview debayer) and
