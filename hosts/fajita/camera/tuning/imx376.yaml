@@ -65,6 +65,14 @@ algorithms:
   # lets Adjust's saturation boost run — so with Ccm parked, Adjust's
   # saturation path is inert too (Adjust stays listed; it is a no-op here).
   #
+  # CPU-BASELINE COLOR (2026-09-02, patch 18): while Ccm is parked, the CPU
+  # flat non-CCM debayer path can only do per-channel WB/tone — NOT saturation
+  # (needs the cross-channel matrix) and NOT hue rotation. The one free lever
+  # is the AWB gains that feed the flat LUT, so patch 18 applies a small
+  # post-gray-world R/B trim (gated !ccmEnabled) to neutralize the residual
+  # green cast at ~0 per-pixel cost. It self-disables when Ccm is re-listed,
+  # so it never perturbs the calibrated matrix's white point.
+  #
   # TO RE-ENABLE (only with a mitigation, e.g. a lower-res viewfinder stream):
   # restore the `- Ccm:` block below between Awb and Adjust. Pipeline order
   # matters — Awb MUST precede Ccm so the debayer's combinedMatrix =
