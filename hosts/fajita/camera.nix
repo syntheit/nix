@@ -28,7 +28,47 @@ let
     # calibration (Phase 4) and darkroom bursts (Phase 6):
     #   cam --camera <rear-id> --stream role=raw --file=x.dng
     # (Megapixels was dropped as the raw vehicle — see note at packages.)
-    buildInputs = (old.buildInputs or [ ]) ++ [ pkgs.libtiff ];
+    #
+    # libGL (libglvnd) unlocks the soft-ISP GPU DEBAYER (DebayerEGL) so the
+    # whole debayer + AWB gains + CCM + gamma run on the Adreno 630 via
+    # freedreno/mesa instead of the single-threaded SDM845 CPU. This is what
+    # makes the color-correction matrix affordable again: the CPU CCM path
+    # (imx376.yaml STATUS block) cost ~3x the flat-LUT path and dropped the
+    # ~5 MP full-res viewfinder to ~5 fps, breaking autofocus, so the CCM was
+    # re-parked 2026-08-15. On the GPU the CCM is essentially free.
+    #
+    # WHY libGL specifically: libcamera 0.7.0's meson gates the GPU debayer on
+    # `mesa_works = cc.check_header('EGL/egl.h')` (src/libcamera/meson.build)
+    # and pulls `dependency('egl')` + `dependency('glesv2')`; when both the
+    # header is found and softisp is enabled it sets HAVE_DEBAYER_EGL=1 and
+    # compiles egl.cpp + software_isp/debayer_egl.cpp. libglvnd's dev output
+    # provides egl.pc, glesv2.pc AND the EGL/GLES2 headers (incl.
+    # EGL_PLATFORM_SURFACELESS_MESA + eglGetPlatformDisplay), covering the
+    # gate and both pkg-config lookups in one input. libdrm (drm_fourcc.h,
+    # used by egl.cpp) is already in nixpkgs' libcamera buildInputs; the
+    # dma-buf / dma-heap kernel headers are in the standard toolchain.
+    #
+    # RUNTIME (source-verified, safe to ship): the GPU path opens a
+    # SURFACELESS pbuffer EGL context (EGL_PLATFORM_SURFACELESS_MESA,
+    # EGL_PBUFFER_BIT) — no display server, no GBM, no DRM master — inside the
+    # wireplumber process. There is NO automatic CPU fallback: with the GPU
+    # debayer compiled in, SoftwareIsp defaults to DebayerEGL and if
+    # DebayerEGL::start()'s eglInitialize fails it returns -ENODEV and the
+    # stream fails to start (no silent degrade to CPU). The only safe revert is
+    # flipping LIBCAMERA_SOFTISP_MODE back to "cpu" (see the pin below).
+    #
+    # NOTE on look parity: even BEFORE re-enabling CCM, the GPU path is not
+    # bit-identical to the current CPU path. The GPU fragment shader ALWAYS runs
+    # `combinedMatrix` (white-balance applied via matrix multiply) + the
+    # contrast S-curve + gamma, whereas the CPU non-CCM path uses a flat AWB
+    # gain LUT + gamma. At the default contrast=1.0, apply_contrast is an exact
+    # identity (contrastExp = tan(π/4) = 1.0), so the divergence pre-CCM is
+    # just matrix-applied WB gains vs LUT WB gains through gamma — numerically
+    # close but not identical. Expect a slightly different tone on the GPU path;
+    # do not treat a minor tone shift as a bug. The safety net is the
+    # `LIBCAMERA_SOFTISP_MODE` env var, forced to "cpu" below to keep shipped
+    # behavior unchanged until the owner deliberately tests the GPU path.
+    buildInputs = (old.buildInputs or [ ]) ++ [ pkgs.libtiff pkgs.libGL ];
     # Phase 3: soft-ISP autofocus + manual controls. Vendored from
     # gitlab.com/tui/libcamera branch millicam_af_6 (Vasiliy Doylov + Pavel
     # Machek; manual-focus patch is patchwork #26241, tested upstream on
@@ -302,6 +342,41 @@ in
   # is unaffected (same pipewire source, just built with our libcamera).
   services.pipewire.package = pipewire-fajita;
   services.pipewire.wireplumber.package = wireplumber-fajita;
+
+  # SAFETY PIN for the newly-compiled GPU debayer (see the libGL note on
+  # libcamera-fajita above). With HAVE_DEBAYER_EGL compiled in, libcamera's
+  # SoftwareIsp now DEFAULTS to the GPU DebayerEGL and has NO automatic
+  # runtime fallback to the CPU debayer — if the surfaceless EGL context
+  # can't init, DebayerEGL::start() returns -ENODEV and the camera stream
+  # fails to start outright (source: software_isp.cpp selects DebayerEGL when
+  # LIBCAMERA_SOFTISP_MODE is unset or "gpu"; simple.cpp aborts start on the
+  # error, no CPU retry). Pinning to "cpu" keeps the shipped behavior as-is
+  # (single-threaded CPU debayer, CCM still parked). The GPU look will differ
+  # slightly even pre-CCM — see the NOTE on look parity in the libGL comment
+  # above. wireplumber hosts the libcamera SPA camera monitor node, so the env
+  # must be set on ITS user service.
+  #
+  # CAVEAT: this pin works because fajita runs pipewire/wireplumber as USER
+  # services. If `services.pipewire.systemWide` were ever set true, wireplumber
+  # would become a system unit and this `systemd.user.services.wireplumber
+  # .environment` line would silently stop applying — revisit the pin location
+  # if that ever changes.
+  #
+  # TO TEST the GPU path on-device:
+  #   1. Flip this to "gpu" (or remove the line entirely), rebuild + deploy.
+  #   2. Sanity-check the EGL stack before trusting results: verify
+  #      /run/opengl-driver/lib exists with a mesa 50_mesa.json ICD, and run
+  #      a surfaceless EGL probe — it should report the Adreno 630 / freedreno
+  #      renderer, not a zink or kms_swrast software fallback (those would
+  #      eglInitialize-succeed but defeat the purpose).
+  #   3. To re-enable CCM at the same time, follow the "TO RE-ENABLE" recipe
+  #      in imx376.yaml's STATUS block — the `- Ccm:` entry MUST stay between
+  #      `Awb` and `Adjust` in the algorithm list (Awb must precede Ccm so the
+  #      debayer's `combinedMatrix = ccm * gainMatrix`; patch 13's
+  #      black-subtraction fold assumes exactly this order). Re-enabling CCM
+  #      also flips `ccmEnabled=true`, which re-activates Adjust's saturation
+  #      path — see the STATUS block for the full ordering rationale.
+  systemd.user.services.wireplumber.environment.LIBCAMERA_SOFTISP_MODE = "cpu";
 
   # Camera device nodes. systemd's default 70-uaccess rules already tag
   # video4linux devices for the active seat; make it explicit and cover the
