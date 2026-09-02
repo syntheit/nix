@@ -1,0 +1,80 @@
+From: Daniel <daniel@matv.io>
+Subject: [PATCH] media: i2c: imx371: disable PDAF raw-pixel output to restore front-camera colour
+
+The IMX371 front sensor on the OnePlus 6T (SDM845) produces grayscale
+selfies: all Bayer channels in captured frames read R≈G≈B, effectively
+reducing every pixel to luminance. The root cause was identified by
+comparing the imx371.c sensor mode register table against the
+imx376.c rear-sensor driver in the same tree, which is known to produce
+correct colour output.
+
+Four registers differ between the two drivers and are responsible for the
+monochrome output:
+
+  0x3F14 (PRIMARY): PDAF raw-pixel output enable.
+    imx371.c = 0x01 (enabled — the direct cause of R≈G≈B; with PDAF
+    raw-pixel mode active the ISP receives phase-detect/luminance data on
+    all colour channels instead of a normal Bayer mosaic).
+    imx376.c = 0x00 (disabled — normal colour Bayer output).
+
+  0x3F3C: PDAF companion / raw-pixel mode select.
+    imx371.c = 0x01, imx376.c = 0x00.
+
+  0x3E20: Pixel output type select.
+    imx371.c = 0x00, imx376.c = 0x03.
+
+  0xBC41: Sensor output format companion.
+    imx371.c = 0x01, imx376.c = 0x03.
+
+This patch mirrors the imx376 known-good values for all four registers,
+disabling the PDAF raw-pixel output path and restoring normal Bayer colour
+readout from the IMX371 front sensor.
+
+Note: the register semantics above are inferred from driver-differential
+analysis — there is no public IMX371 datasheet available for verification.
+See the investigation report at ~/fajita-notes/camera-project/front-mono-investigation.md
+for the full differential comparison, including additional registers that
+differ between imx371.c and imx376.c (0x3F4C, 0x3F4D, 0x3F78, 0x3F79)
+which were left unchanged in this patch but may need to be mirrored too if
+colour is not fully restored after testing this change.
+
+This patch is UNVERIFIED — it requires an on-device kernel reflash to test.
+Do NOT apply without that test. Kernel source: rev c4804e960aef,
+tag sdm845-6.16.7-r0.
+
+---
+ drivers/media/i2c/imx371.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+--- a/drivers/media/i2c/imx371.c
++++ b/drivers/media/i2c/imx371.c
+@@ -358,7 +358,7 @@
+ 	{CCI_REG8(0x040D), 0x30},
+ 	{CCI_REG8(0x040E), 0x0D},
+ 	{CCI_REG8(0x040F), 0x80},
+-	{CCI_REG8(0xBC41), 0x01},
++	{CCI_REG8(0xBC41), 0x03},
+ 	{CCI_REG8(0x034C), 0x12},
+ 	{CCI_REG8(0x034D), 0x30},
+ 	{CCI_REG8(0x034E), 0x0D},
+@@ -377,7 +377,7 @@
+ 	{CCI_REG8(0x0821), 0x70},
+ 	{CCI_REG8(0x0822), 0x00},
+ 	{CCI_REG8(0x0823), 0x00},
+-	{CCI_REG8(0x3E20), 0x00},
++	{CCI_REG8(0x3E20), 0x03},
+ 	{CCI_REG8(0x3E37), 0x00},
+ 	{CCI_REG8(0x3E3B), 0x00},
+ 	{CCI_REG8(0x3614), 0x00},
+@@ -397,9 +397,9 @@
+ 	{CCI_REG8(0x3C05), 0x14},
+ 	{CCI_REG8(0x3C06), 0x01},
+ 	{CCI_REG8(0x3C07), 0x01},
+-	{CCI_REG8(0x3F14), 0x01},
++	{CCI_REG8(0x3F14), 0x00},
+ 	{CCI_REG8(0x3F17), 0x00},
+-	{CCI_REG8(0x3F3C), 0x01},
++	{CCI_REG8(0x3F3C), 0x00},
+ 	{CCI_REG8(0x3F78), 0x00},
+ 	{CCI_REG8(0x3F79), 0xB4},
+ 	{CCI_REG8(0x3F7C), 0x00},
