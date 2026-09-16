@@ -1,5 +1,6 @@
 {
   lib,
+  pkgs,
   vars,
   ...
 }:
@@ -43,14 +44,41 @@
   };
   networking.firewall.trustedInterfaces = [ "tailscale0" ];
 
+  # SSH on two ports, deliberately:
+  #   22   — reachable only over tailscale0 (a trusted interface, so the
+  #          firewall lets it through without an explicit allow).
+  #   4040 — reachable from the public internet, as a SECOND way in whose
+  #          failure domain is independent of tailscale.com. The NUC has no
+  #          IPMI, so if tailscaled wedges or tailscale.com has an outage, the
+  #          only remaining path would be someone physically at the colo. 4040
+  #          rather than 22 purely to cut brute-force log noise — that is not a
+  #          security control; the real controls are key-only auth, no root
+  #          login, no passwords over the network, plus fail2ban below.
+  # NB: this needs colobarn to allow inbound TCP 4040.
   services.openssh = {
     enable = true;
     openFirewall = false;
+    ports = [
+      22
+      4040
+    ];
     settings = {
       PermitRootLogin = "no";
       PasswordAuthentication = false;
       KbdInteractiveAuthentication = false;
     };
+  };
+  # Only 4040 is opened to every interface; 22 stays tailscale-only via
+  # trustedInterfaces above.
+  networking.firewall.allowedTCPPorts = [ 4040 ];
+
+  # Public SSH means continuous credential-stuffing traffic. Key-only auth
+  # already makes that futile, but fail2ban keeps the journal readable and
+  # drops the obvious floods.
+  services.fail2ban = {
+    enable = true;
+    maxretry = 5;
+    bantime = "1h";
   };
 
   users.users."${vars.user.name}" = {
@@ -66,6 +94,56 @@
     # BRING-UP — it is a bootstrap credential, not a permanent one.
     initialPassword = lib.mkDefault "tech123";
   };
+
+  # ── Tailscale self-heal ───────────────────────────────────────────────────
+  # This box has no IPMI and may be moved between networks, so the thing that
+  # must never happen is "tailscaled is wedged and nobody is on site". systemd
+  # already restarts the daemon if it *exits*, but it does not notice the
+  # failure mode that actually strands you: the process alive but the backend
+  # stuck in NeedsLogin/Stopped after a network change or a DHCP flap.
+  #
+  # Deliberately conservative: it only acts when the backend is NOT Running,
+  # so a healthy node is never touched, and it only bounces the service — it
+  # never re-runs `tailscale up` or re-reads the authkey, so it cannot
+  # re-register the node or change its identity.
+  systemd.services.tailscale-selfheal = {
+    description = "Restart tailscaled if the backend is not Running";
+    after = [ "tailscaled.service" ];
+    path = [
+      pkgs.tailscale
+      pkgs.jq
+    ];
+    serviceConfig.Type = "oneshot";
+    script = ''
+      state=$(tailscale status --json 2>/dev/null | jq -r '.BackendState' 2>/dev/null || echo Unknown)
+      if [ "$state" = "Running" ]; then
+        echo "tailscale backend Running — nothing to do"
+        exit 0
+      fi
+      echo "tailscale backend is '$state' — restarting tailscaled"
+      systemctl restart tailscaled.service
+    '';
+  };
+  systemd.timers.tailscale-selfheal = {
+    description = "Periodically check that tailscale is actually up";
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      # First check shortly after boot, then every 5 min. Persistent so a box
+      # that was powered off through a scheduled run still checks on wake.
+      OnBootSec = "3min";
+      OnUnitActiveSec = "5min";
+      Persistent = true;
+    };
+  };
+
+  # Allow remote deploys from vista/harbor (`nixos-rebuild --target-host`).
+  # Without this, pushing a locally-built closure fails with "lacks a signature
+  # by a trusted key", because only root is trusted by default and root SSH is
+  # (correctly) disabled on this host.
+  nix.settings.trusted-users = [
+    "root"
+    "@wheel"
+  ];
 
   security.sudo.wheelNeedsPassword = false;
 
