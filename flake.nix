@@ -423,6 +423,99 @@
             }
           ];
         };
+
+        # Colo NUC — phase 1: boot, get on the network, be reachable. No
+        # fleet role yet. See hosts/nuc/default.nix.
+        nuc = nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          specialArgs = specialArgs // {
+            hostName = "nuc";
+          };
+          modules = [
+            ./hosts/nuc
+            inputs.disko.nixosModules.disko
+            inputs.home-manager.nixosModules.home-manager
+            {
+              nixpkgs.overlays = [
+                (import ./overlays { inherit inputs lib; }).modifications
+                (import ./overlays { inherit inputs lib; }).additions
+              ];
+              home-manager.useGlobalPkgs = true;
+              home-manager.useUserPackages = true;
+              home-manager.backupFileExtension = "bkp";
+              home-manager.extraSpecialArgs = specialArgs // {
+                hostName = "nuc";
+              };
+              home-manager.users."${vars.user.name}" = import ./hosts/nuc/home.nix;
+            }
+          ];
+        };
+
+        # Live installer ISO for the colo NUC bring-up. Boots to a console,
+        # auto-joins the same Tailscale tailnet as the `nuc` host itself (so
+        # Daniel can SSH in and drive the install remotely — no out-of-band
+        # console at the colo), and carries this flake's own source plus
+        # `disko-install` so the only physical step is picking USB boot.
+        #
+        # Build with --impure (reads the auth key from a file kept outside
+        # this git repo on purpose — see hosts/nuc/default.nix):
+        #   nix build --impure .#nixosConfigurations.nuc-installer.config.system.build.isoImage
+        nuc-installer = nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          modules = [
+            (
+              { modulesPath, ... }:
+              {
+                imports = [ (modulesPath + "/installer/cd-dvd/installation-cd-minimal.nix") ];
+              }
+            )
+            inputs.disko.nixosModules.disko
+            {
+              networking.hostName = "nuc-installer";
+
+              # Kept outside ~/nix on purpose — never commit the raw key.
+              environment.etc."tailscale-authkey".source = /var/lib/nuc-bootstrap/tailscale-authkey;
+              # This flake's own source, so disko-install needs no git/GitHub
+              # credentials to install `#nuc` — only the public flake inputs
+              # (nixpkgs/disko/etc.) need internet access during install.
+              environment.etc."nuc-flake".source = self;
+
+              services.tailscale = {
+                enable = true;
+                authKeyFile = "/etc/tailscale-authkey";
+              };
+              networking.firewall.trustedInterfaces = [ "tailscale0" ];
+
+              services.openssh = {
+                enable = true;
+                openFirewall = false;
+                settings = {
+                  PermitRootLogin = "prohibit-password";
+                  PasswordAuthentication = false;
+                  KbdInteractiveAuthentication = false;
+                };
+              };
+              users.users.root.openssh.authorizedKeys.keys = [
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdRcH2UWe31VdU62j3Ksbb6LDyS1APNW1BQMM8mvsej daniel@matv.io"
+              ];
+
+              # `disko` (format+mount only) alongside `disko-install` (one-shot).
+              # The target NUC7i3BNK has only 8 GB RAM, and the live ISO's nix
+              # store is a tmpfs sized at ~50% of RAM (~4 GB) — smaller than
+              # the ~6 GB `nuc` closure. disko-install stages that closure in
+              # the live store first, so it dies with "No space left on device"
+              # (reproduced in the rehearsal at 8 GB). The two-step path —
+              # `disko --mode destroy,format,mount` then `nixos-install --root`
+              # — is RAM-independent, because nixos-install runs
+              # `nix-build --store <mountpoint>` and therefore builds straight
+              # onto the SSD. Keep disko-install for roomier machines.
+              environment.systemPackages = [
+                inputs.disko.packages.x86_64-linux.disko
+                inputs.disko.packages.x86_64-linux.disko-install
+              ];
+            }
+          ];
+        };
       };
 
       darwinConfigurations = {
