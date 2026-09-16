@@ -182,8 +182,9 @@ in
     usbToggle
   ]
   # Affinity Suite — heavy creative app, workstation-only. Skipped on the
-  # headless server (vista).
-  ++ lib.optionals (hostName != "vista") [
+  # headless servers (vista, nuc), which also don't load the affinity-nix
+  # overlay that defines it.
+  ++ lib.optionals (!builtins.elem hostName [ "vista" "nuc" ]) [
     affinity-v3
   ];
 
