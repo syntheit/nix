@@ -131,4 +131,22 @@
   # principal; the orchestrator already accepts MALLI_PRO_ADMIN_API_KEY under a
   # separate name, so one can be minted without resharing this key.
   sops.secrets.deus_malli_admin_token = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0400"; };
+
+  # Read-only AWS credentials for deus-server, so the console can show the bots
+  # that are STILL on Fargate alongside the ones already on Macs. Each bot has
+  # its own ECS service named svc-<botUid>, so listing them and reading their
+  # desiredCount is the whole AWS-side inventory — and the complement against
+  # hosts/bots.json is the migration backlog.
+  #
+  # IAM user `deus-ecs-readonly`, inline policy `ecs-read-mallipro`: exactly
+  # ecs:ListServices + ecs:DescribeServices, conditioned to the
+  # malli-ai-api-prod-mallipro-orch cluster. It cannot scale a service, touch a
+  # task definition, or read anything outside ECS — verified after creation by
+  # calling it (lists services; AccessDenied on iam:ListUsers).
+  #
+  # Deliberately NOT the credentials that were already on harbor: those belong
+  # to a person (IAM user Nathan), and a service that needs to read a list of
+  # container names should not inherit an individual's permissions.
+  sops.secrets.deus_aws_access_key_id = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0400"; };
+  sops.secrets.deus_aws_secret_access_key = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0400"; };
 }
