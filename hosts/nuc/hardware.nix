@@ -94,10 +94,10 @@
     };
   };
 
-  services.journald.extraConfig = ''
-    SystemMaxUse=500M
-    MaxRetentionSec=1month
-  '';
+  services.journald.settings.Journal = {
+    SystemMaxUse = "500M";
+    MaxRetentionSec = "1month";
+  };
 
   services.earlyoom = {
     enable = true;

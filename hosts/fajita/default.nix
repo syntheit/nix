@@ -3,8 +3,13 @@
   lib,
   pkgs,
   inputs,
+  localFajitaProjects,
   ...
 }:
+let
+  localFajitaPackage = project:
+    project.packages.${pkgs.stdenv.hostPlatform.system}.default;
+in
 {
   imports = [
     ../../modules/gnome-mobile.nix
@@ -1174,10 +1179,10 @@
     jotter                                # Memos notes client (GTK4/libadwaita) — inputs.jotter (github)
     warden                                # Bitwarden/Vaultwarden client (GTK4/libadwaita, over rbw) — inputs.warden (github)
     courier                               # Email client (GTK4/libadwaita, IMAP/SMTP, privacy-first) — inputs.courier (local ~/Projects/courier)
-    calculator                            # Calculator (GTK4/libadwaita, Google-Calculator-style, mobile-first) — inputs.calculator (local ~/Projects/calculator)
-    bourse                                # Bourse (GTK4/libadwaita stocks watchlist, Yahoo Finance, mobile-first) — inputs.bourse (local ~/Projects/bourse)
-    mirador                               # Invidious/YouTube client (GTK4/libadwaita, mobile-first) — inputs.mirador (local ~/Projects/mirador)
-    relay                                 # Terminal (GTK4/libadwaita/VTE, mobile-first: touch selection, key bar, mosh persistence) — inputs.relay (local ~/Projects/relay)
+    (localFajitaPackage localFajitaProjects.calculator) # Calculator (local Harbor checkout, pinned)
+    (localFajitaPackage localFajitaProjects.bourse)     # Bourse (local Harbor checkout, pinned)
+    (localFajitaPackage localFajitaProjects.mirador)    # Invidious/YouTube client (local Harbor checkout, pinned)
+    (localFajitaPackage localFajitaProjects.relay)      # Terminal (local Harbor checkout, pinned)
     paloma-wrapped                        # Telegram client (GTK4/libadwaita, TDLib); api creds injected at runtime from sops — inputs.paloma (github syntheit/paloma).
     # YouTube → self-hosted Invidious as a PWA (see pwas.nix). Dropped `pipeline`
     # because it speaks Piped, not Invidious. Clapper below still handles

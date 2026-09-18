@@ -68,6 +68,18 @@ in
   # the fleet, never needs conduit to expose an origin IP for it.
   imports = [ inputs.deus.nixosModules.web ];
 
+  # malli-deus's flake builds this package with its own package set, before
+  # Vista's overlays apply. Its source still expects the old
+  # `pnpm.configHook` attribute; Nixpkgs 26.11 exports that hook as top-level
+  # `pnpmConfigHook`. Build the same pinned source with this small, local
+  # compatibility shim until malli-deus switches to the current spelling.
+  services.deus.web.package = pkgs.callPackage "${inputs.deus}/web/nix/package.nix" {
+    pnpm = pkgs.pnpm // {
+      configHook = pkgs.pnpmConfigHook;
+      fetchDeps = pkgs.fetchPnpmDeps;
+    };
+  };
+
   services.deus.web = {
     enable = true;
     # 127.0.0.1:8086 is NOT reachable from the vista host — the nspawn is
