@@ -149,7 +149,9 @@
     libsForQt5.qtwayland
     kdePackages.qtstyleplugin-kvantum
     libsForQt5.qtstyleplugin-kvantum
-    ladybird
+    # ladybird — removed 2026-08-31: marked insecure in nixpkgs (CVE-2026-58592,
+    # drive-by RCE via the WebAssembly ESM loader). Re-add once nixpkgs ships a
+    # patched build and drops the knownVulnerabilities entry.
     obsidian
   ];
 }
