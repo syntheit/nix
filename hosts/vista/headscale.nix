@@ -201,6 +201,18 @@ in
       # a Mac. Best-effort like the rest: absent file => deus leaves the
       # placement routes disabled rather than failing activation.
       stage_optional /run/secrets/deus_malli_admin_token    /var/lib/deus-keys/malli-admin-token     0400
+      # AWS read-only creds, composed into one shared-credentials file because
+      # that is the single artefact every AWS SDK understands without env vars
+      # (which would render into /proc/*/environ). Absent halves leave no file,
+      # so the ECS inventory stays off rather than half-configured.
+      if [ -f /run/secrets/deus_aws_access_key_id ] && [ -f /run/secrets/deus_aws_secret_access_key ]; then
+        umask 077
+        ${pkgs.coreutils}/bin/printf '[default]\naws_access_key_id = %s\naws_secret_access_key = %s\n' \
+          "$(${pkgs.coreutils}/bin/cat /run/secrets/deus_aws_access_key_id)" \
+          "$(${pkgs.coreutils}/bin/cat /run/secrets/deus_aws_secret_access_key)" \
+          > /var/lib/deus-keys/aws-credentials
+        ${pkgs.coreutils}/bin/chmod 0400 /var/lib/deus-keys/aws-credentials
+      fi
       # nanomdm API key (ADE enqueue auth + webhook ?token= secret).
       # Best-effort: until it's added to secrets/conduit.yaml the file is
       # absent and deus-server leaves the ADE orchestrator disabled.
@@ -457,6 +469,27 @@ in
         # Read-only lookup scope for the AWS orchestrator (GET /fleet/bots/{uid}).
         # Same value must be stored in AWS Secrets Manager as DEUS_SERVICE_TOKEN.
         serviceTokenFile = "/var/lib/deus-tokens/service-token";
+
+        # ── Moving a bot between Fargate and a Mac ──
+        #
+        # /etc/deus-keys, not /var/lib/deus-keys: the host directory is
+        # bind-mounted to that path inside this container (see bindMounts
+        # below). Both files are staged 0400 root and reach the process
+        # through systemd LoadCredential, never an Environment= string.
+        #
+        # Without malliAdminTokenFile the placement RPCs fail closed and
+        # nothing in deus can move a customer's traffic: malli-ai decides
+        # where a bot is served from with mp_bots.runner_placement, and with
+        # RUNNER_PLACEMENT_ENFORCED on in prod an 'ecs'-placed bot never
+        # consults deus at all. Writing hosts/bots.json only provisions the
+        # Mac; flipping that column is the migration.
+        #
+        # Without awsCredentialsFile the console can see the 34 bots already
+        # on Macs and none of the ~396 still on Fargate — which is every bot
+        # the migration has not reached. The key is read-only on ECS in one
+        # cluster and can do nothing else.
+        malliAdminTokenFile = "/etc/deus-keys/malli-admin-token";
+        awsCredentialsFile = "/etc/deus-keys/aws-credentials";
 
         # SSH-push deploys (Colmena model). deus-server claims pending
         # deploy jobs and SSHes to the target as tars/lima, runs
