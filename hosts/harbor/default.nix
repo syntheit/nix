@@ -13,6 +13,7 @@
     ./storage.nix
     ./containers
     ./access.nix
+    ./malli-overview.nix
     ./monitoring.nix
     ./virt.nix
     ../../modules/server-safety.nix

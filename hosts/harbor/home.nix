@@ -45,6 +45,7 @@
     codex
     restic
     awscli2
+    aws-sam-cli
     yazi
   ];
 
