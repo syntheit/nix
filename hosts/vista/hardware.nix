@@ -2,8 +2,39 @@
   config,
   lib,
   pkgs,
+  inputs,
   ...
 }:
+let
+  # linux-t2's HID trackpad patch group no longer applies to Linux 6.18.52.
+  # Vista is headless and does not use its internal trackpad (see the note
+  # below), so retain the rest of the T2 patch series while omitting only that
+  # stale trackpad-support patches.  4001 targets Asahi (Apple silicon) and
+  # 4003–4005 target T2/Magic trackpads; none are needed by this headless Intel
+  # T2 host.
+  t2Patchset = builtins.fromJSON (
+    builtins.readFile "${inputs.nixos-hardware}/apple/t2/pkgs/linux-t2/stable.json"
+  );
+  t2Kernel = (pkgs.callPackage "${inputs.nixos-hardware}/apple/t2/pkgs/linux-t2/generic.nix" { }) {
+    kernel = pkgs.linux_6_18;
+    patchesFile = builtins.toFile "vista-linux-t2-stable.json" (
+      builtins.toJSON (
+        t2Patchset
+        // {
+          patches = lib.filter (
+            patch:
+            !(builtins.elem patch.name [
+              "4001-asahi-trackpad.patch"
+              "4003-HID-apple-ignore-the-trackpad-on-T2-Macs.patch"
+              "4004-HID-magicmouse-Add-support-for-trackpads-found-on-T2.patch"
+              "4005-HID-magicmouse-fix-regression-breaking-support-for-M.patch"
+            ])
+          ) t2Patchset.patches;
+        }
+      )
+    );
+  };
+in
 {
   # ── Apple T2 (MacBookPro16,1) ────────────────────────────────────────────
   # The nixos-hardware apple-t2 module does the heavy lifting: it pins a
@@ -34,6 +65,8 @@
     # hardware.firmware rather than re-enabling the broken extractor.
     firmware.enable = false;
   };
+
+  boot.kernelPackages = lib.mkForce (pkgs.linuxPackagesFor t2Kernel);
 
   # ── T2 bridge NIC: keep NetworkManager off it (prevents a kernel lockup) ───
   # The T2 exposes an internal USB "bridge" network interface (MAC
@@ -197,10 +230,10 @@
     };
   };
 
-  services.journald.extraConfig = ''
-    SystemMaxUse=500M
-    MaxRetentionSec=1month
-  '';
+  services.journald.settings.Journal = {
+    SystemMaxUse = "500M";
+    MaxRetentionSec = "1month";
+  };
 
   services.earlyoom = {
     enable = true;
