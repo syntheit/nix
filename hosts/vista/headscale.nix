@@ -56,6 +56,77 @@ let
   haveProfiles     = builtins.pathExists configProfiles;
 in
 {
+  # deus operator web console (Next.js). HOST-level, NOT inside
+  # containers.headscale.config — unlike deus-server it doesn't need the
+  # nspawn's own tailscaled/headscale-group access, and running it on the
+  # host lets Daniel reach it directly at vista:3300 over vista's own
+  # (personal/syntheit) tailscale, with no extra port-forwarding. ALSO
+  # reachable publicly at https://deus.mallimax.net via a Cloudflare Tunnel
+  # running INSIDE the nspawn (services.cloudflared in the container config
+  # below) — chosen over a plain Caddy relay through conduit (what every other
+  # fleet endpoint uses) so this admin console, which has real write access to
+  # the fleet, never needs conduit to expose an origin IP for it.
+  imports = [ inputs.deus.nixosModules.web ];
+
+  services.deus.web = {
+    enable = true;
+    # 127.0.0.1:8086 is NOT reachable from the vista host — the nspawn is
+    # privateNetwork, and the DNAT rules below only catch externally-arriving
+    # PREROUTING traffic, not host-originated loopback connections (verified
+    # empirically: curl 127.0.0.1:8086 from vista times out; 10.100.1.2:8086 —
+    # the container's own veth address — works). Contradicts this module's own
+    # doc comment, which assumes host-networking (true on conduit, not here).
+    deusServer = "http://10.100.1.2:8086";
+    operatorTokenFile = "/var/lib/deus-tokens/operator-token";
+    authSecretFile = config.sops.secrets.deus_web_auth_secret.path;
+    address = "0.0.0.0";
+    port = 3300;
+    # Canonical public origin — Auth.js callback URLs (AUTH_URL) …
+    consoleOrigin = "https://deus.mallimax.net";
+
+    # Google SSO. ADDITIVE — password login always remains, so a broken OAuth
+    # config or a Google outage can never lock operators out of the fleet.
+    # Google only decides who may ATTEMPT: web/src/lib/googleGate.ts admits an
+    # identity only if its VERIFIED email already matches a provisioned
+    # operator row, and the role is re-read from the DB rather than taken from
+    # the provider. An unknown Google account is refused, never auto-created.
+    #
+    # Consent screen is External (mallimax.net is not a Workspace domain, and
+    # operators may sign in with non-newreach.com addresses); only basic
+    # scopes are requested, so no Google verification review applies.
+    googleClientId = "246735899094-j1d6nm8ei0j5up2asle0bfnfdcn01sam.apps.googleusercontent.com";
+    googleClientSecretFile = config.sops.secrets.deus_web_google_client_secret.path;
+    # … plus the direct tailnet origin in the BFF's CSRF allowlist, so BOTH
+    # paths stay fully functional, mutations included.
+    #
+    # Why this matters: vista:3300 is the BREAK-GLASS path for a console with
+    # write access to ~580 Macs. If Cloudflare, DNS, or the tunnel credential
+    # is unhealthy, the fleet must still be operable. Allowing only the public
+    # origin silently downgrades the tailnet path to read-only — verified
+    # empirically: a mutating request whose Origin isn't the configured one
+    # gets a hard 403 — which is exactly backwards for a fallback path.
+    #
+    # Not a security loosening: CONSOLE_ORIGIN is an explicit operator
+    # allowlist, never reflected from the request. Any origin NOT listed is
+    # still rejected.
+    extraOrigins = [ "http://vista:3300" ];
+  };
+
+  # The public tunnel for the console lives INSIDE the nspawn now — see
+  # services.cloudflared in containers.headscale.config below. It previously
+  # ran here on the vista HOST against deus.matv.io on Daniel's PERSONAL
+  # Cloudflare account; it is now deus.mallimax.net on the WORK account, and
+  # belongs with the rest of the fleet's credentials rather than on the host.
+  #
+  # The tunnel terminates in the container but malli-web runs on the HOST, so
+  # it dials back over the veth (hostAddress 10.100.1.1). ve-headscale is NOT
+  # in networking.firewall.trustedInterfaces (only tailscale0 and wg0 are), so
+  # without this rule that connection is dropped and the tunnel 502s with
+  # nothing obviously wrong at either end. Scoped to the one port rather than
+  # trusting the whole interface — the container should not gain blanket
+  # access to host services just to reach the console.
+  networking.firewall.interfaces."ve-headscale".allowedTCPPorts = [ 3300 ];
+
   systemd.tmpfiles.rules = [
     # Headscale state (db.sqlite) — bind-mounted into the nspawn. Must exist on
     # the host before the container starts. On conduit this pre-existed; on a
@@ -89,6 +160,14 @@ in
     # Caddy at bootstrap.matv.io/pkg/* (see the vhost below). Daniel scp's
     # the nix-built + signed pkg here.
     "d /var/lib/malli-bootstrap 0755 root root -"
+    # Cloudflare Tunnel credentials for the console (deus.mallimax.net), on
+    # Daniel's WORK Cloudflare account. Bind-mounted read-only into the nspawn,
+    # where the tunnel actually runs. Created once, by hand, with
+    # `cloudflared tunnel create` — it needs an interactive OAuth login, and no
+    # API token in this repo is scoped for Tunnel management (the granter's
+    # token covers the themalli.ai DNS zone only). 0700 so the credential file
+    # inside is not readable by unprivileged host users.
+    "d /var/lib/cloudflared-deus 0700 root root -"
   ];
 
   # Sops renders to /run/secrets, a host-only tmpfs the container can't
@@ -117,6 +196,11 @@ in
       stage_optional /run/secrets/cloudflare_zone_id        /var/lib/deus-granter/cf-zone-id         0444
       stage_optional /run/secrets/deus_malli_nix_write_key  /var/lib/deus-keys/malli-nix-write       0400
       stage_optional /run/secrets/deus_github_app_key       /var/lib/deus-keys/github-app-key        0400
+      # malli-ai platform-admin token — reads and flips a bot's declared runner
+      # placement, which is the step that actually moves traffic between ECS and
+      # a Mac. Best-effort like the rest: absent file => deus leaves the
+      # placement routes disabled rather than failing activation.
+      stage_optional /run/secrets/deus_malli_admin_token    /var/lib/deus-keys/malli-admin-token     0400
       # nanomdm API key (ADE enqueue auth + webhook ?token= secret).
       # Best-effort: until it's added to secrets/conduit.yaml the file is
       # absent and deus-server leaves the ADE orchestrator disabled.
@@ -219,6 +303,14 @@ in
       # HOST; migrated off conduit's local file_server 2026-08.
       "/var/lib/malli-bootstrap" = {
         hostPath = "/var/lib/malli-bootstrap";
+        isReadOnly = true;
+      };
+      # Cloudflare Tunnel credentials, read-only. The container's cloudflared
+      # reads /etc/cloudflared/credentials.json; the file itself is staged on
+      # the host (see tmpfiles above) so it survives container rebuilds and is
+      # never in the nix store.
+      "/etc/cloudflared" = {
+        hostPath = "/var/lib/cloudflared-deus";
         isReadOnly = true;
       };
       # registry.nix is no longer the inventory source — deus-server
@@ -517,6 +609,43 @@ in
       # vista:8088 (host DNAT → this container). Plain HTTP; TLS terminates
       # at conduit. handle_path strips the /pkg prefix so /pkg/foo maps to
       # /var/lib/malli-bootstrap/foo. Migrated off conduit's file_server 2026-08.
+      # ── Cloudflare Tunnel — public front for the deus web console ────────
+      # deus.mallimax.net (Daniel's WORK Cloudflare account) → the console.
+      #
+      # Runs HERE, in the nspawn, not on the vista host: the container already
+      # holds every fleet credential, so the tunnel that exposes the fleet's
+      # control console belongs with them. It replaces an earlier host-level
+      # tunnel for deus.matv.io on Daniel's personal account.
+      #
+      # The console process (malli-web) runs on the HOST, so ingress points at
+      # the veth hostAddress rather than localhost. The host firewall allows
+      # exactly :3300 in on ve-headscale (see networking.firewall.interfaces
+      # near the top of this file) — without that the tunnel 502s.
+      #
+      # Setup, run ONCE inside the container, signed in to the WORK account:
+      #
+      #   sudo nixos-container run headscale -- cloudflared tunnel login
+      #     → prints a URL; open it and authorize the mallimax.net zone.
+      #   sudo nixos-container run headscale -- cloudflared tunnel create deus
+      #     → writes ~/.cloudflared/<TUNNEL-UUID>.json
+      #   sudo install -D -m 0400 <that file> /var/lib/cloudflared-deus/credentials.json
+      #     (on the HOST — it is bind-mounted read-only to /etc/cloudflared)
+      #   sudo nixos-container run headscale -- cloudflared tunnel route dns deus deus.mallimax.net
+      #     → creates the CNAME automatically; no manual DNS record needed.
+      #
+      # enable is true before the credential exists; the unit simply fails and
+      # retries until it is staged, which is noisy but harmless.
+      services.cloudflared = {
+        enable = true;
+        tunnels."deus" = {
+          ingress."deus.mallimax.net" = "http://10.100.1.1:3300";
+          default = "http_status:404";
+          credentialsFile = "/etc/cloudflared/credentials.json";
+        };
+      };
+      # Mirror raven/harbor: never bounce the tunnel on an unrelated switch.
+      systemd.services.cloudflared-tunnel-deus.restartIfChanged = false;
+
       services.caddy.enable = true;
       services.caddy.virtualHosts.":8088".extraConfig = ''
         handle_path /pkg/* {
@@ -1082,6 +1211,12 @@ in
         tmux
         git
         sqlite # poke deus.db directly when needed (cleanup, audits)
+        # services.cloudflared installs the DAEMON only — it runs straight from
+        # a store path and never lands on an interactive PATH. Add the CLI so an
+        # operator in here can actually inspect the tunnel
+        # (`cloudflared tunnel info deus`, `tunnel list`) instead of hitting
+        # "program not installed" and assuming the tunnel didn't deploy.
+        cloudflared
         # deus CLI/TUI — operators run `deus` here to watch the fleet and
         # the provisioning dashboard (press P). Same package the server
         # module pulls in, so it's already in the container closure.
