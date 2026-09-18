@@ -18,8 +18,13 @@
         # --time: Display the date/time.
         # --asterisks: Mask the password.
         # --remember: Remember the last logged-in username.
-        # --cmd Hyprland: Automatically start Hyprland after login.
-        command = "${pkgs.tuigreet}/bin/tuigreet --time --asterisks --remember --cmd Hyprland";
+        # --cmd start-hyprland: launches Hyprland via the wrapper the NixOS
+        # hyprland module ships (programs.hyprland.enable). Launching the raw
+        # `Hyprland` binary directly triggers Hyprland's own startup warning
+        # ("WARNING: Hyprland is being launched without start-hyprland."),
+        # confirmed in ~/.cache/hyprland/*.log — start-hyprland does the
+        # session env/systemd setup Hyprland now expects.
+        command = "${pkgs.tuigreet}/bin/tuigreet --time --asterisks --remember --cmd start-hyprland";
         user = "greeter";
       };
     };
