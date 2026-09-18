@@ -173,22 +173,6 @@
       url = "git+ssh://git@github.com/syntheit/courier.git";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # Calculator — native GTK4/libadwaita Google-Calculator-style app (mobile-first).
-    calculator = {
-      url = "git+file:///home/matv/Projects/calculator?rev=d5f662b89325f042a29a42ccbea23067a79404e5";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    # Bourse — native GTK4/libadwaita stocks watchlist app (Yahoo Finance, no API key).
-    bourse = {
-      url = "git+file:///home/matv/Projects/bourse?rev=cb6fb484de2ccee653076e137101d780575a0a95";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    # Mirador — native GTK4/libadwaita mobile Invidious/YouTube client.
-    # Pinned to a committed rev (local worktree may carry WIP); drop ?rev= to track HEAD once clean.
-    mirador = {
-      url = "git+file:///home/matv/Projects/mirador?rev=409f57ed7b7f8112b1862001cdfb4e5425f34887";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     # Paloma — native GTK4/libadwaita Telegram client (over TDLib). api_id/api_hash
     # are injected at RUNTIME from sops, not baked at build time (see
     # overlays/default.nix paloma-wrapped + hosts' secrets).
@@ -199,13 +183,6 @@
       # system nixpkgs moved to tdlib 1.8.66 which renamed a Message field
       # (is_paid_ton_ -> is_paid_gram_suggested_post); following it made the
       # generated deserializer panic (missing field) and the app crash on load.
-    };
-    # Relay — native GTK4/libadwaita/VTE mobile terminal (Termius-feel, mosh
-    # persistence, touch selection). Pinned to a committed rev; drop ?rev= to
-    # track HEAD once clean.
-    relay = {
-      url = "git+file:///home/matv/Projects/relay?rev=dd6d219f47a3fcedfdba88f8e98c9776d3c01ea0";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
@@ -219,6 +196,11 @@
     let
       inherit (nixpkgs) lib;
       vars = import ./vars;
+      # These projects only ship on fajita and their source checkouts live on
+      # Harbor.  Keeping them out of `inputs` means other hosts can update this
+      # shared flake without requiring /home/matv/Projects to exist locally.
+      localFajitaProject = name: rev:
+        builtins.getFlake "git+file:///home/matv/Projects/${name}?rev=${rev}";
       specialArgs = {
         inherit inputs;
         inherit vars;
@@ -369,6 +351,12 @@
           system = "aarch64-linux";
           specialArgs = specialArgs // {
             hostName = "fajita";
+            localFajitaProjects = {
+              calculator = localFajitaProject "calculator" "d5f662b89325f042a29a42ccbea23067a79404e5";
+              bourse = localFajitaProject "bourse" "cb6fb484de2ccee653076e137101d780575a0a95";
+              mirador = localFajitaProject "mirador" "409f57ed7b7f8112b1862001cdfb4e5425f34887";
+              relay = localFajitaProject "relay" "dd6d219f47a3fcedfdba88f8e98c9776d3c01ea0";
+            };
           };
           modules = [
             (import "${inputs.mobile-nixos}/lib/configuration.nix" { device = "oneplus-fajita"; })
