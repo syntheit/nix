@@ -310,11 +310,17 @@ let
     $T -L $S split-window -v -l 90%          # pane 2 (right middle)
     $T -L $S split-window -v -l 40%          # pane 3 (right bottom)
 
-    # Now launch programs in each pane
-    $T -L $S send-keys -t 0 "btop" Enter
-    $T -L $S send-keys -t 1 "${clockScript}" Enter
-    $T -L $S send-keys -t 2 "${dashboardInfoScript}" Enter
-    $T -L $S send-keys -t 3 "pipes.sh -t 0 -t 1 -p 2 -R -f 30 -r 3000 -c 1 -c 2 -c 3 -c 4 -c 5 -c 6 -c 7" Enter
+    # Now launch programs in each pane. Each is wrapped in a restart loop: if
+    # the program ever exits (crash, transient terminal error, whatever) tmux's
+    # default behavior is to CLOSE the pane, which silently collapses the whole
+    # layout (verified: this had already happened here — btop's and pipes.sh's
+    # panes were both gone, leaving the clock pane rendering where btop used to
+    # be). The pane's actual process is this loop, not the program, so the pane
+    # itself never dies — it just relaunches.
+    $T -L $S send-keys -t 0 "while true; do btop; sleep 1; done" Enter
+    $T -L $S send-keys -t 1 "while true; do ${clockScript}; sleep 1; done" Enter
+    $T -L $S send-keys -t 2 "while true; do ${dashboardInfoScript}; sleep 1; done" Enter
+    $T -L $S send-keys -t 3 "while true; do pipes.sh -t 0 -t 1 -p 2 -R -f 30 -r 3000 -c 1 -c 2 -c 3 -c 4 -c 5 -c 6 -c 7; sleep 1; done" Enter
 
     # Focus status pane for mic/cam key toggles
     $T -L $S select-pane -t 2
@@ -385,15 +391,26 @@ let
   '';
 
   toggleDashboard = pkgs.writeShellScript "toggle-dashboard" ''
-    hyprctl=${config.wayland.windowManager.hyprland.package}/bin/hyprctl
-    jq=${pkgs.jq}/bin/jq
+    # Hold a lock for the whole relaunch-check + spawn. Without this, pressing
+    # Home twice quickly (e.g. because the first press looked like it did
+    # nothing) races two of this script: both see no com.matv.dashboard client
+    # yet and both spawn `ghostty -e dashboardScript`, which both then race on
+    # tmux's has-session/new-session/split-window/send-keys against the SAME
+    # session name — verified live to corrupt the pane layout (duplicate
+    # split-window and send-keys calls hitting whatever panes already exist).
+    exec ${pkgs.util-linux}/bin/flock -n /tmp/dashboard-toggle.lock -c '
+      hyprctl=${config.wayland.windowManager.hyprland.package}/bin/hyprctl
+      jq=${pkgs.jq}/bin/jq
 
-    # Relaunch if dashboard window was closed
-    if ! $hyprctl clients -j | $jq -e '.[] | select(.class == "com.matv.dashboard")' > /dev/null 2>&1; then
-      ${pkgs.ghostty}/bin/ghostty --class=com.matv.dashboard -e ${dashboardScript} &
-    fi
+      # Relaunch if dashboard window was closed
+      if ! $hyprctl clients -j | $jq -e ".[] | select(.class == \"com.matv.dashboard\")" > /dev/null 2>&1; then
+        ${pkgs.ghostty}/bin/ghostty --class=com.matv.dashboard -e ${dashboardScript} &
+        disown
+        sleep 0.3
+      fi
 
-    $hyprctl dispatch togglespecialworkspace dashboard
+      $hyprctl dispatch togglespecialworkspace dashboard
+    '
   '';
 
   handleEscapeScript = pkgs.writeShellScript "handle-escape" ''
@@ -450,6 +467,7 @@ let
  │    Super + ,          Previous workspace                │
  │    Super + Shift + .  Move window to next workspace     │
  │    Super + Shift + ,  Move window to prev workspace     │
+ │    Super + Scroll     Cycle workspaces                  │
  ├─────────────────────────────────────────────────────────┤
  │  Screenshots                                            │
  │    Super + S          Area → clipboard                  │
@@ -578,6 +596,9 @@ in
         "$mod, comma, workspace, -1"
         "$mod SHIFT, period, movetoworkspace, +1"
         "$mod SHIFT, comma, movetoworkspace, -1"
+        # Hold Super + scroll wheel to cycle workspaces
+        "$mod, mouse_down, workspace, e+1"
+        "$mod, mouse_up, workspace, e-1"
 
         # Wallpaper cycling
         "$mod ALT, period, exec, wallpaper-cycle next"
@@ -634,8 +655,11 @@ in
         "$mod, mouse:273, resizewindow"
       ];
       exec-once = [
+        # Theme is baked directly into ~/.config/copyq/copyq.conf at
+        # home-manager activation time now (see copyq.nix) — `copyq loadTheme`
+        # against a running server was verified not to reliably apply/persist
+        # the theme (CopyQ bug, not a startup race), so don't rely on it here.
         "${pkgs.copyq}/bin/copyq --start-server"
-        "${pkgs.bash}/bin/bash -c 'sleep 1 && ${pkgs.copyq}/bin/copyq loadTheme ~/.config/copyq/themes/tokyodark.ini && ${pkgs.copyq}/bin/copyq hide'"
         "${pkgs.hyprpolkitagent}/libexec/hyprpolkitagent"
         # Start dashboard in background (hidden), then watch for show/hide to
         # freeze its workers while off-screen so it idles at ~0% in the background.
@@ -758,7 +782,6 @@ in
 
         # Spotify → hidden special workspace
         "workspace special:spotify silent, match:class (?i)^spotify$"
-        "workspace special:spotify silent, match:title ^Spotify.*Zen$"
 
         # Dashboard → hidden special workspace (toggled with Super+Home)
         "workspace special:dashboard silent, match:initial_class ^(com\.matv\.dashboard)$"
@@ -769,6 +792,17 @@ in
         "NIXOS_OZONE_WL,1"
         "QT_QPA_PLATFORMTHEME,qtct"
         "QT_WAYLAND_DISABLE_WINDOWDECORATION,1"
+        # Compose key (input.kb_options = compose:ralt) in GTK4 apps.
+        # GTK 4.20 dropped GTK's own compose/dead-key handling on Wayland:
+        # GtkIMContextWayland now defers to the compositor's text-input-v3 input
+        # method, and Hyprland ships none — so Compose silently does nothing in
+        # every GTK4 app, Ghostty included. (Accents kept working in GTK3/Qt/
+        # Electron apps, which compose via xkbcommon or their own tables.)
+        # "simple" pins GtkIMContextSimple, GTK's X11-style compose engine
+        # (built-in sequence table + ~/.XCompose).
+        # Safe here: no input method on these hosts (ibus is fajita-only). Drop
+        # this if ibus/fcitx is ever added — it would make them unusable.
+        "GTK_IM_MODULE,simple"
       ]
       ++ lib.optionals (hostName == "mantle") [
         "LIBVA_DRIVER_NAME,nvidia"
@@ -808,6 +842,12 @@ in
         temperature = 5500
     }
   '';
+
+  # Same compose-key fix for a Ghostty started by D-Bus activation instead of
+  # by Hyprland: its .desktop is DBusActivatable, so a launcher can bring it up
+  # via app-com.mitchellh.ghostty.service, which does not inherit Hyprland's
+  # env (HM imports only DISPLAY/WAYLAND_DISPLAY/XDG_* into the user manager).
+  systemd.user.sessionVariables.GTK_IM_MODULE = "simple";
 
   # Hyprsunset systemd service with auto-restart on crash
   # TZ is needed to work around hyprwm/hyprsunset#83 (defaults to UTC on NixOS)

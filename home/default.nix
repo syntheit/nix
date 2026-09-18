@@ -29,7 +29,7 @@
     ./modules/copyq.nix
     ./modules/wallpaper.nix
     ./modules/zed.nix
-    ./modules/spotify.nix
+    ./modules/raven-scrcpy.nix
     ./shell.nix
   ];
 

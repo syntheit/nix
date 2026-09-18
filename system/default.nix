@@ -56,6 +56,44 @@ let
         ;;
     esac
   '';
+  # RAW photo thumbnails for Nautilus. Replaces nufraw-thumbnailer (dropped from
+  # nixpkgs 2026-08 for depending on the deprecated GTK2 engine). Every DSLR RAW
+  # embeds a JPEG preview; we extract the largest with exiftool and resize with
+  # ImageMagick — no slow full RAW decode. Ships a freedesktop .thumbnailer that
+  # Nautilus discovers via the `share/thumbnailers` pathsToLink below.
+  rawThumbnailerBin = pkgs.writeShellApplication {
+    name = "raw-thumbnailer";
+    runtimeInputs = [
+      pkgs.exiftool
+      pkgs.imagemagick
+    ];
+    text = ''
+      size="$1"
+      input="$2"
+      output="$3"
+
+      tmp="$(mktemp --suffix=.jpg)"
+      trap 'rm -f "$tmp"' EXIT
+
+      # Pull the embedded preview, trying tags in descending quality order.
+      for tag in JpgFromRaw PreviewImage OtherImage ThumbnailImage; do
+        if exiftool -b -"$tag" "$input" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
+          break
+        fi
+      done
+
+      [ -s "$tmp" ] || exit 1
+
+      # Honour embedded orientation, shrink to the requested box, drop metadata.
+      exec magick "$tmp" -auto-orient -thumbnail "''${size}x''${size}>" -strip "png:$output"
+    '';
+  };
+  rawThumbnailer = pkgs.writeTextDir "share/thumbnailers/raw.thumbnailer" ''
+    [Thumbnailer Entry]
+    TryExec=${rawThumbnailerBin}/bin/raw-thumbnailer
+    Exec=${rawThumbnailerBin}/bin/raw-thumbnailer %s %i %o
+    MimeType=image/x-canon-cr2;image/x-canon-cr3;image/x-canon-crw;image/x-nikon-nef;image/x-nikon-nrw;image/x-sony-arw;image/x-sony-sr2;image/x-sony-srf;image/x-adobe-dng;image/x-fuji-raf;image/x-panasonic-rw2;image/x-panasonic-raw;image/x-olympus-orf;image/x-pentax-pef;image/x-samsung-srw;image/x-kodak-dcr;image/x-minolta-mrw;image/x-sigma-x3f;
+  '';
   # GParted wrapper: pkexec strips DISPLAY on Wayland, so we re-inject it via a root helper
   gpartedRoot = pkgs.writeShellScript "gparted-root" ''
     export DISPLAY=''${DISPLAY:-:0}
@@ -165,10 +203,7 @@ in
     gdk-pixbuf # Basic image formats (PNG, JPEG, BMP, GIF, TIFF, etc.)
     libheif # HEIF and AVIF image formats
     libheif.out # HEIF output plugin
-    # nufraw / nufraw-thumbnailer removed from nixpkgs (UI depended on the
-    # deprecated GTK2 engine) — dropped to unblock evaluation. Restore RAW
-    # thumbnail support with a maintained replacement (e.g. libraw/darktable)
-    # if needed.
+    rawThumbnailer # RAW image thumbnailer (replaces removed nufraw-thumbnailer)
     ffmpegthumbnailer # Video thumbnail generation
     poppler-utils # PDF thumbnail generation
     android-tools

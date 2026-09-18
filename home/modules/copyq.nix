@@ -1,4 +1,4 @@
-{ config, ... }:
+{ config, lib, pkgs, ... }:
 
 let
   inherit (config.lib.stylix.colors) base00 base01 base03 base05 base0A base0D;
@@ -66,5 +66,54 @@ in
     tool_button_pressed_css="\n    ;background: ''${sel_bg}"
     tool_button_selected_css="\n    ;background: ''${sel_bg - #222}\n    ;color: ''${sel_fg}\n    ;border: 1px solid ''${sel_bg}"
     use_system_icons=false
+  '';
+
+  # CopyQ has no stylix target, so the theme above has to be applied by hand.
+  # The obvious way to do that -- `copyq loadTheme <path>` sent to a running
+  # `copyq --start-server` via Hyprland's exec-once -- does not work. Verified
+  # empirically (live system, 2026-08-08): running `copyq loadTheme
+  # ~/.config/copyq/themes/tokyodark.ini` against the live server returns
+  # success (exit 0) but never updates the [Theme] section of
+  # ~/.config/copyq/copyq.conf -- it stays on the default/light values
+  # (bg=default_bg, fg=default_text, style_main_window=false) no matter how
+  # long you wait or whether `copyq hide` follows it, and the visible window
+  # stays undyed (confirmed by the user, who saw a white window). This isn't
+  # the "sleep 1" race condition it looks like -- calling loadTheme by hand,
+  # seconds after the server has been up, behaves identically. CopyQ's own
+  # MainWindow::loadTheme() is supposed to persist via a fresh QSettings
+  # write, but in practice on this build/version it doesn't stick.
+  #
+  # CopyQ *does* read the [Theme] section of copyq.conf reliably at server
+  # startup, and doesn't otherwise touch that section during normal use,
+  # so instead of fighting the runtime RPC, splice the theme directly into
+  # copyq.conf before the server ever starts.
+  home.activation.copyqTheme = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    THEME_SRC="$HOME/.config/copyq/themes/tokyodark.ini"
+    COPYQ_CONF="$HOME/.config/copyq/copyq.conf"
+
+    if [ -f "$THEME_SRC" ]; then
+      mkdir -p "$(dirname "$COPYQ_CONF")"
+      if [ -f "$COPYQ_CONF" ]; then
+        ${pkgs.gawk}/bin/awk -v themefile="$THEME_SRC" '
+          BEGIN {
+            while ((getline line < themefile) > 0) theme = theme line "\n"
+          }
+          /^\[Theme\]/ {
+            printf "%s", theme
+            found = 1
+            skipping = 1
+            next
+          }
+          /^\[/ && skipping { skipping = 0 }
+          skipping { next }
+          { print }
+          END {
+            if (!found) printf "%s", theme
+          }
+        ' "$COPYQ_CONF" > "$COPYQ_CONF.new" && mv "$COPYQ_CONF.new" "$COPYQ_CONF"
+      else
+        cp "$THEME_SRC" "$COPYQ_CONF"
+      fi
+    fi
   '';
 }
