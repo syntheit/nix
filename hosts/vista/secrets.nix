@@ -98,4 +98,37 @@
 
   # WireGuard private key for the wg0 link to conduit (vista = 10.100.0.4).
   sops.secrets.vista_wg_private_key = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0400"; };
+
+  # Auth.js JWT signing/encryption secret for the deus web console
+  # (services.deus.web, host-level — see headscale.nix). 0400/root: read by
+  # systemd (root) via LoadCredential in the malli-web unit, not by the
+  # malli-web user directly — matches deus_deploy_key et al above.
+  sops.secrets.deus_web_auth_secret = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0400"; };
+
+  # Google OAuth client SECRET for console SSO. Only this half is sensitive —
+  # the client ID is public by design and sits as a plain value in
+  # headscale.nix. Same 0400/root treatment: it reaches the process through
+  # systemd LoadCredential, never an Environment= string, which would render it
+  # into the world-readable nix store.
+  sops.secrets.deus_web_google_client_secret = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0400"; };
+
+  # malli-ai platform-admin bearer token. deus-server uses it to read a bot's
+  # DECLARED runner placement and to flip it between `ecs` and `fleet`.
+  #
+  # That flip is the actual AWS→Mac migration step. Writing hosts/bots.json
+  # only provisions capacity on the Mac: RUNNER_PLACEMENT_ENFORCED is on in
+  # prod, and an `ecs`-placed bot never consults deus at all, so no amount of
+  # fleet-side config moves its traffic.
+  #
+  # 0400/root like deus_web_auth_secret: it reaches deus-server through systemd
+  # LoadCredential, never an Environment= string, which would render it into
+  # the world-readable nix store and into /proc/*/environ.
+  #
+  # ⚠️ This is a PIPELINE_API_KEY-class credential, which malli-ai treats as
+  # full platform admin — it can provision and retire orgs, buy Twilio numbers
+  # and reset passwords, none of which deus has any business doing. deus calls
+  # only the two placement routes. The durable fix is a scoped service
+  # principal; the orchestrator already accepts MALLI_PRO_ADMIN_API_KEY under a
+  # separate name, so one can be minted without resharing this key.
+  sops.secrets.deus_malli_admin_token = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0400"; };
 }
