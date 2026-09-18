@@ -116,10 +116,10 @@
   nixpkgs.config.allowUnfree = true;
 
   # Journal — cap size to reduce journald memory footprint
-  services.journald.extraConfig = ''
-    SystemMaxUse=200M
-    MaxRetentionSec=1month
-  '';
+  services.journald.settings.Journal = {
+    SystemMaxUse = "200M";
+    MaxRetentionSec = "1month";
+  };
 
   # /boot is a tiny 249M EFI partition (fixed by the nixos-avf VM image), and
   # each generation's kernel + initrd is ~86M. The avf module leaves

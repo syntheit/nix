@@ -64,10 +64,10 @@
   boot.tmp.tmpfsSize = "50%";
 
   # Cap journal size to prevent unbounded growth
-  services.journald.extraConfig = ''
-    SystemMaxUse=500M
-    MaxRetentionSec=1month
-  '';
+  services.journald.settings.Journal = {
+    SystemMaxUse = "500M";
+    MaxRetentionSec = "1month";
+  };
 
   # Kill runaway processes before the system becomes unresponsive
   services.earlyoom = {

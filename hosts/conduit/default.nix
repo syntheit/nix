@@ -613,10 +613,10 @@
   '';
 
   # Cap journal
-  services.journald.extraConfig = ''
-    SystemMaxUse=200M
-    MaxRetentionSec=1month
-  '';
+  services.journald.settings.Journal = {
+    SystemMaxUse = "200M";
+    MaxRetentionSec = "1month";
+  };
 
   # BTRFS scrub
   services.btrfs.autoScrub = {
