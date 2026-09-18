@@ -1,4 +1,4 @@
-{ pkgs, lib, ... }:
+{ pkgs, lib, config, ... }:
 
 let
   isLinux = pkgs.stdenv.isLinux;
@@ -67,5 +67,23 @@ lib.mkMerge [
       name = "Papirus";
       package = pkgs.papirus-icon-theme;
     };
+
+    # Publish the desktop's light/dark preference. xdg-desktop-portal-gtk reads
+    # this dconf key to answer the `color-scheme` key of the portal's
+    # org.freedesktop.appearance namespace -- that portal value is what apps
+    # set to "System" appearance consult (Zen/Firefox, libadwaita, Electron).
+    #
+    # Nothing here ever set it, so the portal reported 0 ("no preference").
+    # Zen used to fall back to reading the GTK theme's colours, which are dark
+    # because of the gtk.css stylix writes, so it looked dark anyway. The
+    # 2026-08-31 rebuild took Zen 1.21.6b -> 1.21.15b and that fallback stopped
+    # happening -- with "no preference" Zen now just renders light. Verified:
+    # `busctl --user call org.freedesktop.portal.Desktop \
+    #    /org/freedesktop/portal/desktop org.freedesktop.portal.Settings Read \
+    #    ss org.freedesktop.appearance color-scheme` returned `u 0` before this
+    # key was set and `u 1` after. Keyed off stylix.polarity so the two can't
+    # drift apart.
+    dconf.settings."org/gnome/desktop/interface".color-scheme =
+      if config.stylix.polarity == "light" then "prefer-light" else "prefer-dark";
   })
 ]

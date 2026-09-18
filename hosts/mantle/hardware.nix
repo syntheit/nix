@@ -13,6 +13,14 @@
     open = false;
     nvidiaSettings = true;
     package = config.boot.kernelPackages.nvidiaPackages.stable;
+    # Installs nvidia-suspend/nvidia-hibernate/nvidia-resume systemd units and
+    # sets NVreg_PreserveVideoMemoryAllocations=1, so the driver actually saves
+    # and restores VRAM/GPU state across suspend. Without this, the proprietary
+    # driver has no suspend/resume hooks at all (confirmed on this host: no
+    # nvidia-suspend/resume/hibernate units exist, `systemctl cat` finds none) —
+    # a well-documented cause of black-screen/hang-on-resume with NVIDIA +
+    # Wayland. Requires a reboot to take effect (changes kernel module params).
+    powerManagement.enable = true;
   };
 
   # NVIDIA container support for Docker
