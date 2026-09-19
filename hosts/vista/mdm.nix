@@ -4,10 +4,12 @@
 #   nanomdm  — the MDM server: pushes config profiles + commands to enrolled Macs
 #   scep     — device-identity CA: issues the certs nanomdm validates
 #
-# Both are built as our own minimal Docker images from the upstream release binaries
+# Both currently use our own minimal Docker images from upstream release binaries
 # (the official nanomdm image is distroless and only reads CLI args, which would force
 # the API key into the nix store; our tiny entrypoint reads it from the sops env file at
-# runtime instead). Design notes: ~/Projects/malli-deus/plans/phase-2-mdm-and-profiles.md
+# runtime instead). The default-off NanoMDM source-build draft is documented in
+# ../../docs/nanomdm-v09-packaging-draft.md.
+# Design notes: ~/Projects/malli-deus/plans/phase-2-mdm-and-profiles.md
 #
 # All persistent data lives under ONE directory (tar it to back up / move servers):
 #   /arespool/appdata/mdm/nanomdm/   → nanomdm /app/db    (devices, queue, APNs push cert)
@@ -23,6 +25,17 @@ let
   dataDir = "/var/lib/mdm";
   scepHostPort = 8081;
   nanomdmHostPort = 9990; # 9000 is already taken on harbor
+
+  # Packaging draft, intentionally OFF. Supply an immutable published fork/artifact
+  # with a full commit and verified source/vendor hashes before opting in; the
+  # current patched source exists only in an unmerged /tmp checkout.
+  nanomdmPatchedSourcePin = null;
+  usePatchedNanoMDM = nanomdmPatchedSourcePin != null;
+  nanomdmTag = if usePatchedNanoMDM then
+    "0.9.0-patched-${builtins.substring 0 12 nanomdmPatchedSourcePin.rev}"
+  else "0.6.0";
+  nanomdmStorageArgs = "-storage file -storage-dsn /app/db"
+    + lib.optionalString usePatchedNanoMDM " -storage-options enable_deprecated=1";
 
   # Pin upstream release binaries (statically linked, verified to run on NixOS) and wrap
   # each in a minimal Docker image so the whole stack is containers.
@@ -40,7 +53,7 @@ let
     installPhase = "install -Dm0755 scepserver-linux-amd64 $out/bin/scepserver";
   };
 
-  nanomdm = pkgs.stdenv.mkDerivation {
+  nanomdmRelease = pkgs.stdenv.mkDerivation {
     pname = "nanomdm"; version = "0.6.0";
     src = fetchRelease { repo = "nanomdm"; asset = "nanomdm"; ver = "0.6.0"; hash = "0j2cjnv84pyyj8pa10kniwbj6f0f9g7q6rxmw9kzldjvdb80l2gd"; };
     nativeBuildInputs = [ pkgs.unzip pkgs.autoPatchelfHook ];
@@ -49,6 +62,11 @@ let
     # the nanomdm zip extracts into a versioned subdir
     installPhase = "install -Dm0755 nanomdm-linux-amd64-v0.6.0/nanomdm-linux-amd64 $out/bin/nanomdm";
   };
+  nanomdm = if usePatchedNanoMDM then
+    pkgs.callPackage ../../packages/nanomdm-patched/default.nix {
+      sourcePin = nanomdmPatchedSourcePin;
+    }
+  else nanomdmRelease;
 
   # nanodep — the ABM/ADE (DEP) connector: links nanomdm to Apple Business so Macs
   # auto-enroll. Internal/operator-facing only (Apple is reached OUTBOUND), so no tunnel.
@@ -85,7 +103,7 @@ let
     exec ${nanomdm}/bin/nanomdm \
       -ca /app/scep/ca.pem \
       -api "$NANOMDM_API" \
-      -storage file -storage-dsn /app/db \
+      ${nanomdmStorageArgs} \
       -webhook-url "http://10.100.0.1:8086/ade/webhook?token=$NANOMDM_API" \
       -listen :9000
   '';
@@ -250,7 +268,7 @@ let
   };
 
   scepImage = mkImage "malli-scep" "2.3.0" scepEntry [ "8080/tcp" ] [ "/depot" ];
-  nanomdmImage = mkImage "malli-nanomdm" "0.6.0" nanomdmEntry [ "9000/tcp" ] [ "/app/db" ];
+  nanomdmImage = mkImage "malli-nanomdm" nanomdmTag nanomdmEntry [ "9000/tcp" ] [ "/app/db" ];
   nanodepImage = mkImage "malli-nanodep" "0.7.0" nanodepEntry [ "9001/tcp" ] [ "/app/db" ];
 
   # The enroll server needs python3 (not a release binary), so it builds its own
@@ -388,7 +406,7 @@ in
   # ── nanomdm (MDM server) container ─────────────────────────────────────────
   virtualisation.oci-containers.containers.nanomdm = {
     imageFile = nanomdmImage;
-    image = "malli-nanomdm:0.6.0";
+    image = "malli-nanomdm:${nanomdmTag}";
     # Bind all interfaces (was 127.0.0.1-only): the cloudflared tunnel
     # still reaches it on localhost (mdm.matv.io → localhost:9990), and
     # deus-server on conduit can now reach the enqueue API over WireGuard
