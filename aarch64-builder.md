@@ -36,8 +36,8 @@ and it goes to the Mac. It's native, not qemu.
   FAIL outright ("a 'aarch64-linux' with features {} is required" / no machine) —
   there is no local fallback. The mini idles always-on.
 - If a build can't reach the builder (the VM wedged once after a resize):
-  `ssh mac 'sudo launchctl kickstart -k system/org.nixos.linux-builder'`, then wait
-  ~10s and check `ssh mac 'nc -z localhost 31022 && echo up'`.
+  `ssh mini 'sudo launchctl kickstart -k system/org.nixos.linux-builder'`, then wait
+  ~10s and check `ssh mini 'nc -z localhost 31022 && echo up'`.
 - DO NOT touch binfmt_misc on harbor by hand. Do not hand-register qemu binfmt
   handlers via /proc/sys/fs/binfmt_misc/register — a malformed magic/mask matches
   every ELF and recursively breaks ALL process exec on harbor (kernel ELOOP; only a

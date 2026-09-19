@@ -48,7 +48,9 @@
         IdentityFile = "~/.ssh/mainkey";
         User = "daniel";
       };
-      "mac" = {
+      # `mini` is the primary user-facing name. Keep `mac` during the rename:
+      # it is referenced by older operational notes and has the same endpoint.
+      "mini mac" = {
         HostName = "100.75.241.25";
         IdentityFile = "~/.ssh/mainkey";
         User = "daniel";

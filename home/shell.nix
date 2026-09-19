@@ -15,13 +15,18 @@ let
     h = "harbor";
     m = "mantle";
     r = "raven";
+    s = "swift";
     v = "vista";
   };
 
   # swift roams (cafe wifi) -> mosh; the LAN machines talk over plain ssh.
   # harbor is remote for everyone, so it is always mosh.
   # fajita is a roaming phone on Tailscale -> always mosh (survives cell/wifi handoff).
-  transportFor = target: if hostName == "swift" || target == "harbor" || target == "fajita" then "mosh" else "ssh";
+  transportFor = target:
+    if hostName == "swift" || target == "swift" || target == "harbor" || target == "fajita" then
+      "mosh"
+    else
+      "ssh";
 
   mkSessionFn =
     letter: target:
