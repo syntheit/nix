@@ -14,7 +14,7 @@ on `127.0.0.1:9992` there and forwards only these exact method/path forms to
 | --- | --- |
 | GET | `/tokens`, `/declaration-items`, `/declaration/{activation,configuration,asset,management}/{canonical ASCII ID}` |
 | PUT | `/status` |
-| POST | `/v1/command-receipts` |
+| POST | `/v1/command-receipts`, `/v1/device-information-receipts` |
 
 The only mount is `/var/lib/deus/ddm-private:/run/ddm-private:ro`; the bridge
 does not receive API keys or HMAC keys. It uses direct AF_UNIX sockets, never
@@ -24,6 +24,11 @@ no-new-privileges, strict Host/method/path/header/body limits, and 16 maximum
 concurrent connections. The Deus listener must separately authenticate the
 peer with `SO_PEERCRED`, pin exactly one device-channel enrollment, and verify
 the original NanoMDM HMAC; the bridge is not an authentication substitute.
+For both receipt paths, the bridge enforces the 2 KB body limit and forwards
+only the declared JSON content type and receipt-signature header. It does not
+hold the receipt key or verify the signature; Deus performs that check and
+rejects unexpected JSON fields. The bridge's local forwarding test uses a
+placeholder signature to test transport only, not end-to-end authentication.
 
 ## Why activation is blocked
 
