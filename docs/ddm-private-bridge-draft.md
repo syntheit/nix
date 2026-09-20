@@ -60,8 +60,10 @@ Enabling the option requires all three explicit confirmations:
   real cross-namespace connection has proven `SO_PEERCRED` reports UID 3999.
   `-ddm-private-socket`, `-ddm-peer-uid`, `-ddm-enrollment-id`,
   `-ddm-request-key-file`, `-ddm-response-key-file`, and
-  `-ddm-receipt-key-file` are needed; **these Deus module options do not yet
-  exist here**. The public Deus HTTP mux must not gain DDM routes.
+  `-ddm-receipt-key-file` are needed. Default-off module wiring now exists
+  only in the separate Deus macOS-updates feature branch; this Nix checkout
+  has not pinned or deployed it. The public Deus HTTP mux must not gain DDM
+  routes.
 
 The Nix assertion also requires a verified `malli-nanomdm:0.9.0-patched-*`
 image, with NanoMDM's device-supplied DDM endpoint confinement patch. The
