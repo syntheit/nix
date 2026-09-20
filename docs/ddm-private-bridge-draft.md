@@ -42,7 +42,8 @@ Enabling the option requires all three explicit confirmations:
   Deus-owned bind-mounted state, not just the socket directory. Migrate only
   entries actually owned by the old Deus UID/GID 999; preserve root-owned and
   other identities. The new
-  `/var/lib/deus` must be 3999:3999 mode 0750; create
+  `/var/lib/deus` must be 3999:3999 mode 0700; the Deus Nix module's
+  existing 0750 tmpfiles rule must be overridden before activation. Create
   `/var/lib/deus/ddm-private` as 3999:3999 mode 0700. Check every file that
   Deus needs before restarting the nspawn; restore the backup and old UID
   configuration if checks fail. This module never runs `chown` or deletes a
