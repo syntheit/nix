@@ -157,7 +157,11 @@ in
     # made that fail with "mkstemp: Permission denied", so the stale key was
     # never cleared and every deploy to that host hard-failed host-key checking,
     # stranding it as un-deployable until the entry was removed by hand.
-    "d /var/lib/deus 0755 deus deus -"
+    # Once dedicated DDM identity is explicitly enabled, do NOT auto-chown
+    # the old UID-999 bind mount here: the full tree must be migrated during
+    # an approved maintenance window before that configuration is activated.
+  ] ++ lib.optional (!config.malli.mdm.ddmBridge.enable)
+    "d /var/lib/deus 0755 deus deus -" ++ [
     # 0755 so the container's deus user can traverse to the world-readable token files inside.
     "d /var/lib/deus-tokens 0755 root root -"
     # 0750 — keys are root-only on the host; the container re-permissions for fleet/deus user.
