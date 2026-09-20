@@ -108,7 +108,24 @@ class BridgeTests(unittest.TestCase):
             {"Content-Type": "application/json", "X-NanoMDM-Receipt-Signature": "sha256=abc"},
         )
         self.assertEqual(status, 204)
-        self.assertEqual(len(self.unix.requests), 4)
+        candidate = b'{"is_supervised":null,"serial_number":null,"product_name":null}'
+        status, body, _ = self.request(
+            "POST", "/v1/device-information-receipts", candidate,
+            {
+                "Content-Type": "application/json",
+                "X-NanoMDM-Receipt-Signature": "sha256=signed-metadata",
+                "X-Untrusted-Extra": "must-not-forward",
+            },
+        )
+        self.assertEqual((status, body), (204, b""))
+        method, path, forwarded, headers = self.unix.requests[-1]
+        self.assertEqual((method, path, forwarded), (
+            "POST", "/v1/device-information-receipts", candidate,
+        ))
+        self.assertEqual(headers["X-NanoMDM-Receipt-Signature"], "sha256=signed-metadata")
+        self.assertEqual(headers["Content-Type"], "application/json")
+        self.assertNotIn("X-Untrusted-Extra", headers)
+        self.assertEqual(len(self.unix.requests), 5)
 
         for method, path in (
             ("GET", "/status"),
@@ -117,10 +134,15 @@ class BridgeTests(unittest.TestCase):
             ("GET", "/tokens?x=1"),
             ("GET", "/declaration/activation/a%2fb"),
             ("GET", "/declaration/activation/a/extra"),
+            ("GET", "/v1/device-information-receipts"),
+            ("PUT", "/v1/device-information-receipts"),
+            ("POST", "/v1/device-information-receipts/"),
+            ("POST", "/v1/device-information-receipts?x=1"),
+            ("POST", "/v1/device-information-receipts%2f"),
         ):
             status, _, _ = self.request(method, path, headers=ddm_headers)
             self.assertEqual(status, 404, (method, path))
-        self.assertEqual(len(self.unix.requests), 4)
+        self.assertEqual(len(self.unix.requests), 5)
 
     def test_raw_request_smuggling_inputs_do_not_forward(self):
         host = f"Host: 127.0.0.1:{self.bridge.server_address[1]}\r\n"
@@ -165,6 +187,36 @@ class BridgeTests(unittest.TestCase):
             {"X-NanoMDM-Receipt-Signature": "sha256=abc"},
         )
         self.assertEqual(status, 400)
+        for headers in (
+            {"X-NanoMDM-Receipt-Signature": "sha256=abc"},
+            {"Content-Type": "application/json"},
+            {
+                "Content-Type": "text/plain",
+                "X-NanoMDM-Receipt-Signature": "sha256=abc",
+            },
+        ):
+            status, _, _ = self.request(
+                "POST", "/v1/device-information-receipts", b"{}", headers,
+            )
+            self.assertEqual(status, 400)
+        status, _, _ = self.request(
+            "POST", "/v1/device-information-receipts",
+            b"x" * (bridge.MAX_RECEIPT_BODY + 1),
+            {
+                "Content-Type": "application/json",
+                "X-NanoMDM-Receipt-Signature": "sha256=abc",
+            },
+        )
+        self.assertEqual(status, 413)
+        host = f"Host: 127.0.0.1:{self.bridge.server_address[1]}\r\n"
+        duplicate_signature = (
+            "POST /v1/device-information-receipts HTTP/1.1\r\n" + host
+            + "Content-Type: application/json\r\n"
+            + "X-NanoMDM-Receipt-Signature: sha256=abc\r\n"
+            + "X-NanoMDM-Receipt-Signature: sha256=abc\r\n"
+            + "Content-Length: 2\r\n\r\n{}"
+        ).encode()
+        self.assertIn(b" 400 ", self.raw_request(duplicate_signature))
         status, _, _ = self.request(
             "PUT", "/status", b"x" * (bridge.MAX_DDM_BODY + 1),
             {
@@ -183,6 +235,14 @@ class BridgeTests(unittest.TestCase):
         status, _, _ = self.request(
             "GET", "/tokens",
             headers={"X-Enrollment-ID": "enrollment-1", "X-Hmac-Signature": "abc"},
+        )
+        self.assertEqual(status, 502)
+        status, _, _ = self.request(
+            "POST", "/v1/device-information-receipts", b"{}",
+            {
+                "Content-Type": "application/json",
+                "X-NanoMDM-Receipt-Signature": "sha256=abc",
+            },
         )
         self.assertEqual(status, 502)
         self.assertEqual(self.unix.requests, [])

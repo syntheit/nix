@@ -38,6 +38,7 @@ def allowed_request(method, path):
     return (method, path) in (
         ("PUT", "/status"),
         ("POST", "/v1/command-receipts"),
+        ("POST", "/v1/device-information-receipts"),
     )
 
 
@@ -183,7 +184,10 @@ class Handler(BaseHTTPRequestHandler):
             self._reject(400)
             return
         length = int(lengths[0]) if lengths else 0
-        receipt = path == "/v1/command-receipts"
+        receipt = path in (
+            "/v1/command-receipts",
+            "/v1/device-information-receipts",
+        )
         limit = MAX_RECEIPT_BODY if receipt else MAX_DDM_BODY
         if length > limit or (self.command == "GET" and length):
             self._reject(413)
