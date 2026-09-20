@@ -22,20 +22,32 @@
 { config, pkgs, lib, ... }:
 
 let
+  privateCredentials = config.malli.mdm.privateCredentials;
   dataDir = "/var/lib/mdm";
   scepHostPort = 8081;
   nanomdmHostPort = 9990; # 9000 is already taken on harbor
 
   # Packaging draft, intentionally OFF. Supply an immutable published fork/artifact
-  # with a full commit and verified source/vendor hashes before opting in; the
-  # current patched source exists only in an unmerged /tmp checkout.
-  nanomdmPatchedSourcePin = null;
+  # with a full commit and verified source/vendor hashes before opting in.
+  nanomdmPatchedSourcePin = config.malli.mdm.nanomdmPatchedSourcePin;
   usePatchedNanoMDM = nanomdmPatchedSourcePin != null;
   nanomdmTag = if usePatchedNanoMDM then
     "0.9.0-patched-${builtins.substring 0 12 nanomdmPatchedSourcePin.rev}"
   else "0.6.0";
   nanomdmStorageArgs = "-storage file -storage-dsn /app/db"
     + lib.optionalString usePatchedNanoMDM " -storage-options enable_deprecated=1";
+  credentialPreflight = pkgs.writeShellScript "nanomdm-credential-preflight" ''
+    set -eu
+    dir=${dataDir}/credentials
+    test ! -L "$dir"
+    test "$(${pkgs.coreutils}/bin/stat -c '%u:%g:%a' "$dir")" = '0:0:700'
+    for name in nanomdm-api webhook-hmac; do
+      file="$dir/$name"
+      test ! -L "$file"
+      test -f "$file"
+      test "$(${pkgs.coreutils}/bin/stat -c '%u:%g:%a' "$file")" = '0:0:600'
+    done
+  '';
 
   # Pin upstream release binaries (statically linked, verified to run on NixOS) and wrap
   # each in a minimal Docker image so the whole stack is containers.
@@ -91,7 +103,16 @@ let
       -challenge "$SCEP_CHALLENGE" -allowrenew 0 -crtvalid 365
   '';
 
-  nanomdmEntry = pkgs.writeShellScript "nanomdm-entrypoint" ''
+  nanomdmEntry = pkgs.writeShellScript "nanomdm-entrypoint" (if privateCredentials.enable then ''
+    set -eu
+    exec ${nanomdm}/bin/nanomdm \
+      -ca /app/scep/ca.pem \
+      -api-key-file /run/mdm-credentials/nanomdm-api \
+      ${nanomdmStorageArgs} \
+      -webhook-hmac-key-file /run/mdm-credentials/webhook-hmac \
+      -webhook-url http://10.100.0.1:8086/ade/webhook \
+      -listen :9000
+  '' else ''
     set -e
     : "''${NANOMDM_API:?NANOMDM_API must be set (sops nanomdm.env)}"
     # -webhook-url feeds every check-in + command ack to deus's ADE
@@ -106,7 +127,7 @@ let
       ${nanomdmStorageArgs} \
       -webhook-url "http://10.100.0.1:8086/ade/webhook?token=$NANOMDM_API" \
       -listen :9000
-  '';
+  '');
 
   nanodepEntry = pkgs.writeShellScript "nanodep-entrypoint" ''
     set -e
@@ -354,12 +375,31 @@ let
   };
 in
 {
+  options.malli.mdm.nanomdmPatchedSourcePin = lib.mkOption {
+    type = lib.types.nullOr (lib.types.submodule {
+      options = {
+        owner = lib.mkOption { type = lib.types.str; };
+        repo = lib.mkOption { type = lib.types.str; };
+        rev = lib.mkOption { type = lib.types.str; };
+        hash = lib.mkOption { type = lib.types.str; };
+        vendorHash = lib.mkOption { type = lib.types.str; };
+      };
+    });
+    default = null;
+    description = "Fixed full-revision source/vendor-hash pin for published patched NanoMDM v0.9; null keeps live v0.6 unchanged.";
+  };
+
+  config = {
+
   # The nanomdm/scep/nanodep release binaries are linux-amd64 (fetched by
   # fetchRelease). vista is an Intel T2 MacBook (x86_64) so this holds; the
   # assert guards against a future ARM host silently building unrunnable images.
   assertions = [{
     assertion = pkgs.stdenv.hostPlatform.isx86_64;
     message = "hosts/vista/mdm.nix ships linux-amd64 MDM binaries; host must be x86_64.";
+  } {
+    assertion = !privateCredentials.enable || usePatchedNanoMDM;
+    message = "Private MDM credentials require a published, fixed-hash patched NanoMDM v0.9 source pin; v0.6 cannot read private API/HMAC files.";
   }];
 
   # ── Secrets ────────────────────────────────────────────────────────────────
@@ -369,7 +409,7 @@ in
   # and nanomdm read that same value, so they match by construction.
   sops.secrets.scep_challenge.sopsFile = ../../secrets/mantle.yaml;
 
-  sops.templates."nanomdm.env" = {
+  sops.templates."nanomdm.env" = lib.mkIf (!privateCredentials.enable) {
     restartUnits = [ "docker-nanomdm.service" ];
     content = "NANOMDM_API=${config.sops.placeholder.nanomdm_api}\n";
   };
@@ -378,10 +418,14 @@ in
     restartUnits = [ "docker-scep.service" "docker-mdmenroll.service" ];
     content = "SCEP_CHALLENGE=${config.sops.placeholder.scep_challenge}\n";
   };
-  # nanodep reuses the nanomdm API key for its operator API (both are internal/localhost).
+  # The opt-in cutover separates NanoDEP's credential from NanoMDM's.
+  # NanoDEP v0.7 still exposes its own key via -api argv; that remains a
+  # separate migration gate and must not be called fully remediated.
   sops.templates."nanodep.env" = {
     restartUnits = [ "docker-nanodep.service" ];
-    content = "NANODEP_API=${config.sops.placeholder.nanomdm_api}\n";
+    content = "NANODEP_API=${if privateCredentials.prepare || privateCredentials.enable then
+      config.sops.placeholder.nanodep_api
+    else config.sops.placeholder.nanomdm_api}\n";
   };
 
   # ── Persistent data dirs (data pool; one parent for easy backup/move) ───────
@@ -417,9 +461,18 @@ in
     volumes = [
       "${dataDir}/nanomdm:/app/db"       # file-backend store (devices, queue, push cert)
       "${dataDir}/scep:/app/scep:ro"     # read the SCEP CA cert to validate device certs
-    ];
-    environmentFiles = [ config.sops.templates."nanomdm.env".path ]; # NANOMDM_API
+    ] ++ lib.optional privateCredentials.enable
+      "${dataDir}/credentials:/run/mdm-credentials:ro";
+    environmentFiles = lib.optional (!privateCredentials.enable)
+      config.sops.templates."nanomdm.env".path; # legacy NANOMDM_API only
   };
+
+  # Docker otherwise auto-creates a missing bind source. Fail closed before
+  # starting a container with empty/misowned credential mount paths.
+  systemd.services.docker-nanomdm.serviceConfig.ExecStartPre =
+    lib.mkIf privateCredentials.enable (lib.mkBefore [
+      "${credentialPreflight}"
+    ]);
 
   # nanomdm needs the SCEP CA cert (ca.pem) to exist first — scep's entrypoint creates it.
   # On mantle the containers bind to the WireGuard IP 10.100.0.4, so wg0 must be
@@ -499,5 +552,6 @@ in
       OnBootSec = "3min";        # let docker-nanodep settle after a reboot
       OnUnitActiveSec = "5min";
     };
+  };
   };
 }

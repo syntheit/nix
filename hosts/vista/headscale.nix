@@ -15,6 +15,8 @@
 { pkgs, lib, config, inputs, vars, ... }:
 
 let
+  privateMDMCredentials = config.malli.mdm.privateCredentials;
+  stageMDMCredentials = privateMDMCredentials.prepare || privateMDMCredentials.enable;
   headscale-ui-src = pkgs.fetchzip {
     url = "https://github.com/gurucomputing/headscale-ui/releases/download/2025.01.20/headscale-ui.zip";
     hash = "sha256-eMT3/UsTYkiJFzoWlNPOM6hgbyGoBbPi3cs/u71KJ0c=";
@@ -160,7 +162,7 @@ in
     # Once dedicated DDM identity is explicitly enabled, do NOT auto-chown
     # the old UID-999 bind mount here: the full tree must be migrated during
     # an approved maintenance window before that configuration is activated.
-  ] ++ lib.optional (!config.malli.mdm.ddmBridge.enable)
+  ] ++ lib.optional (!config.malli.mdm.deusDedicatedIdentity.enable)
     "d /var/lib/deus 0755 deus deus -" ++ [
     # 0755 so the container's deus user can traverse to the world-readable token files inside.
     "d /var/lib/deus-tokens 0755 root root -"
@@ -232,7 +234,7 @@ in
       # nanomdm API key (ADE enqueue auth + webhook ?token= secret).
       # Best-effort: until it's added to secrets/conduit.yaml the file is
       # absent and deus-server leaves the ADE orchestrator disabled.
-      stage_optional /run/secrets/nanomdm_api               /var/lib/deus-tokens/nanomdm-api         0444
+      ${lib.optionalString (!stageMDMCredentials) "stage_optional /run/secrets/nanomdm_api               /var/lib/deus-tokens/nanomdm-api         0444"}
       # ADE bootstrap-creds vend: the fleet sops age key deus-server
       # hands a bootstrapping Mac. Best-effort — absent until the sops
       # secret is added (see the gating note at the top of this file).
@@ -565,8 +567,16 @@ in
           # (10.100.0.4:9990). Webhook back posts to conduit 10.100.0.1:8086,
           # which forwards here. (Local veth wiring is a deferred optimization.)
           nanomdmURL = "http://10.100.0.1:9990"; # conduit socat → vista 10.100.0.4
-          apiKeyFile = "/var/lib/deus-tokens/nanomdm-api";
-          webhookSecretFile = "/var/lib/deus-tokens/nanomdm-api";
+          apiKeyFile = if stageMDMCredentials then
+            "/var/lib/deus-tokens/private-mdm/nanomdm-api"
+          else "/var/lib/deus-tokens/nanomdm-api";
+          webhookSecretFile = if privateMDMCredentials.retireLegacyWebhook then
+            ""
+          else if stageMDMCredentials then
+            "/var/lib/deus-tokens/private-mdm/nanomdm-api"
+          else "/var/lib/deus-tokens/nanomdm-api";
+          webhookHMACKeyFile = lib.optionalString stageMDMCredentials
+            "/var/lib/deus-tokens/private-mdm/webhook-hmac";
 
           # Managed admin the AccountConfiguration step creates on each
           # Mac. "tars" (== vars.user.name) so auto-login-as-tars works,

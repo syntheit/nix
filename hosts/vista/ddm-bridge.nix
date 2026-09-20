@@ -61,8 +61,10 @@ in
   config = lib.mkIf cfg.enable {
     assertions = [
       {
-        assertion = cfg.identityMigrationConfirmed;
-        message = "DDM bridge requires an approved, verified migration of all Deus-owned bind-mounted entries from colliding host UID 999 to dedicated UID/GID 3999.";
+        assertion = cfg.identityMigrationConfirmed
+          && config.malli.mdm.deusDedicatedIdentity.enable
+          && config.malli.mdm.deusDedicatedIdentity.migrationConfirmed;
+        message = "DDM bridge requires separately enabled, approved, and verified dedicated Deus UID/GID 3999 migration.";
       }
       {
         assertion = cfg.credentialMigrationConfirmed;
@@ -86,17 +88,6 @@ in
     # Same kernel-visible identity as nspawn's Deus process, but distinct from
     # host btrbk UID 999. No auto-chown: the operator must back up and migrate
     # the full /var/lib/deus tree before enabling this option.
-    users.groups.deus-ddm-bridge.gid = bridgeUID;
-    users.users.deus-ddm-bridge = {
-      isSystemUser = true;
-      uid = bridgeUID;
-      group = "deus-ddm-bridge";
-    };
-    containers.headscale.config = { ... }: {
-      users.groups.deus.gid = bridgeUID;
-      users.users.deus.uid = bridgeUID;
-    };
-
     virtualisation.oci-containers.containers.deus-ddm-bridge = {
       imageFile = bridgeImage;
       image = "malli-deus-ddm-bridge:${bridgeTag}";
