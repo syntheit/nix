@@ -26,7 +26,7 @@ let
     set -eu
     test ! -L ${stateDir}
     test -d ${stateDir}
-    test "$(${pkgs.coreutils}/bin/stat -c '%u:%g:%a' ${stateDir})" = '${bridgeID}:${bridgeID}:750'
+    test "$(${pkgs.coreutils}/bin/stat -c '%u:%g:%a' ${stateDir})" = '${bridgeID}:${bridgeID}:700'
   '';
   bridgePreflight = pkgs.writeShellScript "deus-ddm-bridge-preflight" ''
     set -eu
