@@ -19,7 +19,9 @@
     ./nix-builder.nix
     # Malli fleet control plane, migrated from conduit (2026-08).
     ./headscale.nix # Headscale + deus nspawn (self-contained tailscale inside)
+    ./deus-dedicated-identity.nix # dormant UID 3999 state-migration gate
     ./ddm-bridge.nix # dormant private NanoMDM→Deus DDM sidecar (default off)
+    ./mdm-credentials.nix # dormant private MDM/ADE credential cutover
     ./registry.nix # docker registry:2 on :5000
     ./zot.nix # zot OCI registry on :5001
     ./mdm.nix # nanomdm/scep/nanodep/enroll — migrated from mantle (2026-08)
