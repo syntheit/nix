@@ -209,6 +209,28 @@ in
     "kernel.panic" = 30; # reboot 30s after any panic
   };
 
+  # Reclaim stray build caches from /tmp.
+  #
+  # /tmp is tmpfs on purpose — fast, and it spares the NVMe a great deal of
+  # write churn. What does not belong there is a BUILD CACHE. Go's own default
+  # is ~/.cache/go-build, on disk, deliberately: a cache wiped on every reboot
+  # is not a cache, it is a temp directory you pay to refill. Agent sessions
+  # working on this box have nonetheless set GOCACHE to /tmp/<session>-go-cache
+  # to avoid contending on the shared cache, and on 2026-09-19 six of those
+  # took /tmp to 100% of its 15.6G. The visible symptom was misleading: the
+  # archive store reserves 2G of headroom, so every Stage refused with a
+  # message that reads like a code fault rather than a full disk.
+  #
+  # The convention is the real fix — per-session caches belong under ~/.cache.
+  # This is the safety net for when that is forgotten, which it will be.
+  # Deliberately narrow: it matches build-cache names only, never /tmp at
+  # large, so nothing else in /tmp is at risk from it.
+  systemd.tmpfiles.rules = [
+    "e /tmp/*go-cache* - - - 1d"
+    "e /tmp/*gocache* - - - 1d"
+    "e /tmp/*-go-build* - - - 1d"
+  ];
+
   boot.tmp.useTmpfs = true;
   boot.tmp.tmpfsSize = "50%";
 

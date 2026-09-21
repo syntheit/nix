@@ -96,6 +96,61 @@
     mode = "0444";
   };
 
+  # ── Dark-host alerting sinks ──────────────────────────────────────
+  # deus-server's dark-host watch has been merged and deployed since the
+  # September incident and has never fired once, for one reason: it was
+  # never given a sink. It sweeps the fleet every 60s and raises an event
+  # when a Mac goes seen→unseen for ten minutes, then posts it nowhere.
+  # Eight bot Macs stayed dark for four days and the first report came
+  # from a customer.
+  #
+  # Either file alone switches it on; both can run together.
+  #
+  # Standalone sops files gated on the file existing, rather than keys in
+  # vista-deus.yaml, for the same reason deus_fleet_age_key is: a
+  # declared-but-absent key fails sops activation for the WHOLE host, so
+  # a secret that has not been created yet would break every rebuild
+  # until it was. Absent file → the whole wiring below is inert and
+  # deus-server starts exactly as it does today.
+  #
+  # ⚠️ These are also systemd LoadCredential sources, and systemd FAILS a
+  # unit whose credential source is missing. That is why the gate is on
+  # the encrypted file's presence at EVAL time, not on the staged file at
+  # runtime: nix decides whether the flag is emitted at all, so the unit
+  # can never reference a credential that was not staged.
+  #
+  # Create either one ON VISTA (.sops.yaml routes secrets/vista/* to
+  # vista + daniel), then `git add` it — a flake cannot see an untracked
+  # file, so an un-added secret evaluates as absent and nothing happens:
+  #
+  #   printf '%s' 'https://hooks.slack.com/services/T…/B…/…' \
+  #     | sops --encrypt --input-type binary --output-type binary /dev/stdin \
+  #     > ~/nix/secrets/vista/deus_dark_host_webhook
+  #   git -C ~/nix add secrets/vista/deus_dark_host_webhook
+  #
+  #   printf '%s' 'https://<key>@<org>.ingest.sentry.io/<project>' \
+  #     | sops --encrypt --input-type binary --output-type binary /dev/stdin \
+  #     > ~/nix/secrets/vista/deus_dark_host_sentry_dsn
+  #   git -C ~/nix add secrets/vista/deus_dark_host_sentry_dsn
+  #
+  # No trailing newline: deus trims whitespace, but a webhook URL is
+  # compared against hooks.slack.com by hostname and there is no reason
+  # to make that depend on trimming.
+  #
+  # 0400/root like the other LoadCredential sources — systemd reads them
+  # as root before dropping to the deus user, so neither ever has to be
+  # readable by deus on disk.
+  sops.secrets.deus_dark_host_webhook = lib.mkIf (builtins.pathExists ../../secrets/vista/deus_dark_host_webhook) {
+    sopsFile = ../../secrets/vista/deus_dark_host_webhook;
+    format = "binary";
+    mode = "0400";
+  };
+  sops.secrets.deus_dark_host_sentry_dsn = lib.mkIf (builtins.pathExists ../../secrets/vista/deus_dark_host_sentry_dsn) {
+    sopsFile = ../../secrets/vista/deus_dark_host_sentry_dsn;
+    format = "binary";
+    mode = "0400";
+  };
+
   # WireGuard private key for the wg0 link to conduit (vista = 10.100.0.4).
   sops.secrets.vista_wg_private_key = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0400"; };
 
