@@ -70,9 +70,14 @@ Enabling the option requires all three explicit confirmations:
   has not pinned or deployed it. The public Deus HTTP mux must not gain DDM
   routes.
 
-The Nix assertion also requires a verified `malli-nanomdm:0.9.0-patched-*`
-image, with NanoMDM's device-supplied DDM endpoint confinement patch. The
-current source-build pin is `null`, so enabling the bridge fails evaluation.
+The Nix assertions also require the NanoMDM source pin to be on the reviewed
+allowlist in `hosts/vista/nanomdm-reviewed-source.nix` — owner, repo and full
+revision — and the image tag the container will run to be one built from an
+allowlisted revision. The earlier check matched only the tag prefix
+`malli-nanomdm:0.9.0-patched-`, which `mdm.nix` derives from the very pin it
+was meant to be verifying, so it passed for any v0.9 source, unpatched
+upstream included. The current source-build pin is `null` and the allowlist
+is empty, so enabling the bridge fails evaluation twice over.
 Before any NanoMDM `-dm` activation, add *file-backed* support for its
 send/receive DDM HMAC keys; the upstream literal-key flags expose secrets in
 process argv. The patched post-core receipt sender likewise needs its own
