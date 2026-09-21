@@ -3,6 +3,7 @@
 { config, lib, pkgs, ... }:
 let
   cfg = config.malli.mdm.privateCredentials;
+  ddm = config.malli.mdm.declarativeManagement;
   staging = cfg.prepare || cfg.enable || cfg.retireLegacyWebhook;
   stageScript = pkgs.writeText "vista-mdm-stage-credentials.py"
     (builtins.readFile ../../packages/vista-mdm-stage-credentials.py);
@@ -123,6 +124,20 @@ in
       format = "binary";
       mode = "0600";
     };
+    # Declarative-management pair. Only rendered when -dm is actually enabled:
+    # an unused rendered secret is one more copy of key material on disk.
+    sops.secrets.nanomdm_dm_send_hmac_key = lib.mkIf
+      (ddm.enable && ddm.sendHmacSopsFile != null) {
+        sopsFile = ddm.sendHmacSopsFile;
+        format = "binary";
+        mode = "0600";
+      };
+    sops.secrets.nanomdm_dm_recv_hmac_key = lib.mkIf
+      (ddm.enable && ddm.recvHmacSopsFile != null) {
+        sopsFile = ddm.recvHmacSopsFile;
+        format = "binary";
+        mode = "0600";
+      };
 
     # Called at activation after sops renders both secrets. This writes only
     # exact-byte private copies; no credential value enters Nix/store/argv.
@@ -135,7 +150,11 @@ in
           /run/secrets/nanodep_api \
           /var/lib/mdm/credentials \
           /var/lib/deus-tokens/private-mdm \
-          /var/lib/deus-tokens/nanomdm-api
+          /var/lib/deus-tokens/nanomdm-api${
+            lib.optionalString (ddm.enable && ddm.sendHmacSopsFile != null
+              && ddm.recvHmacSopsFile != null) '' \
+          /run/secrets/nanomdm_dm_send_hmac_key \
+          /run/secrets/nanomdm_dm_recv_hmac_key''}
       '';
     };
   };

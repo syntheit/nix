@@ -23,9 +23,36 @@
 
 let
   privateCredentials = config.malli.mdm.privateCredentials;
+  declarativeManagement = config.malli.mdm.declarativeManagement;
   dataDir = "/var/lib/mdm";
   scepHostPort = 8081;
   nanomdmHostPort = 9990; # 9000 is already taken on harbor
+
+  # ── Declarative management (-dm), intentionally OFF ────────────────────────
+  # The DM hook's destination is the private bridge, which joins NanoMDM's OWN
+  # network namespace (ddm-bridge.nix: --network=container:nanomdm), so this
+  # loopback address never leaves that namespace and is never a host port.
+  # The literal below is the bridge's listen tuple; the assertion further down
+  # fails the build if packages/nanomdm-ddm-bridge.py ever moves off it.
+  ddmBridgeListen = ''LISTEN = ("127.0.0.1", 9992)'';
+  ddmBridgeSource = builtins.readFile ../../packages/nanomdm-ddm-bridge.py;
+  # Trailing slash REQUIRED: NanoMDM resolves the device-supplied endpoint
+  # ("tokens", "status", "declaration/<type>/<id>") against this prefix with
+  # url.ResolveReference, which drops the last path element of a prefix that
+  # does not end in "/". See the trailing-slash assertion below.
+  ddmEndpointURL = "http://127.0.0.1:9992/";
+  # The bridge's allowlist matches absolute paths (/tokens, /declaration-items,
+  # PUT /status, /declaration/<type>/<id>), so the prefix must be the bare root.
+  ddmArgs = lib.optionalString declarativeManagement.enable
+    ("-dm ${ddmEndpointURL}"
+      + " -dm-send-hmac-key-file /run/mdm-credentials/ddm-send-hmac"
+      + " -dm-recv-hmac-key-file /run/mdm-credentials/ddm-recv-hmac");
+  # NanoMDM's -dm-send key is the key Deus verifies with -ddm-request-key-file;
+  # its -dm-recv key is the one Deus signs responses with
+  # (-ddm-response-key-file). Deus's third, receipt key has no sender in this
+  # NanoMDM build and stays unconfigured.
+  ddmCredentialNames = lib.optionals declarativeManagement.enable
+    [ "ddm-send-hmac" "ddm-recv-hmac" ];
 
   # Packaging draft, intentionally OFF. Supply an immutable published fork/artifact
   # with a full commit and verified source/vendor hashes before opting in.
@@ -41,7 +68,8 @@ let
     dir=${dataDir}/credentials
     test ! -L "$dir"
     test "$(${pkgs.coreutils}/bin/stat -c '%u:%g:%a' "$dir")" = '0:0:700'
-    for name in nanomdm-api webhook-hmac; do
+    for name in nanomdm-api webhook-hmac${
+      lib.concatMapStrings (name: " ${name}") ddmCredentialNames}; do
       file="$dir/$name"
       test ! -L "$file"
       test -f "$file"
@@ -111,6 +139,7 @@ let
       ${nanomdmStorageArgs} \
       -webhook-hmac-key-file /run/mdm-credentials/webhook-hmac \
       -webhook-url http://10.100.0.1:8086/ade/webhook \
+      ${ddmArgs} \
       -listen :9000
   '' else ''
     set -e
@@ -378,15 +407,61 @@ in
   options.malli.mdm.nanomdmPatchedSourcePin = lib.mkOption {
     type = lib.types.nullOr (lib.types.submodule {
       options = {
-        owner = lib.mkOption { type = lib.types.str; };
-        repo = lib.mkOption { type = lib.types.str; };
+        owner = lib.mkOption { type = lib.types.str; default = ""; };
+        repo = lib.mkOption { type = lib.types.str; default = ""; };
         rev = lib.mkOption { type = lib.types.str; };
-        hash = lib.mkOption { type = lib.types.str; };
+        hash = lib.mkOption { type = lib.types.str; default = ""; };
         vendorHash = lib.mkOption { type = lib.types.str; };
+        # ── LOCAL-PATH OVERRIDE — PRE-PUBLICATION TESTING ONLY ──────────────
+        # Builds the package from a checkout on this machine instead of a
+        # published, content-addressed GitHub tarball. A local path is mutable
+        # and unreviewable, so it must never appear in a deployed host closure:
+        # localTestingOnly has to be set with it, and the assertion below
+        # refuses that combination together with privateCredentials.enable.
+        localPath = lib.mkOption {
+          type = lib.types.nullOr lib.types.path;
+          default = null;
+          description = "Pre-publication local checkout to build instead of the published revision. Never deploy.";
+        };
+        localTestingOnly = lib.mkOption {
+          type = lib.types.bool;
+          default = false;
+          description = "Explicit acknowledgement that localPath is an unpublished, unreviewable build source.";
+        };
       };
     });
     default = null;
     description = "Fixed full-revision source/vendor-hash pin for published patched NanoMDM v0.9; null keeps live v0.6 unchanged.";
+  };
+
+  # ── Declarative management (-dm) ───────────────────────────────────────────
+  # Stock NanoMDM v0.9 resolves a DEVICE-SUPPLIED DM endpoint against the
+  # configured prefix, so an absolute or root-relative endpoint turns the
+  # server into a request-forgery proxy that also forwards the enrollment
+  # headers. Only the patched build (which confines the endpoint to Apple's
+  # relative DDM forms) may ever receive -dm; that is an assertion, not a note.
+  options.malli.mdm.declarativeManagement = {
+    enable = lib.mkEnableOption "the patched NanoMDM declarative-management hook onto the private Deus DDM bridge";
+    sendHmacSopsFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = ''
+        Independently generated, sops-encrypted binary file holding the
+        32-256 byte printable-ASCII key NanoMDM signs outbound DM request
+        bodies with, and Deus verifies as -ddm-request-key-file. It must not
+        reuse the API, webhook, NanoDEP, or DM receive key.
+      '';
+    };
+    recvHmacSopsFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = ''
+        Independently generated, sops-encrypted binary file holding the
+        32-256 byte printable-ASCII key Deus signs DM responses with
+        (-ddm-response-key-file) and NanoMDM verifies. It must not reuse any
+        other MDM credential, including the DM send key.
+      '';
+    };
   };
 
   config = {
@@ -400,6 +475,48 @@ in
   } {
     assertion = !privateCredentials.enable || usePatchedNanoMDM;
     message = "Private MDM credentials require a published, fixed-hash patched NanoMDM v0.9 source pin; v0.6 cannot read private API/HMAC files.";
+  } {
+    # A published pin needs all three fetchFromGitHub fields; the local-path
+    # override deliberately has none of them.
+    assertion = !usePatchedNanoMDM || nanomdmPatchedSourcePin.localPath != null
+      || (nanomdmPatchedSourcePin.owner != "" && nanomdmPatchedSourcePin.repo != ""
+        && nanomdmPatchedSourcePin.hash != "");
+    message = "A published patched NanoMDM pin requires owner, repo and a fixed source hash.";
+  } {
+    assertion = !usePatchedNanoMDM || nanomdmPatchedSourcePin.localPath == null
+      || nanomdmPatchedSourcePin.localTestingOnly;
+    message = "malli.mdm.nanomdmPatchedSourcePin.localPath is a pre-publication build source; set localTestingOnly = true to acknowledge it.";
+  } {
+    assertion = !usePatchedNanoMDM || nanomdmPatchedSourcePin.localPath == null
+      || !privateCredentials.enable;
+    message = "A local-path patched NanoMDM build must never back a deployed private-credential cutover; publish and pin the revision first.";
+  } {
+    # THE gate: -dm on stock v0.9 is a server-side request-forgery primitive.
+    assertion = !declarativeManagement.enable || usePatchedNanoMDM;
+    message = "Declarative management requires the endpoint-confined patched NanoMDM v0.9 pin; stock v0.9 resolves device-supplied -dm endpoints and must never be given -dm.";
+  } {
+    assertion = !declarativeManagement.enable || privateCredentials.enable;
+    message = "Declarative management requires malli.mdm.privateCredentials.enable; the DM HMAC key files are only staged and mounted on that path.";
+  } {
+    assertion = !declarativeManagement.enable
+      || (declarativeManagement.sendHmacSopsFile != null
+        && declarativeManagement.recvHmacSopsFile != null);
+    message = "Declarative management requires separately encrypted DM send and receive HMAC secret files (malli.mdm.declarativeManagement.sendHmacSopsFile / recvHmacSopsFile).";
+  } {
+    # Defensive: NanoMDM's url.ResolveReference drops the last path element of
+    # a prefix without a trailing slash (upstream docs/operations-guide.md).
+    assertion = !declarativeManagement.enable || lib.hasSuffix "/" ddmEndpointURL;
+    message = "The NanoMDM -dm endpoint URL must end in a trailing slash or Go's relative path resolver truncates it.";
+  } {
+    assertion = !declarativeManagement.enable
+      || lib.hasInfix ddmBridgeListen ddmBridgeSource;
+    message = "The -dm endpoint no longer matches the DDM bridge's listen address in packages/nanomdm-ddm-bridge.py.";
+  } {
+    assertion = !declarativeManagement.enable || config.malli.mdm.ddmBridge.enable;
+    message = "Declarative management requires malli.mdm.ddmBridge.enable; without the bridge nothing serves the -dm endpoint.";
+  } {
+    assertion = !config.malli.mdm.ddmBridge.enable || declarativeManagement.enable;
+    message = "The DDM bridge is only reachable from NanoMDM's -dm hook; enable malli.mdm.declarativeManagement too.";
   }];
 
   # ── Secrets ────────────────────────────────────────────────────────────────

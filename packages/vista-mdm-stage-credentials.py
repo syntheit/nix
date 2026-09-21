@@ -67,12 +67,23 @@ def atomic_private_file(directory: Path, name: str, value: bytes, uid: int) -> N
 
 
 def stage(api_source: Path, hmac_source: Path, nanodep_source: Path,
-          nano_dir: Path, deus_dir: Path, legacy_api: Path) -> None:
+          nano_dir: Path, deus_dir: Path, legacy_api: Path,
+          ddm_send_source: Path = None, ddm_recv_source: Path = None) -> None:
     api = read_key(api_source, min_length=1, max_length=4096)
     hmac = read_key(hmac_source, min_length=32, max_length=256)
     nanodep = read_key(nanodep_source, min_length=1, max_length=4096)
-    if len({api, hmac, nanodep}) != 3:
-        raise ValueError("NanoMDM, NanoDEP, and webhook credentials must be distinct")
+    # The declarative-management pair is optional and all-or-nothing: NanoMDM
+    # signs DM requests with the send key and verifies Deus's responses with
+    # the receive key, so a half-configured pair is a silent one-way trust.
+    if (ddm_send_source is None) != (ddm_recv_source is None):
+        raise ValueError("declarative management needs both DM HMAC sources")
+    declarative = {}
+    if ddm_send_source is not None:
+        declarative["ddm-send-hmac"] = read_key(ddm_send_source, min_length=32, max_length=256)
+        declarative["ddm-recv-hmac"] = read_key(ddm_recv_source, min_length=32, max_length=256)
+    values = [api, hmac, nanodep, *declarative.values()]
+    if len(set(values)) != len(values):
+        raise ValueError("NanoMDM, NanoDEP, webhook, and DM credentials must be distinct")
     root_parent(nano_dir.parent)
     root_parent(deus_dir.parent)
     root_parent(legacy_api.parent)
@@ -81,6 +92,8 @@ def stage(api_source: Path, hmac_source: Path, nanodep_source: Path,
     for directory, uid in ((nano_dir, 0), (deus_dir, DEUS_UID)):
         atomic_private_file(directory, "nanomdm-api", api, uid)
         atomic_private_file(directory, "webhook-hmac", hmac, uid)
+        for name, value in declarative.items():
+            atomic_private_file(directory, name, value, uid)
     # Preserve rollback bytes without leaving the old 0444 leak behind. The
     # default-off deus-stage path is skipped in this mode, so it cannot undo
     # the private replacement later in activation ordering.
@@ -88,8 +101,9 @@ def stage(api_source: Path, hmac_source: Path, nanodep_source: Path,
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 7:
-        raise SystemExit("usage: stage API_SOURCE HMAC_SOURCE NANODEP_SOURCE NANO_DIR DEUS_DIR LEGACY_API")
+    if len(sys.argv) not in (7, 9):
+        raise SystemExit("usage: stage API_SOURCE HMAC_SOURCE NANODEP_SOURCE NANO_DIR "
+                         "DEUS_DIR LEGACY_API [DM_SEND_SOURCE DM_RECV_SOURCE]")
     try:
         stage(*(Path(argument) for argument in sys.argv[1:]))
     except (OSError, ValueError) as error:
