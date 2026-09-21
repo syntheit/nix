@@ -54,6 +54,22 @@ let
   # profile so a Mac has Full Disk Access etc. before Phase B runs.
   configProfiles   = ./profiles;
   haveProfiles     = builtins.pathExists configProfiles;
+
+  # ── Dark-host alerting sinks (gated; see ./secrets.nix) ───────────
+  # Same shape and the same reason as the fleet age key: absent file =>
+  # the whole wiring evaluates away and deus-server starts exactly as it
+  # does today. Present file => it is staged into /var/lib/deus-keys,
+  # handed to the unit as a systemd credential, and the dark-host watch
+  # finally has somewhere to report.
+  #
+  # The gate MUST be at EVAL time. systemd fails a unit whose
+  # LoadCredential source is missing, so "emit the flag and hope the file
+  # is staged" would trade a silently non-alerting control plane for a
+  # control plane that does not start — a strictly worse failure.
+  darkWebhookEnc    = ../../secrets/vista/deus_dark_host_webhook;
+  haveDarkWebhook   = builtins.pathExists darkWebhookEnc;
+  darkSentryDSNEnc  = ../../secrets/vista/deus_dark_host_sentry_dsn;
+  haveDarkSentryDSN = builtins.pathExists darkSentryDSNEnc;
 in
 {
   # deus operator web console (Next.js). HOST-level, NOT inside
@@ -213,6 +229,19 @@ in
       # a Mac. Best-effort like the rest: absent file => deus leaves the
       # placement routes disabled rather than failing activation.
       stage_optional /run/secrets/deus_malli_admin_token    /var/lib/deus-keys/malli-admin-token     0400
+      # Dark-host alerting sinks. NOT best-effort: these are staged only
+      # when the encrypted file exists at eval time, in which case sops
+      # has already rendered /run/secrets and the copy must succeed. The
+      # deus-server unit names them as LoadCredential sources, and a
+      # missing source makes systemd refuse to start the unit — so a
+      # silent `|| true` here would turn a staging slip into a dead
+      # control plane at the next boot rather than at this activation.
+      ${lib.optionalString haveDarkWebhook ''
+        ${pkgs.coreutils}/bin/install -m 0400 /run/secrets/deus_dark_host_webhook /var/lib/deus-keys/dark-host-webhook
+      ''}
+      ${lib.optionalString haveDarkSentryDSN ''
+        ${pkgs.coreutils}/bin/install -m 0400 /run/secrets/deus_dark_host_sentry_dsn /var/lib/deus-keys/dark-host-sentry-dsn
+      ''}
       # AWS read-only creds, composed into one shared-credentials file because
       # that is the single artefact every AWS SDK understands without env vars
       # (which would render into /proc/*/environ). Absent halves leave no file,
@@ -338,9 +367,11 @@ in
         isReadOnly = true;
       };
       # registry.nix is no longer the inventory source — deus-server
-      # now reads from headscale (deus v0.12+). Roles live in
-      # /var/lib/deus/roles.json (small JSON, operator-edited),
-      # which is in the bind-mounted /var/lib/deus tree.
+      # now reads from headscale (deus v0.12+). Roles come from
+      # hosts/roles.json in the malli-nix mirror (rolesFromMirror,
+      # below): the file /var/lib/deus/roles.json was never created by
+      # anything and never existed, so reading it meant no host had any
+      # role. The mirror is already bind-mounted and already synced.
     };
 
     config = { pkgs, ... }: let
@@ -475,7 +506,41 @@ in
         address = "0.0.0.0";
         port = 8086;
         # registryFile = null (default) — inventory comes from headscale.
-        # Roles live in /var/lib/deus/roles.json (operator-edited).
+        #
+        # ── Roles ──
+        # Read hosts/roles.json out of the malli-nix mirror, not from
+        # rolesFile. The module default, /var/lib/deus/roles.json, has
+        # NEVER existed on this box — nothing creates it, because role
+        # writes go through the granter, which commits roles.json to
+        # malli-nix. deus's read side and its own write side were looking
+        # at two different files and only one of them was real.
+        #
+        # The consequence was total and silent: a missing roles file read
+        # as "no host has any role", so org-bots-bots-ready,
+        # cache-serving and user-vm-running were skipped for all 582
+        # hosts while roles.json declared 34 org-bots Macs.
+        #
+        # mirrorPath (default /var/lib/git-mirror/malli-nix.git) already
+        # holds the file and re-syncs every 5 minutes on
+        # malli-nix-mirror.timer, so this adds no moving part — it
+        # removes one.
+        #
+        # Blast radius measured before enabling this (2026-09-18, live
+        # /hosts against the mirror's roles.json): 38 entries, all 38
+        # matching a host in the fleet, and NONE newly gaining the
+        # org-bots checks — every online bot Mac already gets those from
+        # its own self-reported OrgBotsStatus. The only genuinely new
+        # checks are cache-serving on m-1w6l and user-vm-running on
+        # m-g94t / m-qvlm, and all three are offline today, so the
+        # immediate health delta is zero.
+        #
+        # ⚠️ When those three come back, expect DEGRADED rather than
+        # healthy: m-1w6l's cache signing keypair was never generated, so
+        # its :5080 probe is expected to fail. Both checks are
+        # non-critical by design, so neither can turn a host red on its
+        # own. That is the check reporting reality, not a regression.
+        rolesFromMirror = true;
+
         operatorTokenFile = "/var/lib/deus-tokens/operator-token";
         agentTokenFile = "/var/lib/deus-tokens/agent-token";
         # Read-only lookup scope for the AWS orchestrator (GET /fleet/bots/{uid}).
@@ -503,6 +568,32 @@ in
         malliAdminTokenFile = "/etc/deus-keys/malli-admin-token";
         awsCredentialsFile = "/etc/deus-keys/aws-credentials";
 
+        # ── Dark-host watch: the fleet's only alert ──
+        #
+        # Same /etc/deus-keys bind-mount and the same LoadCredential
+        # treatment as the two files above. Both paths are emitted ONLY
+        # when the encrypted secret exists in this repo (see the gates at
+        # the top of this file and the creation commands in
+        # ./secrets.nix), because systemd refuses to start a unit whose
+        # credential source is missing.
+        #
+        # webhookFormat = "slack" is not cosmetic. A Slack incoming
+        # webhook accepts exactly {"text": …} and answers the event shape
+        # with HTTP 400 invalid_payload — so the default format against a
+        # hooks.slack.com URL posts on every transition and delivers
+        # nothing, which is the same silence this watch exists to end.
+        # deus refuses that combination at startup, but setting it right
+        # here means never meeting the guard.
+        #
+        # Point webhookFile at a non-Slack receiver (or a relay) and set
+        # this back to "event" for the flat JSON shape.
+        darkHost = {
+          webhookFile = lib.mkIf haveDarkWebhook "/etc/deus-keys/dark-host-webhook";
+          webhookFormat = "slack";
+          sentryDSNFile = lib.mkIf haveDarkSentryDSN "/etc/deus-keys/dark-host-sentry-dsn";
+          sentryEnvironment = "prod";
+        };
+
         # SSH-push deploys (Colmena model). deus-server claims pending
         # deploy jobs and SSHes to the target as tars/lima, runs
         # *-rebuild directly. Agents no longer poll /agent/commands.
@@ -528,6 +619,123 @@ in
         # activation script in this same module from sops secrets
         # defined in secrets.nix. Account/zone IDs are config, not
         # secrets.
+        # ── Customer identity for the bots console ──
+        #
+        # Without this the console shows "Unidentified bot" and a truncated
+        # UUID for 562 of 596 bots, because ListBots omits host, slug and
+        # orgUid for every bot deus has no fleet record of. That is honest,
+        # and it is useless to a human choosing who to migrate.
+        #
+        # The source is GET /api/malli-pro/admin/v2/phone-numbers, which is
+        # already deployed and answers with the admin token deus already
+        # holds. It carries bot_uid, org_uid, e164 and phone_number_id for
+        # 588 of 596 bots. org_uid is trustworthy by SCHEMA, not by luck:
+        # mp_phone_numbers has no org_id column at all, so the API must join
+        # phone -> bot -> org to produce one. Verified against two bots whose
+        # orgUid a human wrote into malli-nix during earlier waves.
+        #
+        # GET-only. The snapshot is for DISPLAY; anything that mutates a
+        # customer re-reads that one bot live, so a stale name is cosmetic
+        # and can never authorise an action.
+        botIdentity = {
+          enable = true;
+        };
+
+        # ── Bot migration: Fargate → Mac, driven from the console ──
+        #
+        # Two switches, and they are deliberately different in kind.
+        #
+        # botmove.deusURL turns on PLANNING. Every check runs for real and
+        # every finding is streamed, and nothing anywhere changes. Without
+        # it PlanBotMove fails closed and the whole engine is inert — which
+        # is what it was until now.
+        #
+        # botmove.execute.enable is the one option in this module that can
+        # take a paying customer's bot offline. With it true the engine's
+        # mutating steps are ARMED: the RPC may stop a launchd job and a
+        # container, carry that customer's workspace onto another Mac,
+        # merge a malli-nix PR and deploy it. Re-running the plan undoes
+        # none of that.
+        #
+        # It is the OUTERMOST gate, not the only one. Inside it the RPC
+        # still requires a named operator, a plan digest that is
+        # re-derived server-side (so a console acting on a stale screen is
+        # refused), a target Mac deus can currently vouch for, a claim on
+        # the bot AND the target AND the shared malli-nix branch, and a
+        # capability preflight that refuses to start a move this deployment
+        # cannot finish.
+        botmove = {
+          # Loopback INSIDE the nspawn — this is deus reading its own
+          # inventory, not a network hop.
+          deusURL = "http://127.0.0.1:8086";
+          deusTokenFile = "/var/lib/deus-tokens/operator-token";
+
+          execute.enable = true;
+
+          # The malli-nix change a move prepares for itself. Without these
+          # the move refuses rather than pushing to a repo it was not told
+          # about.
+          repoOwner = "NRE-Product";
+          repoName = "malli-nix";
+
+          # A SEPARATE clone from granter.repoWorkDir on purpose: that tree
+          # pushes HEAD:main, and a move pushes a branch. The module
+          # asserts they differ.
+          granterWorkDir = "/var/lib/deus/botmove-granter";
+          granterRepoURL = "git@github.com:NRE-Product/malli-nix.git";
+
+          # Reading the orchestrator's CloudWatch logs is what lets the
+          # verify phase assert the ABSENCE of placement_pin_fallback —
+          # which is the check that catches a move that looks fine and is
+          # still serving the old host from a pinned address.
+          awsCredentialsFile = "/etc/deus-keys/aws-credentials";
+
+          # ── Per-host prod secrets, provisioned automatically ──
+          #
+          # A Mac hosting a customer bot needs four prod secret values. If
+          # hosts/<mac>/secrets.yaml is ABSENT, nix-darwin silently falls back
+          # to secrets/fleet.yaml, which holds DEV values — and the bot then
+          # passes nix eval, passes both flake checks, deploys, starts, and
+          # 401s EVERY customer dispatch on a dev-paired token. That is not
+          # hypothetical: it happened to m-04ao in migration wave 2 and was
+          # found by breaking a production bot.
+          #
+          # deus has written sops-encrypted per-host secrets for every new Mac
+          # since the ADE bootstrap flow shipped; this wires that existing
+          # capability into the move so an operator never runs a script.
+          #
+          # It READS prod/cursor_runner_token and never mints one: the
+          # orchestrator sends ONE global CURSOR_RUNNER_TOKEN to every bot, so
+          # a freshly generated per-host token would 401 every dispatch. IAM
+          # is scoped to exactly four secret ARNs and deus refuses any other
+          # secret BY NAME on top of that.
+          prodSecrets = {
+            enable = true;
+            credentialsFile = "/etc/deus-keys/aws-credentials";
+          };
+
+          # Reading a customer's workspace off a LIVE Fargate task. The
+          # tarball goes task → S3 → here over the task's own HTTPS
+          # egress; the exec channel carries a ~200-byte command and never
+          # the data, because SSM truncates past a few KB and that is what
+          # killed migration wave 2.
+          fargate = {
+            credentialsFile = "/etc/deus-keys/aws-credentials";
+            bucket = "malli-cursor-runner-ebs-migrations-prod";
+          };
+        };
+
+        # ── ECS sleep/wake ──
+        #
+        # OFF until someone wants it. The IAM grant exists (ecs-sleep-wake,
+        # UpdateService only, conditioned to the one cluster; DeleteService
+        # and StopTask stay denied), but the standing operational rule is
+        # "do NOT spin ECS down" — a migrated bot's Fargate service is that
+        # bot's ROLLBACK. The code refuses to sleep a fleet-placed bot
+        # without an explicit override, and leaving this false means the
+        # RPCs are not even mounted.
+        ecsControl.enable = false;
+
         granter = {
           enable = true;
           domain = "themalli.ai";
