@@ -1,0 +1,189 @@
+# malli-rehearsal-selftest SCRATCH_DIR
+#
+# Runs the harness against SYNTHETIC fixtures only (make-fixture.sh), as the
+# root of an unprivileged user namespace, so it needs no sudo and touches
+# nothing real. Every case must end with the expected checks, an intact
+# wipe, and none of the planted secret markers in the output.
+#
+#   good            every check PASS (identity on stdin)
+#   tty             every check PASS, identity typed at the hidden prompt
+#   wrong-count     --expected-count one too high: the two count checks FAIL
+#   corrupt         one byte of the encrypted archive flipped: decrypt FAIL
+#   v06-unreadable  a v0.9 that leaves the store in a form v0.6 cannot
+#                   read: v09.unchanged and v06.read FAIL
+#   bad-migration   deus.db with a table the new schema cannot build on:
+#                   deus.migrate FAIL
+#   interrupted     SIGINT (Ctrl-C) mid-run, as the v0.9 phase begins:
+#                   exit 130, and still wiped
+#   killed          kill -9 mid-run: no trap runs, and the tmpfs is still gone
+export LC_ALL=C
+
+scratch=${1:?usage: malli-rehearsal-selftest SCRATCH_DIR}
+case $scratch in /nix/store/*) echo "not in the store" >&2; exit 2 ;; esac
+mkdir -p "$scratch"
+scratch=$(realpath -e "$scratch")
+run=$scratch/run
+out=$scratch/out
+rm -rf "$run" "$out"
+mkdir -p "$run" "$out"
+
+"$FIXTURE" "$scratch/good" --count 12
+"$FIXTURE" "$scratch/broken-deus" --count 12 --broken-deus
+cp "$scratch/good/backup.tar.zst.age" "$scratch/corrupt.age"
+size=$(stat -c %s "$scratch/corrupt.age")
+printf '\x5a' | dd of="$scratch/corrupt.age" bs=1 seek=$((size / 2)) conv=notrunc status=none
+
+failures=0
+results=()
+
+# harness fixture-dir output-file extra-args... -> exit code of the harness
+rehearse() {
+  local harness=$1 fx=$2 log=$3 rc=0
+  shift 3
+  grep AGE-SECRET-KEY "$fx/identity" \
+    | unshare --user --map-root-user -- env --default-signal=INT "$harness" \
+        --work-parent "$run" --tmpfs-size 1g --backup "$fx/backup.tar.zst.age" \
+        --baseline "$fx/baseline.tsv" "$@" \
+    > "$log" 2>&1 || rc=$?
+  return "$rc"
+}
+
+status_of() { awk -v c="$2" '/^==== REHEARSAL SUMMARY/ { s = 1 } s && $2 == c { print $1 }' "$1"; }
+
+# case-name log expected-exit actual-exit fixture-dir "check=STATUS ..."
+judge() {
+  local name=$1 log=$2 want_rc=$3 got_rc=$4 fx=$5 expect=$6 problems="" pair c want got mp
+  [ "$got_rc" = "$want_rc" ] || problems+=" exit=$got_rc(want $want_rc)"
+  for pair in $expect; do
+    c=${pair%%=*}
+    want=${pair#*=}
+    got=$(status_of "$log" "$c")
+    [ "$got" = "$want" ] || problems+=" $c=${got:-none}(want $want)"
+  done
+  # The wipe: reported complete, mountpoint gone, nothing left behind.
+  grep -Eq '^WIPE: [0-9]+ files zeroed and unlinked, 0 entries left before unmount; tmpfs unmounted: yes; mountpoint .* removed: yes$' "$log" \
+    || problems+=" wipe-line"
+  mp=$(sed -n 's/^WIPE: .*; mountpoint \(.*\) removed: .*$/\1/p' "$log")
+  if [ -z "$mp" ] || [ -e "$mp" ]; then problems+=" mountpoint-still-exists"; fi
+  if [ -n "$(find "$run" -mindepth 1 -print -quit)" ]; then problems+=" leftovers-in-work-parent"; fi
+  if grep -sq 'malli-rehearsal-[0-9a-f]\{16\}' /proc/[0-9]*/mountinfo; then problems+=" tmpfs-still-mounted-somewhere"; fi
+  # No planted secret, identity, enrollment ID or row value in the output.
+  if grep -F -q -f "$fx/markers" "$log"; then problems+=" LEAK"; fi
+  if [ -z "$problems" ]; then
+    results+=("PASS  $name")
+  else
+    results+=("FAIL  $name:$problems")
+    failures=$((failures + 1))
+  fi
+}
+
+all_pass="isolation=PASS decrypt=PASS layout=PASS enrollments=PASS bootstraptokens=PASS
+  v09.start=PASS v09.version=PASS v09.read=PASS v09.unchanged=PASS
+  v06.start=PASS v06.version=PASS v06.read=PASS v06.unchanged=PASS
+  deus.migrate=PASS deus.integrity=PASS deus.rollback=PASS"
+
+rc=0; rehearse "$HARNESS" "$scratch/good" "$out/good.log" || rc=$?
+judge good "$out/good.log" 0 "$rc" "$scratch/good" "$all_pass"
+
+rc=0; rehearse "$HARNESS" "$scratch/good" "$out/wrong-count.log" --expected-count 13 || rc=$?
+judge wrong-count "$out/wrong-count.log" 1 "$rc" "$scratch/good" \
+  "isolation=PASS decrypt=PASS enrollments=FAIL bootstraptokens=FAIL v09.read=PASS v06.read=PASS deus.migrate=PASS"
+
+mkdir -p "$scratch/corrupt"
+cp "$scratch/good/identity" "$scratch/good/baseline.tsv" "$scratch/good/markers" "$scratch/corrupt/"
+mv "$scratch/corrupt.age" "$scratch/corrupt/backup.tar.zst.age"
+rc=0; rehearse "$HARNESS" "$scratch/corrupt" "$out/corrupt.log" || rc=$?
+judge corrupt "$out/corrupt.log" 1 "$rc" "$scratch/corrupt" \
+  "isolation=PASS decrypt=FAIL layout=SKIP v09.start=SKIP deus.migrate=SKIP"
+
+rc=0; rehearse "$HARNESS_FAULTY_V09" "$scratch/good" "$out/v06-unreadable.log" || rc=$?
+judge v06-unreadable "$out/v06-unreadable.log" 1 "$rc" "$scratch/good" \
+  "decrypt=PASS v09.start=PASS v09.version=PASS v09.read=PASS v09.unchanged=FAIL v06.start=PASS v06.read=FAIL v06.unchanged=FAIL deus.migrate=PASS"
+
+rc=0; rehearse "$HARNESS" "$scratch/broken-deus" "$out/bad-migration.log" || rc=$?
+judge bad-migration "$out/bad-migration.log" 1 "$rc" "$scratch/broken-deus" \
+  "decrypt=PASS enrollments=PASS v09.read=PASS v06.read=PASS deus.migrate=FAIL deus.integrity=FAIL deus.rollback=FAIL"
+
+# The owner's path: the identity typed at the prompt on a terminal (a
+# pseudo-terminal here), sent only once the prompt is up, as a person would.
+log=$out/tty.log
+rm -f "$scratch/tty-in"
+mkfifo "$scratch/tty-in"
+script -qec "unshare --user --map-root-user -- $HARNESS --work-parent $run --tmpfs-size 1g --backup $scratch/good/backup.tar.zst.age --baseline $scratch/good/baseline.tsv" \
+  /dev/null < "$scratch/tty-in" > "$log" 2>&1 &
+pid=$!
+exec 7> "$scratch/tty-in"
+for _ in $(seq 1 200); do
+  grep -q 'Paste the age identity' "$log" && break
+  sleep 0.05
+done
+sleep 0.3
+grep AGE-SECRET-KEY "$scratch/good/identity" >&7
+rc=0; wait "$pid" || rc=$?
+exec 7>&-
+rm -f "$scratch/tty-in"
+# A terminal ends lines with CR LF.
+tr -d '\r' < "$log" > "$log.lf" && mv "$log.lf" "$log"
+judge tty "$log" 0 "$rc" "$scratch/good" "$all_pass"
+
+# Ctrl-C mid-run, with the decrypted store on the tmpfs.
+log=$out/interrupted.log
+grep AGE-SECRET-KEY "$scratch/good/identity" \
+  | unshare --user --map-root-user -- env --default-signal=INT "$HARNESS" \
+      --work-parent "$run" --tmpfs-size 1g --baseline "$scratch/good/baseline.tsv" \
+      --backup "$scratch/good/backup.tar.zst.age" > "$log" 2>&1 &
+pid=$!
+for _ in $(seq 1 600); do
+  grep -q '^== nanomdm v0.9' "$log" && break
+  sleep 0.05
+done
+kill -INT "$pid" 2>/dev/null || true
+rc=0; wait "$pid" || rc=$?
+if grep -q '^==== REHEARSAL SUMMARY' "$log"; then
+  results+=("FAIL  interrupted: the run finished before the signal landed")
+  failures=$((failures + 1))
+else
+  judge interrupted "$log" 130 "$rc" "$scratch/good" ""
+  zeroed=$(sed -n 's/^WIPE: \([0-9]*\) files zeroed.*/\1/p' "$log")
+  results[-1]="${results[-1]} (interrupted with ${zeroed:-?} decrypted files on the tmpfs)"
+fi
+
+# kill -9 mid-run: no trap can run, so the kernel must do the wipe. The
+# sandbox dies with its parent, the private mount namespace with its last
+# process, and the tmpfs with it. Only the empty mountpoint may remain.
+log=$out/killed.log
+grep AGE-SECRET-KEY "$scratch/good/identity" \
+  | unshare --user --map-root-user -- "$HARNESS" \
+      --work-parent "$run" --tmpfs-size 1g --baseline "$scratch/good/baseline.tsv" \
+      --backup "$scratch/good/backup.tar.zst.age" > "$log" 2>&1 &
+pid=$!
+for _ in $(seq 1 600); do
+  grep -q '^== nanomdm v0.9' "$log" && break
+  sleep 0.05
+done
+kill -KILL "$pid" 2>/dev/null || true
+rc=0; wait "$pid" || rc=$?
+problems=""
+[ "$rc" = 137 ] || problems+=" exit=$rc(want 137)"
+grep -q '^==== REHEARSAL SUMMARY' "$log" && problems+=" finished-before-the-kill"
+for _ in $(seq 1 100); do
+  grep -sq 'malli-rehearsal-[0-9a-f]\{16\}' /proc/[0-9]*/mountinfo || break
+  sleep 0.05
+done
+if grep -sq 'malli-rehearsal-[0-9a-f]\{16\}' /proc/[0-9]*/mountinfo; then problems+=" tmpfs-still-mounted-somewhere"; fi
+left=$(find "$run" -mindepth 1 | wc -l)
+dirs=$(find "$run" -mindepth 1 -maxdepth 1 -type d -empty | wc -l)
+[ "$left" = "$dirs" ] || problems+=" files-left-in-work-parent"
+if grep -F -q -f "$scratch/good/markers" "$log"; then problems+=" LEAK"; fi
+if [ -z "$problems" ]; then
+  results+=("PASS  killed (kill -9 mid-run: tmpfs gone with the namespace; $dirs empty mountpoint left, removed now)")
+else
+  results+=("FAIL  killed:$problems")
+  failures=$((failures + 1))
+fi
+find "$run" -mindepth 1 -maxdepth 1 -type d -empty -delete
+
+printf '\n==== SELF-TEST (synthetic data only) ====\n'
+printf '%s\n' "${results[@]}"
+printf 'logs: %s\n' "$out"
+[ "$failures" = 0 ]
