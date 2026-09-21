@@ -1,19 +1,22 @@
 # NanoMDM v0.9 packaging draft (not a deployment)
 
 `hosts/vista/mdm.nix` continues to select the verified v0.6.0 release. The
-opt-in `nanomdmPatchedSourcePin` is deliberately `null`: the patched v0.9 source
-currently exists only as an unmerged local checkout, so there is no honest
-remote source hash or Go vendor hash to put in the Nix configuration yet.
+opt-in `nanomdmPatchedSourcePin` is deliberately `null`.
 
-To make a deployable candidate, publish an immutable patched-source revision,
-then set `nanomdmPatchedSourcePin` to an attribute set with `owner`, `repo`, a
-full 40-character `rev`, `hash` for `fetchFromGitHub`, and `vendorHash` for
-`buildGoModule`. Both hashes must be measured from that published revision and
-verified by a clean Nix build; do not use a floating ref, `lib.fakeHash`, a
-local `/tmp` path, or an upstream v0.9 binary lacking our patches. The
-derivation builds only `cmd/nanomdm` and runs its Go tests.
-It sets `CGO_ENABLED=0` for a static binary, and the opt-in container tag
-includes the pinned commit's first 12 characters for rollback identity.
+The patched v0.9 source is vendored in Deus at `third_party/nanomdm` (see its
+`third_party/VENDORED.md`), and the package builds it from this flake's
+existing private `deus` input — no separate fetch, fork or deploy key, and no
+local-path override. To make a deployable candidate, lock `deus` at a revision
+that vendors it and set `nanomdmPatchedSourcePin` to `deusRev` (the reviewed
+Deus revision), `nanomdmCommit` (the vendored canary commit), `hash` (the NAR
+hash of `third_party/nanomdm`, `nix hash path`) and `vendorHash` for
+`buildGoModule`. Evaluation fails unless the locked `deus` input carries exactly
+the tree `hash` names, so a later Deus revision that leaves the vendored tree
+alone builds the identical server, and one that changes it stops the build.
+The derivation builds only `cmd/nanomdm` and runs its Go tests.
+It sets `CGO_ENABLED=0` for a static binary, and the version compiled into the
+binary and used as the container tag names the canary commit and the Deus
+revision (`packages/nanomdm-patched/version.nix`) for rollback identity.
 
 The draft deliberately retains the existing `/app/db` bind mount, file backend,
 SCEP CA path, API key, webhook URL, APNs topic/profile, host port, and data

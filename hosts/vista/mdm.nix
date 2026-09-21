@@ -19,7 +19,7 @@
 # public IP. Device auth works behind Cloudflare's TLS termination via SignMessage=true in
 # the enrollment profile (Mdm-Signature header) — nanomdm's default, no client-cert passthrough.
 # ─────────────────────────────────────────────────────────────────────────────
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, inputs, ... }:
 
 let
   privateCredentials = config.malli.mdm.privateCredentials;
@@ -69,18 +69,42 @@ let
   # flag when no receipt key is configured, which belongs in that repo.
   ddmCredentialNames = lib.optionals declarativeManagement.enable
     [ "ddm-send-hmac" "ddm-recv-hmac" "ddm-receipt-hmac" ];
-  # A reviewed revision allowlist, not a name check. See the file's header.
+  # A reviewed-tree allowlist, not a name check. See the file's header.
   reviewedNanoMDMSource = import ./nanomdm-reviewed-source.nix;
-  reviewedPinCoordinates = map (entry: { inherit (entry) owner repo rev; })
-    declarativeManagement.reviewedSourcePins;
+  pinCoordinates = pin: { inherit (pin) deusRev nanomdmCommit hash; };
+  reviewedPinCoordinates = map pinCoordinates declarativeManagement.reviewedSourcePins;
 
-  # Packaging draft, intentionally OFF. Supply an immutable published fork/artifact
-  # with a full commit and verified source/vendor hashes before opting in.
+  # Patched v0.9, intentionally OFF. Its one source is the tree Deus vendors at
+  # third_party/nanomdm, read from the same locked `deus` input as the rest of
+  # Deus; the pin names the reviewed tree that input must carry.
   nanomdmPatchedSourcePin = config.malli.mdm.nanomdmPatchedSourcePin;
   usePatchedNanoMDM = nanomdmPatchedSourcePin != null;
-  nanomdmTag = if usePatchedNanoMDM then
-    "0.9.0-patched-${builtins.substring 0 12 nanomdmPatchedSourcePin.rev}"
-  else "0.6.0";
+  vendoredNanoMDMPath = "${inputs.deus}/third_party/nanomdm";
+  vendoredNanoMDM =
+    if builtins.pathExists vendoredNanoMDMPath
+    then builtins.path { path = vendoredNanoMDMPath; name = "source"; }
+    else throw "malli.mdm.nanomdmPatchedSourcePin is set, but the locked deus input has no third_party/nanomdm; lock deus at a revision that vendors NanoMDM.";
+  # The store path Nix gives a tree whose NAR hash is `hash`: the output path
+  # of a recursive sha256 fixed-output derivation with that hash, which is
+  # computed from the hash alone and never built. builtins.path above gives
+  # the vendored tree the same kind of path, so the two are equal exactly when
+  # its NAR hash is `hash`. (builtins.path's own sha256 argument checks the
+  # same thing, but a mismatch there aborts evaluation instead of failing a
+  # named assertion.)
+  storePathOfTree = hash: (derivation {
+    name = "source";
+    system = "builtin";
+    builder = "builtin:unused";
+    outputHashMode = "recursive";
+    outputHashAlgo = "sha256";
+    outputHash = hash;
+  }).outPath;
+  vendoredNanoMDMIsPinned =
+    builtins.match "sha256-[A-Za-z0-9+/]{43}=" nanomdmPatchedSourcePin.hash != null
+    && "${vendoredNanoMDM}" == storePathOfTree nanomdmPatchedSourcePin.hash;
+  # "0.6.0", or the patched build's ../../packages/nanomdm-patched/version.nix
+  # string. Taken from the package itself so the tag names what was built.
+  nanomdmTag = nanomdm.version;
   nanomdmStorageArgs = "-storage file -storage-dsn /app/db"
     + lib.optionalString usePatchedNanoMDM " -storage-options enable_deprecated=1";
   credentialPreflight = pkgs.writeShellScript "nanomdm-credential-preflight" ''
@@ -124,6 +148,7 @@ let
   };
   nanomdm = if usePatchedNanoMDM then
     pkgs.callPackage ../../packages/nanomdm-patched/default.nix {
+      src = vendoredNanoMDM;
       sourcePin = nanomdmPatchedSourcePin;
     }
   else nanomdmRelease;
@@ -426,32 +451,26 @@ in
 {
   options.malli.mdm.nanomdmPatchedSourcePin = lib.mkOption {
     type = lib.types.nullOr (lib.types.submodule {
+      # The source is always the locked `deus` input's third_party/nanomdm;
+      # these say which tree that must be. The package validates their shape.
       options = {
-        owner = lib.mkOption { type = lib.types.str; default = ""; };
-        repo = lib.mkOption { type = lib.types.str; default = ""; };
-        rev = lib.mkOption { type = lib.types.str; };
-        hash = lib.mkOption { type = lib.types.str; default = ""; };
+        deusRev = lib.mkOption {
+          type = lib.types.str;
+          description = "Full revision of the reviewed Deus commit that vendors this tree; named in the version string.";
+        };
+        nanomdmCommit = lib.mkOption {
+          type = lib.types.str;
+          description = "Full NanoMDM commit the tree was vendored from (Deus third_party/VENDORED.md); named in the version string.";
+        };
+        hash = lib.mkOption {
+          type = lib.types.str;
+          description = "NAR hash of third_party/nanomdm (`nix hash path`). Evaluation fails unless the locked deus input carries exactly this tree.";
+        };
         vendorHash = lib.mkOption { type = lib.types.str; };
-        # ── LOCAL-PATH OVERRIDE — PRE-PUBLICATION TESTING ONLY ──────────────
-        # Builds the package from a checkout on this machine instead of a
-        # published, content-addressed GitHub tarball. A local path is mutable
-        # and unreviewable, so it must never appear in a deployed host closure:
-        # localTestingOnly has to be set with it, and the assertion below
-        # refuses that combination together with privateCredentials.enable.
-        localPath = lib.mkOption {
-          type = lib.types.nullOr lib.types.path;
-          default = null;
-          description = "Pre-publication local checkout to build instead of the published revision. Never deploy.";
-        };
-        localTestingOnly = lib.mkOption {
-          type = lib.types.bool;
-          default = false;
-          description = "Explicit acknowledgement that localPath is an unpublished, unreviewable build source.";
-        };
       };
     });
     default = null;
-    description = "Fixed full-revision source/vendor-hash pin for published patched NanoMDM v0.9; null keeps live v0.6 unchanged.";
+    description = "Pin for the patched NanoMDM v0.9 that Deus vendors; null keeps live v0.6 unchanged.";
   };
 
   # ── Declarative management (-dm) ───────────────────────────────────────────
@@ -510,21 +529,21 @@ in
     reviewedSourcePins = lib.mkOption {
       type = lib.types.listOf (lib.types.submodule {
         options = {
-          owner = lib.mkOption { type = lib.types.strMatching "[A-Za-z0-9._-]+"; };
-          repo = lib.mkOption { type = lib.types.strMatching "[A-Za-z0-9._-]+"; };
-          rev = lib.mkOption { type = lib.types.strMatching "[0-9a-f]{40}"; };
+          deusRev = lib.mkOption { type = lib.types.strMatching "[0-9a-f]{40}"; };
+          nanomdmCommit = lib.mkOption { type = lib.types.strMatching "[0-9a-f]{40}"; };
+          hash = lib.mkOption { type = lib.types.strMatching "sha256-[A-Za-z0-9+/]{43}="; };
         };
       });
-      default = map (rev: { inherit (reviewedNanoMDMSource) owner repo; inherit rev; })
-        reviewedNanoMDMSource.revisions;
+      default = map pinCoordinates reviewedNanoMDMSource.revisions;
       defaultText = lib.literalExpression "the reviewed revisions in hosts/vista/nanomdm-reviewed-source.nix";
       description = ''
-        The exact patched-NanoMDM sources whose declarative-management endpoint
-        confinement was read and canaried. Its default is the operator-facing
-        allowlist in hosts/vista/nanomdm-reviewed-source.nix, which is empty
-        until a revision is reviewed; a pin outside this list cannot be given
-        -dm. Entries naming an upstream owner are refused whatever this is set
-        to, because that is the unpatched, request-forgery build.
+        The vendored patched-NanoMDM trees whose declarative-management
+        endpoint confinement was reviewed, each with the Deus revision that
+        carries it. Its default is the operator-facing allowlist in
+        hosts/vista/nanomdm-reviewed-source.nix; a pin outside this list
+        cannot be given -dm. A tree listed there as stock upstream is refused
+        whatever this is set to, because that is the unpatched,
+        request-forgery build.
       '';
     };
   };
@@ -539,41 +558,40 @@ in
     message = "hosts/vista/mdm.nix ships linux-amd64 MDM binaries; host must be x86_64.";
   } {
     assertion = !privateCredentials.enable || usePatchedNanoMDM;
-    message = "Private MDM credentials require a published, fixed-hash patched NanoMDM v0.9 source pin; v0.6 cannot read private API/HMAC files.";
+    message = "Private MDM credentials require the patched NanoMDM v0.9 pin (malli.mdm.nanomdmPatchedSourcePin); v0.6 cannot read private API/HMAC files.";
   } {
-    # A published pin needs all three fetchFromGitHub fields, and that is
-    # enforced by packages/nanomdm-patched/default.nix's own top-level asserts,
-    # not here: forcing config.assertions forces the systemd units, which force
-    # docker-nanomdm.imageFile, which reaches the package's asserts FIRST. A
-    # module assertion on the same condition can never print — the message the
-    # operator actually sees has to come from the package.
-    assertion = !usePatchedNanoMDM || nanomdmPatchedSourcePin.localPath == null
-      || nanomdmPatchedSourcePin.localTestingOnly;
-    message = "malli.mdm.nanomdmPatchedSourcePin.localPath is a pre-publication build source; set localTestingOnly = true to acknowledge it.";
-  } {
-    assertion = !usePatchedNanoMDM || nanomdmPatchedSourcePin.localPath == null
-      || !privateCredentials.enable;
-    message = "A local-path patched NanoMDM build must never back a deployed private-credential cutover; publish and pin the revision first.";
+    # The pin's shape is checked by packages/nanomdm-patched/default.nix's own
+    # top-level asserts, not here: forcing config.assertions forces the
+    # systemd units, which force docker-nanomdm.imageFile, which reaches the
+    # package's asserts FIRST, so a module assertion on the same condition
+    # could never print. This one can: the package builds whatever tree it is
+    # given and never compares it with the pin.
+    #
+    # Everything below trusts the pin's hash, so bind it to the bytes built:
+    # the locked deus input must carry exactly the tree the pin names. A Deus
+    # revision that changed third_party/nanomdm stops here, -dm or not.
+    assertion = !usePatchedNanoMDM || vendoredNanoMDMIsPinned;
+    message = "malli.mdm.nanomdmPatchedSourcePin.hash is not the NAR hash of third_party/nanomdm in the locked deus input; that Deus revision vendors a different NanoMDM than the pin names.";
   } {
     # THE gate: -dm on stock v0.9 is a server-side request-forgery primitive.
     assertion = !declarativeManagement.enable || usePatchedNanoMDM;
     message = "Declarative management requires the endpoint-confined patched NanoMDM v0.9 pin; stock v0.9 resolves device-supplied -dm endpoints and must never be given -dm.";
   } {
-    # …and THE gate's teeth. A pin only says "some source"; it constrains
-    # neither owner, repo nor revision, so `owner = "micromdm"` with a real
-    # v0.9 revision is a perfectly well-formed pin that yields the exploitable
-    # stock build. Require the exact reviewed coordinates instead.
+    # …and THE gate's teeth. A pin only says "some tree"; the assertion above
+    # makes it the tree actually built, and this one requires that tree to be
+    # a reviewed one: its Deus revision, vendored commit and NAR hash must
+    # appear together in one allowlist row.
     assertion = !declarativeManagement.enable || !usePatchedNanoMDM
-      || builtins.elem {
-        inherit (nanomdmPatchedSourcePin) owner repo rev;
-      } reviewedPinCoordinates;
-    message = "The patched NanoMDM pin is not on the reviewed declarative-management allowlist; add the audited owner/repo/revision to hosts/vista/nanomdm-reviewed-source.nix only after reading its endpoint confinement and running the canary.";
+      || builtins.elem (pinCoordinates nanomdmPatchedSourcePin) reviewedPinCoordinates;
+    message = "The patched NanoMDM pin is not on the reviewed declarative-management allowlist; add the audited Deus revision, vendored commit and tree hash to hosts/vista/nanomdm-reviewed-source.nix only after reading its endpoint confinement and running the canary.";
   } {
-    # Independent of whatever the allowlist was set to: upstream publishes the
+    # Independent of whatever the allowlist was set to: stock upstream is the
     # unpatched build, so it can never be a declarative-management source.
     assertion = !declarativeManagement.enable || !usePatchedNanoMDM
-      || !(builtins.elem nanomdmPatchedSourcePin.owner reviewedNanoMDMSource.deniedOwners);
-    message = "Upstream NanoMDM (micromdm/jessepeterson) is the unpatched build whose -dm resolves device-supplied endpoints into a request-forgery proxy; it can never be a declarative-management source, allowlisted or not.";
+      || !(builtins.any (tree: tree.hash == nanomdmPatchedSourcePin.hash
+        || tree.nanomdmCommit == nanomdmPatchedSourcePin.nanomdmCommit)
+        reviewedNanoMDMSource.denied);
+    message = "Stock upstream NanoMDM is the unpatched build whose -dm resolves device-supplied endpoints into a request-forgery proxy; it can never be a declarative-management source, allowlisted or not.";
   } {
     assertion = !declarativeManagement.enable || privateCredentials.enable;
     message = "Declarative management requires malli.mdm.privateCredentials.enable; the DM HMAC key files are only staged and mounted on that path.";

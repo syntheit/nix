@@ -127,25 +127,28 @@ evaluation test takes the address back apart and checks it against
 
 ### The pin is not the gate: the reviewed-source allowlist
 
-A source pin on its own constrains nothing. `owner = "micromdm"` with a real
-40-hex revision and real hashes is a perfectly well-formed pin, and it builds
-**stock upstream v0.9** — the build whose `-dm` resolves a device-supplied
-endpoint and forwards the enrollment headers with it, i.e. the server-side
-request-forgery primitive, live against the whole enrolled fleet. So
-`declarativeManagement.enable` additionally requires the pin's owner, repo
-and full revision to appear in
+A source pin on its own constrains nothing: vendoring **stock upstream v0.9**
+into Deus and pinning its hash would build the server whose `-dm` resolves a
+device-supplied endpoint and forwards the enrollment headers with it, i.e. the
+server-side request-forgery primitive, live against the whole enrolled fleet.
+The patched server's only source is Deus's vendored `third_party/nanomdm`,
+and evaluation fails unless the locked `deus` input carries exactly the tree
+the pin's NAR hash names. `declarativeManagement.enable` additionally requires
+the pin's Deus revision, vendored commit and hash to appear together in one
+row of
 [`hosts/vista/nanomdm-reviewed-source.nix`](../hosts/vista/nanomdm-reviewed-source.nix),
-and refuses an upstream owner outright whatever that allowlist says. The
+and refuses the stock v0.9.0 tree outright whatever that allowlist says. The
 bridge re-checks the same allowlist, and separately requires the image tag
 the container will actually run to be one built from an allowlisted
-revision — it no longer reads a name it derived from the pin it was
-supposed to be checking.
+row — it no longer reads a name it derived from the pin it was supposed to be
+checking.
 
-That allowlist is **empty**, so `-dm` cannot be enabled at all right now:
-the endpoint-confined fork is not published, so no revision has been
-reviewed. Adding a row is a security review — read the diff against
-upstream, confirm the confinement has no escape, build it, run the canary
-against one verified enrollment, then record the revision with the date and
+The allowlist holds one row: the Deus revision that vendors the canary tree
+`3c52ba4`. Because the hash is what is enforced, a later Deus revision that
+leaves `third_party/nanomdm` untouched needs no new row. Adding one is a
+security review — read the vendored tree's diff against upstream, confirm the
+confinement has no escape, confirm the row's hash is that tree, build it, run
+the canary against one verified enrollment, then record it with the date and
 the reviewer.
 
 Beyond the pin it requires `privateCredentials.enable` (the key files are
@@ -226,11 +229,14 @@ Offline checks only:
 ```
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest packages/test_vista_mdm_stage_credentials.py
 nix eval --impure --offline --json \
-  --override-input deus path:/path/to/reviewed/malli-deus-feature \
+  --override-input deus 'git+file:///path/to/malli-deus?rev=<reviewed revision>' \
   --apply 'vista: import ./tests/vista-mdm-credentials-eval.nix { inherit vista; }' \
   .#nixosConfigurations.vista
 ```
 
-The Nix test uses fake fixed hashes and existing encrypted files as
-**evaluation fixtures only**. It never builds those hashes or decrypts those
-files; do not deploy its configuration.
+The `deus` override must be a committed Deus revision that vendors the
+reviewed `third_party/nanomdm`: the test pins the shipped allowlist row, and
+evaluation refuses a pin whose hash is not the tree that input carries. The
+test uses that pin, fake hashes in its negative cases, and existing encrypted
+files as **evaluation fixtures only**. It never builds anything or decrypts
+those files; do not deploy its configuration.
