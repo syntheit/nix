@@ -162,7 +162,8 @@ for _ in $(seq 1 600); do
   sleep 0.05
 done
 kill -KILL "$pid" 2>/dev/null || true
-rc=0; wait "$pid" || rc=$?
+# (Silences bash's own "Killed" job notice.)
+rc=0; { wait "$pid"; } 2>/dev/null || rc=$?
 problems=""
 [ "$rc" = 137 ] || problems+=" exit=$rc(want 137)"
 grep -q '^==== REHEARSAL SUMMARY' "$log" && problems+=" finished-before-the-kill"
