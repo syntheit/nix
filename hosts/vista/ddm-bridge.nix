@@ -10,6 +10,8 @@ let
   socketPath = "${privateDir}/socket";
   bridgeText = builtins.readFile ../../packages/nanomdm-ddm-bridge.py;
   bridgeTag = "1.0.0-${builtins.substring 0 12 (builtins.hashString "sha256" bridgeText)}";
+  nanomdmVersion = import ../../packages/nanomdm-patched/version.nix;
+  reviewedCoordinates = pin: { inherit (pin) deusRev nanomdmCommit hash; };
   bridgeSource = pkgs.writeText "nanomdm-ddm-bridge.py"
     bridgeText;
   bridgeImage = pkgs.dockerTools.buildImage {
@@ -92,21 +94,23 @@ in
         # the pin and compared it to a prefix also derived from the pin, so it
         # restated the pin to itself and passed for any source, upstream
         # included. Check the pin's actual coordinates against the reviewed
-        # allowlist instead.
+        # allowlist instead. (mdm.nix binds the pin's hash to the tree the
+        # locked deus input really carries.)
         assertion = config.malli.mdm.nanomdmPatchedSourcePin != null
-          && builtins.elem {
-            inherit (config.malli.mdm.nanomdmPatchedSourcePin) owner repo rev;
-          } (map (entry: { inherit (entry) owner repo rev; })
-            config.malli.mdm.declarativeManagement.reviewedSourcePins);
+          && builtins.elem (reviewedCoordinates config.malli.mdm.nanomdmPatchedSourcePin)
+            (map reviewedCoordinates
+              config.malli.mdm.declarativeManagement.reviewedSourcePins);
         message = "DDM bridge requires a NanoMDM source pin on the reviewed declarative-management allowlist in hosts/vista/nanomdm-reviewed-source.nix; an arbitrary v0.9 pin is the unpatched, request-forgery build.";
       }
       {
         # And the image the container will actually run must be the one built
-        # from such a revision: the acceptable tags come from the allowlist,
-        # so a pin swapped underneath the module cannot keep this green.
+        # from such a revision: mdm.nix takes the tag from the package's own
+        # version, and the acceptable tags are computed from the allowlist rows
+        # with the same function, so a pin swapped underneath the module
+        # cannot keep this green.
         assertion = builtins.elem
           config.virtualisation.oci-containers.containers.nanomdm.image
-          (map (entry: "malli-nanomdm:0.9.0-patched-${builtins.substring 0 12 entry.rev}")
+          (map (entry: "malli-nanomdm:${nanomdmVersion entry}")
             config.malli.mdm.declarativeManagement.reviewedSourcePins);
         message = "DDM bridge requires the configured NanoMDM image tag to be one built from a reviewed, endpoint-confined revision (hosts/vista/nanomdm-reviewed-source.nix).";
       }
