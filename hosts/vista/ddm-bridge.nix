@@ -88,9 +88,27 @@ in
         message = "DDM bridge UID 3999 assumes identity host/nspawn UID mapping; re-design for shifted mappings.";
       }
       {
-        assertion = lib.hasPrefix "malli-nanomdm:0.9.0-patched-"
-          config.virtualisation.oci-containers.containers.nanomdm.image;
-        message = "DDM bridge requires a verified, SSRF-patched NanoMDM v0.9 image pin.";
+        # NOT the old name check. That one read a tag that mdm.nix derives from
+        # the pin and compared it to a prefix also derived from the pin, so it
+        # restated the pin to itself and passed for any source, upstream
+        # included. Check the pin's actual coordinates against the reviewed
+        # allowlist instead.
+        assertion = config.malli.mdm.nanomdmPatchedSourcePin != null
+          && builtins.elem {
+            inherit (config.malli.mdm.nanomdmPatchedSourcePin) owner repo rev;
+          } (map (entry: { inherit (entry) owner repo rev; })
+            config.malli.mdm.declarativeManagement.reviewedSourcePins);
+        message = "DDM bridge requires a NanoMDM source pin on the reviewed declarative-management allowlist in hosts/vista/nanomdm-reviewed-source.nix; an arbitrary v0.9 pin is the unpatched, request-forgery build.";
+      }
+      {
+        # And the image the container will actually run must be the one built
+        # from such a revision: the acceptable tags come from the allowlist,
+        # so a pin swapped underneath the module cannot keep this green.
+        assertion = builtins.elem
+          config.virtualisation.oci-containers.containers.nanomdm.image
+          (map (entry: "malli-nanomdm:0.9.0-patched-${builtins.substring 0 12 entry.rev}")
+            config.malli.mdm.declarativeManagement.reviewedSourcePins);
+        message = "DDM bridge requires the configured NanoMDM image tag to be one built from a reviewed, endpoint-confined revision (hosts/vista/nanomdm-reviewed-source.nix).";
       }
       {
         assertion = cfg.enrollmentID != ""

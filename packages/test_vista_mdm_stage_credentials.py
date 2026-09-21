@@ -80,30 +80,38 @@ class StageCredentialsTests(unittest.TestCase):
             self.assertEqual(legacy.read_bytes(), b"a" * 32)
             self.assertEqual(legacy.stat().st_mode & 0o777, 0o600)
 
-    def test_declarative_management_pair_is_all_or_nothing_and_distinct(self):
+    def test_declarative_management_keys_are_all_or_nothing_and_distinct(self):
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
-            api, hmac, nanodep, send, recv = (
-                base / name for name in ("api", "hmac", "nanodep", "send", "recv"))
+            api, hmac, nanodep, send, recv, receipt = (
+                base / name
+                for name in ("api", "hmac", "nanodep", "send", "recv", "receipt"))
             api.write_bytes(b"a" * 32)
             hmac.write_bytes(b"b" * 32)
             nanodep.write_bytes(b"c" * 32)
             send.write_bytes(b"d" * 32)
             recv.write_bytes(b"e" * 32)
+            receipt.write_bytes(b"f" * 32)
             with mock.patch.object(stage_credentials, "root_parent"):
                 with mock.patch.object(stage_credentials, "private_directory"):
                     with mock.patch.object(stage_credentials, "atomic_private_file") as write:
+                        # Any missing source of the three, including the
+                        # receipt key Deus needs to start its listener at all.
+                        for partial in ((send,), (send, recv), (None, recv, receipt)):
+                            with self.assertRaises(ValueError):
+                                stage_credentials.stage(api, hmac, nanodep, base / "nano",
+                                                        base / "deus", base / "legacy",
+                                                        *partial)
+                        receipt.write_bytes(b"d" * 32)
                         with self.assertRaises(ValueError):
                             stage_credentials.stage(api, hmac, nanodep, base / "nano",
-                                                    base / "deus", base / "legacy", send)
-                        recv.write_bytes(b"d" * 32)
+                                                    base / "deus", base / "legacy",
+                                                    send, recv, receipt)
+                        receipt.write_bytes(b"f" * 31)
                         with self.assertRaises(ValueError):
                             stage_credentials.stage(api, hmac, nanodep, base / "nano",
-                                                    base / "deus", base / "legacy", send, recv)
-                        recv.write_bytes(b"e" * 31)
-                        with self.assertRaises(ValueError):
-                            stage_credentials.stage(api, hmac, nanodep, base / "nano",
-                                                    base / "deus", base / "legacy", send, recv)
+                                                    base / "deus", base / "legacy",
+                                                    send, recv, receipt)
                         write.assert_not_called()
 
     def test_declarative_management_keys_reach_both_consumers(self):
@@ -112,22 +120,25 @@ class StageCredentialsTests(unittest.TestCase):
             nano, deus = base / "nano", base / "deus"
             nano.mkdir(mode=0o700)
             deus.mkdir(mode=0o700)
-            api, hmac, nanodep, send, recv = (
-                base / name for name in ("api", "hmac", "nanodep", "send", "recv"))
+            api, hmac, nanodep, send, recv, receipt = (
+                base / name
+                for name in ("api", "hmac", "nanodep", "send", "recv", "receipt"))
             api.write_bytes(b"a" * 32)
             hmac.write_bytes(b"b" * 32)
             nanodep.write_bytes(b"c" * 32)
             send.write_bytes(b"d" * 32)
             recv.write_bytes(b"e" * 32)
+            receipt.write_bytes(b"f" * 32)
             with mock.patch.object(stage_credentials, "root_parent"):
                 with mock.patch.object(stage_credentials, "private_directory"):
                     with mock.patch.object(stage_credentials.os, "fchown"):
                         stage_credentials.stage(api, hmac, nanodep, nano, deus,
-                                                base / "legacy", send, recv)
+                                                base / "legacy", send, recv, receipt)
             for directory in (nano, deus):
                 self.assertEqual((directory / "ddm-send-hmac").read_bytes(), b"d" * 32)
                 self.assertEqual((directory / "ddm-recv-hmac").read_bytes(), b"e" * 32)
-                for name in ("ddm-send-hmac", "ddm-recv-hmac"):
+                self.assertEqual((directory / "ddm-receipt-hmac").read_bytes(), b"f" * 32)
+                for name in ("ddm-send-hmac", "ddm-recv-hmac", "ddm-receipt-hmac"):
                     self.assertEqual((directory / name).stat().st_mode & 0o777, 0o600)
 
     def test_root_parent_rejects_symlink_and_world_writable_directory(self):

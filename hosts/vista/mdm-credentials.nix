@@ -138,6 +138,16 @@ in
         format = "binary";
         mode = "0600";
       };
+    # The third key belongs to Deus alone — the pinned NanoMDM build has no
+    # command-receipt sender — but Deus's module passes -ddm-receipt-key-file
+    # unconditionally with DDM on and turns its ENTIRE private listener off
+    # when the file is unreadable, so it is staged exactly like the pair.
+    sops.secrets.nanomdm_dm_receipt_hmac_key = lib.mkIf
+      (ddm.enable && ddm.receiptHmacSopsFile != null) {
+        sopsFile = ddm.receiptHmacSopsFile;
+        format = "binary";
+        mode = "0600";
+      };
 
     # Called at activation after sops renders both secrets. This writes only
     # exact-byte private copies; no credential value enters Nix/store/argv.
@@ -152,9 +162,10 @@ in
           /var/lib/deus-tokens/private-mdm \
           /var/lib/deus-tokens/nanomdm-api${
             lib.optionalString (ddm.enable && ddm.sendHmacSopsFile != null
-              && ddm.recvHmacSopsFile != null) '' \
+              && ddm.recvHmacSopsFile != null && ddm.receiptHmacSopsFile != null) '' \
           /run/secrets/nanomdm_dm_send_hmac_key \
-          /run/secrets/nanomdm_dm_recv_hmac_key''}
+          /run/secrets/nanomdm_dm_recv_hmac_key \
+          /run/secrets/nanomdm_dm_receipt_hmac_key''}
       '';
     };
   };

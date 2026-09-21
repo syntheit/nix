@@ -15,9 +15,20 @@ in
 
 # The caller must supply an immutable, published source revision and both fixed
 # hashes. No local /tmp checkout or floating branch may enter a host closure.
+#
+# These asserts, not the Vista module's, are what an operator actually reads:
+# forcing config.assertions forces the systemd units, which force this
+# derivation, so a module-level assertion on the same conditions can never
+# print. Keep the messages self-contained and name the option they came from.
 assert lib.assertMsg
   (builtins.match "[0-9a-f]{40}" sourcePin.rev != null)
   "nanomdm-patched requires a full 40-character commit revision";
+assert lib.assertMsg
+  (local || builtins.match "[A-Za-z0-9._-]+" (sourcePin.owner or "") != null)
+  "nanomdm-patched requires a published GitHub owner in malli.mdm.nanomdmPatchedSourcePin.owner";
+assert lib.assertMsg
+  (local || builtins.match "[A-Za-z0-9._-]+" (sourcePin.repo or "") != null)
+  "nanomdm-patched requires a published GitHub repo in malli.mdm.nanomdmPatchedSourcePin.repo";
 assert lib.assertMsg
   (local || builtins.match "sha256-[A-Za-z0-9+/=]+" sourcePin.hash != null)
   "nanomdm-patched requires a fixed source hash";

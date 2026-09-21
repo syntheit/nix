@@ -117,29 +117,69 @@ NanoMDM entrypoint. The URL keeps its **trailing slash**: NanoMDM resolves
 the device-supplied endpoint against this prefix with Go's relative path
 resolver, which drops the last path element of a prefix that lacks one.
 The destination is the bridge sidecar inside NanoMDM's own network
-namespace, so it is never a host port.
+namespace, so it is never a host port. The endpoint and the bridge's listen
+tuple are **built from one host string and one port**, so they cannot drift
+apart. (An earlier revision of this document claimed an assertion tied them.
+It did not: only the bridge `.py` was checked, so editing the endpoint URL
+alone left every assertion green. The tie is structural now, and the
+evaluation test takes the address back apart and checks it against
+`packages/nanomdm-ddm-bridge.py`.)
 
-It cannot be enabled without the patched source pin. Stock NanoMDM v0.9
-resolves a device-supplied `-dm` endpoint and forwards the enrollment
-headers with it, which is a server-side request-forgery primitive; only the
-build that confines the endpoint to Apple's relative DDM forms may receive
-this flag. It also requires `privateCredentials.enable` (the key files are
-staged and mounted only on that path), `ddmBridge.enable`, and two more
-separately encrypted binary secret files — `sendHmacSopsFile` and
-`recvHmacSopsFile`, each an independently generated 32–256 byte printable
-ASCII key with no trailing newline, distinct from each other and from the
-API, webhook and NanoDEP keys. The staging helper refuses a half-configured
-pair and any reuse. NanoMDM's *send* key is what Deus verifies as its DDM
-*request* key; NanoMDM's *receive* key is the one Deus *signs responses*
-with. Deus's third, receipt key is deliberately left unset: the pinned
-NanoMDM build has no command-receipt sender.
+### The pin is not the gate: the reviewed-source allowlist
+
+A source pin on its own constrains nothing. `owner = "micromdm"` with a real
+40-hex revision and real hashes is a perfectly well-formed pin, and it builds
+**stock upstream v0.9** — the build whose `-dm` resolves a device-supplied
+endpoint and forwards the enrollment headers with it, i.e. the server-side
+request-forgery primitive, live against the whole enrolled fleet. So
+`declarativeManagement.enable` additionally requires the pin's owner, repo
+and full revision to appear in
+[`hosts/vista/nanomdm-reviewed-source.nix`](../hosts/vista/nanomdm-reviewed-source.nix),
+and refuses an upstream owner outright whatever that allowlist says. The
+bridge re-checks the same allowlist, and separately requires the image tag
+the container will actually run to be one built from an allowlisted
+revision — it no longer reads a name it derived from the pin it was
+supposed to be checking.
+
+That allowlist is **empty**, so `-dm` cannot be enabled at all right now:
+the endpoint-confined fork is not published, so no revision has been
+reviewed. Adding a row is a security review — read the diff against
+upstream, confirm the confinement has no escape, build it, run the canary
+against one verified enrollment, then record the revision with the date and
+the reviewer.
+
+Beyond the pin it requires `privateCredentials.enable` (the key files are
+staged and mounted only on that path), `ddmBridge.enable`, and **three** more
+separately encrypted binary secret files — `sendHmacSopsFile`,
+`recvHmacSopsFile` and `receiptHmacSopsFile`, each an independently generated
+32–256 byte printable ASCII key with no trailing newline, distinct from each
+other and from the API, webhook and NanoDEP keys. The staging helper refuses
+a half-configured set and any reuse. NanoMDM's *send* key is what Deus
+verifies as its DDM *request* key; NanoMDM's *receive* key is the one Deus
+*signs responses* with.
+
+The **third, receipt key is required, not optional**, even though the pinned
+NanoMDM build has no command-receipt sender. The pinned Deus module emits
+`-ddm-receipt-key-file %d/ddm-receipt-hmac` unconditionally whenever
+`ddm.enable`: that path is non-empty, so `readDDMKey` fails with `ENOENT`,
+`configurePrivateDDM` errors, and `configureOptionalPrivateDDM` disables the
+**entire** private listener. The socket is then never created, the bridge
+preflight's `test -S` fails, and the sidecar never starts — leaving the key
+out did not skip receipts, it meant the opt-in path could not start at all.
+The cleaner long-term fix is for Deus to omit the flag when no receipt key
+is configured; that change belongs in the Deus repo and is not made here.
 
 `ddmBridge.enable` now also creates `/var/lib/deus/ddm-private` (UID 3999,
 mode 0700) — the one directory Deus requires to exist before it will bind
 its private listener, and which it never creates itself — pins the Deus
-listener to `ddmBridge.enrollmentID`, and copies the two staged keys into
+listener to `ddmBridge.enrollmentID`, and copies all three staged keys into
 the container's `/run/credstore` so systemd's bare `LoadCredential` names
-resolve. Nothing here generates or commits key material.
+resolve. Each copy is preceded by an `r` line removing the destination,
+because tmpfiles' `C+` does **not** overwrite an existing file; see
+Rotation below. The container reload is ordered after
+`vista-mdm-stage-credentials`, so the first DDM enablement cannot copy from
+sources that activation has not written yet. Nothing here generates or
+commits key material.
 
 ## Rotation and rollback
 
@@ -159,6 +199,18 @@ window, then verify signed check-ins. Do not rely on sops file updates alone:
 Docker bind mounts and systemd `LoadCredential` snapshot/startup behavior mean
 running processes can continue with old keys. A mismatch may cause webhook
 rejections even though both services appear started.
+
+The DDM credstore has a specific version of that trap. `systemd-tmpfiles`'
+`C+` copies only when the destination does **not** exist (verified on systemd
+261), so after a sops rotation plus a `switch` that merely *reloads* the
+container, NanoMDM picks up the new key while Deus keeps serving the
+boot-time copy — HMAC verification then fails silently, with both services
+"started" and a `systemctl restart deus-server` making no difference, since
+the stale bytes are in `/run/credstore`, not in the unit. Each `C+` is
+therefore preceded by `r /run/credstore/ddm-…-hmac`, which removes the stale
+copy so the copy actually happens. That fixes the *copy*, not the process: a
+running Deus has already read its credentials, so the restart-receiver-first
+window above still applies.
 
 For rollback before a first DDM command, restore the previously tested Nix
 generation, *its matching secret values*, and the protected NanoMDM file-store

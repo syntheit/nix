@@ -897,17 +897,35 @@ in
       #
       # NanoMDM's -dm-send key is what Deus verifies as its DDM *request*
       # key; NanoMDM's -dm-recv key is what Deus *signs responses* with.
-      # Deus's third (receipt) key is deliberately absent: the pinned
-      # NanoMDM build has no command-receipt sender, and an unset receipt
-      # key file simply leaves receipts off.
+      # Deus's THIRD (receipt) key is NOT optional, even though the pinned
+      # NanoMDM build has no command-receipt sender: the Deus module emits
+      # -ddm-receipt-key-file %d/ddm-receipt-hmac unconditionally whenever
+      # ddm.enable, and a non-empty path that does not exist makes
+      # readDDMKey fail ENOENT, configurePrivateDDM error, and
+      # configureOptionalPrivateDDM disable the WHOLE private listener. The
+      # socket is then never created, the bridge preflight's `test -S`
+      # fails, and the sidecar never starts — so leaving this key out did
+      # not skip receipts, it meant the opt-in path could not start at all.
+      # (Cleaner long-term fix: have Deus omit the flag when no receipt key
+      # is configured. That change belongs in the Deus repo.)
       #
-      # /run is a tmpfs, so each boot re-copies. A key rotation still
-      # needs the documented restart-receiver-first window; refreshing
-      # the staged file alone does not re-key a running process.
+      # /run is a tmpfs, so each boot re-copies. Each C+ is preceded by an
+      # `r` because C+ does NOT overwrite an existing destination file:
+      # after a sops rotation plus a switch that only *reloads* the
+      # container, NanoMDM would pick up the new key while Deus kept
+      # serving the boot-time copy, and HMAC verification would fail
+      # silently with both services "started" and restarts not helping.
+      # Removing first makes the copy actually happen. A rotation still
+      # needs the documented restart-receiver-first window; refreshing the
+      # staged file alone does not re-key a running process.
       ++ lib.optionals config.malli.mdm.ddmBridge.enable [
         "d /run/credstore 0700 root root -"
+        "r /run/credstore/ddm-request-hmac"
         "C+ /run/credstore/ddm-request-hmac 0400 root root - /var/lib/deus-tokens/private-mdm/ddm-send-hmac"
+        "r /run/credstore/ddm-response-hmac"
         "C+ /run/credstore/ddm-response-hmac 0400 root root - /var/lib/deus-tokens/private-mdm/ddm-recv-hmac"
+        "r /run/credstore/ddm-receipt-hmac"
+        "C+ /run/credstore/ddm-receipt-hmac 0400 root root - /var/lib/deus-tokens/private-mdm/ddm-receipt-hmac"
       ];
 
 
@@ -1356,7 +1374,18 @@ in
   # bounce. The `|| true` keeps activation green even on first ever
   # boot when the container hasn't started yet (autoStart picks it
   # up moments later).
-  system.activationScripts.reload-headscale-container = lib.stringAfter [ "etc" ] ''
+  #
+  # The reload makes the container run its own tmpfiles, which is what
+  # copies /var/lib/deus-tokens/private-mdm/ddm-*-hmac into the
+  # credstore — so it must not run before those sources exist.
+  # vista-mdm-stage-credentials (mdm-credentials.nix) writes them and
+  # only orders itself after setupSecrets; with no edge between the two,
+  # activation's alphabetical order puts the reload FIRST, and the very
+  # first DDM enablement would copy from paths that are not there yet.
+  # The dependency only exists on the staging path, so the default-off
+  # closure keeps `deps = [ "etc" ]` exactly as before.
+  system.activationScripts.reload-headscale-container = lib.stringAfter
+    ([ "etc" ] ++ lib.optional stageMDMCredentials "vista-mdm-stage-credentials") ''
     if ${pkgs.systemd}/bin/systemctl is-active container@headscale.service >/dev/null 2>&1; then
       desired=${config.containers.headscale.path}
       current=$(${pkgs.coreutils}/bin/readlink -f /var/lib/nixos-containers/headscale/run/current-system 2>/dev/null || true)
