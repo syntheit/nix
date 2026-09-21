@@ -108,6 +108,39 @@ Do not enable the bridge as part of this step. The bridge still needs its own
 independent HMAC keys, trusted command-receipt path, 5fro enrollment pin, and
 full credential-migration attestation.
 
+## Declarative management (`-dm`), separately default-off
+
+`malli.mdm.declarativeManagement.enable` is a **fourth** switch, off by
+default and off in every step above. It adds `-dm http://127.0.0.1:9992/`
+plus `-dm-send-hmac-key-file` and `-dm-recv-hmac-key-file` to the patched
+NanoMDM entrypoint. The URL keeps its **trailing slash**: NanoMDM resolves
+the device-supplied endpoint against this prefix with Go's relative path
+resolver, which drops the last path element of a prefix that lacks one.
+The destination is the bridge sidecar inside NanoMDM's own network
+namespace, so it is never a host port.
+
+It cannot be enabled without the patched source pin. Stock NanoMDM v0.9
+resolves a device-supplied `-dm` endpoint and forwards the enrollment
+headers with it, which is a server-side request-forgery primitive; only the
+build that confines the endpoint to Apple's relative DDM forms may receive
+this flag. It also requires `privateCredentials.enable` (the key files are
+staged and mounted only on that path), `ddmBridge.enable`, and two more
+separately encrypted binary secret files — `sendHmacSopsFile` and
+`recvHmacSopsFile`, each an independently generated 32–256 byte printable
+ASCII key with no trailing newline, distinct from each other and from the
+API, webhook and NanoDEP keys. The staging helper refuses a half-configured
+pair and any reuse. NanoMDM's *send* key is what Deus verifies as its DDM
+*request* key; NanoMDM's *receive* key is the one Deus *signs responses*
+with. Deus's third, receipt key is deliberately left unset: the pinned
+NanoMDM build has no command-receipt sender.
+
+`ddmBridge.enable` now also creates `/var/lib/deus/ddm-private` (UID 3999,
+mode 0700) — the one directory Deus requires to exist before it will bind
+its private listener, and which it never creates itself — pins the Deus
+listener to `ddmBridge.enrollmentID`, and copies the two staged keys into
+the container's `/run/credstore` so systemd's bare `LoadCredential` names
+resolve. Nothing here generates or commits key material.
+
 ## Rotation and rollback
 
 The initial migration deliberately preserves the current NanoMDM API key for

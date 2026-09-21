@@ -555,6 +555,19 @@ in
           githubAppKeyFile = "/var/lib/deus/github-app-key";
         };
 
+        # ── Private single-enrollment DDM listener (default-off) ────
+        # Entirely separate from the public HTTP mux: a peer-credential
+        # -checked Unix socket under the bind-mounted Deus state dir,
+        # answered only for one pinned enrollment. Deus creates the
+        # socket and refuses to bind unless its parent already exists
+        # as UID 3999, mode 0700 — ddm-bridge.nix creates exactly that
+        # one directory on the host side of the same bind mount.
+        # socketPath and peerUID keep their reviewed module defaults.
+        ddm = lib.mkIf config.malli.mdm.ddmBridge.enable {
+          enable = true;
+          enrollmentID = config.malli.mdm.ddmBridge.enrollmentID;
+        };
+
         # ── ADE / zero-touch orchestrator ──
         # Drives Apple Automated Device Enrollment through the self-hosted
         # nanomdm runs on vista (hosts/vista/mdm.nix, migrated from mantle
@@ -872,6 +885,29 @@ in
         # each Mac/VM key on first contact. Empty file at boot; SSH
         # appends as it discovers hosts.
         "f /var/lib/deus/fleet-known-hosts 0644 deus deus -"
+      ]
+      # ── Private DDM listener credentials (default-off) ──────────────
+      # The deus module asks for these by BARE LoadCredential name, which
+      # makes systemd search its credstore directories, so a missing key
+      # disables DDM instead of failing the whole public unit. Give it a
+      # credstore on the container's tmpfs, populated by copy (never a
+      # symlink, never a nix store path) from the private-mdm staging
+      # directory in the existing read-only /var/lib/deus-tokens mount.
+      # systemd reads these as root before dropping to User=deus.
+      #
+      # NanoMDM's -dm-send key is what Deus verifies as its DDM *request*
+      # key; NanoMDM's -dm-recv key is what Deus *signs responses* with.
+      # Deus's third (receipt) key is deliberately absent: the pinned
+      # NanoMDM build has no command-receipt sender, and an unset receipt
+      # key file simply leaves receipts off.
+      #
+      # /run is a tmpfs, so each boot re-copies. A key rotation still
+      # needs the documented restart-receiver-first window; refreshing
+      # the staged file alone does not re-key a running process.
+      ++ lib.optionals config.malli.mdm.ddmBridge.enable [
+        "d /run/credstore 0700 root root -"
+        "C+ /run/credstore/ddm-request-hmac 0400 root root - /var/lib/deus-tokens/private-mdm/ddm-send-hmac"
+        "C+ /run/credstore/ddm-response-hmac 0400 root root - /var/lib/deus-tokens/private-mdm/ddm-recv-hmac"
       ];
 
 
