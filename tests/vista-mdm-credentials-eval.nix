@@ -20,14 +20,21 @@ let
       };
     }) ];
   }).config;
-  # The pin is the shipped reviewed row itself, because the tree is no longer
-  # a fixture: mdm.nix refuses any pin whose hash is not the NAR hash of the
-  # third_party/nanomdm the locked deus input carries, so this test needs
-  # `--override-input deus` at a Deus revision that vendors that tree (see
-  # docs/vista-mdm-credential-cutover-draft.md). Only the vendorHash is added;
-  # it is the measured one, and nothing here builds.
   reviewed = import ../hosts/vista/nanomdm-reviewed-source.nix;
-  pin = builtins.head reviewed.revisions // {
+  # TEST-LOCAL only: this exercises the complete -dm path without turning the
+  # shipped empty allowlist into an owner sign-off. The overridden Deus input
+  # must carry this exact tree; mdm.nix enforces the NAR-hash match.
+  reviewedCanary = {
+    deusRev = "101d427b9c879be013d201269608bc5f3ef00494";
+    nanomdmCommit = "3c52ba4a031c6d2035cea0722a47c598318fc59d";
+    hash = "sha256-lhhXPgBp7SmdMCQc1c9/3ZBmrAbElvdXDtEWN68BP/Y=";
+  };
+  testLocalAllowlist = [ (reviewedCanary // {
+    reviewer = "TEST-LOCAL";
+    reviewDate = "1970-01-01";
+    reason = "Evaluation fixture for the complete declarative-management path.";
+  }) ];
+  pin = reviewedCanary // {
     vendorHash = "sha256-W49woVx8MjNZsfGHPudYReTRggnjfZ4f3VKCwgqaaV0=";
   };
   onSystem = vista.extendModules {
@@ -72,12 +79,11 @@ let
     (builtins.filter (item: !item.assertion) ddmBlocked.assertions);
   # The complete opt-in path: the reviewed pin, private credentials, the
   # bridge, and one pinned enrollment. Fixture secrets only; never deploy.
-  # It uses the SHIPPED allowlist, so it also proves the shipped row names
-  # the tree the deus input really carries.
   ddmOnSystem = onSystem.extendModules {
     modules = [ ({ ... }: {
       malli.mdm.declarativeManagement = {
         enable = true;
+        reviewedSourcePins = testLocalAllowlist;
         sendHmacSopsFile = ../secrets/vista/deus_deploy_key; # fixture only
         recvHmacSopsFile = ../secrets/vista/malli_nix_deploy_key; # fixture only
         receiptHmacSopsFile = ../secrets/vista/deus_fleet_age_key; # fixture only
@@ -95,7 +101,7 @@ let
   failedMessages = config: map (item: item.message)
     (builtins.filter (item: !item.assertion) config.assertions);
   unpinnedTreeMessage = "malli.mdm.nanomdmPatchedSourcePin.hash is not the NAR hash of third_party/nanomdm in the locked deus input; that Deus revision vendors a different NanoMDM than the pin names.";
-  notReviewedMessage = "The patched NanoMDM pin is not on the reviewed declarative-management allowlist; add the audited Deus revision, vendored commit and tree hash to hosts/vista/nanomdm-reviewed-source.nix only after reading its endpoint confinement and running the canary.";
+  notReviewedMessage = "The patched NanoMDM pin is not on the reviewed declarative-management allowlist; the owner must sign off its byte-identical match to the reviewed canary in hosts/vista/nanomdm-reviewed-source.nix before enabling -dm.";
   stockUpstreamMessage = "Stock upstream NanoMDM is the unpatched build whose -dm resolves device-supplied endpoints into a request-forgery proxy; it can never be a declarative-management source, allowlisted or not.";
   bridgeNotReviewedMessage = "DDM bridge requires a NanoMDM source pin on the reviewed declarative-management allowlist in hosts/vista/nanomdm-reviewed-source.nix; an arbitrary v0.9 pin is the unpatched, request-forgery build.";
   bridgeImageTagMessage = "DDM bridge requires the configured NanoMDM image tag to be one built from a reviewed, endpoint-confined revision (hosts/vista/nanomdm-reviewed-source.nix).";
@@ -139,9 +145,20 @@ let
   stockUpstreamAllowlistedMessages = failedMessages (ddmOnSystem.extendModules {
     modules = [ ({ lib, ... }: {
       malli.mdm.nanomdmPatchedSourcePin = lib.mkForce stockUpstreamPin;
-      malli.mdm.declarativeManagement.reviewedSourcePins = lib.mkForce [{
+      malli.mdm.declarativeManagement.reviewedSourcePins = lib.mkForce [ {
         inherit (stockUpstreamPin) deusRev nanomdmCommit hash;
-      }];
+        reviewer = "TEST-LOCAL";
+        reviewDate = "1970-01-01";
+        reason = "Prove stock upstream remains denied even if locally allowlisted.";
+      } ];
+    }) ];
+  }).config;
+  # The same otherwise-complete configuration with the shipped allowlist must
+  # fail specifically at the review gate.
+  shippedAllowlistMessages = failedMessages (ddmOnSystem.extendModules {
+    modules = [ ({ lib, ... }: {
+      malli.mdm.declarativeManagement.reviewedSourcePins =
+        lib.mkForce reviewed.revisions;
     }) ];
   }).config;
   # Two of the three DM keys is not "receipts off", it is a listener that
@@ -249,10 +266,11 @@ assert builtins.elem
   ddmBlockedMessages;
 assert ddmBlocked.virtualisation.oci-containers.containers.nanomdm == nanoOff;
 # ── A pin is not a review: stock upstream must be refused ────────────────
-# The allowlist in force is exactly the shipped reviewed rows, and none of
-# them is a tree that can never be allowlisted.
-assert off.malli.mdm.declarativeManagement.reviewedSourcePins
-  == map (row: { inherit (row) deusRev nanomdmCommit hash; }) reviewed.revisions;
+# The shipped allowlist is empty. Enabling -dm remains impossible until the
+# owner records a sign-off row; the complete-path test uses only its local row.
+assert reviewed.revisions == [ ];
+assert off.malli.mdm.declarativeManagement.reviewedSourcePins == [ ];
+assert builtins.elem notReviewedMessage shippedAllowlistMessages;
 assert builtins.all (row: builtins.all (tree:
   row.hash != tree.hash && row.nanomdmCommit != tree.nanomdmCommit)
   reviewed.denied) reviewed.revisions;

@@ -9,41 +9,42 @@
 # Macs able to aim it.
 #
 # The patched server has exactly one source: the tree Deus vendors at
-# third_party/nanomdm, read from this flake's `deus` input. Each row below is a
-# Deus revision whose vendored tree was reviewed, with that tree's NAR hash.
+# third_party/nanomdm, read from this flake's `deus` input. Each row below is
+# the owner's sign-off for one Deus revision whose vendored tree was reviewed,
+# with that tree's NAR hash, the reviewer, the date, and a one-line reason.
 # malli.mdm.declarativeManagement.enable refuses to evaluate unless the
 # configured pin's deusRev, nanomdmCommit AND hash appear together in one
 # row, and mdm.nix separately refuses a pin whose hash is not the NAR hash of
 # the tree the locked `deus` input actually carries. So the hash is what is
 # enforced: a later Deus revision that leaves third_party/nanomdm untouched
-# builds the same server and needs no new row, and one that changes it cannot
-# reach -dm until it is reviewed and added here.
+# carries the same tree hash and stays covered by the existing row. deusRev is
+# NOT checked against the locked `deus` input; it records which revision the
+# owner reviewed. A revision that changes the tree cannot reach -dm until its
+# build is reviewed and a new row is added here.
 #
-# ADDING A ROW HERE IS A SECURITY REVIEW, NOT A VERSION BUMP:
-#   1. read the vendored tree's diff against upstream and confirm the endpoint
-#      confinement is present, total, and has no escape for absolute or
-#      root-relative device-supplied endpoints;
-#   2. confirm the row names that tree: `git rev-parse <deusRev>:third_party/nanomdm`
-#      is the reviewed tree, and `nix hash path third_party/nanomdm` at
-#      <deusRev> is `hash`;
-#   3. build it and run the DDM canary against one verified enrollment;
-#   4. add the row with the date, the reviewer, and the canary result.
+# ADDING A ROW HERE IS THE OWNER'S SECURITY SIGN-OFF, NOT A VERSION BUMP.
+# Before adding it, confirm that the vendored tree builds byte-identically to
+# the reviewed canary NanoMDM commit 3c52ba4a031c6d2035cea0722a47c598318fc59d,
+# whose reviewed output is
+# /nix/store/301070qz9p20r0pvpv124b0qgdbn2a6r-nanomdm-0.9.0-patched-3c52ba4a031c.
+# Record the owner/reviewer, date, and one-line reason in the row. This sign-off
+# deliberately happens at the start of the on-device session: the DDM canary
+# requires -dm, and -dm requires this row. After the session, append the
+# on-device canary result to that row as a comment; it is not a prerequisite.
+#
+# Example only (do not uncomment without the owner's sign-off):
+# {
+#   deusRev = "101d427b9c879be013d201269608bc5f3ef00494";
+#   nanomdmCommit = "3c52ba4a031c6d2035cea0722a47c598318fc59d";
+#   hash = "sha256-lhhXPgBp7SmdMCQc1c9/3ZBmrAbElvdXDtEWN68BP/Y=";
+#   reviewer = "Owner Name";
+#   reviewDate = "YYYY-MM-DD";
+#   reason = "Vendored build is byte-identical to the reviewed canary.";
+#   # On-device canary result (append after the session): ...
+# }
 # ─────────────────────────────────────────────────────────────────────────────
 {
-  revisions = [
-    {
-      # 2026-09-21. Vendored by `git subtree add` from NanoMDM
-      # canary/v0.9.0-dm-minimal (upstream v0.9.0 plus the endpoint
-      # confinement f8ec94f, the DM key files de59483 and the API/webhook key
-      # files 99ea1e8 and af56aee). third_party/nanomdm is git tree
-      # db41e28498eb7ee08c0a48c66a4aac034a59f3ab, identical to the canary's,
-      # and with this flake's nixpkgs it builds the reviewed canary derivation
-      # byte for byte. On-device DDM canary: not recorded yet.
-      deusRev = "101d427b9c879be013d201269608bc5f3ef00494";
-      nanomdmCommit = "3c52ba4a031c6d2035cea0722a47c598318fc59d";
-      hash = "sha256-lhhXPgBp7SmdMCQc1c9/3ZBmrAbElvdXDtEWN68BP/Y=";
-    }
-  ];
+  revisions = [ ];
 
   # Trees that can NEVER be allowlisted, whatever else is written above or
   # overridden in a host configuration: stock upstream, whose `-dm` endpoint

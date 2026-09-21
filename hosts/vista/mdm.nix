@@ -532,14 +532,18 @@ in
           deusRev = lib.mkOption { type = lib.types.strMatching "[0-9a-f]{40}"; };
           nanomdmCommit = lib.mkOption { type = lib.types.strMatching "[0-9a-f]{40}"; };
           hash = lib.mkOption { type = lib.types.strMatching "sha256-[A-Za-z0-9+/]{43}="; };
+          reviewer = lib.mkOption { type = lib.types.nonEmptyStr; };
+          reviewDate = lib.mkOption { type = lib.types.strMatching "[0-9]{4}-[0-9]{2}-[0-9]{2}"; };
+          reason = lib.mkOption { type = lib.types.nonEmptyStr; };
         };
       });
-      default = map pinCoordinates reviewedNanoMDMSource.revisions;
+      default = reviewedNanoMDMSource.revisions;
       defaultText = lib.literalExpression "the reviewed revisions in hosts/vista/nanomdm-reviewed-source.nix";
       description = ''
         The vendored patched-NanoMDM trees whose declarative-management
         endpoint confinement was reviewed, each with the Deus revision that
-        carries it. Its default is the operator-facing allowlist in
+        carries it and the owner's reviewer/date/reason sign-off. Its default
+        is the operator-facing allowlist in
         hosts/vista/nanomdm-reviewed-source.nix; a pin outside this list
         cannot be given -dm. A tree listed there as stock upstream is refused
         whatever this is set to, because that is the unpatched,
@@ -583,7 +587,7 @@ in
     # appear together in one allowlist row.
     assertion = !declarativeManagement.enable || !usePatchedNanoMDM
       || builtins.elem (pinCoordinates nanomdmPatchedSourcePin) reviewedPinCoordinates;
-    message = "The patched NanoMDM pin is not on the reviewed declarative-management allowlist; add the audited Deus revision, vendored commit and tree hash to hosts/vista/nanomdm-reviewed-source.nix only after reading its endpoint confinement and running the canary.";
+    message = "The patched NanoMDM pin is not on the reviewed declarative-management allowlist; the owner must sign off its byte-identical match to the reviewed canary in hosts/vista/nanomdm-reviewed-source.nix before enabling -dm.";
   } {
     # Independent of whatever the allowlist was set to: stock upstream is the
     # unpatched build, so it can never be a declarative-management source.

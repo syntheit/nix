@@ -143,13 +143,16 @@ the container will actually run to be one built from an allowlisted
 row — it no longer reads a name it derived from the pin it was supposed to be
 checking.
 
-The allowlist holds one row: the Deus revision that vendors the canary tree
-`3c52ba4`. Because the hash is what is enforced, a later Deus revision that
-leaves `third_party/nanomdm` untouched needs no new row. Adding one is a
-security review — read the vendored tree's diff against upstream, confirm the
-confinement has no escape, confirm the row's hash is that tree, build it, run
-the canary against one verified enrollment, then record it with the date and
-the reviewer.
+The shipped allowlist is empty, so `-dm` cannot be enabled until the owner
+adds a signed-off row. Before adding one, verify that the vendored tree's build
+is byte-identical to the reviewed canary `3c52ba4` output
+`/nix/store/301070qz9p20r0pvpv124b0qgdbn2a6r-nanomdm-0.9.0-patched-3c52ba4a031c`,
+then record the reviewer, date, and one-line reason in the row. The on-device
+canary requires `-dm`, so it is run only after that sign-off and its result is
+appended to the row as a comment after the session. Because the tree hash is
+enforced, a later Deus revision that leaves `third_party/nanomdm` untouched
+needs no new source review, but still needs its own signed-off row naming that
+Deus revision.
 
 Beyond the pin it requires `privateCredentials.enable` (the key files are
 staged and mounted only on that path), `ddmBridge.enable`, and **three** more
@@ -235,8 +238,9 @@ nix eval --impure --offline --json \
 ```
 
 The `deus` override must be a committed Deus revision that vendors the
-reviewed `third_party/nanomdm`: the test pins the shipped allowlist row, and
-evaluation refuses a pin whose hash is not the tree that input carries. The
-test uses that pin, fake hashes in its negative cases, and existing encrypted
-files as **evaluation fixtures only**. It never builds anything or decrypts
-those files; do not deploy its configuration.
+reviewed `third_party/nanomdm`: evaluation refuses a pin whose hash is not the
+tree that input carries. The shipped allowlist remains empty; the test injects
+a TEST-LOCAL row through
+`reviewedSourcePins`, uses fake hashes in its negative cases, and uses existing
+encrypted files as **evaluation fixtures only**. It never builds anything or
+decrypts those files; do not deploy its configuration.
