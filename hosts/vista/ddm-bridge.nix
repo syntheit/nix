@@ -56,6 +56,15 @@ in
       default = false;
       description = "Explicit operator attestation that the Deus private listener is file-key-configured for one enrollment and was tested with SO_PEERCRED UID 3999.";
     };
+    enrollmentID = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = ''
+        The single freshly verified NanoMDM device-channel enrollment ID the
+        Deus private listener will answer for. This is a one-device pin, not a
+        fleet-wide DDM switch; re-enrollment requires a new value and review.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -83,6 +92,24 @@ in
           config.virtualisation.oci-containers.containers.nanomdm.image;
         message = "DDM bridge requires a verified, SSRF-patched NanoMDM v0.9 image pin.";
       }
+      {
+        assertion = cfg.enrollmentID != ""
+          && builtins.stringLength cfg.enrollmentID <= 128
+          && builtins.match "[A-Za-z0-9-]+" cfg.enrollmentID != null;
+        message = "DDM bridge requires one verified NanoMDM device-channel enrollment ID (1-128 letters, digits or hyphens) in malli.mdm.ddmBridge.enrollmentID.";
+      }
+    ];
+
+    # The ONLY directory this module creates. Deus refuses to bind its private
+    # listener unless the socket's parent already exists, is owned by the Deus
+    # UID and is exactly mode 0700 (internal/ddm/private_linux.go), and it
+    # never creates that parent itself; the bridge preflight above then
+    # re-checks the same three properties before Docker can start the sidecar.
+    # This is a new, empty directory — not a chown of migrated Deus state, and
+    # not a substitute for the approved /var/lib/deus migration, whose own
+    # activation preflight still fails the switch if the parent is wrong.
+    systemd.tmpfiles.rules = [
+      "d ${privateDir} 0700 ${bridgeID} ${bridgeID} -"
     ];
 
     # Same kernel-visible identity as nspawn's Deus process, but distinct from
