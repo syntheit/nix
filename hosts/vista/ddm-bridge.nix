@@ -41,6 +41,21 @@ let
     test -S ${socketPath}
     test "$(${pkgs.coreutils}/bin/stat -c '%u:%g:%a' ${socketPath})" = '${bridgeID}:${bridgeID}:600'
   '';
+  # Runs inside the headscale container, in deus-server itself and as its
+  # user (UID 3999), before EVERY Deus start. Deus never creates the socket's
+  # parent, and a host tmpfiles rule alone comes too late on the first -dm
+  # switch: the host's tmpfiles run at sysinit-reactivation, AFTER the
+  # activation script whose container reload has already restarted Deus,
+  # which then logs "private DDM DISABLED" and never retries. mkdir as the
+  # deus user gives exactly 3999:3999, and -m sets 0700 whatever the umask.
+  # An existing path is left alone: Deus and the bridge preflight each
+  # refuse anything but a real 3999:3999:0700 directory.
+  deusDdmPrepare = pkgs.writeShellScript "deus-ddm-private-prepare" ''
+    set -u
+    if [ ! -e ${privateDir} ] && [ ! -L ${privateDir} ]; then
+      ${pkgs.coreutils}/bin/mkdir -m 0700 ${privateDir}
+    fi
+  '';
 in
 {
   options.malli.mdm.ddmBridge = {
@@ -132,9 +147,17 @@ in
     # This is a new, empty directory — not a chown of migrated Deus state, and
     # not a substitute for the approved /var/lib/deus migration, whose own
     # activation preflight still fails the switch if the parent is wrong.
+    #
+    # deus-server creates it itself before every start (deusDdmPrepare, "-":
+    # a failure there leaves only DDM off, as Deus does, never the whole
+    # control plane). The host rule stays for the bridge side and for boot.
     systemd.tmpfiles.rules = [
       "d ${privateDir} 0700 ${bridgeID} ${bridgeID} -"
     ];
+    containers.headscale.config = { ... }: {
+      systemd.services.deus-server.serviceConfig.ExecStartPre =
+        lib.mkAfter [ "-${deusDdmPrepare}" ];
+    };
 
     # Same kernel-visible identity as nspawn's Deus process, but distinct from
     # host btrbk UID 999. No auto-chown: the operator must back up and migrate
