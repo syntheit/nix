@@ -26,6 +26,69 @@ let
       User = "${bridgeID}:${bridgeID}";
     };
   };
+  # Pass/fail probes of the private socket. They connect and close; nothing
+  # is ever sent, so no request, key or enrollment ID crosses the socket.
+  #   wait PATH SECONDS  exit 0 once PATH is a socket (never a symlink) that
+  #                      accepts a connection; 1 if none did in SECONDS.
+  #   clear-stale PATH   unlink PATH only if it is a socket owned by this UID
+  #                      whose connect is refused (ECONNREFUSED: no listener
+  #                      holds it), and only if it is still that same inode.
+  #                      A live listener, anything that is not such a socket,
+  #                      or any other connect result is left alone. Exit 0.
+  socketProbe = pkgs.writeText "deus-ddm-socket-probe.py" ''
+    import errno, os, socket, stat, sys, time
+
+    def refused(path):
+        # None when a listener accepted the connection, else the OSError.
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(2)
+        try:
+            s.connect(path)
+            return None
+        except OSError as e:
+            return e
+        finally:
+            s.close()
+
+    def lstat_socket(path):
+        try:
+            st = os.lstat(path)
+        except FileNotFoundError:
+            return None
+        return st if stat.S_ISSOCK(st.st_mode) else False
+
+    mode, path = sys.argv[1], sys.argv[2]
+    if mode == "wait":
+        limit = int(sys.argv[3])
+        deadline = time.monotonic() + limit
+        while True:
+            if lstat_socket(path) and refused(path) is None:
+                sys.exit(0)
+            if time.monotonic() >= deadline:
+                print(f"{path}: no listener accepted a connection within {limit}s", file=sys.stderr)
+                sys.exit(1)
+            time.sleep(2)
+    elif mode == "clear-stale":
+        st = lstat_socket(path)
+        if st is None:
+            sys.exit(0)
+        if st is False or st.st_uid != os.geteuid():
+            print(f"{path}: not a socket owned by this UID; left in place", file=sys.stderr)
+            sys.exit(0)
+        err = refused(path)
+        if err is None:
+            print(f"{path}: a listener is live on it; left in place", file=sys.stderr)
+        elif err.errno != errno.ECONNREFUSED:
+            print(f"{path}: not proven stale ({err.strerror}); left in place", file=sys.stderr)
+        else:
+            again = lstat_socket(path)
+            if again and (again.st_dev, again.st_ino) == (st.st_dev, st.st_ino):
+                os.unlink(path)
+                print(f"{path}: removed a stale socket (connect refused, no listener)", file=sys.stderr)
+        sys.exit(0)
+    else:
+        sys.exit(f"usage: {sys.argv[0]} wait PATH SECONDS | clear-stale PATH")
+  '';
   statePreflight = pkgs.writeShellScript "deus-ddm-state-preflight" ''
     set -eu
     test ! -L ${stateDir}
@@ -38,6 +101,11 @@ let
     test ! -L ${privateDir}
     test -d ${privateDir}
     test "$(${pkgs.coreutils}/bin/stat -c '%u:%g:%a' ${privateDir})" = '${bridgeID}:${bridgeID}:700'
+    # A socket file is not a listener: after an unclean Deus exit the file
+    # stays and nothing accepts on it. Require one that accepts a connection.
+    # (Run as root, which Deus's SO_PEERCRED check closes silently.)
+    ${pkgs.python3}/bin/python3 ${socketProbe} wait ${socketPath} 0
+    test ! -L ${socketPath}
     test -S ${socketPath}
     test "$(${pkgs.coreutils}/bin/stat -c '%u:%g:%a' ${socketPath})" = '${bridgeID}:${bridgeID}:600'
   '';
@@ -50,11 +118,18 @@ let
   # deus user gives exactly 3999:3999, and -m sets 0700 whatever the umask.
   # An existing path is left alone: Deus and the bridge preflight each
   # refuse anything but a real 3999:3999:0700 directory.
+  #
+  # Then the stale socket: after an unclean exit (SIGKILL at the stop
+  # timeout, a crash, a hard reset) the socket file outlives Deus, and a Deus
+  # that refuses an existing path would keep DDM off for good. Deus is not
+  # running during its own ExecStartPre, so a socket nobody accepts on is
+  # stale; clear-stale proves that with ECONNREFUSED before it unlinks.
   deusDdmPrepare = pkgs.writeShellScript "deus-ddm-private-prepare" ''
     set -u
     if [ ! -e ${privateDir} ] && [ ! -L ${privateDir} ]; then
       ${pkgs.coreutils}/bin/mkdir -m 0700 ${privateDir}
     fi
+    exec ${pkgs.python3}/bin/python3 ${socketProbe} clear-stale ${socketPath}
   '';
 in
 {
@@ -148,9 +223,13 @@ in
     # not a substitute for the approved /var/lib/deus migration, whose own
     # activation preflight still fails the switch if the parent is wrong.
     #
-    # deus-server creates it itself before every start (deusDdmPrepare, "-":
-    # a failure there leaves only DDM off, as Deus does, never the whole
-    # control plane). The host rule stays for the bridge side and for boot.
+    # deus-server creates it itself before every start, and clears a stale
+    # socket in it (deusDdmPrepare, "-": a failure there leaves only DDM
+    # off, as Deus does, never the whole control plane). The host rule stays
+    # for the bridge side and for boot. No host tmpfiles "r" rule for the
+    # socket: a switch re-runs "systemd-tmpfiles --create --remove"
+    # (systemd-tmpfiles-resetup), which would unlink a LIVE socket from under
+    # a running Deus.
     systemd.tmpfiles.rules = [
       "d ${privateDir} 0700 ${bridgeID} ${bridgeID} -"
     ];
