@@ -567,24 +567,31 @@ open_store() { # label binary db -> exit code
   return "$rc"
 }
 
-say "old deus $DEUS_OLD_VERSION: $DEUS_OLD"
-crc=0
-open_store deus-old-control "$DEUS_OLD" "$DB" || crc=$?
-if [ "$migrated" = no ]; then
-  record deus.rollback FAIL "not judged: the migration did not run or failed (old Deus on the untouched copy: exit $crc)"
+say "old deus $DEUS_OLD_VERSION (rev $DEUS_OLD_REV): $DEUS_OLD"
+say "new deus $DEUS_NEW_VERSION (rev $DEUS_NEW_REV)"
+# Only another Deus proves a rollback. The build refuses a harness whose old
+# and new Deus share a revision or a version; this is the run-time check.
+if [ "$DEUS_OLD_REV" = "$DEUS_NEW_REV" ] || [ "$DEUS_OLD_VERSION" = "$DEUS_NEW_VERSION" ]; then
+  record deus.rollback FAIL "the old Deus is not another Deus: old $DEUS_OLD_VERSION (rev $DEUS_OLD_REV), new $DEUS_NEW_VERSION (rev $DEUS_NEW_REV); this would test the new Deus against itself. Build again with --old-deus-rev set to the Deus vista runs"
 else
-  orc=0
-  open_store deus-old-rollback "$DEUS_OLD" "$DEUS_NEW_DB" || orc=$?
-  integrity "$DEUS_NEW_DB"
-  say "old deus on the untouched copy: exit $crc; on the migrated copy: exit $orc; then integrity_check $INTEGRITY, foreign_key_check $FK_ROWS rows"
-  if [ "$crc" = 0 ] && [ "$orc" = 0 ] && [ "$INTEGRITY" = ok ]; then
-    record deus.rollback PASS "old Deus $DEUS_OLD_VERSION opens the migrated copy (and the untouched one)"
-  elif [ "$crc" != 0 ]; then
-    show_log "$LOG/deus-old-control.err"
-    record deus.rollback FAIL "old Deus $DEUS_OLD_VERSION cannot open even the untouched copy (exit $crc)"
+  crc=0
+  open_store deus-old-control "$DEUS_OLD" "$DB" || crc=$?
+  if [ "$migrated" = no ]; then
+    record deus.rollback FAIL "not judged: the migration did not run or failed (old Deus on the untouched copy: exit $crc)"
   else
-    show_log "$LOG/deus-old-rollback.err"
-    record deus.rollback FAIL "old Deus $DEUS_OLD_VERSION cannot open the migrated copy (exit $orc): step 2 has no code-only rollback"
+    orc=0
+    open_store deus-old-rollback "$DEUS_OLD" "$DEUS_NEW_DB" || orc=$?
+    integrity "$DEUS_NEW_DB"
+    say "old deus on the untouched copy: exit $crc; on the migrated copy: exit $orc; then integrity_check $INTEGRITY, foreign_key_check $FK_ROWS rows"
+    if [ "$crc" = 0 ] && [ "$orc" = 0 ] && [ "$INTEGRITY" = ok ]; then
+      record deus.rollback PASS "old Deus $DEUS_OLD_VERSION opens the migrated copy (and the untouched one)"
+    elif [ "$crc" != 0 ]; then
+      show_log "$LOG/deus-old-control.err"
+      record deus.rollback FAIL "old Deus $DEUS_OLD_VERSION cannot open even the untouched copy (exit $crc)"
+    else
+      show_log "$LOG/deus-old-rollback.err"
+      record deus.rollback FAIL "old Deus $DEUS_OLD_VERSION cannot open the migrated copy (exit $orc): step 2 has no code-only rollback"
+    fi
   fi
 fi
 

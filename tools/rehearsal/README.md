@@ -24,7 +24,7 @@ cannot reach them over the network, and it cannot see their files or sockets.
 | `v06.*` | The same checks for the v0.6.0 binary that vista runs today. It runs without `enable_deprecated` on the same copy, after v0.9 has opened it. This is the rollback. |
 | `deus.migrate` | The new Deus's `deus-server -migrate-only -state-dir /work/deus-new` upgrades a copy of the real `deus.db` on the tmpfs, and its report names that copy and says it migrated it. The line gives the duration, the exit code and the table count before and after. FAIL, with nothing run on the copy, when the copy lacks any table that the old Deus's own `store.Open` creates (the build lists them) or has no rows in `heartbeats`: an empty database, which a mistyped `.backup` source makes, would otherwise pass all three Deus checks. FAIL when the binary is missing or has no `-migrate-only`, when it exits 1 (the open or the upgrade failed), or when its report does not name the copy or says it created a new database. |
 | `deus.integrity` | `deus-server -migrate-only` exited 0: its own `integrity_check` says only `ok` and its `foreign_key_check` has no rows. The harness's `sqlite3` then agrees on the same copy. Exit 2 (upgraded, but a check found a problem) is a FAIL here. |
-| `deus.rollback` | The Deus that vista runs today opens the migrated copy. It is also run on the untouched copy as a control. PASS means step 2 has a code-only rollback. |
+| `deus.rollback` | The Deus that vista runs today opens the migrated copy. It is also run on the untouched copy as a control. PASS means step 2 has a code-only rollback. FAIL, without running either, when the old Deus has the new one's revision or version. |
 
 ## What it does not prove
 
@@ -119,8 +119,13 @@ cannot reach them over the network, and it cannot see their files or sockets.
 ## Step 1: build (your normal user, no sudo, about 5–15 minutes the first time)
 
 ```sh
-/home/daniel/Projects/malli-nix-macos-updates/tools/rehearsal/build.sh
+/home/daniel/Projects/malli-nix-macos-updates/tools/rehearsal/build.sh --old-deus-rev 410a695
 ```
+
+`410a695` is the Deus deployed on vista today (0.57.19). Name it: without
+`--old-deus-rev`, the build takes the `deus` revision locked in
+`/home/daniel/nix/flake.lock`, and that lock moves to the new Deus as soon
+as step 2 is prepared.
 
 The build uses only committed trees, never uncommitted work:
 
@@ -134,10 +139,13 @@ The build uses only committed trees, never uncommitted work:
 - the new Deus from the committed head of `feature/macos-updates`. Its
   `deus-server` must have `-migrate-only` (Deus `c26640d`, in 0.58.0). The
   build stops with an error on a Deus without it, and the run checks again;
-- the old Deus from the `deus` revision locked in `/home/daniel/nix/flake.lock`,
-  which is what vista runs. If that lock already points at the new Deus,
-  pass `--old-deus-rev` with the revision vista actually runs. Otherwise
-  `deus.rollback` only tests the new Deus against itself.
+- the old Deus from `--old-deus-rev` in `/home/daniel/Projects/malli-deus`
+  (a short revision is fine). It is the rollback target, and its schema is
+  the one a real `deus.db` must have. An old Deus with the new one's
+  revision would make `deus.rollback` test the new Deus against itself, so
+  `build.sh` refuses the same revision, the build refuses the same version,
+  and the run fails `deus.rollback` on either. Both versions are printed at
+  the top of the report and again in the summary.
 
 If step 2 will deploy a different Deus revision, pass
 `--new-deus-rev <sha>` and build again. `build.sh` prints the store path of
@@ -226,6 +234,7 @@ runs the harness as root of an unprivileged user namespace, in these cases:
 - an empty `deus.db`, as a mistyped `.backup` source makes, and one with
   the old schema but no `heartbeats` rows;
 - a new Deus whose `deus-server` has no `-migrate-only`;
+- a harness whose old Deus is the new one;
 - a Ctrl-C mid-run, and a `kill -9` mid-run.
 
 Every case must end with a complete wipe and with none of the planted

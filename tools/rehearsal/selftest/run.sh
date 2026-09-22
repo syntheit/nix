@@ -26,6 +26,9 @@
 #                   makes: deus.migrate, deus.integrity and deus.rollback FAIL
 #   no-heartbeats   deus.db has the old schema but no heartbeats rows: the
 #                   same three FAIL
+#   old-is-new      a harness whose old Deus is the new one, as build.sh's
+#                   default would give once the live lock is bumped:
+#                   deus.rollback FAIL, and neither Deus is run as the old one
 #   no-migrate-only a new Deus whose deus-server has no -migrate-only (the
 #                   old Deus's stands in): deus.migrate FAIL, and it is never
 #                   run on the copy
@@ -175,6 +178,11 @@ rc=0; rehearse "$HARNESS" "$scratch/no-heartbeats" "$out/no-heartbeats.log" || r
 judge no-heartbeats "$out/no-heartbeats.log" 1 "$rc" "$scratch/no-heartbeats" \
   "decrypt=PASS enrollments=PASS v09.read=PASS v06.read=PASS deus.migrate=FAIL deus.integrity=FAIL deus.rollback=FAIL" \
   "^ +FAIL +deus\.migrate +the copy of deus\.db is not one vista's Deus wrote: it has ([1-9][0-9]*) of the old Deus [^ ]+'s \1 tables, and heartbeats rows: 0 "
+
+rc=0; rehearse "$HARNESS_OLD_IS_NEW" "$scratch/good" "$out/old-is-new.log" || rc=$?
+judge old-is-new "$out/old-is-new.log" 1 "$rc" "$scratch/good" \
+  "decrypt=PASS enrollments=PASS v09.read=PASS v06.read=PASS deus.migrate=PASS deus.integrity=PASS deus.rollback=FAIL" \
+  '^ +FAIL +deus\.rollback +the old Deus is not another Deus: old ([^ ]+) \(rev ([0-9a-f]{40})\), new \1 \(rev \2\);'
 
 rc=0; rehearse "$HARNESS_NO_MIGRATE_ONLY" "$scratch/good" "$out/no-migrate-only.log" || rc=$?
 judge no-migrate-only "$out/no-migrate-only.log" 1 "$rc" "$scratch/good" \
