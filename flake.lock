@@ -772,11 +772,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1784090559,
-        "narHash": "sha256-uugGs89DFsC9uLrPesiE8asz41QxrZt3RxDhtWCV5wo=",
+        "lastModified": 1789751744,
+        "narHash": "sha256-UxrXpFU1ydKwdSeU0Dq3FvMXkaYDSveYZzILzGII4wY=",
         "owner": "syntheit",
         "repo": "foyer",
-        "rev": "05eb908bb660d07eab0630a0446ea47062e8b349",
+        "rev": "f4cabcc7945fab18def5860118647be5a4c922f2",
         "type": "github"
       },
       "original": {
