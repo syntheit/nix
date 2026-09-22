@@ -71,8 +71,10 @@ still requires its own approved state migration and service validation.
    UID/GID 999 to 3999:3999, preserve all unrelated owners, verify nspawn and
    Docker kernel UID maps, and check `/var/lib/deus` is 3999:3999 mode 0700.
    Enable `deusDedicatedIdentity` only after that check; it does not migrate
-   state. The host activation and nspawn start preflights enforce the parent
-   ownership/mode before the container starts. The reviewed Deus module's
+   state. The host activation preflight enforces the parent ownership/mode
+   before the container reloads. The nspawn start preflight refuses only a
+   mixed 999/3999 state: an all-999 container still starts (Headscale), and
+   deus-server's own guard keeps Deus down. The reviewed Deus module's
    inner tmpfiles rule still enforces parent 3999:3999 mode 0700, but does not
    recursively migrate contents; the whole tree must be audited first. A
    failed state check means restore the backup and stop.
