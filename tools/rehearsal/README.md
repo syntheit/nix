@@ -17,7 +17,7 @@ cannot reach them over the network, and it cannot see their files or sockets.
 | `decrypt` | age decrypts the backup with your identity, and the archive extracts cleanly. This is the tested restore. |
 | `layout` | The archive holds exactly one NanoMDM store and one `deus.db`, and the rest of what restoring NanoMDM needs: exactly one `scep/` directory whose `ca.pem` and `ca.key` are non-empty files, exactly one `nanodep/` directory with at least one non-empty file, and at least one push certificate (a `<topic>.pem` beside its `<topic>.key` in the store, both non-empty). All of this is checked by stat only; no content is read or printed. Without the store or `deus.db` the run stops here. A missing SCEP, NanoDEP or push-certificate piece fails `layout`, and the other checks still run. |
 | `enrollments` | The number of device enrollments (directories with `Authenticate.plist`) equals the expected count. That count is the number of rows in the baseline, 535. |
-| `bootstraptokens` | The number of `BootstrapToken.dat` files equals the expected count. It also compares them with the baseline by ID and size and reports how many are missing, new or resized. |
+| `bootstraptokens` | The number of `BootstrapToken.dat` files equals the expected count, and, whenever a baseline is given (also with `--expected-count`), no token the baseline lists is missing from the backup. It compares them with the baseline by ID and size and reports how many are missing, new or resized. A missing token fails the check even when the counts agree, and its enrollment ID is printed. |
 | `v09.start`, `v09.version` | The exact patched v0.9 binary that step 3 would run starts on the store copy with `-storage file -storage-options enable_deprecated=1`. Its `/version` begins with `0.9.0-patched-3c52ba4a031c`. |
 | `v09.read` | v0.9's own storage code reads every enrollment. That covers Authenticate, push info, bootstrap tokens, queued commands and the push certificate. There are no read errors. |
 | `v09.unchanged` | After v0.9 has run, the store's stat manifest is identical to the one taken before. The manifest records path, type, mode, size and mtime, never contents. |
@@ -83,8 +83,10 @@ cannot reach them over the network, and it cannot see their files or sockets.
   and the nspawn containers' cannot be reached either.
 - **Nothing secret is printed.** The output contains counts, sizes,
   durations, exit codes, version strings, the relative paths of the
-  backup's parts, and PASS or FAIL. It never prints file contents,
-  enrollment IDs or database rows. The only SQL it runs reads table names
+  backup's parts, and PASS or FAIL. It never prints file contents or
+  database rows. The one kind of enrollment ID it prints is that of a
+  bootstrap token the baseline lists and the backup lacks: an ID the
+  baseline file already holds, and never the token. The only SQL it runs reads table names
   and counts from `sqlite_master`, `SELECT count(*) FROM heartbeats`, and
   two `PRAGMA` checks, so no row, `admin_password` or token column is ever
   read. `deus-server -migrate-only` runs the same kind of counts and
@@ -174,9 +176,11 @@ variables are cleared then.
 
 - `decrypt`: the wrong identity, or a damaged or truncated backup. Do not go
   on to step 2 or 3. Make a new backup first.
-- `enrollments` or `bootstraptokens`: read the counts on the line. "missing"
-  or "new" against the baseline means the fleet changed since 2026-09-20, or
-  the backup is incomplete.
+- `enrollments` or `bootstraptokens`: read the counts on the line. "new"
+  against the baseline means Macs enrolled since 2026-09-20. "missing"
+  always fails `bootstraptokens`, even when the counts agree, and the lines
+  above it list each missing enrollment ID: that Mac was removed since
+  2026-09-20, or the backup is incomplete. Find out which before step 3.
 - `v09.*` or `v06.*`: do not start step 3. The step-3 rollback cannot be
   trusted.
 - `deus.migrate` or `deus.integrity`: do not start step 2. The new Deus
@@ -215,6 +219,8 @@ runs the harness as root of an unprivileged user namespace, in these cases:
 - a v0.9 that leaves the store unreadable to v0.6;
 - a failing migration (`deus-server -migrate-only` exits 1);
 - a migration that applies but leaves a dangling foreign key (exit 2);
+- one Mac lost since the baseline and one new, so the counts agree, with
+  and without `--expected-count`;
 - a backup without the `scep/` directory, without `scep/ca.key`, with an
   empty `nanodep/`, or without the push certificate;
 - an empty `deus.db`, as a mistyped `.backup` source makes, and one with

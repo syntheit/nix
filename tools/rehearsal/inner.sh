@@ -8,9 +8,10 @@
 #
 # Output rule: counts, sizes, durations, exit codes, version strings,
 # relative paths of the backup's components, and PASS/FAIL. Never a file's
-# contents, an enrollment ID, a database row, or a tool's error text unless
-# --show-errors asks for it: the last lines of that tool's own error log,
-# which can name a file, a table or a constraint.
+# contents, a database row, or a tool's error text unless --show-errors asks
+# for it: the last lines of that tool's own error log, which can name a
+# file, a table or a constraint. Never an enrollment ID either, except the
+# baseline's IDs whose bootstrap token the backup lacks.
 #
 # (writeShellApplication supplies the shebang and errexit/nounset/pipefail;
 # the prelude supplies the binary paths.)
@@ -257,15 +258,28 @@ disabled=$(find "$S" -mindepth 2 -maxdepth 2 -type f -name Disabled | wc -l)
 say "device enrollments (Authenticate.plist): $devices; user channels: $user_channels; disabled: $disabled; push certs: $pushcerts"
 say "BootstrapToken.dat files: $bstokens"
 baseline_note=""
+missing=0
 if [ -f /in/baseline.tsv ]; then
   awk -F'\t' 'NF >= 2 { print $1 "\t" $2 }' /in/baseline.tsv | sort > "$L/baseline"
   base_n=$(grep -c . "$L/baseline" || true)
   [ -n "$expected_count" ] || expected_count=$base_n
-  missing=$(comm -23 <(cut -f1 "$L/baseline") <(cut -f1 "$L/bst") | grep -c . || true)
+  comm -23 <(cut -f1 "$L/baseline") <(cut -f1 "$L/bst") > "$L/bst-missing"
+  missing=$(grep -c . "$L/bst-missing" || true)
   extra=$(comm -13 <(cut -f1 "$L/baseline") <(cut -f1 "$L/bst") | grep -c . || true)
   resized=$(join -t "$(printf '\t')" "$L/baseline" "$L/bst" | awk -F'\t' '$2 != $3' | grep -c . || true)
   baseline_note="; vs baseline ($base_n rows): $missing missing, $extra new, $resized resized"
   say "baseline: $base_n rows; token IDs missing from backup: $missing; new since baseline: $extra; size differs: $resized"
+  # A token the baseline lists and the backup lacks fails the check even
+  # when the counts agree (one Mac lost and one new is still 535). These are
+  # the one exception to "no enrollment IDs": the baseline's own IDs, so the
+  # owner can find each Mac. Only an ID of hex digits and dashes is printed,
+  # and never a token's contents.
+  if [ "$missing" -gt 0 ]; then
+    say "enrollment IDs whose bootstrap token is in the baseline but not in the backup:"
+    while IFS= read -r id; do
+      if [[ $id =~ ^[0-9A-Fa-f-]{8,64}$ ]]; then say "  missing: $id"; else say "  missing: (an ID that is not hex digits and dashes; not printed)"; fi
+    done < "$L/bst-missing"
+  fi
 fi
 if [ -z "$expected_count" ]; then
   record enrollments FAIL "no expected count: pass --baseline or --expected-count"
@@ -276,7 +290,9 @@ else
   else
     record enrollments FAIL "$devices device enrollments, expected $expected_count"
   fi
-  if [ "$bstokens" = "$expected_count" ]; then
+  if [ "$missing" -gt 0 ]; then
+    record bootstraptokens FAIL "$missing bootstrap tokens in the baseline are not in the backup (IDs above); $bstokens BootstrapToken.dat, expected $expected_count$baseline_note"
+  elif [ "$bstokens" = "$expected_count" ]; then
     record bootstraptokens PASS "$bstokens BootstrapToken.dat = $expected_count expected$baseline_note"
   else
     record bootstraptokens FAIL "$bstokens BootstrapToken.dat, expected $expected_count$baseline_note"
