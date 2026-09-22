@@ -1,5 +1,6 @@
 # malli-rehearsal-fixture DIR [--count N] [--broken-deus] [--dangling-fk]
 #                             [--empty-deus] [--no-heartbeats]
+#                             [--omit scep|scep-key|nanodep|pushcert]
 #
 # Writes a SYNTHETIC stand-in for the pre-upgrade backup into DIR. Nothing
 # in it comes from production: a NanoMDM file store of N made-up
@@ -27,16 +28,20 @@
 # `sqlite3 <source> ".backup deus.db"` makes: a valid database with no table.
 #
 # --no-heartbeats leaves the heartbeats table empty; every other row goes in.
+#
+# --omit leaves one piece out of the archive: the scep directory, scep/ca.key,
+# every file in nanodep (the directory stays, empty), or the push certificate.
 umask 077
 export LC_ALL=C
 
-dir=${1:?usage: malli-rehearsal-fixture DIR [--count N] [--broken-deus] [--dangling-fk] [--empty-deus] [--no-heartbeats]}
+dir=${1:?usage: malli-rehearsal-fixture DIR [--count N] [--broken-deus] [--dangling-fk] [--empty-deus] [--no-heartbeats] [--omit PIECE]}
 shift
 count=12
 broken_deus=0
 dangling_fk=0
 empty_deus=0
 no_heartbeats=0
+omit=""
 while [ $# -gt 0 ]; do
   case $1 in
     --count) count=$2; shift 2 ;;
@@ -44,6 +49,7 @@ while [ $# -gt 0 ]; do
     --dangling-fk) dangling_fk=1; shift ;;
     --empty-deus) empty_deus=1; shift ;;
     --no-heartbeats) no_heartbeats=1; shift ;;
+    --omit) omit=$2; shift 2 ;;
     *) echo "unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -100,11 +106,20 @@ printf '%s\n<key>MessageType</key><string>TokenUpdate</string>\n<key>Topic</key>
 # A made-up APNs push certificate and key, stored under the topic.
 openssl req -x509 -newkey rsa:2048 -nodes -days 400 -subj "/CN=APSP:synthetic/UID=$topic" \
   -keyout "$store/$topic.key" -out "$store/$topic.pem" 2>/dev/null
-# A dummy SCEP CA (the harness reads only ca.pem) and NanoDEP store.
+# A dummy SCEP CA and NanoDEP store. The harness checks that ca.pem, ca.key
+# and a NanoDEP file exist and are not empty, and reads only ca.pem.
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 400 \
   -subj /CN=synthetic-scep-ca -keyout "$src/var/lib/mdm/scep/ca.key" \
   -out "$src/var/lib/mdm/scep/ca.pem" 2>/dev/null
 printf 'synthetic\n' > "$src/var/lib/mdm/nanodep/placeholder"
+case $omit in
+  "") ;;
+  scep) rm -rf "$src/var/lib/mdm/scep" ;;
+  scep-key) rm -f "$src/var/lib/mdm/scep/ca.key" ;;
+  nanodep) rm -f "$src/var/lib/mdm/nanodep/"* ;;
+  pushcert) rm -f "$store/$topic.pem" "$store/$topic.key" ;;
+  *) echo "unknown --omit $omit" >&2; exit 2 ;;
+esac
 
 # deus.db made by the OLD Deus's own store.Open, then a few made-up rows.
 db=$src/var/lib/deus/deus.db
@@ -155,4 +170,4 @@ grep -h AGE-SECRET-KEY "$dir/identity" >> "$dir/markers"
 rm -rf "$src" "$dir/xlsx" "$dir/empty.xlsx"
 printf 'fixture: %s enrollments, %s bytes encrypted, recipient %s%s\n' \
   "$count" "$(stat -c %s "$dir/backup.tar.zst.age")" "$recipient" \
-  "$([ "$broken_deus" = 1 ] && echo ', deus.db with a table the new schema cannot build on')$([ "$dangling_fk" = 1 ] && echo ', deus.db with a dangling rack_slots foreign key')$([ "$empty_deus" = 1 ] && echo ', an empty deus.db')$([ "$no_heartbeats" = 1 ] && echo ', deus.db without heartbeats rows')"
+  "$([ "$broken_deus" = 1 ] && echo ', deus.db with a table the new schema cannot build on')$([ "$dangling_fk" = 1 ] && echo ', deus.db with a dangling rack_slots foreign key')$([ "$empty_deus" = 1 ] && echo ', an empty deus.db')$([ "$no_heartbeats" = 1 ] && echo ', deus.db without heartbeats rows')${omit:+, without $omit}"

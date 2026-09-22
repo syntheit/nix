@@ -15,7 +15,7 @@ cannot reach them over the network, and it cannot see their files or sockets.
 | --- | --- |
 | `isolation` | The sandbox has no network interface except loopback. Connects to vista's NanoMDM (10.100.0.4:9990), the Deus webhook (10.100.0.1:8086), an Apple address and 1.1.1.1 all fail. No host path except `/nix/store` is visible. No capabilities are left. |
 | `decrypt` | age decrypts the backup with your identity, and the archive extracts cleanly. This is the tested restore. |
-| `layout` | The archive holds exactly one NanoMDM store and one `deus.db`. It also reports SCEP and NanoDEP if they are present. |
+| `layout` | The archive holds exactly one NanoMDM store and one `deus.db`, and the rest of what restoring NanoMDM needs: exactly one `scep/` directory whose `ca.pem` and `ca.key` are non-empty files, exactly one `nanodep/` directory with at least one non-empty file, and at least one push certificate (a `<topic>.pem` beside its `<topic>.key` in the store, both non-empty). All of this is checked by stat only; no content is read or printed. Without the store or `deus.db` the run stops here. A missing SCEP, NanoDEP or push-certificate piece fails `layout`, and the other checks still run. |
 | `enrollments` | The number of device enrollments (directories with `Authenticate.plist`) equals the expected count. That count is the number of rows in the baseline, 535. |
 | `bootstraptokens` | The number of `BootstrapToken.dat` files equals the expected count. It also compares them with the baseline by ID and size and reports how many are missing, new or resized. |
 | `v09.start`, `v09.version` | The exact patched v0.9 binary that step 3 would run starts on the store copy with `-storage file -storage-options enable_deprecated=1`. Its `/version` begins with `0.9.0-patched-3c52ba4a031c`. |
@@ -101,8 +101,10 @@ cannot reach them over the network, and it cannot see their files or sockets.
 - The encrypted backup from step 0. It is an age-encrypted tar, either plain
   or compressed with gzip, xz or zstd. It must hold the NanoMDM file store
   (`…/mdm/nanomdm/`) and `deus.db` (with its `-wal` and `-shm` if they were
-  captured). SCEP and NanoDEP directories are optional. If the finder cannot
-  pick them out, name them with `--nanomdm-path` or `--deus-db-path`. Do not
+  captured), with the push certificate in the store. It must also hold the
+  `scep/` directory with `ca.pem` and `ca.key`, and the `nanodep/`
+  directory; `layout` fails without them. If the finder cannot pick out the
+  store or `deus.db`, name them with `--nanomdm-path` or `--deus-db-path`. Do not
   make the backup with `bsdtar --zstd -cf -`: libarchive 3.8.9 writes a
   truncated stream that way. If the backup was made like that, the
   `decrypt` check will fail.
@@ -213,6 +215,8 @@ runs the harness as root of an unprivileged user namespace, in these cases:
 - a v0.9 that leaves the store unreadable to v0.6;
 - a failing migration (`deus-server -migrate-only` exits 1);
 - a migration that applies but leaves a dangling foreign key (exit 2);
+- a backup without the `scep/` directory, without `scep/ca.key`, with an
+  empty `nanodep/`, or without the push certificate;
 - an empty `deus.db`, as a mistyped `.backup` source makes, and one with
   the old schema but no `heartbeats` rows;
 - a new Deus whose `deus-server` has no `-migrate-only`;
