@@ -188,26 +188,59 @@ DB=""
 if [ -n "$nanomdm_rel" ] && [ -d "$R/$nanomdm_rel" ]; then S=$R/$nanomdm_rel; fi
 if [ -n "$deus_rel" ] && [ -f "$R/$deus_rel" ]; then DB=$R/$deus_rel; fi
 yn() { if [ -e "$1" ]; then echo yes; else echo no; fi; }
+# By stat only: "present" for a non-empty regular file, else EMPTY or MISSING.
+file_state() {
+  if [ -f "$1" ] && [ -s "$1" ]; then echo present; elif [ -e "$1" ]; then echo EMPTY; else echo MISSING; fi
+}
 if [ -n "$S" ]; then say "nanomdm store: $nanomdm_rel"; else say "nanomdm store: MISSING"; fi
 if [ -n "$DB" ]; then
   say "deus.db:       $deus_rel (wal: $(yn "$DB-wal"), shm: $(yn "$DB-shm"))"
 else
   say "deus.db:       MISSING"
 fi
-if [ -n "$scep_rel" ]; then
-  say "scep:          $scep_rel (ca.pem: $(yn "$R/$scep_rel/ca.pem"))"
-else
-  say "scep:          absent"
-fi
-say "nanodep:       ${nanodep_rel:-absent}"
-if [ -n "$S" ] && [ -n "$DB" ]; then
-  record layout PASS "nanomdm store and deus.db found; scep: ${scep_rel:-absent}; nanodep: ${nanodep_rel:-absent}"
-else
+if [ -z "$S" ] || [ -z "$DB" ]; then
   missing_parts=""
   [ -n "$S" ] || missing_parts="the nanomdm store"
   [ -n "$DB" ] || missing_parts="${missing_parts:+$missing_parts and }deus.db"
   record layout FAIL "no single $missing_parts in the archive (name it with --nanomdm-path / --deus-db-path)"
   summary
+fi
+# The rest of what restoring NanoMDM needs, by stat only; no content is read
+# or printed. SCEP's CA certificate and its key (without ca.key no Mac can
+# get a new identity), a NanoDEP store with at least one non-empty file, and
+# at least one push certificate: a <topic>.pem beside its <topic>.key in the
+# store, both non-empty, as the storage reads it.
+gaps=""
+gap() { gaps=${gaps:+$gaps; }$1; }
+if [ -n "$scep_rel" ]; then
+  ca_pem=$(file_state "$R/$scep_rel/ca.pem")
+  ca_key=$(file_state "$R/$scep_rel/ca.key")
+  say "scep:          $scep_rel (ca.pem: $ca_pem, ca.key: $ca_key)"
+  [ "$ca_pem" = present ] || gap "scep/ca.pem is ${ca_pem,,}"
+  [ "$ca_key" = present ] || gap "scep/ca.key is ${ca_key,,}"
+else
+  say "scep:          MISSING (no single scep directory)"
+  gap "no single scep directory"
+fi
+nanodep_files=0
+if [ -n "$nanodep_rel" ]; then
+  nanodep_files=$(find "$R/$nanodep_rel" -type f -size +0 | wc -l)
+  say "nanodep:       $nanodep_rel ($nanodep_files non-empty files)"
+  [ "$nanodep_files" -gt 0 ] || gap "nanodep holds no non-empty file"
+else
+  say "nanodep:       MISSING (no single nanodep directory)"
+  gap "no single nanodep directory"
+fi
+pushcerts=0
+while IFS= read -r pem; do
+  if [ -s "$pem" ] && [ -f "${pem%.pem}.key" ] && [ -s "${pem%.pem}.key" ]; then pushcerts=$((pushcerts + 1)); fi
+done < <(find "$S" -mindepth 1 -maxdepth 1 -type f -name '*.pem')
+say "push certs:    $pushcerts in the store (<topic>.pem beside <topic>.key, both non-empty)"
+[ "$pushcerts" -gt 0 ] || gap "no push certificate in the store"
+if [ -z "$gaps" ]; then
+  record layout PASS "nanomdm store, deus.db, scep ca.pem and ca.key, $nanodep_files nanodep files, $pushcerts push certs"
+else
+  record layout FAIL "$gaps"
 fi
 
 # ── 4. counts, by stat only ───────────────────────────────────────────────
@@ -221,12 +254,6 @@ devices=$(grep -c . "$L/device" || true)
 bstokens=$(grep -c . "$L/bst" || true)
 user_channels=$(comm -13 "$L/device" "$L/token" | grep -c . || true)
 disabled=$(find "$S" -mindepth 2 -maxdepth 2 -type f -name Disabled | wc -l)
-# A push certificate is a <topic>.pem beside its <topic>.key, as the storage
-# reads it.
-pushcerts=0
-while IFS= read -r pem; do
-  if [ -f "${pem%.pem}.key" ]; then pushcerts=$((pushcerts + 1)); fi
-done < <(find "$S" -mindepth 1 -maxdepth 1 -type f -name '*.pem')
 say "device enrollments (Authenticate.plist): $devices; user channels: $user_channels; disabled: $disabled; push certs: $pushcerts"
 say "BootstrapToken.dat files: $bstokens"
 baseline_note=""

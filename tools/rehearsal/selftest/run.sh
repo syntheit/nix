@@ -15,6 +15,9 @@
 #                   deus-server -migrate-only exits 1, deus.migrate FAIL
 #   unhealthy       deus.db with a dangling foreign key: the upgrade applies,
 #                   deus-server -migrate-only exits 2, deus.integrity FAIL
+#   omit-scep, omit-scep-key, omit-nanodep, omit-pushcert
+#                   the backup lacks the scep directory, scep/ca.key, every
+#                   NanoDEP file, or the push certificate: layout FAIL
 #   empty-deus      deus.db is the empty database a mistyped .backup source
 #                   makes: deus.migrate, deus.integrity and deus.rollback FAIL
 #   no-heartbeats   deus.db has the old schema but no heartbeats rows: the
@@ -41,6 +44,10 @@ mkdir -p "$run" "$out"
 "$FIXTURE" "$scratch/dangling-fk" --count 12 --dangling-fk
 "$FIXTURE" "$scratch/empty-deus" --count 12 --empty-deus
 "$FIXTURE" "$scratch/no-heartbeats" --count 12 --no-heartbeats
+omitted_pieces="scep scep-key nanodep pushcert"
+for piece in $omitted_pieces; do
+  "$FIXTURE" "$scratch/omit-$piece" --count 12 --omit "$piece"
+done
 cp "$scratch/good/backup.tar.zst.age" "$scratch/corrupt.age"
 size=$(stat -c %s "$scratch/corrupt.age")
 printf '\x5a' | dd of="$scratch/corrupt.age" bs=1 seek=$((size / 2)) conv=notrunc status=none
@@ -124,6 +131,19 @@ rc=0; rehearse "$HARNESS" "$scratch/dangling-fk" "$out/unhealthy.log" || rc=$?
 judge unhealthy "$out/unhealthy.log" 1 "$rc" "$scratch/dangling-fk" \
   "decrypt=PASS enrollments=PASS v09.read=PASS v06.read=PASS deus.migrate=PASS deus.integrity=FAIL" \
   '^ +FAIL +deus\.integrity +deus-server -migrate-only exit 2; its report: 0 integrity_check problems, 1 foreign_key_check rows;'
+
+for piece in $omitted_pieces; do
+  case $piece in
+    scep) gap='no single scep directory' ;;
+    scep-key) gap='scep/ca\.key is missing' ;;
+    nanodep) gap='nanodep holds no non-empty file' ;;
+    pushcert) gap='no push certificate in the store' ;;
+  esac
+  rc=0; rehearse "$HARNESS" "$scratch/omit-$piece" "$out/omit-$piece.log" || rc=$?
+  judge "omit-$piece" "$out/omit-$piece.log" 1 "$rc" "$scratch/omit-$piece" \
+    "decrypt=PASS layout=FAIL enrollments=PASS bootstraptokens=PASS v09.start=PASS v09.read=PASS v06.start=PASS v06.read=PASS deus.migrate=PASS deus.rollback=PASS" \
+    "^ +FAIL +layout +$gap\$"
+done
 
 rc=0; rehearse "$HARNESS" "$scratch/empty-deus" "$out/empty-deus.log" || rc=$?
 judge empty-deus "$out/empty-deus.log" 1 "$rc" "$scratch/empty-deus" \
