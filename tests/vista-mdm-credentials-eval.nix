@@ -203,6 +203,44 @@ let
   endpointListensOnBridge = endpointAddress != null && hasInfix
     ''LISTEN = ("${builtins.elemAt endpointAddress 0}", ${builtins.elemAt endpointAddress 1})''
     (builtins.readFile ../packages/nanomdm-ddm-bridge.py);
+  # ── The reload's gates must be real, not merely ordered ─────────────────
+  # `deps` only says WHEN a snippet runs. Deleting the fail-closed wrapper
+  # in mdm-credentials.nix while keeping its `deps` entry left the container
+  # reload completely ungated — free to reload onto credentials staging had
+  # never written — and every assertion below still passed, still reporting
+  # containerReloadWaitsForCredentialStaging. So assert the wrapper itself:
+  # each gate's `if` must sit before the single `systemctl reload`, and each
+  # must be closed by a `fi` after it. The `fi` count is taken relative to
+  # the ungated default-off text, so the base snippet can grow branches of
+  # its own without making this vacuous.
+  identityOnly = (vista.extendModules {
+    modules = [ ({ ... }: {
+      malli.mdm.deusDedicatedIdentity = {
+        enable = true;
+        migrationConfirmed = true; # evaluation fixture only
+      };
+    }) ];
+  }).config;
+  reloadText = c: c.system.activationScripts.reload-headscale-container.text;
+  reloadCommand = "systemctl reload container@headscale.service";
+  reloadGates = [
+    "[ \"\${vistaMdmStageCredentials:-1}\" != 0 ]"
+    "[ \"\${vistaDeusIdentityPreflight:-1}\" != 0 ]"
+  ];
+  reloadRefusals = [
+    "NOT reloading container@headscale: vista-mdm-stage-credentials failed"
+    "NOT reloading container@headscale: vista-deus-identity-preflight failed"
+  ];
+  reloadHalves = c: lib.splitString reloadCommand (reloadText c);
+  beforeReload = c: builtins.head (reloadHalves c);
+  afterReload = c: builtins.elemAt (reloadHalves c) 1;
+  fiCount = text: builtins.length (builtins.filter
+    (line: builtins.match "[[:space:]]*fi[[:space:]]*" line != null)
+    (lib.splitString "\n" text));
+  gatesWrapReload = c: gates:
+    builtins.length (reloadHalves c) == 2
+    && builtins.all (gate: hasInfix gate (beforeReload c)) gates
+    && fiCount (afterReload c) == fiCount (afterReload off) + builtins.length gates;
   nanoOff = off.virtualisation.oci-containers.containers.nanomdm;
   nanoPrepared = prepared.virtualisation.oci-containers.containers.nanomdm;
   nanoOn = on.virtualisation.oci-containers.containers.nanomdm;
@@ -335,6 +373,19 @@ assert off.system.activationScripts.reload-headscale-container.deps == [ "etc" ]
 assert lib.subtractLists
   ddmOn.system.activationScripts.reload-headscale-container.deps
   [ "etc" "vista-mdm-stage-credentials" "vista-deus-identity-preflight" ] == [ ];
+# …and each `deps` entry must come with the wrapper that actually refuses.
+# Default-off carries neither gate and reloads unconditionally.
+assert !(builtins.any (gate: hasInfix gate (reloadText off)) reloadGates);
+assert !(builtins.any (text: hasInfix text (reloadText off)) reloadRefusals);
+assert builtins.length (reloadHalves off) == 2;
+# The dedicated Deus UID on its own contributes exactly its own gate…
+assert gatesWrapReload identityOnly [ (builtins.elemAt reloadGates 1) ];
+assert !(hasInfix (builtins.head reloadGates) (reloadText identityOnly));
+# …and each further gate adds its own `if`/`fi` pair around the same one
+# reload, so deleting any one wrapper while keeping its `deps` fails here.
+assert gatesWrapReload on reloadGates;
+assert gatesWrapReload ddmOn reloadGates;
+assert builtins.all (text: hasInfix text (reloadText ddmOn)) reloadRefusals;
 assert ddmOn.containers.headscale.config.services.deus.server.ddm.enable;
 assert ddmOn.containers.headscale.config.services.deus.server.ddm.enrollmentID
   == "OFFLINE-TEST-ENROLLMENT-ID";
@@ -357,6 +408,7 @@ assert builtins.filter (item: !item.assertion)
   everyDeusDDMCredentialIsStagedAndRefreshedOnRotation = true;
   dmEndpointAndBridgeListenerCannotDrift = true;
   containerReloadWaitsForCredentialStaging = true;
+  containerReloadIsGatedNotMerelyOrdered = true;
   # Forces a full opt-in system evaluation, not just the option surface.
   declarativeManagementToplevel = ddmOn.system.build.toplevel.drvPath;
 }
