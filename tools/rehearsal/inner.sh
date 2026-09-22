@@ -37,7 +37,6 @@ done
 readonly W=/work
 readonly R=$W/restore
 readonly LOG=$W/logs
-mkdir -p "$R" "$LOG" "$W/tmp" "$W/home" "$W/lists"
 
 CHECKS=(isolation decrypt layout enrollments bootstraptokens
   v09.start v09.version v09.read v09.unchanged
@@ -52,7 +51,7 @@ record() {
   printf '  %-4s %-16s %s\n' "$2" "$1" "$3"
 }
 say() { printf '       %s\n' "$*"; }
-phase() { printf '\n== %s\n' "$*"; }
+phase() { CURRENT_PHASE=$*; printf '\n== %s\n' "$*"; }
 now_ms() { date +%s%3N; }
 secs() { awk -v ms="$1" 'BEGIN { printf "%.1fs", ms / 1000 }'; }
 # The last few lines of a tool's own log, only when asked for.
@@ -63,8 +62,15 @@ show_log() {
   fi
 }
 
-summary() {
+# Every way out prints the summary: the normal end, a check that stops the
+# run, and an abort on an unexpected error (errexit), which reports the
+# phase it stopped in and exits non-zero. The last line of the whole run,
+# RESULT:, is malli-rehearse's.
+SUMMARY_DONE=0
+CURRENT_PHASE="start"
+print_summary() { # [why the run stopped early]
   local failed=0 c
+  SUMMARY_DONE=1
   printf '\n==== REHEARSAL SUMMARY ====\n'
   printf '%s\n' "$BUILD_INFO" | sed 's/^/  /'
   printf '\n'
@@ -72,13 +78,42 @@ summary() {
     printf '  %-4s %-16s %s\n' "${RESULT[$c]}" "$c" "${NOTE[$c]}"
     [ "${RESULT[$c]}" = PASS ] || failed=$((failed + 1))
   done
-  if [ "$failed" = 0 ]; then
-    printf '\nRESULT: PASS (%d of %d checks)\n' "${#CHECKS[@]}" "${#CHECKS[@]}"
-    exit 0
+  if [ -n "${1:-}" ]; then
+    printf '\nCHECKS: FAIL (%s; %d of %d checks not PASS)\n' "$1" "$failed" "${#CHECKS[@]}"
+    return 1
   fi
-  printf '\nRESULT: FAIL (%d of %d checks not PASS)\n' "$failed" "${#CHECKS[@]}"
+  if [ "$failed" = 0 ]; then
+    printf '\nCHECKS: PASS (%d of %d checks)\n' "${#CHECKS[@]}" "${#CHECKS[@]}"
+    return 0
+  fi
+  printf '\nCHECKS: FAIL (%d of %d checks not PASS)\n' "$failed" "${#CHECKS[@]}"
+  return 1
+}
+summary() {
+  if print_summary; then exit 0; fi
   exit 1
 }
+SERVER_PID=""
+stop_server() {
+  if [ -n "$SERVER_PID" ]; then
+    kill -TERM "$SERVER_PID" 2>/dev/null || true
+    wait "$SERVER_PID" 2>/dev/null || true
+    SERVER_PID=""
+  fi
+}
+# shellcheck disable=SC2329 # the EXIT trap
+on_exit() {
+  local rc=$?
+  set +e
+  stop_server
+  if [ "$SUMMARY_DONE" = 0 ]; then
+    [ "$rc" != 0 ] || rc=1
+    print_summary "the harness stopped early on an error (exit $rc) in the $CURRENT_PHASE phase; the checks after it did not run"
+  fi
+  exit "$rc"
+}
+trap on_exit EXIT
+mkdir -p "$R" "$LOG" "$W/tmp" "$W/home" "$W/lists"
 
 # ── 1. isolation ──────────────────────────────────────────────────────────
 phase "isolation"
@@ -318,15 +353,6 @@ else
   ca_note="a throwaway CA (the backup has no scep/ca.pem)"
 fi
 
-SERVER_PID=""
-stop_server() {
-  if [ -n "$SERVER_PID" ]; then
-    kill -TERM "$SERVER_PID" 2>/dev/null || true
-    wait "$SERVER_PID" 2>/dev/null || true
-    SERVER_PID=""
-  fi
-}
-trap stop_server EXIT
 # start_server label binary port args... ; sets SERVER_PID and VERSION_SEEN.
 # No -api and no -api-key-file: the server registers no API routes, so
 # nothing can push, enqueue or upload. No -webhook-url and no -dm.

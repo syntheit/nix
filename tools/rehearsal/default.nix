@@ -221,7 +221,9 @@ let
 
   prelude = { v09 ? nanomdmV09, v09Entrypoint ? nanomdmV09
             , deusNewBin ? "${deusNewServer}/bin/deus-server"
-            , rollbackDeus ? deusOld, rollbackDeusRev ? oldDeusRev }: ''
+            , rollbackDeus ? deusOld, rollbackDeusRev ? oldDeusRev
+              # Self-test only: shell code appended to the prelude.
+            , preludeExtra ? "" }: ''
     readonly NANOMDM_V09=${v09}/bin/nanomdm
     readonly NANOMDM_V06=${nanomdmV06}/bin/nanomdm
     readonly -a V09_STORAGE=(${lib.escapeShellArgs v09StorageFlags})
@@ -253,6 +255,7 @@ let
       "$V06_ENTRYPOINT_FLAGS" "$PROBE_V09" "$PROBE_V06" "$DEUS_NEW" "$DEUS_OLD" \
       "$DEUS_OLD_TABLES" "$DEUS_NEW_REV" "$DEUS_OLD_REV" "$DEUS_NEW_VERSION" "$DEUS_OLD_VERSION" \
       "$V09_EXPECTED_PREFIX" "$V06_EXPECTED" "$SANDBOX_PATH" "$BUILD_INFO"
+    ${preludeExtra}
   '';
 
   mkInner = args: pkgs.writeShellApplication {
@@ -321,6 +324,15 @@ let
   harnessDriftedV09 = mkHarness {
     v09Entrypoint = nanomdmFromEntrypoint "vista-nanomdm-step3-drifted" driftedV09Entrypoint;
   };
+  # A harness in which cp fails, as it would on a full tmpfs: inner.sh's
+  # copy of deus.db then stops the run on errexit, an abort no check
+  # expects. The summary and a RESULT: FAIL line must still be printed.
+  harnessCpFails = mkHarness {
+    preludeExtra = ''
+      # shellcheck disable=SC2329 # only inner.sh calls cp
+      cp() { echo "self-test: cp fails here on purpose" >&2; return 1; }
+    '';
+  };
 
   fixture = pkgs.writeShellApplication {
     name = "malli-rehearsal-fixture";
@@ -338,6 +350,7 @@ let
       readonly HARNESS_NO_MIGRATE_ONLY=${harnessNoMigrateOnly}/bin/malli-rehearse
       readonly HARNESS_OLD_IS_NEW=${harnessOldIsNew}/bin/malli-rehearse
       readonly HARNESS_DRIFTED_V09=${harnessDriftedV09}/bin/malli-rehearse
+      readonly HARNESS_CP_FAILS=${harnessCpFails}/bin/malli-rehearse
       readonly FIXTURE=${fixture}/bin/malli-rehearsal-fixture
     '' + builtins.readFile ./selftest/run.sh;
   };

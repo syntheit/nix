@@ -48,6 +48,30 @@ usage: malli-rehearse --backup FILE.age [options]
 EOF
 }
 
+# The verdict, always the last line of a run (only kill -9 can stop it):
+# PASS only when every check passed, which is exit 0. Until the tmpfs
+# exists, the early trap below prints it for any exit but 0 (--help, or the
+# exec into the ns stage); from then on the cleanup trap prints it after
+# the wipe. It may never fail the exit.
+# shellcheck disable=SC2329 # called from the EXIT traps
+result_line() { # exit-code
+  if [ "$1" = 0 ]; then
+    printf '\nRESULT: PASS (every check passed)\n'
+  else
+    case $1 in
+      129 | 130 | 141 | 143) printf '\nRESULT: FAIL (exit %s: stopped by a signal before the checks finished)\n' "$1" ;;
+      *) printf '\nRESULT: FAIL (exit %s: see the summary or the message above)\n' "$1" ;;
+    esac
+  fi 2>/dev/null || true
+}
+# shellcheck disable=SC2329 # the EXIT trap until the cleanup trap replaces it
+early_exit() {
+  local rc=$?
+  trap '' PIPE
+  if [ "$rc" != 0 ]; then result_line "$rc"; fi
+}
+trap early_exit EXIT
+
 self=$(readlink -f -- "$0")
 stage=host
 backup=""
@@ -195,6 +219,7 @@ cleanup() {
   case $rc in
     129 | 130 | 141 | 143) printf '\nmalli-rehearse: interrupted (exit %s); wiped\n' "$rc" >&2 2>/dev/null || true ;;
   esac
+  result_line "$rc"
   exit "$rc"
 }
 trap cleanup EXIT
