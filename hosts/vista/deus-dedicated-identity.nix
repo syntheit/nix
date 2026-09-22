@@ -45,10 +45,12 @@ let
   # container's own tmpfiles rules rather than assumed: SIX rules name deus,
   # one `d` on the state dir and five `f`/`C+` leaves under it. None of them
   # is `Z`, `z`, `R`, `r` or `X`, so nothing recurses and no unrelated owner
-  # under the state dir is touched. A start therefore re-owns at most those
-  # six inodes (and re-chmods them), which a chown puts straight back, and
-  # the three `C+` leaves are force-copied from their source on every start
-  # anyway. Nothing is destroyed and nothing is unrecoverable.
+  # under the state dir is touched. `d` adjusts the directory's own mode and
+  # ownership, `f` creates a missing file and adjusts it, and `C+` copies a
+  # missing one from its source and adjusts it; all three refuse to follow a
+  # symlink. So a start changes at most the mode and ownership of those six
+  # inodes, which a chown and a chmod put straight back. Nothing is
+  # destroyed and nothing is unrecoverable.
   #
   # Against that: the container is Headscale, the VPN control plane for the
   # whole Mac fleet. A refused start is an outage for every Mac, and — since
