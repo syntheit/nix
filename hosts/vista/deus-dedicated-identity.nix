@@ -45,6 +45,14 @@ let
   #   switch additionally requires the finished migration (all 3999 and the
   #          dir 3999:3999:0700). It gates the activation's reload, which
   #          would otherwise restart a running Deus into that guard.
+  #   reload (ExecReload, so a manual `systemctl reload` or `nixos-container
+  #          update` too) holds a reload into this generation's container
+  #          to the switch rule, and one into any other generation's
+  #          container to the start rule. During a switch the activation's
+  #          `systemctl reload` runs before daemon-reload, so it still runs
+  #          the ExecReload of the generation being left, with the new
+  #          generation's SYSTEM_PATH: a rollback from this generation to
+  #          one before step 4 must still reload an all-999 container.
   statePreflight = pkgs.writeShellScript "vista-deus-identity-preflight" ''
     set -eu
     mode=''${1:-switch}
@@ -52,6 +60,8 @@ let
     fix="Finish runbook step 4 (commands 8 and 8a) or its Undo, so that the container's deus user and group and ${stateDir} are all ${legacy} or all ${id}."
     case $mode in
       start | switch) ;;
+      reload)
+        if [ "''${SYSTEM_PATH-}" = ${config.containers.headscale.path} ]; then mode=switch; else mode=start; fi ;;
       *) fail "unknown mode $mode" ;;
     esac
     test ! -L ${stateDir} || fail "${stateDir} is a symlink"
@@ -86,7 +96,7 @@ let
         || fail "the Deus UID ${id} migration has not been done: the container's deus and ${stateDir} ($state) are still ${legacy}. Do runbook step 4 commands 5-9 first."
       [ "$state" = '${id}:${id}:700' ] || fail "${stateDir} is $state, not ${id}:${id}:700"
     elif [ "$eu:$eg" = '${legacy}:${legacy}' ]; then
-      echo "vista-deus-identity-preflight: the container's deus and ${stateDir} are all still ${legacy}: the Deus UID ${id} migration has not been done. The container may start, so Headscale runs; deus-server refuses to start until the migration." >&2
+      echo "vista-deus-identity-preflight: the container's deus and ${stateDir} are all still ${legacy}: the Deus UID ${id} migration has not been done. Going ahead, since nothing would be re-owned; a step-4 or later container configuration keeps deus-server down until the migration." >&2
     fi
   '';
   # Container side, in deus-server itself, as the deus user: Deus refuses to
@@ -227,6 +237,9 @@ in
       # or --job-mode=ignore-dependencies. After a refusal here, the retry
       # Restart= queues is a start job, and the oneshot ends it.
       serviceConfig.ExecStartPre = lib.mkBefore [ "${statePreflight} start" ];
+      # ExecReload lines run in order and stop at the first failure, so a
+      # refusal leaves the container's running generation untouched.
+      serviceConfig.ExecReload = lib.mkBefore [ "${statePreflight} reload" ];
     };
   };
 }
