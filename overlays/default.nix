@@ -8,6 +8,16 @@ let
   overlays = {
     modifications = final: prev: {
       antigravity = inputs.antigravity.packages.${final.stdenv.hostPlatform.system}.default;
+
+      # AI agents from the llm-agents flake (updated daily) instead of nixpkgs,
+      # which runs days behind — and a lagging claude-code cannot select a newly
+      # released model (Opus 5.5 needs 2.1.280; nixpkgs has 2.1.278). The
+      # `or prev.<pkg>` fallback keeps nixpkgs on platforms that flake skips.
+      claude-code =
+        inputs.llm-agents.packages.${final.stdenv.hostPlatform.system}.claude-code or prev.claude-code;
+      codex = inputs.llm-agents.packages.${final.stdenv.hostPlatform.system}.codex or prev.codex;
+      opencode =
+        inputs.llm-agents.packages.${final.stdenv.hostPlatform.system}.opencode or prev.opencode;
       # yabai's scripting addition is pattern-matched against Dock's binary per
       # macOS build. A macOS update (build 26A428) broke the `add_space` pattern
       # in released 7.1.25, so every SA op silently fails ("cannot create space

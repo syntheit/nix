@@ -1,6 +1,7 @@
 { config, vars, ... }:
 {
   imports = [
+    ../../modules/numtide-cache.nix
     ./hardware-configuration.nix
     ./hardware.nix
     ./secrets.nix
