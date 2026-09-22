@@ -166,7 +166,28 @@ in
           /run/secrets/nanomdm_dm_send_hmac_key \
           /run/secrets/nanomdm_dm_recv_hmac_key \
           /run/secrets/nanomdm_dm_receipt_hmac_key''}
+        vistaMdmStageCredentials=$?
       '';
+    };
+    # A failed snippet does not stop activation: NixOS records it and runs the
+    # rest, including the container reload, which would restart Deus onto a
+    # LoadCredential source that staging never wrote; systemd then refuses to
+    # start Deus at all. The reload already runs after staging (headscale.nix
+    # orders it so); here it is skipped unless staging succeeded, so the
+    # container keeps its running generation and its running Deus.
+    system.activationScripts.reload-headscale-container = {
+      deps = [ "vista-mdm-stage-credentials" ];
+      text = lib.mkMerge [
+        (lib.mkBefore ''
+          if [ "''${vistaMdmStageCredentials:-1}" != 0 ]; then
+            echo "NOT reloading container@headscale: vista-mdm-stage-credentials failed. The container keeps its running generation and Deus keeps running; fix the staging, then switch again." >&2
+          else
+            :
+        '')
+        (lib.mkAfter ''
+          fi
+        '')
+      ];
     };
   };
 }
