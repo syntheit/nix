@@ -169,15 +169,24 @@ in
       # The Deus module enforces this on the bind-mounted parent via tmpfiles.
       services.deus.server.stateDirMode = "0700";
       systemd.services.deus-server = {
-        serviceConfig.ExecStartPre = lib.mkBefore [ "${deusGuard}" ];
-        # Restart=always with RestartSec=5s never reaches systemd's default
-        # start limit (5 in 10 s), so a guard refusal repeated every 5 s,
-        # forever. 10 starts in 5 min, the cap the Deus module's own comment
-        # describes, parks it in "failed" after about 50 s instead. Nothing
-        # in the container Requires, BindsTo or PartOf deus-server or has
-        # OnFailure on it, so the container and Headscale are unaffected.
-        startLimitBurst = 10;
-        startLimitIntervalSec = 300;
+        serviceConfig = {
+          ExecStartPre = lib.mkBefore [ "${deusGuard}" ];
+          # Deus never gives up: a crash loop, such as a transient failure at
+          # boot, retries for as long as it lasts instead of parking Deus in
+          # "failed". The Deus module's Restart=always and RestartSec=5s stay;
+          # each automatic restart waits about 1.5 times longer than the one
+          # before, from 5 s up to 5 min over ten steps (about 10 min in
+          # all), then every 5 min. A guard refusal repeats on that schedule:
+          # noisy, and Deus stays down. systemd resets the step count only on
+          # a start it did not queue itself (a manual start or restart, or a
+          # switch that restarts Deus), so ten crashes without one leave
+          # every later crash at 5 min.
+          RestartSteps = 10;
+          RestartMaxDelaySec = "5min";
+        };
+        # No start limit: 0 turns rate limiting off, so no number of
+        # restarts ends in start-limit-hit.
+        startLimitIntervalSec = 0;
       };
     };
 
