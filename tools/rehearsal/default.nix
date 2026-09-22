@@ -159,30 +159,41 @@ let
   ];
   sandboxPath = lib.makeBinPath tools;
 
-  prelude = { v09 ? nanomdmV09, deusNewBin ? "${deusNewServer}/bin/deus-server" }: ''
+  # deus.rollback proves something only when the old Deus is another Deus
+  # than the new one. Once /home/daniel/nix/flake.lock points at the new
+  # Deus, build.sh's default old revision is the new one, and the check
+  # would test the new Deus against itself. So the harness refuses to build
+  # when the two share a revision or a version; inner.sh checks again at run
+  # time and fails deus.rollback.
+  distinctDeus = newDeusRev != oldDeusRev && deusNew.version != deusOld.version;
+
+  prelude = { v09 ? nanomdmV09, deusNewBin ? "${deusNewServer}/bin/deus-server"
+            , rollbackDeus ? deusOld, rollbackDeusRev ? oldDeusRev }: ''
     readonly NANOMDM_V09=${v09}/bin/nanomdm
     readonly NANOMDM_V06=${nanomdmV06}/bin/nanomdm
     readonly PROBE_V09=${probeV09}/bin/rehearsal-probe
     readonly PROBE_V06=${probeV06}/bin/rehearsal-probe
     readonly DEUS_NEW=${deusNewBin}
-    readonly DEUS_OLD=${deusOld}/bin/deus-rack-import
+    readonly DEUS_OLD=${rollbackDeus}/bin/deus-rack-import
     readonly DEUS_OLD_TABLES=${deusOldTables}/tables
+    readonly DEUS_NEW_REV=${lib.escapeShellArg newDeusRev}
+    readonly DEUS_OLD_REV=${lib.escapeShellArg rollbackDeusRev}
     readonly DEUS_NEW_VERSION=${lib.escapeShellArg deusNew.version}
-    readonly DEUS_OLD_VERSION=${lib.escapeShellArg deusOld.version}
+    readonly DEUS_OLD_VERSION=${lib.escapeShellArg rollbackDeus.version}
     readonly V09_EXPECTED_PREFIX=0.9.0-patched-${builtins.substring 0 12 pin.nanomdmCommit}
     readonly V06_EXPECTED=v0.6.0
     readonly SANDBOX_PATH=${sandboxPath}
     readonly BUILD_INFO=${lib.escapeShellArg (lib.concatStringsSep "\n" [
       "vista config  ${vistaRev}"
       "new deus      ${newDeusRev} (${deusNew.version})"
-      "old deus      ${oldDeusRev} (${deusOld.version})"
+      "old deus      ${rollbackDeusRev} (${rollbackDeus.version})"
       "v0.9 pin      deus ${pin.deusRev}, nanomdm ${pin.nanomdmCommit}"
       "              tree ${pin.hash}"
     ])}
     # Each script uses a subset of these.
     : "$NANOMDM_V09" "$NANOMDM_V06" "$PROBE_V09" "$PROBE_V06" "$DEUS_NEW" "$DEUS_OLD" \
-      "$DEUS_OLD_TABLES" "$DEUS_NEW_VERSION" "$DEUS_OLD_VERSION" "$V09_EXPECTED_PREFIX" "$V06_EXPECTED" \
-      "$SANDBOX_PATH" "$BUILD_INFO"
+      "$DEUS_OLD_TABLES" "$DEUS_NEW_REV" "$DEUS_OLD_REV" "$DEUS_NEW_VERSION" "$DEUS_OLD_VERSION" \
+      "$V09_EXPECTED_PREFIX" "$V06_EXPECTED" "$SANDBOX_PATH" "$BUILD_INFO"
   '';
 
   mkInner = args: pkgs.writeShellApplication {
@@ -198,7 +209,11 @@ let
     '' + builtins.readFile ./rehearse.sh;
   };
 
-  harness = mkHarness { };
+  harness =
+    assert lib.assertMsg distinctDeus ("the old Deus is not another Deus: new ${newDeusRev} (${deusNew.version}) and "
+      + "old ${oldDeusRev} (${deusOld.version}) share a revision or a version, so deus.rollback would test the new Deus against itself. "
+      + "Build with --old-deus-rev set to the Deus vista runs today");
+    mkHarness { };
 
   # ── Self-test only ─────────────────────────────────────────────────────
   # A v0.9 that, once stopped, rewrites every TokenUpdate.plist in the store
@@ -231,6 +246,10 @@ let
   # The old Deus's deus-server stands in for a new Deus built from a revision
   # before c26640d: it has no -migrate-only, and bypasses the build's check.
   harnessNoMigrateOnly = mkHarness { deusNewBin = "${deusOld}/bin/deus-server"; };
+  # The new Deus stands in for the old one, as build.sh's default would make
+  # it once the live flake.lock points at the new Deus. It bypasses the
+  # build's check, so inner.sh's own check must fail deus.rollback.
+  harnessOldIsNew = mkHarness { rollbackDeus = deusNew; rollbackDeusRev = newDeusRev; };
 
   fixture = pkgs.writeShellApplication {
     name = "malli-rehearsal-fixture";
@@ -246,6 +265,7 @@ let
       readonly HARNESS=${harness}/bin/malli-rehearse
       readonly HARNESS_FAULTY_V09=${harnessFaultyV09}/bin/malli-rehearse
       readonly HARNESS_NO_MIGRATE_ONLY=${harnessNoMigrateOnly}/bin/malli-rehearse
+      readonly HARNESS_OLD_IS_NEW=${harnessOldIsNew}/bin/malli-rehearse
       readonly FIXTURE=${fixture}/bin/malli-rehearsal-fixture
     '' + builtins.readFile ./selftest/run.sh;
   };
