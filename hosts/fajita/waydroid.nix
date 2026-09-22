@@ -20,6 +20,20 @@ let
   waydroidProvisionStart = pkgs.writeShellScriptBin "waydroid-provision-start" ''
     exec /run/current-system/sw/bin/systemctl start waydroid-apk-provision.service
   '';
+  # Root helper for the close-to-quit extension. `waydroid shell` does an
+  # lxc-attach and needs root, so the GNOME extension (running as daniel)
+  # cannot force-stop an Android app directly — it calls this via `sudo -n`.
+  # Runs as root: `sudo waydroid shell` works without the graphical session
+  # env (it attaches to the container over the system-bus container service).
+  waydroidAppStop = pkgs.writeShellScriptBin "waydroid-app-stop" ''
+    set -eu
+    pkg="''${1:-}"
+    # Guard: only accept Android package-name-shaped args.
+    case "$pkg" in
+      *[!A-Za-z0-9._]*|"") echo "waydroid-app-stop: invalid package '$pkg'" >&2; exit 2 ;;
+    esac
+    exec ${waydroid}/bin/waydroid shell -- am force-stop "$pkg"
+  '';
 in
 {
   # System packages: adb (for split APK install) + waydroid-launch wrapper +
@@ -71,6 +85,7 @@ in
       exec "$W" app launch "$pkg"
     '')
     waydroidProvisionStart
+    waydroidAppStop
     (mkWaydroidDesktop "com.whatsapp" "WhatsApp" "im-whatsapp")
     (mkWaydroidDesktop "com.Slack" "Slack" "im-slack")
     (mkWaydroidDesktop "com.discord" "Discord" "im-discord")
@@ -88,6 +103,9 @@ in
         runHook preInstall
         mkdir -p $out/share/gnome-shell/extensions/waydroid-watcher@fajita.local
         cp -r $src/* $out/share/gnome-shell/extensions/waydroid-watcher@fajita.local/
+        substituteInPlace $out/share/gnome-shell/extensions/waydroid-watcher@fajita.local/extension.js \
+          --replace-fail '@WAYDROID@' '${waydroid}/bin/waydroid' \
+          --replace-fail '@WAYDROID_APP_STOP@' '${waydroidAppStop}/bin/waydroid-app-stop'
         runHook postInstall
       '';
     })
@@ -385,6 +403,10 @@ in
       commands = [
         {
           command = "${waydroidProvisionStart}/bin/waydroid-provision-start";
+          options = [ "NOPASSWD" ];
+        }
+        {
+          command = "${waydroidAppStop}/bin/waydroid-app-stop";
           options = [ "NOPASSWD" ];
         }
       ];

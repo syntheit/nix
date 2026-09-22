@@ -15,39 +15,62 @@ let
     h = "harbor";
     m = "mantle";
     r = "raven";
+    s = "swift";
     v = "vista";
   };
 
   # swift roams (cafe wifi) -> mosh; the LAN machines talk over plain ssh.
   # harbor is remote for everyone, so it is always mosh.
   # fajita is a roaming phone on Tailscale -> always mosh (survives cell/wifi handoff).
-  transportFor = target: if hostName == "swift" || target == "harbor" || target == "fajita" then "mosh" else "ssh";
+  transportFor = target:
+    if hostName == "swift" || target == "swift" || target == "harbor" || target == "fajita" then
+      "mosh"
+    else
+      "ssh";
 
+  # The letter for the host you're on opens the same session locally, so
+  # `m work` on mantle picks up what `m work` from another machine left.
   mkSessionFn =
     letter: target:
     let
       launch = if transportFor target == "mosh" then "mosh ${target} -- bash -c" else "ssh -t ${target}";
     in
-    ''
-      ${letter}() {
-        local name="''${1:-1}"
-        ${launch} "
+    if target == hostName then
+      ''
+        ${letter}() {
+          local name="''${1:-1}" dir=$HOME
           case $name in
-            nix) cd ~/nix ;;
-            *)   [ -d ~/Projects/$name ] && cd ~/Projects/$name ;;
+            nix) dir=~/nix ;;
+            *)   [ -d ~/Projects/$name ] && dir=~/Projects/$name ;;
           esac
-          exec tmux new-session -A -s $name
-        "
-      }
-    '';
+          if [ -n "$TMUX" ]; then
+            # already in tmux: switch instead of nesting
+            tmux has-session -t "=$name" 2>/dev/null || tmux new-session -d -s "$name" -c "$dir"
+            tmux switch-client -t "=$name"
+          else
+            tmux new-session -A -s "$name" -c "$dir"
+          fi
+        }
+      ''
+    else
+      ''
+        ${letter}() {
+          local name="''${1:-1}"
+          ${launch} "
+            case $name in
+              nix) cd ~/nix ;;
+              *)   [ -d ~/Projects/$name ] && cd ~/Projects/$name ;;
+            esac
+            exec tmux new-session -A -s $name
+          "
+        }
+      '';
 
-  # a command for every host except the one we are sitting on
-  otherHosts = lib.filterAttrs (_letter: target: target != hostName) sessionHosts;
-  sessionFns = lib.concatStringsSep "\n" (lib.mapAttrsToList mkSessionFn otherHosts);
+  sessionFns = lib.concatStringsSep "\n" (lib.mapAttrsToList mkSessionFn sessionHosts);
   sessionCheat = lib.concatStringsSep "\n" (
     lib.mapAttrsToList (
-      letter: target: "  ${letter} / ${letter} work        ${target} session (${transportFor target})"
-    ) otherHosts
+      letter: target: "  ${letter} / ${letter} work        ${target} session (${if target == hostName then "local" else transportFor target})"
+    ) sessionHosts
   );
 in
 {
@@ -141,7 +164,7 @@ in
       # <letter> [name] — open/attach tmux session <name> on that host.
       #   default session "1"; name = dir under ~/Projects auto-cds; "nix" -> ~/nix
       # Transport per host: swift uses mosh (it roams); LAN machines use ssh;
-      # harbor is always mosh. No command is defined for the host you're on.
+      # harbor is always mosh. The letter for the host you're on opens a local session.
       ${sessionFns}
 
       cheat() {
