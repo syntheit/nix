@@ -42,6 +42,11 @@
 #                   before anything is mounted
 #   interrupted     SIGINT (Ctrl-C) mid-run, as the v0.9 phase begins:
 #                   exit 130, and still wiped
+#   reader-gone     the reader of the output dies (a dead `| tee`), then
+#                   Ctrl-C at the prompt: exit 130, mountpoint removed
+#   second-interrupt
+#                   a second Ctrl-C to the process group while the cleanup
+#                   waits for the sandbox: exit 130, and still wiped
 #   killed          kill -9 mid-run: no trap runs, and the tmpfs is still gone
 export LC_ALL=C
 
@@ -288,6 +293,88 @@ else
   judge interrupted "$log" 130 "$rc" "$scratch/good" ""
   zeroed=$(sed -n 's/^WIPE: \([0-9]*\) files zeroed.*/\1/p' "$log")
   results[-1]="${results[-1]} (interrupted with ${zeroed:-?} decrypted files on the tmpfs)"
+fi
+
+# The reader of the harness's output dies (as `| tee` would), then Ctrl-C.
+# The harness waits at the identity prompt, the tmpfs mounted, and has
+# nowhere left to write: a message printed before the wipe would raise
+# SIGPIPE and kill it before the wipe. The reader's death means no WIPE line
+# can be seen, so the proof is the exit code and the mountpoint: a harness
+# killed mid-cleanup leaves its mountpoint behind and exits 141.
+log=$out/reader-gone.log
+rm -f "$scratch/key-in" "$scratch/out-pipe"
+mkfifo "$scratch/key-in" "$scratch/out-pipe"
+cat "$scratch/out-pipe" > "$log" &
+reader=$!
+env --default-signal=INT "$HARNESS" --work-parent "$run" --tmpfs-size 1g \
+  --baseline "$scratch/good/baseline.tsv" --backup "$scratch/good/backup.tar.zst.age" \
+  < "$scratch/key-in" > "$scratch/out-pipe" 2>&1 &
+pid=$!
+exec 8> "$scratch/key-in"
+for _ in $(seq 1 200); do
+  grep -q '^tmpfs: ' "$log" && break
+  sleep 0.05
+done
+kill -KILL "$reader" 2>/dev/null || true
+{ wait "$reader"; } 2>/dev/null || true
+kill -INT "$pid" 2>/dev/null || true
+rc=0; { wait "$pid"; } 2>/dev/null || rc=$?
+exec 8>&-
+rm -f "$scratch/key-in" "$scratch/out-pipe"
+problems=""
+[ "$rc" = 130 ] || problems+=" exit=$rc(want 130)"
+grep -q '^tmpfs: ' "$log" || problems+=" never-reached-the-prompt"
+if [ -n "$(find "$run" -mindepth 1 -print -quit)" ]; then problems+=" mountpoint-left-in-work-parent"; fi
+if grep -sq 'malli-rehearsal-[0-9a-f]\{16\}' /proc/[0-9]*/mountinfo; then problems+=" tmpfs-still-mounted-somewhere"; fi
+if [ -z "$problems" ]; then
+  results+=("PASS  reader-gone (output reader killed, then Ctrl-C: wiped, mountpoint removed, exit 130)")
+else
+  results+=("FAIL  reader-gone:$problems")
+  failures=$((failures + 1))
+fi
+find "$run" -mindepth 1 -maxdepth 1 -type d -empty -delete
+
+# A second Ctrl-C while the harness waits for the sandbox to die. Ctrl-C on
+# a terminal signals the whole foreground process group, so the harness gets
+# a group of its own (setsid) and the signals go to the group. The sandbox
+# (bwrap, in a session of its own) and everything in it are stopped first,
+# so the harness's wait for it lasts the full 5 s before its kill -9, and
+# the second Ctrl-C lands inside the cleanup.
+stop_tree() { # pid: SIGSTOP it, then its descendants, top down
+  local k kids=()
+  kill -STOP "$1" 2>/dev/null || return 0
+  read -ra kids < "/proc/$1/task/$1/children" || true
+  for k in "${kids[@]}"; do stop_tree "$k"; done
+}
+log=$out/second-interrupt.log
+grep AGE-SECRET-KEY "$scratch/good/identity" \
+  | setsid env --default-signal=INT "$HARNESS" \
+      --work-parent "$run" --tmpfs-size 1g --baseline "$scratch/good/baseline.tsv" \
+      --backup "$scratch/good/backup.tar.zst.age" > "$log" 2>&1 &
+pid=$!
+for _ in $(seq 1 600); do
+  grep -q '^== nanomdm v0.9' "$log" && break
+  sleep 0.05
+done
+sandbox=""
+kids=()
+read -ra kids < "/proc/$pid/task/$pid/children" || true
+for c in "${kids[@]}"; do
+  if [ "$(cat "/proc/$c/comm" 2>/dev/null)" = bwrap ]; then sandbox=$c; fi
+done
+if [ -n "$sandbox" ]; then stop_tree "$sandbox"; fi
+kill -INT -- "-$pid" 2>/dev/null || true
+sleep 1
+kill -INT -- "-$pid" 2>/dev/null || true
+rc=0; { wait "$pid"; } 2>/dev/null || rc=$?
+if [ -z "$sandbox" ]; then
+  results+=("FAIL  second-interrupt: no running sandbox to stop")
+  failures=$((failures + 1))
+elif grep -q '^==== REHEARSAL SUMMARY' "$log"; then
+  results+=("FAIL  second-interrupt: the run finished before the signal landed")
+  failures=$((failures + 1))
+else
+  judge second-interrupt "$log" 130 "$rc" "$scratch/good" ""
 fi
 
 # kill -9 mid-run: no trap can run, so the kernel must do the wipe. The

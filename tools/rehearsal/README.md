@@ -69,9 +69,12 @@ cannot reach them over the network, and it cannot see their files or sockets.
   pid 1's and refuses to go on if either is the same, so even a hand-typed
   `--stage ns` cannot mount the tmpfs where the services live. It refuses
   to go on unless `/proc/self/mountinfo` shows exactly the tmpfs it just
-  mounted, tagged with a random name. On every exit (success, failure, error, Ctrl-C or
-  kill) it zeroes every file, deletes it, unmounts the tmpfs and removes
-  the mountpoint, and prints a `WIPE:` line that says so. If the harness
+  mounted, tagged with a random name. On every exit (success, failure,
+  error, Ctrl-C or kill) it zeroes every file, deletes it, unmounts the
+  tmpfs and removes the mountpoint, and only then prints a `WIPE:` line
+  that says so. During that cleanup it ignores further Ctrl-C, TERM, HUP
+  and SIGPIPE, so neither a second Ctrl-C nor a `tee` that has died can
+  stop it. If the harness
   itself is killed with `kill -9`, the namespace dies with it and the kernel
   frees the tmpfs; only an empty directory in `/run` is left behind.
 - **The identity is typed, never stored.** You paste it at a prompt with
@@ -245,7 +248,10 @@ pid 1's as it does on vista. It runs the harness in these cases:
 - `--stage ns` typed by hand in pid 1's mount namespace, and in a private
   mount namespace that shares pid 1's network: both refuse before mounting
   anything;
-- a Ctrl-C mid-run, and a `kill -9` mid-run.
+- a Ctrl-C mid-run, and a `kill -9` mid-run;
+- the reader of the output killed (as a dead `| tee` would be) and then a
+  Ctrl-C, and a second Ctrl-C to the whole process group while the cleanup
+  waits for the sandbox: both must still wipe.
 
 Every case must end with a complete wipe and with none of the planted
 secret markers in the output. The markers are the identity, bootstrap
