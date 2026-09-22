@@ -98,12 +98,38 @@ in
         chmod 0644 /var/root/.ssh/known_hosts
       fi
 
-      # Raise per-process file descriptor limit. macOS defaults to 256
-      # which Nix evaluation blows through instantly. 65536 matches
-      # typical Linux server defaults. Both soft + hard set so children
-      # (including sudo'd darwin-rebuild) inherit the new limit.
+      # Raise per-process file descriptor limit for the CURRENT boot.
+      # macOS defaults to 256, which Nix evaluation blows through the
+      # moment it has to fetch an input or rebuild the lazy-trees libgit2
+      # tarball-cache (both open many fds at once) → "Too many open files"
+      # → the eval thread pool tears down → "cannot enqueue a work item
+      # while the thread pool is shutting down". 65536 stays under the
+      # kern.maxfilesperproc ceiling (92160). This only bumps the live
+      # launchd default; the LaunchDaemon below makes it survive reboots.
       launchctl limit maxfiles 65536 65536 2>/dev/null || true
     '';
+
+    # `launchctl limit maxfiles` does NOT persist across reboots — every
+    # boot resets the systemwide default back to 256, so a rebuild that
+    # happens to refetch an input exhausts fds until the next activation
+    # (chicken-and-egg: the rebuild that raises the limit is the one that
+    # fails). This RunAtLoad daemon re-applies the limit at every boot so
+    # the terminal → shell → sudo → nix chain inherits 65536 from the
+    # start. Labelled limit.maxfiles per the well-known macOS convention.
+    launchd.daemons.limit-maxfiles = {
+      serviceConfig = {
+        Label = "limit.maxfiles";
+        ProgramArguments = [
+          "launchctl"
+          "limit"
+          "maxfiles"
+          "65536"
+          "65536"
+        ];
+        RunAtLoad = true;
+        ServiceIPC = false;
+      };
+    };
 
     system.defaults = {
       dock = {
