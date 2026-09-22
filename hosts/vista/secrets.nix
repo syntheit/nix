@@ -186,6 +186,7 @@
   # principal; the orchestrator already accepts MALLI_PRO_ADMIN_API_KEY under a
   # separate name, so one can be minted without resharing this key.
   sops.secrets.deus_malli_admin_token = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0400"; };
+  sops.secrets.deus_malli_admin_token_dev = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0400"; };
 
   # Read-only AWS credentials for deus-server, so the console can show the bots
   # that are STILL on Fargate alongside the ones already on Macs. Each bot has

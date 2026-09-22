@@ -229,6 +229,7 @@ in
       # a Mac. Best-effort like the rest: absent file => deus leaves the
       # placement routes disabled rather than failing activation.
       stage_optional /run/secrets/deus_malli_admin_token    /var/lib/deus-keys/malli-admin-token     0400
+      stage_optional /run/secrets/deus_malli_admin_token_dev /var/lib/deus-keys/malli-admin-token-dev 0400
       # Dark-host alerting sinks. NOT best-effort: these are staged only
       # when the encrypted file exists at eval time, in which case sops
       # has already rendered /run/secrets and the copy must succeed. The
@@ -566,6 +567,8 @@ in
         # the migration has not reached. The key is read-only on ECS in one
         # cluster and can do nothing else.
         malliAdminTokenFile = "/etc/deus-keys/malli-admin-token";
+        # Dev bots' customer identity from api.dev.themalli.ai (read-only display; deus refuses changes to dev bots).
+        malliAdmin.dev.tokenFile = "/etc/deus-keys/malli-admin-token-dev";
         awsCredentialsFile = "/etc/deus-keys/aws-credentials";
 
         # ── Dark-host watch: the fleet's only alert ──
