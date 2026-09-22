@@ -65,19 +65,71 @@ let
   entrypointOf = system: builtins.head
     system.config.virtualisation.oci-containers.containers.nanomdm.imageFile.buildArgs.config.Entrypoint;
   # The one nanomdm binary the entrypoint script execs, as a symlink; the
-  # reference keeps the binary in this closure.
+  # reference keeps the binary in this closure. Also $out/storage-flags: the
+  # -storage and -storage-options flags that exec passes, as "-flag value"
+  # pairs on one line, so the rehearsal can prove it runs each version with
+  # the storage flags vista's configuration gives it.
   nanomdmFromEntrypoint = name: entrypoint: pkgs.runCommand name { } ''
     bins=$(grep -o '/nix/store/[a-z0-9]\{32\}-nanomdm-[^/ ]*/bin/nanomdm' ${entrypoint} | sort -u)
     if [ "$(printf '%s\n' "$bins" | grep -c .)" != 1 ]; then
       echo "expected exactly one nanomdm binary in ${entrypoint}" >&2
       exit 1
     fi
+    # The exec of that binary, its continuation lines joined.
+    cmd=$(sed -e ':a' -e '/\\$/N' -e 's/\\\n/ /' -e 'ta' ${entrypoint} \
+      | awk -v b="$bins" '$1 == "exec" && $2 == b')
+    if [ "$(printf '%s\n' "$cmd" | grep -c .)" != 1 ]; then
+      echo "expected exactly one 'exec $bins' in ${entrypoint}" >&2
+      exit 1
+    fi
+    set -f
+    # Split the command into its words, unglobbed.
+    set -- $cmd
+    set +f
+    flags=""
+    while [ $# -gt 0 ]; do
+      f=$1
+      shift
+      case $f in --*) f=''${f#-} ;; esac
+      case $f in
+        -storage | -storage-options)
+          if [ $# = 0 ]; then echo "$f without a value in ${entrypoint}" >&2; exit 1; fi
+          flags="$flags $f $1"
+          shift ;;
+        -storage=* | -storage-options=*) flags="$flags ''${f%%=*} ''${f#*=}" ;;
+      esac
+    done
     mkdir -p $out/bin
     ln -s "$bins" $out/bin/nanomdm
     printf '%s\n' ${entrypoint} > $out/entrypoint
+    printf '%s\n' "''${flags# }" > $out/storage-flags
   '';
   nanomdmV06 = nanomdmFromEntrypoint "vista-nanomdm-live" (entrypointOf vista);
   nanomdmV09 = nanomdmFromEntrypoint "vista-nanomdm-step3" (entrypointOf vistaV09);
+
+  # The storage flags the rehearsal runs each version with. v0.9's file
+  # storage needs enable_deprecated=1, and v0.6 refuses any -storage-options,
+  # so a rollback must drop it. The build checks both lists against the
+  # entrypoints above, and inner.sh checks them again before it starts
+  # either server.
+  v09StorageFlags = [ "-storage" "file" "-storage-options" "enable_deprecated=1" ];
+  v06StorageFlags = [ "-storage" "file" ];
+  storageFlagsChecked =
+    assert lib.assertMsg (lib.elem "enable_deprecated=1" v09StorageFlags)
+      "v0.9's file storage needs -storage-options enable_deprecated=1";
+    assert lib.assertMsg (!(lib.elem "-storage-options" v06StorageFlags))
+      "v0.6 refuses any -storage-options";
+    pkgs.runCommand "nanomdm-storage-flags-checked" { } ''
+      check() { # label rehearsal-flags entrypoint-flags-file
+        if [ "$(cat "$3")" != "$2" ]; then
+          echo "$1: the rehearsal would run nanomdm with '$2', but vista's entrypoint passes '$(cat "$3")'" >&2
+          exit 1
+        fi
+      }
+      check "v0.9 (step 3)" ${lib.escapeShellArg (toString v09StorageFlags)} ${nanomdmV09}/storage-flags
+      check "v0.6 (today)" ${lib.escapeShellArg (toString v06StorageFlags)} ${nanomdmV06}/storage-flags
+      touch $out
+    '';
 
   # probe/main.go compiled inside each version's own module, beside its
   # cmd/nanomdm, so it links that version's storage/file. It imports only
@@ -167,10 +219,16 @@ let
   # time and fails deus.rollback.
   distinctDeus = newDeusRev != oldDeusRev && deusNew.version != deusOld.version;
 
-  prelude = { v09 ? nanomdmV09, deusNewBin ? "${deusNewServer}/bin/deus-server"
+  prelude = { v09 ? nanomdmV09, v09Entrypoint ? nanomdmV09
+            , deusNewBin ? "${deusNewServer}/bin/deus-server"
             , rollbackDeus ? deusOld, rollbackDeusRev ? oldDeusRev }: ''
     readonly NANOMDM_V09=${v09}/bin/nanomdm
     readonly NANOMDM_V06=${nanomdmV06}/bin/nanomdm
+    readonly -a V09_STORAGE=(${lib.escapeShellArgs v09StorageFlags})
+    readonly -a V06_STORAGE=(${lib.escapeShellArgs v06StorageFlags})
+    readonly V09_ENTRYPOINT_FLAGS=${v09Entrypoint}/storage-flags
+    readonly V06_ENTRYPOINT_FLAGS=${nanomdmV06}/storage-flags
+    # Built only after ${storageFlagsChecked} checked both lists against vista's entrypoints.
     readonly PROBE_V09=${probeV09}/bin/rehearsal-probe
     readonly PROBE_V06=${probeV06}/bin/rehearsal-probe
     readonly DEUS_NEW=${deusNewBin}
@@ -191,7 +249,8 @@ let
       "              tree ${pin.hash}"
     ])}
     # Each script uses a subset of these.
-    : "$NANOMDM_V09" "$NANOMDM_V06" "$PROBE_V09" "$PROBE_V06" "$DEUS_NEW" "$DEUS_OLD" \
+    : "$NANOMDM_V09" "$NANOMDM_V06" "''${V09_STORAGE[@]}" "''${V06_STORAGE[@]}" "$V09_ENTRYPOINT_FLAGS" \
+      "$V06_ENTRYPOINT_FLAGS" "$PROBE_V09" "$PROBE_V06" "$DEUS_NEW" "$DEUS_OLD" \
       "$DEUS_OLD_TABLES" "$DEUS_NEW_REV" "$DEUS_OLD_REV" "$DEUS_NEW_VERSION" "$DEUS_OLD_VERSION" \
       "$V09_EXPECTED_PREFIX" "$V06_EXPECTED" "$SANDBOX_PATH" "$BUILD_INFO"
   '';
@@ -250,6 +309,18 @@ let
   # it once the live flake.lock points at the new Deus. It bypasses the
   # build's check, so inner.sh's own check must fail deus.rollback.
   harnessOldIsNew = mkHarness { rollbackDeus = deusNew; rollbackDeusRev = newDeusRev; };
+  # Step 3's entrypoint as if its configuration had dropped
+  # -storage-options enable_deprecated=1, while the rehearsal still runs v0.9
+  # with it: the rehearsal would prove a configuration step 3 does not run.
+  # It bypasses the build's check (which reads the real entrypoint), so
+  # inner.sh's own check must fail v09.start.
+  driftedV09Entrypoint = pkgs.runCommand "nanomdm-entrypoint-drifted" { } ''
+    sed 's/ -storage-options enable_deprecated=1//' ${entrypointOf vistaV09} > $out
+    if cmp -s $out ${entrypointOf vistaV09}; then echo "the drift did not apply" >&2; exit 1; fi
+  '';
+  harnessDriftedV09 = mkHarness {
+    v09Entrypoint = nanomdmFromEntrypoint "vista-nanomdm-step3-drifted" driftedV09Entrypoint;
+  };
 
   fixture = pkgs.writeShellApplication {
     name = "malli-rehearsal-fixture";
@@ -266,6 +337,7 @@ let
       readonly HARNESS_FAULTY_V09=${harnessFaultyV09}/bin/malli-rehearse
       readonly HARNESS_NO_MIGRATE_ONLY=${harnessNoMigrateOnly}/bin/malli-rehearse
       readonly HARNESS_OLD_IS_NEW=${harnessOldIsNew}/bin/malli-rehearse
+      readonly HARNESS_DRIFTED_V09=${harnessDriftedV09}/bin/malli-rehearse
       readonly FIXTURE=${fixture}/bin/malli-rehearsal-fixture
     '' + builtins.readFile ./selftest/run.sh;
   };
