@@ -318,7 +318,18 @@ in
         # No start limit: 0 turns rate limiting off, so no number of
         # restarts ends in start-limit-hit.
         startLimitIntervalSec = 0;
-      };    };
+      };
+      # deus-fleet-recover runs as deus every 5 min and writes under the
+      # state dir (known_hosts, its own log) while reading the 0600 fleet
+      # deploy credential there. Without the same guard it keeps running —
+      # and keeps creating state-dir entries owned by whichever UID the
+      # container's passwd currently says — right through a migration that
+      # has already stopped deus-server. It is a oneshot behind a timer, so
+      # a refusal is a failed unit every 5 min: visible, and exactly the
+      # signal wanted here.
+      systemd.services.deus-fleet-recover.serviceConfig.ExecStartPre =
+        lib.mkBefore [ "${deusGuard}" ];
+    };
 
     # Fail before a SWITCH can silently re-own the state-dir parent or the
     # other deus tmpfiles paths. (An nspawn boot is allowed to: see the
