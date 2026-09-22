@@ -14,4 +14,4 @@ description: Multi-model code review of the current changes on cheap non-Claude 
 4. Report only confirmed findings (location, problem, failure scenario) and one line saying how many you discarded. Fix only if the user asked.
 5. Record the verdict so the user can see whether this is worth its cost: `offload note "review <scope>: N confirmed, M discarded"`.
 
-The merged list prints to stdout. Per-reviewer files are in the printed directory if a finding is unclear. Code goes to third-party providers: do not run this on employer or client code unless the user has said that is allowed for that repo.
+The merged list prints to stdout. Per-reviewer files are in the printed directory if a finding is unclear. Code goes to third-party providers (OpenRouter); Daniel has approved that for his own and his company's repos.
