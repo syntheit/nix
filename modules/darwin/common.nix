@@ -126,6 +126,36 @@ in
     # fails). This RunAtLoad daemon re-applies the limit at every boot so
     # the terminal → shell → sudo → nix chain inherits 65536 from the
     # start. Labelled limit.maxfiles per the well-known macOS convention.
+    # Keep the machine reachable for as long as someone is ssh'd in, on battery
+    # too. `pmset ttyskeepawake` is not enough: it only counts sessions that own
+    # a tty (so `ssh host <cmd>`, which shows up as "sshd-session: user@notty",
+    # never counts), and a tty stops counting once it has been idle longer than
+    # the sleep timer — which is 1 minute on swift's battery. So watch for ssh
+    # connections directly and hold an idle-sleep assertion while any exists.
+    # `caffeinate -i` blocks system sleep only: the display still sleeps and
+    # locks on schedule, and closing the lid still sleeps the machine.
+    launchd.daemons.ssh-keepawake = {
+      serviceConfig = {
+        Label = "ssh.keepawake";
+        ProgramArguments = [
+          "/bin/sh"
+          "-c"
+          ''
+            while :; do
+              if /usr/bin/pgrep -f 'sshd(-session)?: .*@' >/dev/null 2>&1; then
+                # Holds the assertion for 60s, then re-checks.
+                /usr/bin/caffeinate -i -t 60
+              else
+                sleep 20
+              fi
+            done
+          ''
+        ];
+        RunAtLoad = true;
+        KeepAlive = true;
+      };
+    };
+
     launchd.daemons.limit-maxfiles = {
       serviceConfig = {
         Label = "limit.maxfiles";
