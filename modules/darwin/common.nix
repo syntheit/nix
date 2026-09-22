@@ -160,13 +160,26 @@ in
           "/bin/sh"
           "-c"
           ''
+            # One long-lived caffeinate, started when a session appears and
+            # killed when the last one goes. Re-running `caffeinate -t 60` in a
+            # loop instead leaves a sub-second gap between assertions every
+            # minute, and powerd sleeps an already-idle machine the moment the
+            # assertion drops — swift slept at 19:33 on 2026-09-22 with a live
+            # mosh session for exactly that reason.
+            pid=""
+            cleanup() { [ -n "$pid" ] && kill "$pid" 2>/dev/null; exit 0; }
+            trap cleanup TERM INT EXIT
             while :; do
               if /usr/bin/pgrep -f 'sshd(-session)?: .*@|mosh-server' >/dev/null 2>&1; then
-                # Holds the assertion for 60s, then re-checks.
-                /usr/bin/caffeinate -i -t 60
-              else
-                sleep 20
+                if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+                  /usr/bin/caffeinate -i &
+                  pid=$!
+                fi
+              elif [ -n "$pid" ]; then
+                kill "$pid" 2>/dev/null
+                pid=""
               fi
+              sleep 20
             done
           ''
         ];
