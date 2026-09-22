@@ -1,4 +1,5 @@
 # malli-rehearsal-fixture DIR [--count N] [--broken-deus] [--dangling-fk]
+#                             [--empty-deus] [--no-heartbeats]
 #
 # Writes a SYNTHETIC stand-in for the pre-upgrade backup into DIR. Nothing
 # in it comes from production: a NanoMDM file store of N made-up
@@ -21,19 +22,28 @@
 # --dangling-fk plants a rack_slots row whose rack_units parent does not
 # exist. The new Deus's migration succeeds, but its foreign_key_check finds
 # the row, so deus-server -migrate-only reports unhealthy and exits 2.
+#
+# --empty-deus replaces deus.db with what a mistyped source in step 0's
+# `sqlite3 <source> ".backup deus.db"` makes: a valid database with no table.
+#
+# --no-heartbeats leaves the heartbeats table empty; every other row goes in.
 umask 077
 export LC_ALL=C
 
-dir=${1:?usage: malli-rehearsal-fixture DIR [--count N] [--broken-deus] [--dangling-fk]}
+dir=${1:?usage: malli-rehearsal-fixture DIR [--count N] [--broken-deus] [--dangling-fk] [--empty-deus] [--no-heartbeats]}
 shift
 count=12
 broken_deus=0
 dangling_fk=0
+empty_deus=0
+no_heartbeats=0
 while [ $# -gt 0 ]; do
   case $1 in
     --count) count=$2; shift 2 ;;
     --broken-deus) broken_deus=1; shift ;;
     --dangling-fk) dangling_fk=1; shift ;;
+    --empty-deus) empty_deus=1; shift ;;
+    --no-heartbeats) no_heartbeats=1; shift ;;
     *) echo "unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -109,7 +119,7 @@ now=$(date +%s)
   if [ "$dangling_fk" = 1 ]; then echo "PRAGMA foreign_keys = OFF;"; fi
   echo "BEGIN;"
   for i in $(seq 1 "$count"); do
-    printf "INSERT INTO heartbeats (host_name, rev, uptime_s, disk_free_gb, mem_free_gb, containers, tailscale, updated_at) VALUES ('%s-%d', 'rev', 100, 10.5, 2.5, '{}', '{}', %d);\n" "$marker_host" "$i" "$now"
+    [ "$no_heartbeats" = 1 ] || printf "INSERT INTO heartbeats (host_name, rev, uptime_s, disk_free_gb, mem_free_gb, containers, tailscale, updated_at) VALUES ('%s-%d', 'rev', 100, 10.5, 2.5, '{}', '{}', %d);\n" "$marker_host" "$i" "$now"
     printf "INSERT INTO ade_devices (enrollment_id, udid, serial_number, state, admin_username, admin_password, created_at, updated_at) VALUES ('%s', '%s', 'SYNTH%07d', 'done', 'admin', '%s-%d', %d, %d);\n" \
       "${ids[$((i - 1))]}" "${ids[$((i - 1))]}" "$i" "$marker_pw" "$i" "$now" "$now"
   done
@@ -124,6 +134,11 @@ now=$(date +%s)
 } | sqlite3 -batch -bail "$db"
 sqlite3 "$db" 'PRAGMA wal_checkpoint(TRUNCATE);' > /dev/null
 rm -f "$db-wal" "$db-shm"
+if [ "$empty_deus" = 1 ]; then
+  rm -f "$db"
+  sqlite3 "$src/deus.db.typo" ".backup $db"
+  rm -f "$src/deus.db.typo"
+fi
 
 # The identity is throwaway and guards synthetic data only.
 rm -f "$dir/identity"
@@ -140,4 +155,4 @@ grep -h AGE-SECRET-KEY "$dir/identity" >> "$dir/markers"
 rm -rf "$src" "$dir/xlsx" "$dir/empty.xlsx"
 printf 'fixture: %s enrollments, %s bytes encrypted, recipient %s%s\n' \
   "$count" "$(stat -c %s "$dir/backup.tar.zst.age")" "$recipient" \
-  "$([ "$broken_deus" = 1 ] && echo ', deus.db with a table the new schema cannot build on')$([ "$dangling_fk" = 1 ] && echo ', deus.db with a dangling rack_slots foreign key')"
+  "$([ "$broken_deus" = 1 ] && echo ', deus.db with a table the new schema cannot build on')$([ "$dangling_fk" = 1 ] && echo ', deus.db with a dangling rack_slots foreign key')$([ "$empty_deus" = 1 ] && echo ', an empty deus.db')$([ "$no_heartbeats" = 1 ] && echo ', deus.db without heartbeats rows')"

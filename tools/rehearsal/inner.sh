@@ -438,7 +438,21 @@ pre_tables=$(tables "$DEUS_NEW_DB")
 integrity "$DEUS_NEW_DB"
 pre_integrity=$INTEGRITY
 pre_fk=$FK_ROWS
-say "before: $pre_tables tables; integrity_check $pre_integrity; foreign_key_check $pre_fk rows"
+# A deus.db from vista has every table the old Deus's store.Open creates
+# (the build lists them), and rows in heartbeats: Deus keeps one per host
+# that ever reported and never deletes it. An empty but valid database, such
+# as a mistyped source in step 0's `sqlite3 <source> ".backup ..."` makes,
+# has neither, yet the new Deus would migrate it and the old one open it.
+# Table names and one count(*) only: no row is read.
+old_n=$(grep -c . "$DEUS_OLD_TABLES" || true)
+old_have=$({ sql "$DEUS_NEW_DB" "SELECT name FROM sqlite_master WHERE type = 'table';" 2>/dev/null || true; } \
+  | sort | comm -12 - <(sort "$DEUS_OLD_TABLES") | grep -c . || true)
+hb_rows=$(sql "$DEUS_NEW_DB" 'SELECT count(*) FROM heartbeats;' 2>/dev/null || echo unreadable)
+say "before: $pre_tables tables, $old_have of the old Deus's $old_n; heartbeats rows: $hb_rows; integrity_check $pre_integrity; foreign_key_check $pre_fk rows"
+real_db=no
+if [ "$old_n" -gt 0 ] && [ "$old_have" = "$old_n" ] && [[ $hb_rows =~ ^[0-9]+$ ]] && [ "$hb_rows" -gt 0 ]; then
+  real_db=yes
+fi
 hrc=0
 "$DEUS_NEW" -help >"$LOG/deus-new-help.out" 2>&1 || hrc=$?
 if [ "$hrc" = 0 ] && grep -Eq '^ +-migrate-only( |$)' "$LOG/deus-new-help.out"; then
@@ -449,7 +463,9 @@ fi
 say "new deus $DEUS_NEW_VERSION: $DEUS_NEW (-help exit $hrc; -migrate-only flag: $has_flag)"
 mrc=""
 migrated=no
-if [ "$has_flag" = no ]; then
+if [ "$real_db" = no ]; then
+  record deus.migrate FAIL "the copy of deus.db is not one vista's Deus wrote: it has $old_have of the old Deus $DEUS_OLD_VERSION's $old_n tables, and heartbeats rows: $hb_rows (an empty database, or the wrong file?). Nothing ran on it"
+elif [ "$has_flag" = no ]; then
   show_log "$LOG/deus-new-help.out"
   record deus.migrate FAIL "new Deus $DEUS_NEW_VERSION: deus-server is missing or has no -migrate-only flag (-help exit $hrc); it needs Deus c26640d or later. Nothing ran on the copy"
 else
