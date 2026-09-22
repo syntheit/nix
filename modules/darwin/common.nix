@@ -47,6 +47,16 @@ in
 
     system.primaryUser = vars.user.name;
 
+    # Shared user secrets, same mechanism as the NixOS hosts: sops-nix's darwin
+    # module installs them to /run/secrets (a symlink to private/var/run) from
+    # a launchd daemon, decrypting with the host's ssh key — both Macs' age keys
+    # are already on secrets/shared.yaml in .sops.yaml. Without this, opencode
+    # falls back to `opencode auth login` and an auth.json outside Nix.
+    sops = {
+      defaultSopsFile = ../../secrets/shared.yaml;
+      secrets.openrouter_key.owner = vars.user.name;
+    };
+
     # Nix daemon managed by Determinate Systems installer
     nix.enable = false;
 
@@ -396,6 +406,19 @@ in
       pmset -a sms 0
       pmset -a lessbright 0
       rm -f /var/vm/sleepimage 2>/dev/null || true
+
+      # An active tty — which an ssh login is — blocks idle sleep. This is the
+      # macOS default; set it explicitly so a machine that once had it turned
+      # off doesn't silently drop ssh sessions. On the MacBook it only covers
+      # idle sleep: closing the lid still sleeps.
+      pmset -a ttyskeepawake 1 || true
+${lib.optionalString (hostName == "mini") ''
+      # The mini is always-on infrastructure (aarch64 builder, ssh target), so
+      # it never system-sleeps. Display sleep and screen lock are untouched.
+      pmset -a sleep 0 || true
+      pmset -a disksleep 0 || true
+      pmset -a womp 1 || true
+''}
 
       # ================================================================
       # TCC permissions (requires SIP disabled)

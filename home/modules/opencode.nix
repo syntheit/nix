@@ -17,8 +17,16 @@
 #   deep/trust-critical (`@research`)     → Kimi K3    ($3/$15), cites sources
 #
 # Web search: Exa via OPENCODE_ENABLE_EXA (free, no key), wrapped onto the binary.
-{ pkgs, lib, ... }:
+{
+  pkgs,
+  lib,
+  osConfig ? null,
+  ...
+}:
 let
+  # sops-provided key: only some hosts declare it (see provider options below).
+  hasSopsKey = osConfig != null && ((osConfig.sops.secrets or { }) ? openrouter_key);
+
   commander = "openrouter/z-ai/glm-5.2";
   reader = "openrouter/z-ai/glm-4.7-flash";
   coder = "openrouter/qwen/qwen3-coder-next";
@@ -81,11 +89,12 @@ in
       model = commander;
       small_model = reader;
 
-      # Linux hosts read the key from the sops-decrypted file. On darwin the
-      # sops secrets path isn't wired yet, so omit apiKey there and let opencode
-      # use `opencode auth login` (auth.json) until the darwin path is verified.
-      provider.openrouter.options = lib.optionalAttrs pkgs.stdenv.isLinux {
-        apiKey = "{file:/run/secrets/openrouter_key}";
+      # Read the key from the sops-decrypted file, taking the path from the
+      # host's own secret definition, and only on hosts that declare it —
+      # pointing at a missing file would break opencode's startup. Hosts without
+      # sops (e.g. ledger) authenticate once with `opencode auth login`.
+      provider.openrouter.options = lib.optionalAttrs hasSopsKey {
+        apiKey = "{file:${osConfig.sops.secrets.openrouter_key.path}}";
       };
 
       # OpenRouter routes price-first, which lands on re-quantized fp4 hosts

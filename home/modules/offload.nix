@@ -13,6 +13,7 @@
   home.file = {
     ".claude/skills/offload/SKILL.md".source = ./claude/skills/offload/SKILL.md;
     ".claude/skills/cheap-review/SKILL.md".source = ./claude/skills/cheap-review/SKILL.md;
+    ".claude/skills/offload-status/SKILL.md".source = ./claude/skills/offload-status/SKILL.md;
     ".claude/CLAUDE.md".source = ./claude/CLAUDE.md;
   };
 }
