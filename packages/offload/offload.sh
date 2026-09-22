@@ -9,8 +9,10 @@ export LC_NUMERIC=C
 usage() {
   cat <<'EOF'
 usage:
-  offload ask [-m MODEL] [-e] [-i] [-f FILE]... PROMPT
-      One headless task. Read-only unless -e (edits + shell allowed).
+  offload ask [-m MODEL] [-w | -e] [-i] [-f FILE]... PROMPT
+      One headless task. Default: reads the repo in the current directory, no
+      shell, no web. -w: web research instead, with no repo access. -e: edits +
+      shell allowed (git repo required).
       -i attaches stdin:  nix build 2>&1 | offload ask -i "why did this fail?"
   offload review [-n 1-5] [-b BASE] [-p PATH]... [FOCUS]
       Parallel review of a diff by N different models, each with its own lens,
@@ -20,7 +22,7 @@ usage:
   offload models
       List model aliases.
 
-env: OFFLOAD_TIMEOUT (seconds per run, default 900)
+env: OFFLOAD_TIMEOUT (seconds per run, default 600)
 EOF
 }
 
@@ -63,20 +65,24 @@ run_one() {
   local files=()
   local f
   for f in "$@"; do files+=(-f "$f"); done
+  # Snapshots (opencode's undo) only matter when the run can edit.
+  local cfg='{"snapshot":false}'
+  if [[ $agent == build ]]; then cfg='{}'; fi
   local t0=$SECONDS
   # Skills off: opencode would otherwise load ~/.claude/skills — including the
-  # offload skill itself. Snapshots off: pointless for one-shot runs.
+  # offload skill itself.
   OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1 \
     OPENCODE_DISABLE_EXTERNAL_SKILLS=1 \
-    OPENCODE_CONFIG_CONTENT='{"snapshot":false}' \
-    timeout "${OFFLOAD_TIMEOUT:-900}" \
+    OPENCODE_CONFIG_CONTENT=$cfg \
+    timeout "${OFFLOAD_TIMEOUT:-600}" \
     opencode run --format json --agent "$agent" -m "openrouter/$model" "$prompt" "${files[@]}" \
     >"$out" 2>"${out%.jsonl}.err" || true
   echo $((SECONDS - t0)) >"${out%.jsonl}.secs"
 }
 
-# JSON event lines only (opencode also prints warnings); empty output is fine.
-events() { grep '^{' "$1" || true; }
+# JSON event lines only: opencode also prints warnings, and a run killed by the
+# timeout can leave a truncated last line. Empty output is fine.
+events() { grep '^{' "$1" | jq -c -R 'fromjson? // empty' || true; }
 
 # Final text of a run that finished. A run killed by the timeout also has text
 # parts, but its last one is mid-task narration, not an answer.
@@ -107,9 +113,10 @@ fail_hint() {
 cmd_ask() {
   local model=glm agent=inspect stdin=0 files=() opt
   OPTIND=1
-  while getopts "m:eif:h" opt; do
+  while getopts "m:weif:h" opt; do
     case $opt in
       m) model=$OPTARG ;;
+      w) agent=browse ;;
       e) agent=build ;;
       i) stdin=1 ;;
       f) files+=("$(realpath "$OPTARG")") ;;
@@ -120,8 +127,23 @@ cmd_ask() {
   if [[ $# -eq 0 ]]; then usage; exit 2; fi
   model=$(resolve_model "$model")
 
+  if [[ $agent == build ]]; then
+    if ! git rev-parse --git-dir >/dev/null 2>&1; then
+      echo "offload: -e needs a git repo, so its changes show up in git diff" >&2
+      exit 2
+    fi
+    if ! git diff --quiet HEAD || [[ -n $(git ls-files --others --exclude-standard) ]]; then
+      echo "offload: warning: tree is dirty; git diff will mix its edits with yours" >&2
+    fi
+  fi
+
   local dir out
   dir=$(new_run_dir)
+  if [[ $agent == browse ]]; then
+    # An empty working dir: web pages can't steer it into the repo.
+    mkdir "$dir/cwd"
+    cd "$dir/cwd"
+  fi
   if ((stdin)); then
     cat >"$dir/stdin.txt"
     files+=("$dir/stdin.txt")
@@ -135,14 +157,17 @@ cmd_ask() {
   stats_line "$model" "$out"
 }
 
-# Panel order = priority; -n N takes the first N.
-LENSES=(correctness integration edge-cases security simplify)
+# Panel order = priority; -n N takes the first N. Measured 2026-09-22 on a
+# ~300-line diff: GLM-5.2 5 min, Qwen3.8-max 7 min (found the real security
+# holes), MiniMax M3 2 min. Kimi K3, DeepSeek V4.1-flash and MiMo v2.6 Pro hit
+# the timeout, so they stay off the panel.
+LENSES=(correctness security integration edge-cases simplify)
 declare -A LENS_MODEL=(
   [correctness]=glm
-  [integration]=mimo
-  [edge-cases]=deepseek
   [security]=qwen
-  [simplify]=minimax
+  [integration]=minimax
+  [edge-cases]=glm53
+  [simplify]=coder
 )
 declare -A LENS_TEXT=(
   [correctness]="Correctness: logic errors, wrong conditions, off-by-one, broken control flow, wrong API/option usage or types — anything that makes the change not do what it intends."

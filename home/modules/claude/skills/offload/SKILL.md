@@ -12,7 +12,7 @@ Claude usage is the scarce resource; OpenRouter tokens cost cents. Every file, p
 | Work | Command | Then you |
 |---|---|---|
 | Recon: where is X handled, what calls Y | `offload ask "List file:line locations where ... One line each with a short reason."` | Read only the cited lines |
-| Docs, changelogs, web research | `offload ask "... Cite a URL for every claim."` | Spot-check a source before relying on it |
+| Docs, changelogs, web research | `offload ask -w "... Cite a URL for every claim."` | Spot-check a source before relying on it |
 | Build/test log triage | `cmd 2>&1 \| offload ask -i "Quote the first real error and its likely cause."` | Confirm against the quoted lines |
 | Second opinion on a plan | `offload ask -m kimi -f plan.md "Find flaws in this plan ..."` | Weigh it; you decide |
 | Mechanical edit with a precise spec | `offload ask -e "..."`, then `git diff` | Review the diff, run tests |
@@ -27,7 +27,7 @@ Design decisions, tricky debugging, security-sensitive changes, anything where c
 - Prompts must be self-contained: the model sees only the prompt, files attached with `-f`, and the repo in the current directory. Name files, symbols, and the exact output format. Ask for short output.
 - Treat answers like a junior's report: verify what you act on, never relay them to the user as fact.
 - Models (`offload models`): `glm` default, strongest open coder; `deepseek`, `mimo`, `minimax` cheap; `qwen` multilingual; `coder` cheap recon; `kimi` deep research only (slow, $0.20-0.50 per agentic run).
-- Read-only unless `-e`. Use `-e` only for bounded tasks in a clean git tree, so `git diff` shows exactly what it did.
+- Modes: default reads the repo in the current directory (no shell, no web); `-w` does web research with no repo access; `-e` can edit and run commands. Use `-e` only for bounded tasks in a clean git tree, so `git diff` shows exactly what it did.
 - Cost and time print to stderr: a typical ask is $0.001-0.05 and 10-120 s. Run independent asks in parallel (background Bash) when useful.
 - Code is sent to third-party model providers. Do not offload employer or client code unless the user has said that is allowed for that repo.
 - If a run fails or answers nonsense, retry at most once, then do the task yourself.

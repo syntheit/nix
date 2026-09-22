@@ -5,6 +5,7 @@
   writeShellApplication,
   coreutils,
   git,
+  gnugrep,
   jq,
 }:
 
@@ -13,6 +14,7 @@ writeShellApplication {
   runtimeInputs = [
     coreutils
     git
+    gnugrep
     jq
   ];
   text = builtins.readFile ./offload.sh;

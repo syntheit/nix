@@ -8,6 +8,7 @@
 }:
 {
   imports = [
+    ../../modules/numtide-cache.nix
     inputs.nixos-avf.nixosModules.avf
     ../../modules/server-safety.nix
     ../../modules/foyer.nix

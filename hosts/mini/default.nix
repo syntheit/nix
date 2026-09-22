@@ -10,6 +10,7 @@ let
 in
 {
   imports = [
+    ../../modules/numtide-cache.nix
     ../../modules/darwin/common.nix
     ./homebrew.nix
     # Native aarch64-linux builder VM (Mimick's image codecs, gtk4-rs apps,
