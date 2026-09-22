@@ -11,7 +11,7 @@
 #                   subagents (in parallel), keeping its own context lean.
 #
 # Model tiers:
-#   commander / plan / implement / review → GLM-5.2   ($0.93/$3)
+#   commander / plan / implement / review → GLM-5.2   (~$0.65/$2, fp8+ hosts only)
 #   broad research fan-out (`general`)    → GLM-4.7-Flash ($0.06/$0.40)
 #   code recon (`explore`/`scout`)        → Qwen3-Coder-Next ($0.11/$0.80)
 #   deep/trust-critical (`@research`)     → Kimi K3    ($3/$15), cites sources
@@ -51,7 +51,7 @@ in
     # Always launch with Exa websearch enabled (free, no API key).
     package = pkgs.symlinkJoin {
       name = "opencode-websearch";
-      paths = [ pkgs.opencode ];
+      paths = [ pkgs.opencode-bin ];
       nativeBuildInputs = [ pkgs.makeWrapper ];
       postBuild = ''
         wrapProgram $out/bin/opencode --set-default OPENCODE_ENABLE_EXA 1
@@ -86,6 +86,19 @@ in
       # use `opencode auth login` (auth.json) until the darwin path is verified.
       provider.openrouter.options = lib.optionalAttrs pkgs.stdenv.isLinux {
         apiKey = "{file:/run/secrets/openrouter_key}";
+      };
+
+      # OpenRouter routes price-first, which lands on re-quantized fp4 hosts
+      # (e.g. deepinfra/fp4 for GLM). Keep the commander on fp8+ — Z.AI's own
+      # endpoint is fp8 too, at ~2x the price. Kimi K3 goes to Moonshot, whose
+      # native build is mxfp4 anyway (other hosts are still the fallback).
+      provider.openrouter.models = {
+        ${lib.removePrefix "openrouter/" commander}.options.provider.quantizations = [
+          "fp8"
+          "bf16"
+          "fp16"
+        ];
+        ${lib.removePrefix "openrouter/" researcher}.options.provider.order = [ "moonshotai" ];
       };
 
       agent = {
