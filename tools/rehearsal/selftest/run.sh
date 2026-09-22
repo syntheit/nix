@@ -6,8 +6,12 @@
 # with the expected checks, an intact wipe, and none of the planted secret
 # markers in the output.
 #
-#   good            every check PASS (identity on stdin)
-#   tty             every check PASS, identity typed at the hidden prompt
+#   good            every check PASS (the whole age key file on stdin,
+#                   comment lines first)
+#   tty             every check PASS, the whole key file pasted at the
+#                   hidden prompt
+#   bad-key         a line that is neither blank, a comment nor the key
+#                   comes first: exit 2 before anything is decrypted
 #   wrong-count     --expected-count one too high: the two count checks FAIL
 #   corrupt         one byte of the encrypted archive flipped: decrypt FAIL
 #   v06-unreadable  a v0.9 that leaves the store in a form v0.6 cannot
@@ -88,11 +92,13 @@ printf '\x5a' | dd of="$scratch/corrupt.age" bs=1 seek=$((size / 2)) conv=notrun
 failures=0
 results=()
 
-# harness fixture-dir output-file extra-args... -> exit code of the harness
+# harness fixture-dir output-file extra-args... -> exit code of the harness.
+# Its stdin is the whole age key file (# created:, # public key:, the key),
+# as an owner would paste it, or $key_input when that is set.
 rehearse() {
   local harness=$1 fx=$2 log=$3 rc=0
   shift 3
-  grep AGE-SECRET-KEY "$fx/identity" \
+  cat "${key_input:-$fx/identity}" \
     | env --default-signal=INT "$harness" \
         --work-parent "$run" --tmpfs-size 1g --backup "$fx/backup.tar.zst.age" \
         --baseline "$fx/baseline.tsv" "$@" \
@@ -139,6 +145,18 @@ all_pass="isolation=PASS decrypt=PASS layout=PASS enrollments=PASS bootstraptoke
 rc=0; rehearse "$HARNESS" "$scratch/good" "$out/good.log" || rc=$?
 judge good "$out/good.log" 0 "$rc" "$scratch/good" "$all_pass" \
   '^ +deus-server -migrate-only: exit 0 in '
+
+# A line that is neither blank, a comment nor the key comes first: refused
+# before anything is decrypted, and the key after it is never printed.
+{ printf '# created: 2026-09-22T00:00:00Z\n\nnot-an-age-identity\n'; grep AGE-SECRET-KEY "$scratch/good/identity"; } > "$scratch/bad-key-input"
+rc=0; key_input=$scratch/bad-key-input rehearse "$HARNESS" "$scratch/good" "$out/bad-key.log" || rc=$?
+judge bad-key "$out/bad-key.log" 2 "$rc" "$scratch/good" "" \
+  '^malli-rehearse: no age X25519 identity \(AGE-SECRET-KEY-1 and 58 more characters\) in the first 8 lines'
+if grep -q '^== isolation' "$out/bad-key.log"; then
+  if [[ ${results[-1]} == PASS* ]]; then failures=$((failures + 1)); fi
+  results[-1]="FAIL  bad-key: the sandbox started (${results[-1]})"
+fi
+rm -f "$scratch/bad-key-input"
 
 rc=0; rehearse "$HARNESS" "$scratch/good" "$out/wrong-count.log" --expected-count 13 || rc=$?
 judge wrong-count "$out/wrong-count.log" 1 "$rc" "$scratch/good" \
@@ -265,7 +283,8 @@ for _ in $(seq 1 200); do
   sleep 0.05
 done
 sleep 0.3
-grep AGE-SECRET-KEY "$scratch/good/identity" >&7
+# The whole key file, comments first, as a person would paste it.
+cat "$scratch/good/identity" >&7
 rc=0; wait "$pid" || rc=$?
 exec 7>&-
 rm -f "$scratch/tty-in"
