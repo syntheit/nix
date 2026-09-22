@@ -12,14 +12,16 @@ let
   bridgeTag = "1.0.0-${builtins.substring 0 12 (builtins.hashString "sha256" bridgeText)}";
   nanomdmVersion = import ../../packages/nanomdm-patched/version.nix;
   reviewedCoordinates = pin: { inherit (pin) deusRev nanomdmCommit hash; };
-  bridgeSource = pkgs.writeText "nanomdm-ddm-bridge.py"
-    bridgeText;
+  # A directory, not a bare file: dockerTools rsyncs every copyToRoot entry as
+  # "<entry>/" into the image root, and a single writeText file fails that
+  # with "Not a directory".
+  bridgeSource = pkgs.writeTextDir "nanomdm-ddm-bridge.py" bridgeText;
   bridgeImage = pkgs.dockerTools.buildImage {
     name = "malli-deus-ddm-bridge";
     tag = bridgeTag;
     copyToRoot = [ pkgs.python3 bridgeSource ];
     config = {
-      Entrypoint = [ "${pkgs.python3}/bin/python3" "${bridgeSource}" ];
+      Entrypoint = [ "${pkgs.python3}/bin/python3" "${bridgeSource}/nanomdm-ddm-bridge.py" ];
       Env = [ "PYTHONDONTWRITEBYTECODE=1" ];
       User = "${bridgeID}:${bridgeID}";
     };
