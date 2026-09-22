@@ -29,4 +29,5 @@
   gnome-mobile-torch = pkgs.callPackage ./gnome-mobile-torch { }; # flashlight QS toggle
   budslink = pkgs.callPackage ./budslink { };
   opencode-bin = pkgs.callPackage ./opencode-bin { }; # upstream binary; nixpkgs 1.18.30 build crashes
+  offload = pkgs.callPackage ./offload { }; # Claude Code -> cheap OpenRouter models
 }

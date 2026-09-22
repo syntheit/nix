@@ -43,6 +43,21 @@ let
     "shutdown*" = "ask";
     "reboot*" = "ask";
   };
+
+  # Read-only shell for headless `inspect` runs: nothing can prompt, so deny
+  # everything except inspection commands. Last matching pattern wins.
+  readonlyBash = {
+    "*" = "deny";
+    "git diff*" = "allow";
+    "git log*" = "allow";
+    "git show*" = "allow";
+    "git blame*" = "allow";
+    "git grep*" = "allow";
+    "git status*" = "allow";
+    "rg *" = "allow";
+    "ls*" = "allow";
+    "wc *" = "allow";
+  };
 in
 {
   programs.opencode = {
@@ -151,6 +166,22 @@ in
             subagents' own context windows are for. Integrate their results and report
             back concisely, flagging anything the reviewer failed.
           '';
+        };
+
+        # Headless read-only worker for the `offload` script (Claude Code hands
+        # it reviews, recon, research, log triage). Primary because
+        # `opencode run --agent` refuses subagents.
+        inspect = {
+          mode = "primary";
+          model = commander;
+          description = "Read-only worker for headless runs: reads code, searches the web, answers. Cannot edit.";
+          # Forces a text answer after 15 tool rounds; uncapped reviewers wander
+          # (GLM took 22 rounds / 36 tool calls on a ~300-line diff).
+          steps = 15;
+          permission = {
+            edit = "deny";
+            bash = readonlyBash;
+          };
         };
 
         # ── Role subagents (used by the orchestrator) ──
