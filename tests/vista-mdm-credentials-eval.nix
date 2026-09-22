@@ -324,10 +324,17 @@ assert removedCredentials == stagedCredentials;
 assert removalPrecedesEveryCopy;
 # ── The -dm endpoint and the bridge listener are one address ─────────────
 assert endpointListensOnBridge;
-# ── The reload must not outrun the staging it copies from ────────────────
+# ── The reload must not outrun the gates it reads ────────────────────────
+# Credential staging writes what the reload's container copies, and the Deus
+# UID preflight decides whether it may run at all; each sets the shell
+# variable the reload's own guard reads, so each must be in `deps`, which is
+# what orders activation snippets. A later gate may add one of its own, so
+# assert the ones that must be there instead of the whole list. The
+# default-off closure still keeps exactly "etc".
 assert off.system.activationScripts.reload-headscale-container.deps == [ "etc" ];
-assert ddmOn.system.activationScripts.reload-headscale-container.deps
-  == [ "etc" "vista-mdm-stage-credentials" ];
+assert lib.subtractLists
+  ddmOn.system.activationScripts.reload-headscale-container.deps
+  [ "etc" "vista-mdm-stage-credentials" "vista-deus-identity-preflight" ] == [ ];
 assert ddmOn.containers.headscale.config.services.deus.server.ddm.enable;
 assert ddmOn.containers.headscale.config.services.deus.server.ddm.enrollmentID
   == "OFFLINE-TEST-ENROLLMENT-ID";
