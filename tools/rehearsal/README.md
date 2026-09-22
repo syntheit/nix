@@ -64,9 +64,12 @@ cannot reach them over the network, and it cannot see their files or sockets.
   backup that sits in `/nix/store`.
 - **Plaintext lives only in a private tmpfs.** The harness creates a fresh
   tmpfs, root-only (0700) and `noswap`, inside a mount namespace of its
-  own, so no other process on vista can see it. It refuses to go on unless
-  `/proc/self/mountinfo` shows exactly the tmpfs it just mounted, tagged
-  with a random name. On every exit (success, failure, error, Ctrl-C or
+  own (and a network namespace of its own), so no other process on vista
+  can see it. Before it mounts anything it compares both namespaces with
+  pid 1's and refuses to go on if either is the same, so even a hand-typed
+  `--stage ns` cannot mount the tmpfs where the services live. It refuses
+  to go on unless `/proc/self/mountinfo` shows exactly the tmpfs it just
+  mounted, tagged with a random name. On every exit (success, failure, error, Ctrl-C or
   kill) it zeroes every file, deletes it, unmounts the tmpfs and removes
   the mountpoint, and prints a `WIPE:` line that says so. If the harness
   itself is killed with `kill -9`, the namespace dies with it and the kernel
@@ -212,13 +215,15 @@ To see why a tool failed, run again with `--show-errors`.
 ## Self-test (synthetic data only, no sudo)
 
 ```sh
-tools/rehearsal/build.sh --selftest
+tools/rehearsal/build.sh --old-deus-rev 410a695 --selftest
 ~/.cache/malli-rehearsal/selftest/bin/malli-rehearsal-selftest /tmp/rehearsal-selftest
 ```
 
 It builds made-up data: a NanoMDM store, a push certificate, and a
 `deus.db` created by the old Deus, all encrypted to a throwaway key. It then
-runs the harness as root of an unprivileged user namespace, in these cases:
+runs itself as pid 1 of a pid namespace of its own, as root of an
+unprivileged user namespace, so the harness can compare its namespaces with
+pid 1's as it does on vista. It runs the harness in these cases:
 
 - good data, with the identity on stdin and typed at the hidden prompt:
   every check passes;
@@ -237,6 +242,9 @@ runs the harness as root of an unprivileged user namespace, in these cases:
 - a harness whose old Deus is the new one;
 - a step-3 entrypoint that no longer passes `-storage-options
   enable_deprecated=1`, while the harness would;
+- `--stage ns` typed by hand in pid 1's mount namespace, and in a private
+  mount namespace that shares pid 1's network: both refuse before mounting
+  anything;
 - a Ctrl-C mid-run, and a `kill -9` mid-run.
 
 Every case must end with a complete wipe and with none of the planted

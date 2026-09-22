@@ -1,9 +1,10 @@
 # malli-rehearsal-selftest SCRATCH_DIR
 #
 # Runs the harness against SYNTHETIC fixtures only (make-fixture.sh), as the
-# root of an unprivileged user namespace, so it needs no sudo and touches
-# nothing real. Every case must end with the expected checks, an intact
-# wipe, and none of the planted secret markers in the output.
+# root of an unprivileged user namespace and pid 1 of a pid namespace of its
+# own, so it needs no sudo and touches nothing real. Every case must end
+# with the expected checks, an intact wipe, and none of the planted secret
+# markers in the output.
 #
 #   good            every check PASS (identity on stdin)
 #   tty             every check PASS, identity typed at the hidden prompt
@@ -35,10 +36,26 @@
 #   no-migrate-only a new Deus whose deus-server has no -migrate-only (the
 #                   old Deus's stands in): deus.migrate FAIL, and it is never
 #                   run on the copy
+#   stage-ns-direct, stage-ns-shared-net
+#                   --stage ns given by hand in pid 1's mount namespace, or
+#                   in a private one that shares pid 1's network: exit 2
+#                   before anything is mounted
 #   interrupted     SIGINT (Ctrl-C) mid-run, as the v0.9 phase begins:
 #                   exit 130, and still wiped
 #   killed          kill -9 mid-run: no trap runs, and the tmpfs is still gone
 export LC_ALL=C
+
+# The harness refuses to mount anything unless its mount and network
+# namespaces differ from pid 1's, as they must on vista. So the self-test
+# re-runs itself as pid 1 of a pid namespace with its own /proc, as root of
+# an unprivileged user namespace: pid 1 is then this script, and its
+# namespaces are the ones the harness must leave.
+if [ "$$" != 1 ]; then
+  exec unshare --user --map-root-user --pid --fork --mount-proc --kill-child -- "$(readlink -f "$0")" "$@"
+fi
+# As pid 1 no signal ends it by default; these do.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 scratch=${1:?usage: malli-rehearsal-selftest SCRATCH_DIR}
 case $scratch in /nix/store/*) echo "not in the store" >&2; exit 2 ;; esac
@@ -71,7 +88,7 @@ rehearse() {
   local harness=$1 fx=$2 log=$3 rc=0
   shift 3
   grep AGE-SECRET-KEY "$fx/identity" \
-    | unshare --user --map-root-user -- env --default-signal=INT "$harness" \
+    | env --default-signal=INT "$harness" \
         --work-parent "$run" --tmpfs-size 1g --backup "$fx/backup.tar.zst.age" \
         --baseline "$fx/baseline.tsv" "$@" \
     > "$log" 2>&1 || rc=$?
@@ -197,12 +214,44 @@ judge no-migrate-only "$out/no-migrate-only.log" 1 "$rc" "$scratch/good" \
   "decrypt=PASS enrollments=PASS v09.read=PASS v06.read=PASS deus.migrate=FAIL deus.integrity=FAIL deus.rollback=FAIL" \
   '^ +FAIL +deus\.migrate +new Deus .*: deus-server is missing or has no -migrate-only flag \(-help exit 0\)'
 
+# --stage ns given by hand: from pid 1's own namespaces (stage-ns-direct),
+# and from a private mount namespace that still shares pid 1's network
+# (stage-ns-shared-net). Both must refuse before mounting anything.
+for name in stage-ns-direct stage-ns-shared-net; do
+  prefix=()
+  shared=mnt
+  if [ "$name" = stage-ns-shared-net ]; then
+    prefix=(unshare --mount --propagation private --)
+    shared=net
+  fi
+  log=$out/$name.log
+  rc=0
+  grep AGE-SECRET-KEY "$scratch/good/identity" \
+    | "${prefix[@]}" "$HARNESS" --stage ns --work-parent "$run" --tmpfs-size 1g \
+        --backup "$scratch/good/backup.tar.zst.age" --baseline "$scratch/good/baseline.tsv" \
+    > "$log" 2>&1 || rc=$?
+  problems=""
+  [ "$rc" = 2 ] || problems+=" exit=$rc(want 2)"
+  want="malli-rehearse: this is pid 1's $shared namespace, not a private one"
+  if ! grep -qF "$want" "$log"; then problems+=" no-line[$want]"; fi
+  if grep -q '^tmpfs: \|^== isolation' "$log"; then problems+=" went-on"; fi
+  if [ -n "$(find "$run" -mindepth 1 -print -quit)" ]; then problems+=" leftovers-in-work-parent"; fi
+  if grep -sq 'malli-rehearsal-[0-9a-f]\{16\}' /proc/[0-9]*/mountinfo; then problems+=" tmpfs-still-mounted-somewhere"; fi
+  if grep -F -q -f "$scratch/good/markers" "$log"; then problems+=" LEAK"; fi
+  if [ -z "$problems" ]; then
+    results+=("PASS  $name")
+  else
+    results+=("FAIL  $name:$problems")
+    failures=$((failures + 1))
+  fi
+done
+
 # The owner's path: the identity typed at the prompt on a terminal (a
 # pseudo-terminal here), sent only once the prompt is up, as a person would.
 log=$out/tty.log
 rm -f "$scratch/tty-in"
 mkfifo "$scratch/tty-in"
-script -qec "unshare --user --map-root-user -- $HARNESS --work-parent $run --tmpfs-size 1g --backup $scratch/good/backup.tar.zst.age --baseline $scratch/good/baseline.tsv" \
+script -qec "$HARNESS --work-parent $run --tmpfs-size 1g --backup $scratch/good/backup.tar.zst.age --baseline $scratch/good/baseline.tsv" \
   /dev/null < "$scratch/tty-in" > "$log" 2>&1 &
 pid=$!
 exec 7> "$scratch/tty-in"
@@ -222,7 +271,7 @@ judge tty "$log" 0 "$rc" "$scratch/good" "$all_pass"
 # Ctrl-C mid-run, with the decrypted store on the tmpfs.
 log=$out/interrupted.log
 grep AGE-SECRET-KEY "$scratch/good/identity" \
-  | unshare --user --map-root-user -- env --default-signal=INT "$HARNESS" \
+  | env --default-signal=INT "$HARNESS" \
       --work-parent "$run" --tmpfs-size 1g --baseline "$scratch/good/baseline.tsv" \
       --backup "$scratch/good/backup.tar.zst.age" > "$log" 2>&1 &
 pid=$!
@@ -246,7 +295,7 @@ fi
 # process, and the tmpfs with it. Only the empty mountpoint may remain.
 log=$out/killed.log
 grep AGE-SECRET-KEY "$scratch/good/identity" \
-  | unshare --user --map-root-user -- "$HARNESS" \
+  | "$HARNESS" \
       --work-parent "$run" --tmpfs-size 1g --baseline "$scratch/good/baseline.tsv" \
       --backup "$scratch/good/backup.tar.zst.age" > "$log" 2>&1 &
 pid=$!

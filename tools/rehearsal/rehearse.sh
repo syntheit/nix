@@ -4,8 +4,10 @@
 #
 # What this outer script does, and nothing more:
 #   1. refuses unless it is root;
-#   2. re-runs itself in a private mount namespace, so the tmpfs it mounts
-#      is invisible to every other process and disappears with it;
+#   2. re-runs itself in a private mount and network namespace, so the tmpfs
+#      it mounts is invisible to every other process and disappears with it,
+#      and refuses to go on (also when --stage ns is given by hand) unless
+#      both namespaces differ from pid 1's;
 #   3. mounts a fresh 0700 tmpfs (noswap) with a random source tag, and
 #      refuses to go on unless /proc/self/mountinfo shows exactly that;
 #   4. reads the age identity from the terminal with echo off (or one line
@@ -108,12 +110,21 @@ if [ "$stage" = host ]; then
     && [ "$(awk '{ print $1, $2, $3 }' /proc/self/uid_map)" = "0 0 4294967295" ]; then
     exec systemd-run --scope --quiet --collect \
       -p MemoryMax="$memory_max" -p MemorySwapMax=0 \
-      -- unshare --mount --propagation private -- "$self" --stage ns "${args[@]}"
+      -- unshare --mount --net --propagation private -- "$self" --stage ns "${args[@]}"
   fi
-  exec unshare --mount --propagation private -- "$self" --stage ns "${args[@]}"
+  exec unshare --mount --net --propagation private -- "$self" --stage ns "${args[@]}"
 fi
 [ "$stage" = ns ] || die "unknown stage"
 [ "$EUID" = 0 ] || die "not root in the private namespace"
+# --stage ns is a public flag. Before anything is mounted, prove that this
+# is a mount namespace and a network namespace of its own: neither may be
+# pid 1's, where every service on the host lives and would see the tmpfs.
+for ns in mnt net; do
+  mine=$(readlink "/proc/self/ns/$ns" 2>/dev/null || true)
+  init=$(readlink "/proc/1/ns/$ns" 2>/dev/null || true)
+  [ -n "$mine" ] && [ -n "$init" ] || die "cannot compare this process's $ns namespace with pid 1's; refusing"
+  [ "$mine" != "$init" ] || die "this is pid 1's $ns namespace, not a private one; run malli-rehearse without --stage"
+done
 backup=$(realpath -e -- "$backup")
 
 mnt=""
