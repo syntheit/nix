@@ -3,7 +3,8 @@
 # Runs the harness against SYNTHETIC fixtures only (make-fixture.sh), as the
 # root of an unprivileged user namespace and pid 1 of a pid namespace of its
 # own, so it needs no sudo and touches nothing real. Every case must end
-# with the expected checks, an intact wipe, and none of the planted secret
+# with the expected checks, an intact wipe, a last line RESULT: PASS (exit
+# 0) or RESULT: FAIL (any other exit), and none of the planted secret
 # markers in the output.
 #
 #   good            every check PASS (the whole age key file on stdin,
@@ -40,6 +41,10 @@
 #   no-migrate-only a new Deus whose deus-server has no -migrate-only (the
 #                   old Deus's stands in): deus.migrate FAIL, and it is never
 #                   run on the copy
+#   cp-fails        cp fails inside the sandbox (as on a full tmpfs), and
+#                   errexit stops the run: the summary says where, then the
+#                   wipe and RESULT: FAIL
+#   outer-error     mktemp fails before the tmpfs exists: RESULT: FAIL last
 #   stage-ns-direct, stage-ns-shared-net
 #                   --stage ns given by hand in pid 1's mount namespace, or
 #                   in a private one that shares pid 1's network: exit 2
@@ -106,12 +111,14 @@ rehearse() {
   return "$rc"
 }
 
+# The run reached its own end: a CHECKS line with counts, not "stopped early".
+finished() { grep -Eq '^CHECKS: (PASS|FAIL) \([0-9]' "$1"; }
 status_of() { awk -v c="$2" '/^==== REHEARSAL SUMMARY/ { s = 1 } s && $2 == c { print $1 }' "$1"; }
 
 # case-name log expected-exit actual-exit fixture-dir "check=STATUS ..."
 #   [an extended regex some line of the log must match]
 judge() {
-  local name=$1 log=$2 want_rc=$3 got_rc=$4 fx=$5 expect=$6 must=${7:-} problems="" pair c want got mp
+  local name=$1 log=$2 want_rc=$3 got_rc=$4 fx=$5 expect=$6 must=${7:-} problems="" pair c want got mp last
   [ "$got_rc" = "$want_rc" ] || problems+=" exit=$got_rc(want $want_rc)"
   if [ -n "$must" ] && ! grep -Eq -- "$must" "$log"; then problems+=" no-line-matching[$must]"; fi
   for pair in $expect; do
@@ -127,6 +134,13 @@ judge() {
   if [ -z "$mp" ] || [ -e "$mp" ]; then problems+=" mountpoint-still-exists"; fi
   if [ -n "$(find "$run" -mindepth 1 -print -quit)" ]; then problems+=" leftovers-in-work-parent"; fi
   if grep -sq 'malli-rehearsal-[0-9a-f]\{16\}' /proc/[0-9]*/mountinfo; then problems+=" tmpfs-still-mounted-somewhere"; fi
+  # The verdict is the last line: RESULT: PASS exactly when the exit is 0.
+  last=$(grep . "$log" | tail -n 1)
+  if [ "$got_rc" = 0 ]; then
+    [[ $last == "RESULT: PASS ("* ]] || problems+=" last-line-not-RESULT-PASS"
+  else
+    [[ $last == "RESULT: FAIL (exit $got_rc: "* ]] || problems+=" last-line-not-RESULT-FAIL"
+  fi
   # No planted secret, identity, enrollment ID or row value in the output.
   if grep -F -q -f "$fx/markers" "$log"; then problems+=" LEAK"; fi
   if [ -z "$problems" ]; then
@@ -232,6 +246,36 @@ judge old-is-new "$out/old-is-new.log" 1 "$rc" "$scratch/good" \
   "decrypt=PASS enrollments=PASS v09.read=PASS v06.read=PASS deus.migrate=PASS deus.integrity=PASS deus.rollback=FAIL" \
   '^ +FAIL +deus\.rollback +the old Deus is not another Deus: old ([^ ]+) \(rev ([0-9a-f]{40})\), new \1 \(rev \2\);'
 
+# An unexpected error inside the sandbox: cp fails (as on a full tmpfs)
+# while inner.sh copies deus.db, and errexit stops the run. The summary
+# still comes, saying where the run stopped, then the wipe and RESULT: FAIL.
+rc=0; rehearse "$HARNESS_CP_FAILS" "$scratch/good" "$out/cp-fails.log" || rc=$?
+judge cp-fails "$out/cp-fails.log" 1 "$rc" "$scratch/good" \
+  "decrypt=PASS enrollments=PASS v09.read=PASS v06.read=PASS deus.migrate=SKIP deus.integrity=SKIP deus.rollback=SKIP" \
+  '^CHECKS: FAIL \(the harness stopped early on an error \(exit 1\) in the deus migrations phase; the checks after it did not run; 3 of 16 checks not PASS\)$'
+
+# An unexpected error outside the sandbox, before the tmpfs exists: mktemp
+# cannot create the mountpoint in the read-only /nix/store. Nothing to wipe,
+# but the last line is still RESULT: FAIL.
+log=$out/outer-error.log
+rc=0
+cat "$scratch/good/identity" \
+  | "$HARNESS" --work-parent /nix/store --tmpfs-size 1g \
+      --backup "$scratch/good/backup.tar.zst.age" --baseline "$scratch/good/baseline.tsv" \
+  > "$log" 2>&1 || rc=$?
+problems=""
+[ "$rc" != 0 ] || problems+=" exit=0"
+last=$(grep . "$log" | tail -n 1)
+[[ $last == "RESULT: FAIL (exit $rc: "* ]] || problems+=" last-line-not-RESULT-FAIL"
+if grep -q '^tmpfs: \|^== isolation' "$log"; then problems+=" went-on"; fi
+if grep -F -q -f "$scratch/good/markers" "$log"; then problems+=" LEAK"; fi
+if [ -z "$problems" ]; then
+  results+=("PASS  outer-error (exit $rc before any mount; RESULT: FAIL last)")
+else
+  results+=("FAIL  outer-error:$problems")
+  failures=$((failures + 1))
+fi
+
 rc=0; rehearse "$HARNESS_NO_MIGRATE_ONLY" "$scratch/good" "$out/no-migrate-only.log" || rc=$?
 judge no-migrate-only "$out/no-migrate-only.log" 1 "$rc" "$scratch/good" \
   "decrypt=PASS enrollments=PASS v09.read=PASS v06.read=PASS deus.migrate=FAIL deus.integrity=FAIL deus.rollback=FAIL" \
@@ -258,6 +302,8 @@ for name in stage-ns-direct stage-ns-shared-net; do
   want="malli-rehearse: this is pid 1's $shared namespace, not a private one"
   if ! grep -qF "$want" "$log"; then problems+=" no-line[$want]"; fi
   if grep -q '^tmpfs: \|^== isolation' "$log"; then problems+=" went-on"; fi
+  last=$(grep . "$log" | tail -n 1)
+  [[ $last == "RESULT: FAIL (exit 2: "* ]] || problems+=" last-line-not-RESULT-FAIL"
   if [ -n "$(find "$run" -mindepth 1 -print -quit)" ]; then problems+=" leftovers-in-work-parent"; fi
   if grep -sq 'malli-rehearsal-[0-9a-f]\{16\}' /proc/[0-9]*/mountinfo; then problems+=" tmpfs-still-mounted-somewhere"; fi
   if grep -F -q -f "$scratch/good/markers" "$log"; then problems+=" LEAK"; fi
@@ -305,7 +351,7 @@ for _ in $(seq 1 600); do
 done
 kill -INT "$pid" 2>/dev/null || true
 rc=0; wait "$pid" || rc=$?
-if grep -q '^==== REHEARSAL SUMMARY' "$log"; then
+if finished "$log"; then
   results+=("FAIL  interrupted: the run finished before the signal landed")
   failures=$((failures + 1))
 else
@@ -389,7 +435,7 @@ rc=0; { wait "$pid"; } 2>/dev/null || rc=$?
 if [ -z "$sandbox" ]; then
   results+=("FAIL  second-interrupt: no running sandbox to stop")
   failures=$((failures + 1))
-elif grep -q '^==== REHEARSAL SUMMARY' "$log"; then
+elif finished "$log"; then
   results+=("FAIL  second-interrupt: the run finished before the signal landed")
   failures=$((failures + 1))
 else
@@ -414,7 +460,7 @@ kill -KILL "$pid" 2>/dev/null || true
 rc=0; { wait "$pid"; } 2>/dev/null || rc=$?
 problems=""
 [ "$rc" = 137 ] || problems+=" exit=$rc(want 137)"
-grep -q '^==== REHEARSAL SUMMARY' "$log" && problems+=" finished-before-the-kill"
+finished "$log" && problems+=" finished-before-the-kill"
 for _ in $(seq 1 100); do
   grep -sq 'malli-rehearsal-[0-9a-f]\{16\}' /proc/[0-9]*/mountinfo || break
   sleep 0.05

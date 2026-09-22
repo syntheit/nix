@@ -165,8 +165,15 @@ Use the `/nix/store/…` path that `build.sh` printed:
 sudo /nix/store/…-malli-rehearse/bin/malli-rehearse \
   --backup /path/to/backup.tar.zst.age \
   --baseline /home/daniel/m1-5fro/bstoken-baseline-20260920.tsv \
-  2>&1 | tee ~/rehearsal-report.txt
+  2>&1 | tee ~/rehearsal-report.txt; echo "malli-rehearse exit: ${pipestatus[1]}"
 ```
+
+That line is for zsh, your shell. A pipeline's own status is `tee`'s,
+which is 0 even when the rehearsal failed, so `$?` says nothing here.
+zsh keeps each command's status in `pipestatus`, counted from 1, and
+`${pipestatus[1]}` is `malli-rehearse`'s. (In bash it is
+`${PIPESTATUS[0]}`. Either shell can instead `setopt pipefail` or
+`set -o pipefail` first, and then `$?` is non-zero when the harness fails.)
 
 Run it with `sudo` from your own shell, as above. Never run it from a
 root shell (`sudo -i`, `sudo su`): anything you paste that the harness
@@ -183,8 +190,14 @@ so nothing is left for your shell. If you know the backup's recipient, add
 `--recipient age1…` and the harness will refuse any other identity before
 it decrypts anything.
 
-The report file contains no secret, so it is safe to keep. The last lines
-are the summary, `RESULT: PASS` or `RESULT: FAIL`, and the `WIPE:` line. The
+The report file contains no secret, so it is safe to keep. Its last lines
+are the summary (ending in `CHECKS: PASS` or `CHECKS: FAIL`), the `WIPE:`
+line, and then the harness's own verdict, always the very last line:
+`RESULT: PASS (every check passed)` or `RESULT: FAIL (exit N: …)`. Read
+that line; it is printed on every way out, including a refusal before
+anything is mounted, an unexpected error (the summary then says in which
+phase the run stopped), a Ctrl-C, or a `tee` that has died. Only
+`kill -9` leaves no `RESULT:` line, and then the exit status is 137. The
 exit status is 0 only when every check passes.
 
 **How long plaintext exists, and where.** Decrypted data exists only from
@@ -262,8 +275,12 @@ pid 1's as it does on vista. It runs the harness in these cases:
 - a Ctrl-C mid-run, and a `kill -9` mid-run;
 - the reader of the output killed (as a dead `| tee` would be) and then a
   Ctrl-C, and a second Ctrl-C to the whole process group while the cleanup
-  waits for the sandbox: both must still wipe.
+  waits for the sandbox: both must still wipe;
+- an unexpected error inside the sandbox (a `cp` that fails, as on a full
+  tmpfs) and one outside it before the tmpfs exists: both must still end
+  with `RESULT: FAIL`, the first after the summary and the wipe.
 
-Every case must end with a complete wipe and with none of the planted
-secret markers in the output. The markers are the identity, bootstrap
+Every case must end with a complete wipe, with a last line of
+`RESULT: PASS` exactly when the exit status is 0 and `RESULT: FAIL`
+otherwise, and with none of the planted secret markers in the output. The markers are the identity, bootstrap
 tokens, passwords, enrollment IDs and host names.
