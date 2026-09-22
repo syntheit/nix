@@ -26,6 +26,9 @@
 #                   makes: deus.migrate, deus.integrity and deus.rollback FAIL
 #   no-heartbeats   deus.db has the old schema but no heartbeats rows: the
 #                   same three FAIL
+#   drifted-v09     step 3's entrypoint no longer passes -storage-options
+#                   enable_deprecated=1, but the harness still would:
+#                   v09.start FAIL, and v0.9 is never started
 #   old-is-new      a harness whose old Deus is the new one, as build.sh's
 #                   default would give once the live lock is bumped:
 #                   deus.rollback FAIL, and neither Deus is run as the old one
@@ -178,6 +181,11 @@ rc=0; rehearse "$HARNESS" "$scratch/no-heartbeats" "$out/no-heartbeats.log" || r
 judge no-heartbeats "$out/no-heartbeats.log" 1 "$rc" "$scratch/no-heartbeats" \
   "decrypt=PASS enrollments=PASS v09.read=PASS v06.read=PASS deus.migrate=FAIL deus.integrity=FAIL deus.rollback=FAIL" \
   "^ +FAIL +deus\.migrate +the copy of deus\.db is not one vista's Deus wrote: it has ([1-9][0-9]*) of the old Deus [^ ]+'s \1 tables, and heartbeats rows: 0 "
+
+rc=0; rehearse "$HARNESS_DRIFTED_V09" "$scratch/good" "$out/drifted-v09.log" || rc=$?
+judge drifted-v09 "$out/drifted-v09.log" 1 "$rc" "$scratch/good" \
+  "decrypt=PASS layout=PASS v09.start=FAIL v09.version=SKIP v09.read=SKIP v09.unchanged=PASS v06.start=PASS v06.read=PASS deus.migrate=PASS deus.rollback=PASS" \
+  '^ +FAIL +v09\.start +v09 runs with "-storage file -storage-options enable_deprecated=1", but its entrypoint passes "-storage file"; not started$'
 
 rc=0; rehearse "$HARNESS_OLD_IS_NEW" "$scratch/good" "$out/old-is-new.log" || rc=$?
 judge old-is-new "$out/old-is-new.log" 1 "$rc" "$scratch/good" \

@@ -18,7 +18,7 @@ cannot reach them over the network, and it cannot see their files or sockets.
 | `layout` | The archive holds exactly one NanoMDM store and one `deus.db`, and the rest of what restoring NanoMDM needs: exactly one `scep/` directory whose `ca.pem` and `ca.key` are non-empty files, exactly one `nanodep/` directory with at least one non-empty file, and at least one push certificate (a `<topic>.pem` beside its `<topic>.key` in the store, both non-empty). All of this is checked by stat only; no content is read or printed. Without the store or `deus.db` the run stops here. A missing SCEP, NanoDEP or push-certificate piece fails `layout`, and the other checks still run. |
 | `enrollments` | The number of device enrollments (directories with `Authenticate.plist`) equals the expected count. That count is the number of rows in the baseline, 535. |
 | `bootstraptokens` | The number of `BootstrapToken.dat` files equals the expected count, and, whenever a baseline is given (also with `--expected-count`), no token the baseline lists is missing from the backup. It compares them with the baseline by ID and size and reports how many are missing, new or resized. A missing token fails the check even when the counts agree, and its enrollment ID is printed. |
-| `v09.start`, `v09.version` | The exact patched v0.9 binary that step 3 would run starts on the store copy with `-storage file -storage-options enable_deprecated=1`. Its `/version` begins with `0.9.0-patched-3c52ba4a031c`. |
+| `v09.start`, `v09.version` | The exact patched v0.9 binary that step 3 would run starts on the store copy with `-storage file -storage-options enable_deprecated=1`. Its `/version` begins with `0.9.0-patched-3c52ba4a031c`. Those storage flags are the ones step 3's entrypoint passes, and v0.6's (`-storage file`, no `-storage-options`, which v0.6 refuses) are the ones today's entrypoint passes: the build checks both against the entrypoints, and the run checks again and fails `v09.start` or `v06.start` on a mismatch without starting that server. |
 | `v09.read` | v0.9's own storage code reads every enrollment. That covers Authenticate, push info, bootstrap tokens, queued commands and the push certificate. There are no read errors. |
 | `v09.unchanged` | After v0.9 has run, the store's stat manifest is identical to the one taken before. The manifest records path, type, mode, size and mtime, never contents. |
 | `v06.*` | The same checks for the v0.6.0 binary that vista runs today. It runs without `enable_deprecated` on the same copy, after v0.9 has opened it. This is the rollback. |
@@ -235,6 +235,8 @@ runs the harness as root of an unprivileged user namespace, in these cases:
   the old schema but no `heartbeats` rows;
 - a new Deus whose `deus-server` has no `-migrate-only`;
 - a harness whose old Deus is the new one;
+- a step-3 entrypoint that no longer passes `-storage-options
+  enable_deprecated=1`, while the harness would;
 - a Ctrl-C mid-run, and a `kill -9` mid-run.
 
 Every case must end with a complete wipe and with none of the planted

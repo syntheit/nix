@@ -379,11 +379,31 @@ compare_manifest() { # label
   fi
 }
 
+# The storage flags each version runs with come from the build, which
+# checked them against the entrypoint vista's configuration runs for that
+# version. Checked again here, before either server starts: the flags the
+# entrypoint passes (read from the build's store path) must be exactly the
+# flags used here, and v0.6's must have no -storage-options, which it
+# refuses.
+flags_mismatch() { # label entrypoint-flags-file flags...
+  local label=$1 file=$2 want
+  shift 2
+  want=$(cat "$file" 2>/dev/null || echo "(unreadable)")
+  if [ "$*" != "$want" ]; then
+    printf '%s runs with "%s", but its entrypoint passes "%s"' "$label" "$*" "$want"
+  elif [ "$label" = v06 ] && [[ " $* " == *" -storage-options "* ]]; then
+    printf 'v06 would run with -storage-options, which v0.6 refuses'
+  fi
+}
+
 phase "nanomdm v0.9 (patched, as step 3 would run it)"
 say "binary: $NANOMDM_V09 ($("$NANOMDM_V09" -version 2>/dev/null || echo '?'))"
-say "flags: -storage file -storage-options enable_deprecated=1 -storage-dsn <copy> -ca <$ca_note>; no -api, -webhook-url or -dm"
-if start_server v09 "$NANOMDM_V09" 19000 -storage file -storage-options enable_deprecated=1 \
-  -storage-dsn "$S" -ca "$CA"; then
+say "flags: ${V09_STORAGE[*]} -storage-dsn <copy> -ca <$ca_note>; no -api, -webhook-url or -dm"
+say "step 3's entrypoint passes: $(cat "$V09_ENTRYPOINT_FLAGS" 2>/dev/null || echo '(unreadable)')"
+mismatch=$(flags_mismatch v09 "$V09_ENTRYPOINT_FLAGS" "${V09_STORAGE[@]}")
+if [ -n "$mismatch" ]; then
+  record v09.start FAIL "$mismatch; not started"
+elif start_server v09 "$NANOMDM_V09" 19000 "${V09_STORAGE[@]}" -storage-dsn "$S" -ca "$CA"; then
   record v09.start PASS "listening on 127.0.0.1:19000 inside the sandbox"
   if [[ $VERSION_SEEN == "$V09_EXPECTED_PREFIX"* ]]; then
     record v09.version PASS "/version: $VERSION_SEEN"
@@ -404,8 +424,12 @@ compare_manifest v09
 
 phase "nanomdm v0.6.0 (rollback, as vista runs it today)"
 say "binary: $NANOMDM_V06 ($("$NANOMDM_V06" -version 2>/dev/null || echo '?'))"
-say "flags: -storage file -storage-dsn <same copy> -ca <$ca_note>; no -storage-options, -api, -webhook-url or -dm"
-if start_server v06 "$NANOMDM_V06" 19001 -storage file -storage-dsn "$S" -ca "$CA"; then
+say "flags: ${V06_STORAGE[*]} -storage-dsn <same copy> -ca <$ca_note>; no -storage-options, -api, -webhook-url or -dm"
+say "vista's entrypoint today passes: $(cat "$V06_ENTRYPOINT_FLAGS" 2>/dev/null || echo '(unreadable)')"
+mismatch=$(flags_mismatch v06 "$V06_ENTRYPOINT_FLAGS" "${V06_STORAGE[@]}")
+if [ -n "$mismatch" ]; then
+  record v06.start FAIL "$mismatch; not started"
+elif start_server v06 "$NANOMDM_V06" 19001 "${V06_STORAGE[@]}" -storage-dsn "$S" -ca "$CA"; then
   record v06.start PASS "listening on 127.0.0.1:19001 on the copy v0.9 opened"
   if [ "$VERSION_SEEN" = "$V06_EXPECTED" ]; then
     record v06.version PASS "/version: $VERSION_SEEN"
