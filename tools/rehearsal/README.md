@@ -22,7 +22,7 @@ cannot reach them over the network, and it cannot see their files or sockets.
 | `v09.read` | v0.9's own storage code reads every enrollment. That covers Authenticate, push info, bootstrap tokens, queued commands and the push certificate. There are no read errors. |
 | `v09.unchanged` | After v0.9 has run, the store's stat manifest is identical to the one taken before. The manifest records path, type, mode, size and mtime, never contents. |
 | `v06.*` | The same checks for the v0.6.0 binary that vista runs today. It runs without `enable_deprecated` on the same copy, after v0.9 has opened it. This is the rollback. |
-| `deus.migrate` | The new Deus's `deus-server -migrate-only -state-dir /work/deus-new` upgrades a copy of the real `deus.db` on the tmpfs, and its report names that copy and says it migrated it. The line gives the duration, the exit code and the table count before and after. FAIL when the binary is missing or has no `-migrate-only`, when it exits 1 (the open or the upgrade failed), or when its report does not name the copy or says it created a new database. |
+| `deus.migrate` | The new Deus's `deus-server -migrate-only -state-dir /work/deus-new` upgrades a copy of the real `deus.db` on the tmpfs, and its report names that copy and says it migrated it. The line gives the duration, the exit code and the table count before and after. FAIL, with nothing run on the copy, when the copy lacks any table that the old Deus's own `store.Open` creates (the build lists them) or has no rows in `heartbeats`: an empty database, which a mistyped `.backup` source makes, would otherwise pass all three Deus checks. FAIL when the binary is missing or has no `-migrate-only`, when it exits 1 (the open or the upgrade failed), or when its report does not name the copy or says it created a new database. |
 | `deus.integrity` | `deus-server -migrate-only` exited 0: its own `integrity_check` says only `ok` and its `foreign_key_check` has no rows. The harness's `sqlite3` then agrees on the same copy. Exit 2 (upgraded, but a check found a problem) is a FAIL here. |
 | `deus.rollback` | The Deus that vista runs today opens the migrated copy. It is also run on the untouched copy as a control. PASS means step 2 has a code-only rollback. |
 
@@ -84,12 +84,12 @@ cannot reach them over the network, and it cannot see their files or sockets.
 - **Nothing secret is printed.** The output contains counts, sizes,
   durations, exit codes, version strings, the relative paths of the
   backup's parts, and PASS or FAIL. It never prints file contents,
-  enrollment IDs or database rows. The only SQL it runs is
-  `SELECT count(*) FROM sqlite_master` and two `PRAGMA` checks, so no row,
-  `admin_password` or token column is ever read. `deus-server -migrate-only`
-  runs the same kind of counts and checks. Its report can name a table and
-  a row id, so it stays in the wiped log, and only its counts and exit code
-  are printed. `--show-errors` is opt-in. It prints a failing tool's own
+  enrollment IDs or database rows. The only SQL it runs reads table names
+  and counts from `sqlite_master`, `SELECT count(*) FROM heartbeats`, and
+  two `PRAGMA` checks, so no row, `admin_password` or token column is ever
+  read. `deus-server -migrate-only` runs the same kind of counts and
+  checks. Its report can name a table and a row id, so it stays in the
+  wiped log, and only its counts and exit code are printed. `--show-errors` is opt-in. It prints a failing tool's own
   last error lines, which can name a file, a table or a constraint.
 - **Production comes first.** The run has an OOM score of 1000, so the
   kernel kills it before any service. It runs at lower CPU and I/O
@@ -213,6 +213,8 @@ runs the harness as root of an unprivileged user namespace, in these cases:
 - a v0.9 that leaves the store unreadable to v0.6;
 - a failing migration (`deus-server -migrate-only` exits 1);
 - a migration that applies but leaves a dangling foreign key (exit 2);
+- an empty `deus.db`, as a mistyped `.backup` source makes, and one with
+  the old schema but no `heartbeats` rows;
 - a new Deus whose `deus-server` has no `-migrate-only`;
 - a Ctrl-C mid-run, and a `kill -9` mid-run.
 

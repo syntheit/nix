@@ -15,6 +15,10 @@
 #                   deus-server -migrate-only exits 1, deus.migrate FAIL
 #   unhealthy       deus.db with a dangling foreign key: the upgrade applies,
 #                   deus-server -migrate-only exits 2, deus.integrity FAIL
+#   empty-deus      deus.db is the empty database a mistyped .backup source
+#                   makes: deus.migrate, deus.integrity and deus.rollback FAIL
+#   no-heartbeats   deus.db has the old schema but no heartbeats rows: the
+#                   same three FAIL
 #   no-migrate-only a new Deus whose deus-server has no -migrate-only (the
 #                   old Deus's stands in): deus.migrate FAIL, and it is never
 #                   run on the copy
@@ -35,6 +39,8 @@ mkdir -p "$run" "$out"
 "$FIXTURE" "$scratch/good" --count 12
 "$FIXTURE" "$scratch/broken-deus" --count 12 --broken-deus
 "$FIXTURE" "$scratch/dangling-fk" --count 12 --dangling-fk
+"$FIXTURE" "$scratch/empty-deus" --count 12 --empty-deus
+"$FIXTURE" "$scratch/no-heartbeats" --count 12 --no-heartbeats
 cp "$scratch/good/backup.tar.zst.age" "$scratch/corrupt.age"
 size=$(stat -c %s "$scratch/corrupt.age")
 printf '\x5a' | dd of="$scratch/corrupt.age" bs=1 seek=$((size / 2)) conv=notrunc status=none
@@ -118,6 +124,16 @@ rc=0; rehearse "$HARNESS" "$scratch/dangling-fk" "$out/unhealthy.log" || rc=$?
 judge unhealthy "$out/unhealthy.log" 1 "$rc" "$scratch/dangling-fk" \
   "decrypt=PASS enrollments=PASS v09.read=PASS v06.read=PASS deus.migrate=PASS deus.integrity=FAIL" \
   '^ +FAIL +deus\.integrity +deus-server -migrate-only exit 2; its report: 0 integrity_check problems, 1 foreign_key_check rows;'
+
+rc=0; rehearse "$HARNESS" "$scratch/empty-deus" "$out/empty-deus.log" || rc=$?
+judge empty-deus "$out/empty-deus.log" 1 "$rc" "$scratch/empty-deus" \
+  "decrypt=PASS enrollments=PASS v09.read=PASS v06.read=PASS deus.migrate=FAIL deus.integrity=FAIL deus.rollback=FAIL" \
+  "^ +FAIL +deus\.migrate +the copy of deus\.db is not one vista's Deus wrote: it has 0 of the old Deus [^ ]+'s [1-9][0-9]* tables, and heartbeats rows: unreadable "
+
+rc=0; rehearse "$HARNESS" "$scratch/no-heartbeats" "$out/no-heartbeats.log" || rc=$?
+judge no-heartbeats "$out/no-heartbeats.log" 1 "$rc" "$scratch/no-heartbeats" \
+  "decrypt=PASS enrollments=PASS v09.read=PASS v06.read=PASS deus.migrate=FAIL deus.integrity=FAIL deus.rollback=FAIL" \
+  "^ +FAIL +deus\.migrate +the copy of deus\.db is not one vista's Deus wrote: it has ([1-9][0-9]*) of the old Deus [^ ]+'s \1 tables, and heartbeats rows: 0 "
 
 rc=0; rehearse "$HARNESS_NO_MIGRATE_ONLY" "$scratch/good" "$out/no-migrate-only.log" || rc=$?
 judge no-migrate-only "$out/no-migrate-only.log" 1 "$rc" "$scratch/good" \

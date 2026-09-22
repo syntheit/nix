@@ -126,6 +126,32 @@ let
     mkdir -p $out/bin
     ln -s ${deusNew}/bin/deus-server $out/bin/deus-server
   '';
+  # The tables the old Deus's own store.Open creates in an empty database,
+  # one name per line. vista runs that Deus, so its deus.db has every one of
+  # them; inner.sh refuses a copy that lacks any, such as the empty database
+  # a mistyped `sqlite3 <source> .backup` makes. The build also requires
+  # heartbeats among them: inner.sh requires rows there, because Deus keeps
+  # one per host that ever reported and never deletes it.
+  deusOldTables = pkgs.runCommand "deus-${deusOld.version}-tables" {
+    nativeBuildInputs = [ pkgs.sqlite pkgs.libarchive ];
+  } ''
+    mkdir -p xlsx/xl/_rels
+    printf '%s' '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets/></workbook>' > xlsx/xl/workbook.xml
+    printf '%s' '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>' > xlsx/xl/_rels/workbook.xml.rels
+    (cd xlsx && bsdtar --format zip -cf ../empty.xlsx xl)
+    : > no-hosts
+    ${deusOld}/bin/deus-rack-import -db "$PWD/deus.db" -xlsx "$PWD/empty.xlsx" \
+      -hosts-file "$PWD/no-hosts" -dry-run > /dev/null
+    sqlite3 -batch -bail deus.db \
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT GLOB 'sqlite_*' ORDER BY name;" > tables
+    n=$(grep -c . tables || true)
+    if [ "$n" -lt 1 ] || ! grep -qx heartbeats tables; then
+      echo "old deus ${oldDeusRev} (${deusOld.version}): its store.Open made $n tables, and heartbeats is not one of them" >&2
+      exit 1
+    fi
+    mkdir -p $out
+    cp tables $out/tables
+  '';
 
   tools = with pkgs; [
     bash coreutils findutils gnugrep gnused gawk diffutils util-linux
@@ -140,6 +166,7 @@ let
     readonly PROBE_V06=${probeV06}/bin/rehearsal-probe
     readonly DEUS_NEW=${deusNewBin}
     readonly DEUS_OLD=${deusOld}/bin/deus-rack-import
+    readonly DEUS_OLD_TABLES=${deusOldTables}/tables
     readonly DEUS_NEW_VERSION=${lib.escapeShellArg deusNew.version}
     readonly DEUS_OLD_VERSION=${lib.escapeShellArg deusOld.version}
     readonly V09_EXPECTED_PREFIX=0.9.0-patched-${builtins.substring 0 12 pin.nanomdmCommit}
@@ -154,7 +181,7 @@ let
     ])}
     # Each script uses a subset of these.
     : "$NANOMDM_V09" "$NANOMDM_V06" "$PROBE_V09" "$PROBE_V06" "$DEUS_NEW" "$DEUS_OLD" \
-      "$DEUS_NEW_VERSION" "$DEUS_OLD_VERSION" "$V09_EXPECTED_PREFIX" "$V06_EXPECTED" \
+      "$DEUS_OLD_TABLES" "$DEUS_NEW_VERSION" "$DEUS_OLD_VERSION" "$V09_EXPECTED_PREFIX" "$V06_EXPECTED" \
       "$SANDBOX_PATH" "$BUILD_INFO"
   '';
 
