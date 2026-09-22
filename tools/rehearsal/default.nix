@@ -112,6 +112,20 @@ let
   # vista flake's nixpkgs), from committed trees only.
   deusNew = pkgs.callPackage "${newDeusSrc}/nix/package.nix" { };
   deusOld = pkgs.callPackage "${oldDeusSrc}/nix/package.nix" { };
+  # The new Deus's migrations run through `deus-server -migrate-only` (Deus
+  # c26640d). The build refuses a new Deus whose deus-server lacks the flag,
+  # so a wrong --new-deus-rev fails here, before any backup is decrypted;
+  # inner.sh probes for it again at run time.
+  deusNewServer = pkgs.runCommand "deus-server-migrate-only-${deusNew.version}" { } ''
+    rc=0
+    ${deusNew}/bin/deus-server -help > help 2>&1 || rc=$?
+    if [ "$rc" != 0 ] || ! grep -Eq '^ +-migrate-only( |$)' help; then
+      echo "new deus ${newDeusRev} (${deusNew.version}): deus-server -help exited $rc and lists no -migrate-only; the rehearsal needs Deus c26640d or later" >&2
+      exit 1
+    fi
+    mkdir -p $out/bin
+    ln -s ${deusNew}/bin/deus-server $out/bin/deus-server
+  '';
 
   tools = with pkgs; [
     bash coreutils findutils gnugrep gnused gawk diffutils util-linux
@@ -119,12 +133,12 @@ let
   ];
   sandboxPath = lib.makeBinPath tools;
 
-  prelude = { v09 ? nanomdmV09 }: ''
+  prelude = { v09 ? nanomdmV09, deusNewBin ? "${deusNewServer}/bin/deus-server" }: ''
     readonly NANOMDM_V09=${v09}/bin/nanomdm
     readonly NANOMDM_V06=${nanomdmV06}/bin/nanomdm
     readonly PROBE_V09=${probeV09}/bin/rehearsal-probe
     readonly PROBE_V06=${probeV06}/bin/rehearsal-probe
-    readonly DEUS_NEW=${deusNew}/bin/deus-rack-import
+    readonly DEUS_NEW=${deusNewBin}
     readonly DEUS_OLD=${deusOld}/bin/deus-rack-import
     readonly DEUS_NEW_VERSION=${lib.escapeShellArg deusNew.version}
     readonly DEUS_OLD_VERSION=${lib.escapeShellArg deusOld.version}
@@ -187,6 +201,9 @@ let
     '';
   };
   harnessFaultyV09 = mkHarness { v09 = faultyV09; };
+  # The old Deus's deus-server stands in for a new Deus built from a revision
+  # before c26640d: it has no -migrate-only, and bypasses the build's check.
+  harnessNoMigrateOnly = mkHarness { deusNewBin = "${deusOld}/bin/deus-server"; };
 
   fixture = pkgs.writeShellApplication {
     name = "malli-rehearsal-fixture";
@@ -201,6 +218,7 @@ let
     text = ''
       readonly HARNESS=${harness}/bin/malli-rehearse
       readonly HARNESS_FAULTY_V09=${harnessFaultyV09}/bin/malli-rehearse
+      readonly HARNESS_NO_MIGRATE_ONLY=${harnessNoMigrateOnly}/bin/malli-rehearse
       readonly FIXTURE=${fixture}/bin/malli-rehearsal-fixture
     '' + builtins.readFile ./selftest/run.sh;
   };

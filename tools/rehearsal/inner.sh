@@ -393,20 +393,110 @@ copy_db() { # dest-dir source-db
     if [ -e "$2$s" ]; then cp -- "$2$s" "$1/deus.db$s"; fi
   done
 }
-integrity() { # db -> sets INTEGRITY ("ok" or "N problems") and FK_ROWS
+# Sets INTEGRITY ("ok", "N problems" or "unreadable") and FK_ROWS (a count,
+# or "unreadable"). A sqlite3 that fails is never read as a clean result.
+integrity() { # db
   local out
-  out=$(sql "$1" 'PRAGMA integrity_check;' 2>/dev/null || echo "error")
-  if [ "$out" = ok ]; then INTEGRITY=ok; else INTEGRITY="$(printf '%s\n' "$out" | grep -c .) problems"; fi
-  FK_ROWS=$(sql "$1" 'PRAGMA foreign_key_check;' 2>/dev/null | grep -c . || true)
+  if out=$(sql "$1" 'PRAGMA integrity_check;' 2>/dev/null); then
+    if [ "$out" = ok ]; then INTEGRITY=ok; else INTEGRITY="$(printf '%s\n' "$out" | grep -c .) problems"; fi
+  else
+    INTEGRITY=unreadable
+  fi
+  if out=$(sql "$1" 'PRAGMA foreign_key_check;' 2>/dev/null); then
+    FK_ROWS=$(printf '%s' "$out" | grep -c . || true)
+  else
+    FK_ROWS=unreadable
+  fi
 }
 tables() { sql "$1" "SELECT count(*) FROM sqlite_master WHERE type = 'table';" 2>/dev/null || echo "?"; }
 
-# Deus has no migrate-only command. The smallest existing entry point that
-# runs its migrations is `deus-rack-import -dry-run`: it calls the same
-# store.Open deus-server calls (migrateDeviceInfoRounds, schema.sql, the
-# ALTER list) and then only plans an import. With an empty workbook and an
-# empty -hosts-file it reads nothing else from the database and writes
-# nothing else; its report (0 hosts, 0 cabinets) goes to the wiped log.
+# The new Deus upgrades the copy with `deus-server -migrate-only` (Deus
+# c26640d). Right after flag parsing, before its logger, any token or
+# secret, and any listener or socket, it opens <state-dir>/deus.db with the
+# store.Open the service uses (the rounds rebuild, schema.sql and the ALTER
+# list, in one transaction). It prints on stdout the table, index and
+# trigger counts and SQLite's integrity_check and foreign_key_check, and
+# exits 0 healthy, 1 when the open or the upgrade failed, 2 when it upgraded
+# but a check found a problem. Its report can name tables and row ids, so it
+# goes to the wiped log and only counts are printed here.
+#
+# A deus-server without the flag stops at flag parsing with exit 2, the same
+# code as "unhealthy", and one given a state dir without deus.db creates a
+# fresh database. So the flag is looked for in its -help before it runs, and
+# a run counts only when its report names this copy, says it migrated it,
+# and does not say it created it.
+DEUS_NEW_DB=$W/deus-new/deus.db
+# The values of one key of the report ("migrated", "integrity_check",
+# "foreign_key_check"), one line per row.
+report_lines() { sed -n "s/^$1: //p" "$LOG/deus-new.out"; }
+count_not_ok() { grep -vc '^ok$' || true; }
+
+# Two databases at most on the tmpfs: the extracted one and the migrated
+# copy. The extracted one serves as the old Deus's control afterwards.
+copy_db "$W/deus-new" "$DB"
+pre_tables=$(tables "$DEUS_NEW_DB")
+integrity "$DEUS_NEW_DB"
+pre_integrity=$INTEGRITY
+pre_fk=$FK_ROWS
+say "before: $pre_tables tables; integrity_check $pre_integrity; foreign_key_check $pre_fk rows"
+hrc=0
+"$DEUS_NEW" -help >"$LOG/deus-new-help.out" 2>&1 || hrc=$?
+if [ "$hrc" = 0 ] && grep -Eq '^ +-migrate-only( |$)' "$LOG/deus-new-help.out"; then
+  has_flag=yes
+else
+  has_flag=no
+fi
+say "new deus $DEUS_NEW_VERSION: $DEUS_NEW (-help exit $hrc; -migrate-only flag: $has_flag)"
+mrc=""
+migrated=no
+if [ "$has_flag" = no ]; then
+  show_log "$LOG/deus-new-help.out"
+  record deus.migrate FAIL "new Deus $DEUS_NEW_VERSION: deus-server is missing or has no -migrate-only flag (-help exit $hrc); it needs Deus c26640d or later. Nothing ran on the copy"
+else
+  t0=$(now_ms)
+  mrc=0
+  "$DEUS_NEW" -migrate-only -state-dir "$W/deus-new" >"$LOG/deus-new.out" 2>"$LOG/deus-new.err" || mrc=$?
+  dt=$(( $(now_ms) - t0 ))
+  post_tables=$(tables "$DEUS_NEW_DB")
+  header=$(head -n 1 "$LOG/deus-new.out")
+  shape=$(report_lines migrated | tail -n 1)
+  rep_integrity=$(report_lines integrity_check | count_not_ok)
+  rep_integrity_ok=$(report_lines integrity_check | grep -c '^ok$' || true)
+  rep_fk=$(report_lines foreign_key_check | count_not_ok)
+  rep_fk_ok=$(report_lines foreign_key_check | grep -c '^ok$' || true)
+  created=$(grep -c '^database: did not exist' "$LOG/deus-new.out" || true)
+  say "deus-server -migrate-only: exit $mrc in $(secs "$dt"); report: ${shape:-no migrated line}; integrity_check lines not ok: $rep_integrity; foreign_key_check rows: $rep_fk"
+  if [ "$header" != "deus-server $DEUS_NEW_VERSION -migrate-only $DEUS_NEW_DB" ] || [ "$created" != 0 ]; then
+    show_log "$LOG/deus-new.out"
+    show_log "$LOG/deus-new.err"
+    if [ -n "$header" ]; then header_note=mismatched; else header_note=missing; fi
+    record deus.migrate FAIL "deus-server -migrate-only (exit $mrc) did not report upgrading this copy of deus.db (first line $header_note; created a new database: $created)"
+  elif [ -n "$shape" ] && { [ "$mrc" = 0 ] || [ "$mrc" = 2 ]; }; then
+    migrated=yes
+    record deus.migrate PASS "new Deus $DEUS_NEW_VERSION upgraded the copy in $(secs "$dt") (deus-server -migrate-only exit $mrc); tables $pre_tables -> $post_tables"
+  else
+    show_log "$LOG/deus-new.out"
+    show_log "$LOG/deus-new.err"
+    record deus.migrate FAIL "deus-server -migrate-only exited $mrc after $(secs "$dt"): the open or the upgrade failed; tables $pre_tables -> $post_tables"
+  fi
+fi
+integrity "$DEUS_NEW_DB"
+say "after:  $(tables "$DEUS_NEW_DB") tables; integrity_check $INTEGRITY; foreign_key_check $FK_ROWS rows"
+if [ "$migrated" = no ]; then
+  record deus.integrity FAIL "not judged: the migration did not run or failed (copy now: integrity $INTEGRITY, $FK_ROWS foreign-key rows)"
+elif [ "$mrc" = 0 ] && [ "$rep_integrity" = 0 ] && [ "$rep_integrity_ok" = 1 ] && [ "$rep_fk" = 0 ] && [ "$rep_fk_ok" = 1 ] \
+  && [ "$INTEGRITY" = ok ] && [ "$FK_ROWS" = 0 ]; then
+  record deus.integrity PASS "deus-server reports healthy (exit 0); integrity_check ok; foreign_key_check 0 rows (before: $pre_integrity, $pre_fk rows)"
+else
+  record deus.integrity FAIL "deus-server -migrate-only exit $mrc; its report: $rep_integrity integrity_check problems, $rep_fk foreign_key_check rows; sqlite3 here: integrity_check $INTEGRITY, foreign_key_check $FK_ROWS rows (before: $pre_integrity, $pre_fk rows)"
+fi
+
+# The old Deus is the one vista runs, and it has no -migrate-only. Its
+# smallest entry point that opens the database is `deus-rack-import
+# -dry-run`: it calls the same store.Open its deus-server calls and then only
+# plans an import. With an empty workbook and an empty -hosts-file it reads
+# nothing else from the database and writes nothing else; its report
+# (0 hosts, 0 cabinets) goes to the wiped log.
 mkdir -p "$W/xlsx/xl/_rels"
 printf '%s' '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets/></workbook>' > "$W/xlsx/xl/workbook.xml"
 printf '%s' '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>' > "$W/xlsx/xl/_rels/workbook.xml.rels"
@@ -418,45 +508,15 @@ open_store() { # label binary db -> exit code
   return "$rc"
 }
 
-# Two databases at most on the tmpfs: the extracted one and the migrated
-# copy. The extracted one serves as the old Deus's control afterwards.
-copy_db "$W/deus-new" "$DB"
-pre_tables=$(tables "$W/deus-new/deus.db")
-integrity "$W/deus-new/deus.db"
-pre_integrity=$INTEGRITY
-pre_fk=$FK_ROWS
-say "before: $pre_tables tables; integrity_check $pre_integrity; foreign_key_check $pre_fk rows"
-say "new deus $DEUS_NEW_VERSION: $DEUS_NEW"
-t0=$(now_ms)
-rc=0
-open_store deus-new "$DEUS_NEW" "$W/deus-new/deus.db" || rc=$?
-dt=$(( $(now_ms) - t0 ))
-post_tables=$(tables "$W/deus-new/deus.db")
-if [ "$rc" = 0 ]; then
-  record deus.migrate PASS "new Deus $DEUS_NEW_VERSION opened and migrated the copy in $(secs "$dt"); tables $pre_tables -> $post_tables"
-else
-  show_log "$LOG/deus-new.err"
-  record deus.migrate FAIL "new Deus $DEUS_NEW_VERSION exited $rc after $(secs "$dt"); the copy is left part-migrated ($pre_tables -> $post_tables tables)"
-fi
-integrity "$W/deus-new/deus.db"
-say "after:  $post_tables tables; integrity_check $INTEGRITY; foreign_key_check $FK_ROWS rows"
-if [ "$rc" = 0 ] && [ "$INTEGRITY" = ok ] && [ "$FK_ROWS" = 0 ]; then
-  record deus.integrity PASS "integrity_check ok; foreign_key_check 0 rows (before: $pre_integrity, $pre_fk rows)"
-elif [ "$rc" != 0 ]; then
-  record deus.integrity FAIL "not judged: the migration failed (copy now: integrity $INTEGRITY, $FK_ROWS foreign-key rows)"
-else
-  record deus.integrity FAIL "integrity_check $INTEGRITY; foreign_key_check $FK_ROWS rows (before: $pre_integrity, $pre_fk rows)"
-fi
-
 say "old deus $DEUS_OLD_VERSION: $DEUS_OLD"
 crc=0
 open_store deus-old-control "$DEUS_OLD" "$DB" || crc=$?
-if [ "$rc" != 0 ]; then
-  record deus.rollback FAIL "not judged: the migration failed (old Deus on the untouched copy: exit $crc)"
+if [ "$migrated" = no ]; then
+  record deus.rollback FAIL "not judged: the migration did not run or failed (old Deus on the untouched copy: exit $crc)"
 else
   orc=0
-  open_store deus-old-rollback "$DEUS_OLD" "$W/deus-new/deus.db" || orc=$?
-  integrity "$W/deus-new/deus.db"
+  open_store deus-old-rollback "$DEUS_OLD" "$DEUS_NEW_DB" || orc=$?
+  integrity "$DEUS_NEW_DB"
   say "old deus on the untouched copy: exit $crc; on the migrated copy: exit $orc; then integrity_check $INTEGRITY, foreign_key_check $FK_ROWS rows"
   if [ "$crc" = 0 ] && [ "$orc" = 0 ] && [ "$INTEGRITY" = ok ]; then
     record deus.rollback PASS "old Deus $DEUS_OLD_VERSION opens the migrated copy (and the untouched one)"

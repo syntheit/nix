@@ -12,7 +12,12 @@
 #   v06-unreadable  a v0.9 that leaves the store in a form v0.6 cannot
 #                   read: v09.unchanged and v06.read FAIL
 #   bad-migration   deus.db with a table the new schema cannot build on:
-#                   deus.migrate FAIL
+#                   deus-server -migrate-only exits 1, deus.migrate FAIL
+#   unhealthy       deus.db with a dangling foreign key: the upgrade applies,
+#                   deus-server -migrate-only exits 2, deus.integrity FAIL
+#   no-migrate-only a new Deus whose deus-server has no -migrate-only (the
+#                   old Deus's stands in): deus.migrate FAIL, and it is never
+#                   run on the copy
 #   interrupted     SIGINT (Ctrl-C) mid-run, as the v0.9 phase begins:
 #                   exit 130, and still wiped
 #   killed          kill -9 mid-run: no trap runs, and the tmpfs is still gone
@@ -29,6 +34,7 @@ mkdir -p "$run" "$out"
 
 "$FIXTURE" "$scratch/good" --count 12
 "$FIXTURE" "$scratch/broken-deus" --count 12 --broken-deus
+"$FIXTURE" "$scratch/dangling-fk" --count 12 --dangling-fk
 cp "$scratch/good/backup.tar.zst.age" "$scratch/corrupt.age"
 size=$(stat -c %s "$scratch/corrupt.age")
 printf '\x5a' | dd of="$scratch/corrupt.age" bs=1 seek=$((size / 2)) conv=notrunc status=none
@@ -51,9 +57,11 @@ rehearse() {
 status_of() { awk -v c="$2" '/^==== REHEARSAL SUMMARY/ { s = 1 } s && $2 == c { print $1 }' "$1"; }
 
 # case-name log expected-exit actual-exit fixture-dir "check=STATUS ..."
+#   [an extended regex some line of the log must match]
 judge() {
-  local name=$1 log=$2 want_rc=$3 got_rc=$4 fx=$5 expect=$6 problems="" pair c want got mp
+  local name=$1 log=$2 want_rc=$3 got_rc=$4 fx=$5 expect=$6 must=${7:-} problems="" pair c want got mp
   [ "$got_rc" = "$want_rc" ] || problems+=" exit=$got_rc(want $want_rc)"
+  if [ -n "$must" ] && ! grep -Eq -- "$must" "$log"; then problems+=" no-line-matching[$must]"; fi
   for pair in $expect; do
     c=${pair%%=*}
     want=${pair#*=}
@@ -83,7 +91,8 @@ all_pass="isolation=PASS decrypt=PASS layout=PASS enrollments=PASS bootstraptoke
   deus.migrate=PASS deus.integrity=PASS deus.rollback=PASS"
 
 rc=0; rehearse "$HARNESS" "$scratch/good" "$out/good.log" || rc=$?
-judge good "$out/good.log" 0 "$rc" "$scratch/good" "$all_pass"
+judge good "$out/good.log" 0 "$rc" "$scratch/good" "$all_pass" \
+  '^ +deus-server -migrate-only: exit 0 in '
 
 rc=0; rehearse "$HARNESS" "$scratch/good" "$out/wrong-count.log" --expected-count 13 || rc=$?
 judge wrong-count "$out/wrong-count.log" 1 "$rc" "$scratch/good" \
@@ -102,7 +111,18 @@ judge v06-unreadable "$out/v06-unreadable.log" 1 "$rc" "$scratch/good" \
 
 rc=0; rehearse "$HARNESS" "$scratch/broken-deus" "$out/bad-migration.log" || rc=$?
 judge bad-migration "$out/bad-migration.log" 1 "$rc" "$scratch/broken-deus" \
-  "decrypt=PASS enrollments=PASS v09.read=PASS v06.read=PASS deus.migrate=FAIL deus.integrity=FAIL deus.rollback=FAIL"
+  "decrypt=PASS enrollments=PASS v09.read=PASS v06.read=PASS deus.migrate=FAIL deus.integrity=FAIL deus.rollback=FAIL" \
+  '^ +FAIL +deus\.migrate +deus-server -migrate-only exited 1 after '
+
+rc=0; rehearse "$HARNESS" "$scratch/dangling-fk" "$out/unhealthy.log" || rc=$?
+judge unhealthy "$out/unhealthy.log" 1 "$rc" "$scratch/dangling-fk" \
+  "decrypt=PASS enrollments=PASS v09.read=PASS v06.read=PASS deus.migrate=PASS deus.integrity=FAIL" \
+  '^ +FAIL +deus\.integrity +deus-server -migrate-only exit 2; its report: 0 integrity_check problems, 1 foreign_key_check rows;'
+
+rc=0; rehearse "$HARNESS_NO_MIGRATE_ONLY" "$scratch/good" "$out/no-migrate-only.log" || rc=$?
+judge no-migrate-only "$out/no-migrate-only.log" 1 "$rc" "$scratch/good" \
+  "decrypt=PASS enrollments=PASS v09.read=PASS v06.read=PASS deus.migrate=FAIL deus.integrity=FAIL deus.rollback=FAIL" \
+  '^ +FAIL +deus\.migrate +new Deus .*: deus-server is missing or has no -migrate-only flag \(-help exit 0\)'
 
 # The owner's path: the identity typed at the prompt on a terminal (a
 # pseudo-terminal here), sent only once the prompt is up, as a person would.
