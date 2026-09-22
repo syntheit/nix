@@ -1,4 +1,4 @@
-# malli-rehearsal-fixture DIR [--count N] [--broken-deus]
+# malli-rehearsal-fixture DIR [--count N] [--broken-deus] [--dangling-fk]
 #
 # Writes a SYNTHETIC stand-in for the pre-upgrade backup into DIR. Nothing
 # in it comes from production: a NanoMDM file store of N made-up
@@ -17,17 +17,23 @@
 # --broken-deus plants a table the new Deus's schema cannot build on (an
 # mdm_enrollments without its columns, so schema.sql's index on
 # mdm_enrollments(serial_number) fails), so its migration fails.
+#
+# --dangling-fk plants a rack_slots row whose rack_units parent does not
+# exist. The new Deus's migration succeeds, but its foreign_key_check finds
+# the row, so deus-server -migrate-only reports unhealthy and exits 2.
 umask 077
 export LC_ALL=C
 
-dir=${1:?usage: malli-rehearsal-fixture DIR [--count N] [--broken-deus]}
+dir=${1:?usage: malli-rehearsal-fixture DIR [--count N] [--broken-deus] [--dangling-fk]}
 shift
 count=12
 broken_deus=0
+dangling_fk=0
 while [ $# -gt 0 ]; do
   case $1 in
     --count) count=$2; shift 2 ;;
     --broken-deus) broken_deus=1; shift ;;
+    --dangling-fk) dangling_fk=1; shift ;;
     *) echo "unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -99,6 +105,8 @@ printf '%s' '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationshi
 "$DEUS_OLD" -db "$db" -xlsx "$dir/empty.xlsx" -dry-run > /dev/null
 now=$(date +%s)
 {
+  # The sqlite3 shell's default, spelled out: the dangling row below must go in.
+  if [ "$dangling_fk" = 1 ]; then echo "PRAGMA foreign_keys = OFF;"; fi
   echo "BEGIN;"
   for i in $(seq 1 "$count"); do
     printf "INSERT INTO heartbeats (host_name, rev, uptime_s, disk_free_gb, mem_free_gb, containers, tailscale, updated_at) VALUES ('%s-%d', 'rev', 100, 10.5, 2.5, '{}', '{}', %d);\n" "$marker_host" "$i" "$now"
@@ -108,6 +116,9 @@ now=$(date +%s)
   printf "INSERT INTO users (name, vm_admin_password, vpn_token, created_at, updated_at) VALUES ('synthetic-user', '%s', '%s', %d, %d);\n" "$marker_pw" "$marker_vpn" "$now" "$now"
   if [ "$broken_deus" = 1 ]; then
     echo "CREATE TABLE mdm_enrollments (legacy_blob TEXT);"
+  fi
+  if [ "$dangling_fk" = 1 ]; then
+    printf "INSERT INTO rack_slots (cabinet, unit, position, host_name) VALUES ('synthetic-cabinet', 99, 1, '%s-slot');\n" "$marker_host"
   fi
   echo "COMMIT;"
 } | sqlite3 -batch -bail "$db"
@@ -129,4 +140,4 @@ grep -h AGE-SECRET-KEY "$dir/identity" >> "$dir/markers"
 rm -rf "$src" "$dir/xlsx" "$dir/empty.xlsx"
 printf 'fixture: %s enrollments, %s bytes encrypted, recipient %s%s\n' \
   "$count" "$(stat -c %s "$dir/backup.tar.zst.age")" "$recipient" \
-  "$([ "$broken_deus" = 1 ] && echo ', deus.db with a table the new schema cannot build on')"
+  "$([ "$broken_deus" = 1 ] && echo ', deus.db with a table the new schema cannot build on')$([ "$dangling_fk" = 1 ] && echo ', deus.db with a dangling rack_slots foreign key')"

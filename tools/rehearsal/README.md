@@ -22,8 +22,8 @@ cannot reach them over the network, and it cannot see their files or sockets.
 | `v09.read` | v0.9's own storage code reads every enrollment. That covers Authenticate, push info, bootstrap tokens, queued commands and the push certificate. There are no read errors. |
 | `v09.unchanged` | After v0.9 has run, the store's stat manifest is identical to the one taken before. The manifest records path, type, mode, size and mtime, never contents. |
 | `v06.*` | The same checks for the v0.6.0 binary that vista runs today. It runs without `enable_deprecated` on the same copy, after v0.9 has opened it. This is the rollback. |
-| `deus.migrate` | The new Deus opens a copy of the real `deus.db` and applies its migrations. The line gives the duration and the table count before and after. |
-| `deus.integrity` | After migration, `PRAGMA integrity_check` returns `ok` and `PRAGMA foreign_key_check` returns no rows. |
+| `deus.migrate` | The new Deus's `deus-server -migrate-only -state-dir /work/deus-new` upgrades a copy of the real `deus.db` on the tmpfs, and its report names that copy and says it migrated it. The line gives the duration, the exit code and the table count before and after. FAIL when the binary is missing or has no `-migrate-only`, when it exits 1 (the open or the upgrade failed), or when its report does not name the copy or says it created a new database. |
+| `deus.integrity` | `deus-server -migrate-only` exited 0: its own `integrity_check` says only `ok` and its `foreign_key_check` has no rows. The harness's `sqlite3` then agrees on the same copy. Exit 2 (upgraded, but a check found a problem) is a FAIL here. |
 | `deus.rollback` | The Deus that vista runs today opens the migrated copy. It is also run on the untouched copy as a control. PASS means step 2 has a code-only rollback. |
 
 ## What it does not prove
@@ -41,13 +41,16 @@ cannot reach them over the network, and it cannot see their files or sockets.
   API key at all, and the reads go through a small probe (`probe/main.go`).
   The probe is compiled inside each version's own source tree and calls only
   that version's storage read methods.
-- **Deus beyond its migrations.** Deus has no migrate-only command. The
-  smallest existing entry point that runs the migrations is
-  `deus-rack-import -dry-run`, which calls the same `store.Open` as
-  `deus-server`. It runs with an empty workbook and an empty host list, so
-  it reads and writes nothing else. `deus-server`'s startup, its loops and
-  its retention pruning are not exercised. A `-migrate-only` flag is
-  proposed below.
+- **Deus beyond its migrations.** `deus-server -migrate-only` (Deus
+  `c26640d`) runs right after flag parsing, before the logger, any token or
+  secret, and any listener or socket. It opens `<state-dir>/deus.db` with
+  the same `store.Open` the service uses, reports, and exits. So the rest of
+  `deus-server`'s startup, its loops and its retention pruning are not
+  exercised. The old Deus that vista runs has no `-migrate-only`, so the
+  rollback check opens the migrated copy with its
+  `deus-rack-import -dry-run`, which calls that version's `store.Open`. It
+  runs with an empty workbook and an empty host list, so it reads and
+  writes nothing else.
 - **Anything the other steps change.** That includes container images and
   the Docker or nspawn wiring, file ownership (the copy is extracted without
   owners), the UID 999→3999 move, the credential switch and `-dm`.
@@ -83,9 +86,11 @@ cannot reach them over the network, and it cannot see their files or sockets.
   backup's parts, and PASS or FAIL. It never prints file contents,
   enrollment IDs or database rows. The only SQL it runs is
   `SELECT count(*) FROM sqlite_master` and two `PRAGMA` checks, so no row,
-  `admin_password` or token column is ever read. `--show-errors` is
-  opt-in. It prints a failing tool's own last error lines, which can name a
-  file, a table or a constraint.
+  `admin_password` or token column is ever read. `deus-server -migrate-only`
+  runs the same kind of counts and checks. Its report can name a table and
+  a row id, so it stays in the wiped log, and only its counts and exit code
+  are printed. `--show-errors` is opt-in. It prints a failing tool's own
+  last error lines, which can name a file, a table or a constraint.
 - **Production comes first.** The run has an OOM score of 1000, so the
   kernel kills it before any service. It runs at lower CPU and I/O
   priority. As root it runs inside a transient systemd scope capped at
@@ -122,9 +127,13 @@ The build uses only committed trees, never uncommitted work:
 - NanoMDM v0.9 from the same configuration with the step-3 pin set. It is
   fed from the new Deus's vendored `third_party/nanomdm`, and its tree hash
   is checked;
-- the new Deus from the committed head of `feature/macos-updates`;
+- the new Deus from the committed head of `feature/macos-updates`. Its
+  `deus-server` must have `-migrate-only` (Deus `c26640d`, in 0.58.0). The
+  build stops with an error on a Deus without it, and the run checks again;
 - the old Deus from the `deus` revision locked in `/home/daniel/nix/flake.lock`,
-  which is what vista runs.
+  which is what vista runs. If that lock already points at the new Deus,
+  pass `--old-deus-rev` with the revision vista actually runs. Otherwise
+  `deus.rollback` only tests the new Deus against itself.
 
 If step 2 will deploy a different Deus revision, pass
 `--new-deus-rev <sha>` and build again. `build.sh` prints the store path of
@@ -168,10 +177,12 @@ variables are cleared then.
   the backup is incomplete.
 - `v09.*` or `v06.*`: do not start step 3. The step-3 rollback cannot be
   trusted.
-- `deus.migrate` or `deus.integrity`: do not start step 2. A failed migration
-  leaves the database half-migrated (`schema.sql` is not applied in a
-  transaction), so recovering from one needs the backup, not only the old
-  binary.
+- `deus.migrate` or `deus.integrity`: do not start step 2. The new Deus
+  applies its whole upgrade in one transaction, so a failed upgrade should
+  leave the file as it was. The table counts before and after on the
+  `deus.migrate` line show whether it did. A `deus.migrate` that says the
+  flag is missing means the harness was built from the wrong Deus: build
+  again with `--new-deus-rev`.
 - `deus.rollback`: step 2 is one-way. Rolling it back means restoring
   `deus.db` from the backup.
 
@@ -200,18 +211,11 @@ runs the harness as root of an unprivileged user namespace, in these cases:
 - a wrong count;
 - a corrupt archive;
 - a v0.9 that leaves the store unreadable to v0.6;
-- a failing migration;
-- a Ctrl-C mid-run.
+- a failing migration (`deus-server -migrate-only` exits 1);
+- a migration that applies but leaves a dangling foreign key (exit 2);
+- a new Deus whose `deus-server` has no `-migrate-only`;
+- a Ctrl-C mid-run, and a `kill -9` mid-run.
 
 Every case must end with a complete wipe and with none of the planted
 secret markers in the output. The markers are the identity, bootstrap
 tokens, passwords, enrollment IDs and host names.
-
-## Proposed Deus addition
-
-A `-migrate-only` flag on `deus-server` would be the honest entry point for
-this check. After flag parsing and before tokens are loaded, it would call
-`store.Open(filepath.Join(*stateDir, "deus.db"))`, close the store and exit 0.
-That would replace the `deus-rack-import -dry-run` stand-in. Applying
-`schema.sql` inside one transaction would make a failed migration leave the
-database as it was.
