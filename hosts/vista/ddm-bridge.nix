@@ -8,6 +8,13 @@ let
   stateDir = "/var/lib/deus";
   privateDir = "${stateDir}/ddm-private";
   socketPath = "${privateDir}/socket";
+  # Bridge start policy: each start waits up to socketWaitSec for Deus to
+  # accept on the socket; a failed start is retried after restartSec; five
+  # starts within 15 min end in start-limit-hit. That is about 12 minutes of
+  # retrying from a cold boot, instead of oci-containers' default 100 ms
+  # restarts, which burn the default burst of five in about a second.
+  socketWaitSec = 120;
+  restartSec = 30;
   bridgeText = builtins.readFile ../../packages/nanomdm-ddm-bridge.py;
   bridgeTag = "1.0.0-${builtins.substring 0 12 (builtins.hashString "sha256" bridgeText)}";
   nanomdmVersion = import ../../packages/nanomdm-patched/version.nix;
@@ -97,14 +104,18 @@ let
   '';
   bridgePreflight = pkgs.writeShellScript "deus-ddm-bridge-preflight" ''
     set -eu
+    # A socket file is not a listener: after an unclean Deus exit the file
+    # stays and nothing accepts on it. Require one that accepts a connection.
+    # (Run as root, which Deus's SO_PEERCRED check closes silently.) Wait for
+    # it first, with a bound: this unit is ordered only after
+    # container@headscale, which is ready when the container boots, well
+    # before its deus-server has bound the socket. Everything below is then
+    # checked against the directory and socket Deus is actually serving.
+    ${pkgs.python3}/bin/python3 ${socketProbe} wait ${socketPath} ${toString socketWaitSec}
     ${statePreflight}
     test ! -L ${privateDir}
     test -d ${privateDir}
     test "$(${pkgs.coreutils}/bin/stat -c '%u:%g:%a' ${privateDir})" = '${bridgeID}:${bridgeID}:700'
-    # A socket file is not a listener: after an unclean Deus exit the file
-    # stays and nothing accepts on it. Require one that accepts a connection.
-    # (Run as root, which Deus's SO_PEERCRED check closes silently.)
-    ${pkgs.python3}/bin/python3 ${socketProbe} wait ${socketPath} 0
     test ! -L ${socketPath}
     test -S ${socketPath}
     test "$(${pkgs.coreutils}/bin/stat -c '%u:%g:%a' ${socketPath})" = '${bridgeID}:${bridgeID}:600'
@@ -264,6 +275,11 @@ in
     systemd.services.docker-deus-ddm-bridge = {
       after = [ "container@headscale.service" ];
       partOf = [ "docker-nanomdm.service" ];
+      # See socketWaitSec. oci-containers sets TimeoutStartSec = 0, so the
+      # bounded wait in the preflight is never cut short by a start timeout.
+      startLimitIntervalSec = 15 * 60;
+      startLimitBurst = 5;
+      serviceConfig.RestartSec = "${toString restartSec}s";
       serviceConfig.ExecStartPre = lib.mkBefore [ "${bridgePreflight}" ];
     };
     systemd.services.docker-nanomdm.wants = [ "docker-deus-ddm-bridge.service" ];
