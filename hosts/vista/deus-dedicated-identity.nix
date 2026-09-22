@@ -29,6 +29,10 @@ let
     ownedBy ${lib.escapeShellArg r.path} ${flag (r.user == "deus")} ${flag (r.group == "deus")}
   '') deusRules;
   deusRuleCount = toString (builtins.length deusRules);
+  # How long a state deus-server's guard refuses must last before the alarm
+  # unit reports it. Long enough that a switch, a container start or a
+  # deliberate mid-migration window does not page anyone.
+  alarmGraceSec = 300;
   # Host side: the bind-mounted state dir, and the container's own deus
   # passwd/group entries. NixOS never changes an existing UID or GID
   # (update-users-groups.pl warns "not applying UID change" and keeps the
@@ -146,7 +150,7 @@ let
     ${ownedChecks}
     if [ "$mode" = start ]; then
       if [ "$problems" != 0 ]; then
-        say "starting the container anyway. It carries Headscale, the VPN control plane for the whole Mac fleet, and refusing its start is an outage for every Mac; a start re-owns at most ${stateDir} and the ${deusRuleCount} paths above, which a chown puts back. deus-server's own guard keeps Deus down until the migration is finished."
+        say "starting the container anyway. It carries Headscale, the VPN control plane for the whole Mac fleet, and refusing its start is an outage for every Mac; a start re-owns at most ${stateDir} and the ${deusRuleCount} paths above, which a chown puts back. deus-server's own guard keeps Deus down until the migration is finished: journalctl -u vista-deus-identity-alarm, or -M headscale -u deus-server."
       elif [ "$eu:$eg" = '${legacy}:${legacy}' ]; then
         say "the container's deus and ${stateDir} are all still ${legacy}: the Deus UID ${id} migration has not been done. Nothing would be re-owned; a step-4 or later container configuration keeps deus-server down until the migration."
       fi
@@ -200,6 +204,45 @@ let
       fi
     }
     ${ownedChecks}
+  '';
+  # 61b3277 took deus-server's infinite backoff as far as it goes: it can
+  # never reach "failed", so `systemctl --failed` and everything built on it
+  # stopped seeing a guard-refused Deus at all. vista has no other alerting
+  # that could carry it — the dark-host webhook and Sentry sinks live inside
+  # deus-server, which is the process that is down, and both are evaluated
+  # away anyway while their encrypted files are absent from this repo. So
+  # this unit is the alarm: it re-runs the switch rule, which is exactly the
+  # state deusGuard demands, and goes to "failed" once that has been refused
+  # for ${toString alarmGraceSec}s. Deus keeps retrying forever regardless;
+  # this only makes the refusal visible. It clears itself the moment the
+  # state is whole again.
+  guardAlarm = pkgs.writeShellScript "vista-deus-identity-alarm" ''
+    set -u
+    stamp=''${RUNTIME_DIRECTORY-/run/vista-deus-identity-alarm}/refused-since
+    say() { echo "vista-deus-identity-alarm: $*" >&2; }
+    # A deliberately stopped container is not a Deus outage to report.
+    if ! ${pkgs.systemd}/bin/systemctl is-active --quiet container@headscale.service; then
+      rm -f "$stamp"
+      exit 0
+    fi
+    if reason=$(${statePreflight} switch 2>&1); then
+      if [ -e "$stamp" ]; then
+        rm -f "$stamp"
+        say "the Deus UID ${id} state is whole again; deus-server's guard will let it start."
+      fi
+      exit 0
+    fi
+    now=$(${pkgs.coreutils}/bin/date +%s)
+    [ -e "$stamp" ] || echo "$now" > "$stamp"
+    since=$(${pkgs.coreutils}/bin/cat "$stamp" 2>/dev/null) || since=$now
+    age=$((now - since))
+    echo "$reason" >&2
+    if [ "$age" -lt ${toString alarmGraceSec} ]; then
+      say "deus-server's identity guard has been refusing for ''${age}s. Reporting as a failure once it passes ${toString alarmGraceSec}s."
+      exit 0
+    fi
+    say "deus-server has been refused by its identity guard for ''${age}s and Deus is down, retrying forever without ever reaching \"failed\". Finish or undo the Deus UID ${id} migration. Detail: journalctl -u vista-deus-identity-alarm -u vista-deus-identity-preflight, and journalctl -M headscale -u deus-server."
+    exit 1
   '';
 in
 {
@@ -266,7 +309,9 @@ in
           # noisy, and Deus stays down. systemd resets the step count only on
           # a start it did not queue itself (a manual start or restart, or a
           # switch that restarts Deus), so ten crashes without one leave
-          # every later crash at 5 min.
+          # every later crash at 5 min. Because Deus never reaches "failed",
+          # the host's vista-deus-identity-alarm.timer is what makes a
+          # guard refusal visible to `systemctl --failed`.
           RestartSteps = 10;
           RestartMaxDelaySec = "5min";
         };
@@ -336,6 +381,29 @@ in
       # Headscale — untouched. Refusing a reload costs no availability,
       # which is why this one still can.
       serviceConfig.ExecReload = lib.mkBefore [ "${statePreflight} reload" ];
+    };
+
+    # The alarm. Deus never reaches "failed" by design, so this unit reaches
+    # it instead, and `systemctl --failed` sees a guard-refused Deus again.
+    systemd.services.vista-deus-identity-alarm = {
+      description = "Report a Deus UID ${id} guard refusal lasting over ${toString (alarmGraceSec / 60)} minutes";
+      unitConfig.RequiresMountsFor = [ stateDir containerRoot ];
+      serviceConfig = {
+        Type = "oneshot";
+        # Preserve=yes, or systemd removes the runtime dir when the oneshot
+        # exits and the "how long has this lasted" stamp never survives.
+        RuntimeDirectory = "vista-deus-identity-alarm";
+        RuntimeDirectoryPreserve = "yes";
+        ExecStart = "${guardAlarm}";
+      };
+    };
+    systemd.timers.vista-deus-identity-alarm = {
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        # After the container and Deus have had a boot's worth of time.
+        OnBootSec = "10min";
+        OnUnitActiveSec = "5min";
+      };
     };
   };
 }
