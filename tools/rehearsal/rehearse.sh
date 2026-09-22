@@ -164,17 +164,21 @@ wipe() {
   if [ -d "$mnt" ] && [ "$unmounted" = yes ]; then rmdir "$mnt" 2>/dev/null || true; fi
   if [ ! -e "$mnt" ]; then removed=yes; fi
   printf '\nWIPE: %s files zeroed and unlinked, %s entries left before unmount; tmpfs unmounted: %s; mountpoint %s removed: %s\n' \
-    "$files" "$left" "$unmounted" "$mnt" "$removed"
+    "$files" "$left" "$unmounted" "$mnt" "$removed" 2>/dev/null || true
 }
 
 # shellcheck disable=SC2329 # the EXIT trap
 cleanup() {
   local rc=$?
-  trap - EXIT INT TERM HUP
+  # Nothing may stop the wipe: not a second Ctrl-C, TERM or HUP, and not a
+  # dead reader of stdout or stderr. Under `sudo ... 2>&1 | tee`, a write
+  # after tee has died raises SIGPIPE, which would kill this shell before
+  # the wipe. So ignore all four first (children inherit that), kill the
+  # sandbox and wipe before printing anything, and let every message fail
+  # quietly.
+  trap '' PIPE INT TERM HUP
+  trap - EXIT
   set +e
-  case $rc in
-    129 | 130 | 143) printf '\nmalli-rehearse: interrupted (exit %s); wiping\n' "$rc" >&2 ;;
-  esac
   key=""
   unset key
   if [ -n "$sandbox_pid" ] && kill -0 "$sandbox_pid" 2>/dev/null; then
@@ -187,12 +191,16 @@ cleanup() {
     wait "$sandbox_pid" 2>/dev/null
   fi
   wipe
+  case $rc in
+    129 | 130 | 141 | 143) printf '\nmalli-rehearse: interrupted (exit %s); wiped\n' "$rc" >&2 2>/dev/null || true ;;
+  esac
   exit "$rc"
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP
+trap 'exit 141' PIPE
 
 # Swap that can only land in RAM: every active swap device is zram with no
 # writeback backing device. Only consulted when noswap is refused.
