@@ -72,12 +72,33 @@ still requires its own approved state migration and service validation.
    Docker kernel UID maps, and check `/var/lib/deus` is 3999:3999 mode 0700.
    Enable `deusDedicatedIdentity` only after that check; it does not migrate
    state. The host activation preflight enforces the parent ownership/mode
-   before the container reloads. The nspawn start preflight refuses only a
-   mixed 999/3999 state: an all-999 container still starts (Headscale), and
-   deus-server's own guard keeps Deus down. The reviewed Deus module's
-   inner tmpfiles rule still enforces parent 3999:3999 mode 0700, but does not
-   recursively migrate contents; the whole tree must be audited first. A
-   failed state check means restore the backup and stop.
+   before the container reloads, and so does a `systemctl reload
+   container@headscale` or a `nixos-container update`; refusing either only
+   leaves the container on the generation it is already running.
+
+   The container's **start** never refuses, in any state — all 999, all
+   3999, any mixture, an absent passwd/group, even an absent state dir. The
+   container carries Headscale, the control plane for the whole Mac fleet,
+   and `systemctl restart container@headscale` stops before it starts, so a
+   refusal there would be a one-way fleet outage. A start in a mixed state
+   re-owns at most `/var/lib/deus` and the five other paths the container's
+   tmpfiles rules name (one `d`, two `f`, three `C+`; none of them
+   recurses), which a chown puts straight back. deus-server's own guard is
+   what keeps Deus down, and it checks all six.
+
+   While Deus is guard-refused it retries forever and never reaches
+   "failed", so watch `systemctl --failed` for
+   `vista-deus-identity-alarm.service`: it fails once a refusal has lasted 5
+   minutes and clears itself when the state is whole again. For the reason,
+   `journalctl -u vista-deus-identity-alarm -u vista-deus-identity-preflight`
+   on the host, and `journalctl -M headscale -u deus-server` for Deus's own
+   refusal. `deus-fleet-recover` is held to the same guard, so it will also
+   show as a failed unit on its 5-minute timer for the duration.
+
+   The reviewed Deus module's inner tmpfiles rule still enforces parent
+   3999:3999 mode 0700, but does not recursively migrate contents; the whole
+   tree must be audited first. A failed state check means restore the backup
+   and stop.
 5. Deploy a **first generation** with `privateCredentials.prepare = true`,
    `receiverVerified = true`, both encrypted secret-file paths set, and
    `enable = false`. This stages private files, resecures the old 0444 API
