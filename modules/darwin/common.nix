@@ -399,17 +399,30 @@ in
 
       # ================================================================
       # TCC permissions (requires SIP disabled)
+      #
+      # csrutil disable puts Apple Silicon in Permissive Security, which
+      # leaves the OS "Not Paired" (bputil -d) — and macOS OTA updates then
+      # fail at preflight with "Failed to personalize" (MSU error 1259).
+      # macOS update runbook:
+      #   1. recovery -> csrutil enable (needs Wi-Fi) -> reboot
+      #   2. install the macOS update
+      #   3. recovery -> csrutil disable -> reboot
+      #   4. darwin-rebuild switch (re-applies these grants)
       # ================================================================
-      TCC_DB="/Library/Application Support/com.apple.TCC/TCC.db"
-      ${lib.concatMapStringsSep "\n" (g: ''
-        # ${g.reason}
-        sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) VALUES ('${g.service}', '$(readlink -f ${g.package}/bin/${g.exec})', 1, 2, 4, 1);"
-      '') config.matv.darwin.tccGrants}
+      if csrutil status | grep -q 'disabled'; then
+        TCC_DB="/Library/Application Support/com.apple.TCC/TCC.db"
+        ${lib.concatMapStringsSep "\n" (g: ''
+          # ${g.reason}
+          sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) VALUES ('${g.service}', '$(readlink -f ${g.package}/bin/${g.exec})', 1, 2, 4, 1);"
+        '') config.matv.darwin.tccGrants}
 
-      # Force tccd to reload from TCC.db — direct sqlite writes don't invalidate
-      # its in-memory cache, so yabai/skhd would otherwise launch without
-      # effective accessibility until tccd is restarted.
-      killall tccd 2>/dev/null || true
+        # Force tccd to reload from TCC.db — direct sqlite writes don't invalidate
+        # its in-memory cache, so yabai/skhd would otherwise launch without
+        # effective accessibility until tccd is restarted.
+        killall tccd 2>/dev/null || true
+      else
+        echo "warning: SIP is enabled — skipped TCC.db grants; run 'darwin-rebuild switch' again after csrutil disable" >&2
+      fi
 
       # Bounce yabai/skhd only when their launchd plist actually changed.
       # Yabai keeps no on-disk bsp state, so each restart rebuilds the tree
