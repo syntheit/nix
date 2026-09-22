@@ -33,7 +33,15 @@ let
   mkSessionFn =
     letter: target:
     let
-      launch = if transportFor target == "mosh" then "mosh ${target} -- bash -c" else "ssh -t ${target}";
+      # MOSH_SERVER_NETWORK_TMOUT: a mosh-server whose client vanished otherwise
+      # lingers forever, and on the Macs that would hold the ssh-keepawake
+      # assertion (modules/darwin/common.nix) and keep the laptop awake on
+      # battery. Exit after 30 min with no client; the tmux session survives.
+      launch =
+        if transportFor target == "mosh" then
+          "mosh --server='env MOSH_SERVER_NETWORK_TMOUT=1800 mosh-server' ${target} -- bash -c"
+        else
+          "ssh -t ${target}";
     in
     if target == hostName then
       ''
