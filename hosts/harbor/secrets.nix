@@ -1,4 +1,4 @@
-{ config, ... }:
+{ config, lib, ... }:
 
 {
   # sops-nix — secrets decrypted at activation time to /run/secrets/
@@ -46,8 +46,8 @@
   sops.secrets.karakeep_meili_master_key = { };
   sops.secrets.docmost_app_secret = { };
   sops.secrets.docmost_db_password = { };
-  sops.secrets.elliot_telegram_token = { owner = "elliot"; };
-  sops.secrets.elliot_claude_oauth_token = { owner = "elliot"; };
+  sops.secrets.elliot_telegram_token = lib.mkIf config.services.elliot.enable { owner = "elliot"; };
+  sops.secrets.elliot_claude_oauth_token = lib.mkIf config.services.elliot.enable { owner = "elliot"; };
   sops.secrets.jelly_recs_jellyfin_api_key = { owner = "jelly-recs"; };
   sops.secrets.grafana_secret_key = {
     owner = "grafana";
@@ -192,7 +192,7 @@
   '';
 
   # Elliot Claude OAuth env file
-  sops.templates."elliot-claude.env" = {
+  sops.templates."elliot-claude.env" = lib.mkIf config.services.elliot.enable {
     owner = "elliot";
     content = ''
       CLAUDE_CODE_OAUTH_TOKEN=${config.sops.placeholder.elliot_claude_oauth_token}
