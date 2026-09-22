@@ -15,6 +15,10 @@
 #                   deus-server -migrate-only exits 1, deus.migrate FAIL
 #   unhealthy       deus.db with a dangling foreign key: the upgrade applies,
 #                   deus-server -migrate-only exits 2, deus.integrity FAIL
+#   swap-token, swap-token-expected-count
+#                   one Mac lost since the baseline and one new, so the
+#                   counts agree (also with --expected-count): bootstraptokens
+#                   FAIL and prints the lost Mac's ID, and no other ID
 #   omit-scep, omit-scep-key, omit-nanodep, omit-pushcert
 #                   the backup lacks the scep directory, scep/ca.key, every
 #                   NanoDEP file, or the push certificate: layout FAIL
@@ -44,6 +48,7 @@ mkdir -p "$run" "$out"
 "$FIXTURE" "$scratch/dangling-fk" --count 12 --dangling-fk
 "$FIXTURE" "$scratch/empty-deus" --count 12 --empty-deus
 "$FIXTURE" "$scratch/no-heartbeats" --count 12 --no-heartbeats
+"$FIXTURE" "$scratch/swap-token" --count 12 --swap-token
 omitted_pieces="scep scep-key nanodep pushcert"
 for piece in $omitted_pieces; do
   "$FIXTURE" "$scratch/omit-$piece" --count 12 --omit "$piece"
@@ -131,6 +136,22 @@ rc=0; rehearse "$HARNESS" "$scratch/dangling-fk" "$out/unhealthy.log" || rc=$?
 judge unhealthy "$out/unhealthy.log" 1 "$rc" "$scratch/dangling-fk" \
   "decrypt=PASS enrollments=PASS v09.read=PASS v06.read=PASS deus.migrate=PASS deus.integrity=FAIL" \
   '^ +FAIL +deus\.integrity +deus-server -migrate-only exit 2; its report: 0 integrity_check problems, 1 foreign_key_check rows;'
+
+# One Mac lost since the baseline and one new: the counts agree, the IDs do
+# not. Only the lost Mac's ID may appear (the markers hold every other ID).
+lost_id=5E1F7E57-0001-4000-8000-000000000001
+for name in swap-token swap-token-expected-count; do
+  extra=()
+  [ "$name" = swap-token ] || extra=(--expected-count 12)
+  rc=0; rehearse "$HARNESS" "$scratch/swap-token" "$out/$name.log" "${extra[@]}" || rc=$?
+  judge "$name" "$out/$name.log" 1 "$rc" "$scratch/swap-token" \
+    "decrypt=PASS layout=PASS enrollments=PASS bootstraptokens=FAIL v09.read=PASS v06.read=PASS deus.migrate=PASS deus.rollback=PASS" \
+    "^ +FAIL +bootstraptokens +1 bootstrap tokens in the baseline are not in the backup \(IDs above\); 12 BootstrapToken\.dat, expected 12; vs baseline \(12 rows\): 1 missing, 1 new, 0 resized$"
+  if [ "$(grep -c "^ \+missing: $lost_id$" "$out/$name.log")" != 1 ]; then
+    if [[ ${results[-1]} == PASS* ]]; then failures=$((failures + 1)); fi
+    results[-1]="FAIL  $name: lost-id-not-printed-once (${results[-1]})"
+  fi
+done
 
 for piece in $omitted_pieces; do
   case $piece in

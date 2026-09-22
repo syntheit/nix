@@ -1,6 +1,6 @@
 # malli-rehearsal-fixture DIR [--count N] [--broken-deus] [--dangling-fk]
 #                             [--empty-deus] [--no-heartbeats]
-#                             [--omit scep|scep-key|nanodep|pushcert]
+#                             [--omit scep|scep-key|nanodep|pushcert] [--swap-token]
 #
 # Writes a SYNTHETIC stand-in for the pre-upgrade backup into DIR. Nothing
 # in it comes from production: a NanoMDM file store of N made-up
@@ -31,10 +31,13 @@
 #
 # --omit leaves one piece out of the archive: the scep directory, scep/ca.key,
 # every file in nanodep (the directory stays, empty), or the push certificate.
+#
+# --swap-token removes the first Mac, bootstrap token and all, and enrolls a
+# new one the baseline does not list: the counts match, the IDs do not.
 umask 077
 export LC_ALL=C
 
-dir=${1:?usage: malli-rehearsal-fixture DIR [--count N] [--broken-deus] [--dangling-fk] [--empty-deus] [--no-heartbeats] [--omit PIECE]}
+dir=${1:?usage: malli-rehearsal-fixture DIR [--count N] [--broken-deus] [--dangling-fk] [--empty-deus] [--no-heartbeats] [--omit PIECE] [--swap-token]}
 shift
 count=12
 broken_deus=0
@@ -42,6 +45,7 @@ dangling_fk=0
 empty_deus=0
 no_heartbeats=0
 omit=""
+swap_token=0
 while [ $# -gt 0 ]; do
   case $1 in
     --count) count=$2; shift 2 ;;
@@ -50,6 +54,7 @@ while [ $# -gt 0 ]; do
     --empty-deus) empty_deus=1; shift ;;
     --no-heartbeats) no_heartbeats=1; shift ;;
     --omit) omit=$2; shift 2 ;;
+    --swap-token) swap_token=1; shift ;;
     *) echo "unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -73,11 +78,10 @@ plist_head='<?xml version="1.0" encoding="UTF-8"?>
 plist_tail='</dict>
 </plist>'
 
-: > "$dir/baseline.tsv"
-ids=()
-for i in $(seq 1 "$count"); do
+# enroll I: made-up device enrollment number I in the store; sets id and e.
+enroll() {
+  local i=$1 serial token cuuid
   id=$(printf '5E1F7E57-%04X-4000-8000-%012X' "$i" "$i")
-  ids+=("$id")
   e=$store/$id
   mkdir -p "$e"
   serial=$(printf 'SYNTH%07d' "$i")
@@ -95,13 +99,29 @@ for i in $(seq 1 "$count"); do
     printf '%s\n<key>CommandUUID</key><string>%s</string>\n<key>Command</key><dict><key>RequestType</key><string>DeviceInformation</string><key>Queries</key><array><string>UDID</string></array></dict>\n%s\n' \
       "$plist_head" "$cuuid" "$plist_tail" > "$e/Queue/$cuuid.plist"
   fi
+}
+: > "$dir/baseline.tsv"
+ids=()
+for i in $(seq 1 "$count"); do
+  enroll "$i"
+  ids+=("$id")
   printf '%s\t%s\t%s\n' "$id" "$(stat -c %s "$e/BootstrapToken.dat")" 2026-09-20 >> "$dir/baseline.tsv"
 done
+# The IDs the harness must never print: every enrollment in the store.
+id_markers=("5E1F7E57-")
+if [ "$swap_token" = 1 ]; then
+  # A Mac gone since the baseline, with its bootstrap token, and a new Mac
+  # enrolled: the counts still match the baseline's. The harness prints
+  # the lost Mac's ID, so the markers are every other ID in full.
+  rm -rf "${store:?}/${ids[0]}"
+  enroll $((count + 1))
+  id_markers=("${ids[@]:1}" "$id" 5E1F7E57-0000-4000-8000-00000000USER)
+fi
 # One user channel: a TokenUpdate and no Authenticate.
-u=$store/${ids[0]}:5E1F7E57-0000-4000-8000-00000000USER
+u=$store/${ids[-1]}:5E1F7E57-0000-4000-8000-00000000USER
 mkdir -p "$u"
 printf '%s\n<key>MessageType</key><string>TokenUpdate</string>\n<key>Topic</key><string>%s</string>\n<key>UDID</key><string>%s</string>\n<key>UserID</key><string>5E1F7E57-0000-4000-8000-00000000USER</string>\n<key>PushMagic</key><string>PUSHMAGIC-USER</string>\n<key>Token</key><data>%s</data>\n%s\n' \
-  "$plist_head" "$topic" "${ids[0]}" "$(head -c 32 /dev/urandom | base64 -w0)" "$plist_tail" > "$u/TokenUpdate.plist"
+  "$plist_head" "$topic" "${ids[-1]}" "$(head -c 32 /dev/urandom | base64 -w0)" "$plist_tail" > "$u/TokenUpdate.plist"
 
 # A made-up APNs push certificate and key, stored under the topic.
 openssl req -x509 -newkey rsa:2048 -nodes -days 400 -subj "/CN=APSP:synthetic/UID=$topic" \
@@ -165,9 +185,9 @@ rm -f "$dir/backup.tar.zst.age"
 # reads either, and reports such a stream as an extraction failure.)
 tar -cf - -C "$src" var | zstd -q -c | age -r "$recipient" -o "$dir/backup.tar.zst.age"
 printf '%s\n' "$recipient" > "$dir/recipient"
-printf '%s\n' "$marker_bst" "$marker_pw" "$marker_vpn" "$marker_host" "5E1F7E57-" "PRIVATE KEY" "PUSHMAGIC" > "$dir/markers"
+printf '%s\n' "$marker_bst" "$marker_pw" "$marker_vpn" "$marker_host" "${id_markers[@]}" "PRIVATE KEY" "PUSHMAGIC" > "$dir/markers"
 grep -h AGE-SECRET-KEY "$dir/identity" >> "$dir/markers"
 rm -rf "$src" "$dir/xlsx" "$dir/empty.xlsx"
 printf 'fixture: %s enrollments, %s bytes encrypted, recipient %s%s\n' \
   "$count" "$(stat -c %s "$dir/backup.tar.zst.age")" "$recipient" \
-  "$([ "$broken_deus" = 1 ] && echo ', deus.db with a table the new schema cannot build on')$([ "$dangling_fk" = 1 ] && echo ', deus.db with a dangling rack_slots foreign key')$([ "$empty_deus" = 1 ] && echo ', an empty deus.db')$([ "$no_heartbeats" = 1 ] && echo ', deus.db without heartbeats rows')${omit:+, without $omit}"
+  "$([ "$broken_deus" = 1 ] && echo ', deus.db with a table the new schema cannot build on')$([ "$dangling_fk" = 1 ] && echo ', deus.db with a dangling rack_slots foreign key')$([ "$empty_deus" = 1 ] && echo ', an empty deus.db')$([ "$no_heartbeats" = 1 ] && echo ', deus.db without heartbeats rows')${omit:+, without $omit}$([ "$swap_token" = 1 ] && echo ", one Mac lost and one new since the baseline")"
