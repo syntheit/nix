@@ -7,6 +7,7 @@
   git,
   gnugrep,
   jq,
+  util-linux,
 }:
 
 writeShellApplication {
@@ -16,6 +17,7 @@ writeShellApplication {
     git
     gnugrep
     jq
+    util-linux
   ];
   text = builtins.readFile ./offload.sh;
 }

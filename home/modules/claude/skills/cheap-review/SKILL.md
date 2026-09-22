@@ -12,5 +12,6 @@ description: Multi-model code review of the current changes on cheap non-Claude 
    - `-n 5` adds edge cases (GLM-5.3) and simplification (Qwen3-Coder). Use it for large changes.
 3. Verify every finding before reporting it: open the cited location and trace the failure scenario. Findings from two or more reviewers are more often real, but check them too. Cheap models produce false positives, and filtering them is your job.
 4. Report only confirmed findings (location, problem, failure scenario) and one line saying how many you discarded. Fix only if the user asked.
+5. Record the verdict so the user can see whether this is worth its cost: `offload note "review <scope>: N confirmed, M discarded"`.
 
 The merged list prints to stdout. Per-reviewer files are in the printed directory if a finding is unclear. Code goes to third-party providers: do not run this on employer or client code unless the user has said that is allowed for that repo.

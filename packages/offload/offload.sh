@@ -19,10 +19,14 @@ usage:
       merged into one deduplicated list. Diff: `git diff BASE` if -b, else
       uncommitted changes (incl. untracked), else the last commit.
       -p limits the review to those paths (repeatable).
+  offload log [N]        Last N runs (default 20): when, model, what for, cost.
+  offload stats [DAYS]   Totals for the last DAYS (default 7), by model and kind.
+  offload note TEXT      Record a quality note (Claude logs review verdicts here).
   offload models
       List model aliases.
 
 env: OFFLOAD_TIMEOUT (seconds per run, default 600)
+log: $XDG_STATE_HOME/offload/log.tsv (default ~/.local/state/offload/log.tsv)
 EOF
 }
 
@@ -97,12 +101,28 @@ cost_of() {
   events "$1" | jq -rs '[.[] | select(.type == "step_finish") | .part.cost // 0] | add // 0'
 }
 
-# stats_line LABEL OUT.jsonl
-stats_line() {
-  local tokens secs
-  tokens=$(events "$2" | jq -rs '[.[] | select(.type == "step_finish") | .part.tokens.total // 0] | add // 0')
-  secs=$(cat "${2%.jsonl}.secs" 2>/dev/null || echo "?")
-  printf 'offload: %-28s $%.4f  %sk tok  %ss\n' "$1" "$(cost_of "$2")" "$((tokens / 1000))" "$secs" >&2
+# One tab-separated line per run, so `offload log`/`stats` can show what ran,
+# on which model, for what, at what cost — and `offload note` records whether it
+# was any good.
+LOG=${XDG_STATE_HOME:-$HOME/.local/state}/offload/log.tsv
+
+# log_row KIND MODEL COST TOKENS SECS STATUS DIR SUMMARY
+log_row() {
+  mkdir -p "${LOG%/*}"
+  printf '%s\t%s\t%s\t%.4f\t%s\t%s\t%s\t%s\t%s\n' \
+    "$(date -Iseconds)" "$1" "$2" "$3" "$4" "$5" "$6" "$7" \
+    "$(printf '%s' "$8" | tr '\t\n' '  ' | cut -c1-120)" >>"$LOG"
+}
+
+# report_run KIND MODEL OUT.jsonl SUMMARY — stderr line for the caller, row for the log.
+report_run() {
+  local kind=$1 model=$2 out=$3 summary=$4 cost tokens secs status=ok
+  cost=$(cost_of "$out")
+  tokens=$(events "$out" | jq -rs '[.[] | select(.type == "step_finish") | .part.tokens.total // 0] | add // 0')
+  secs=$(cat "${out%.jsonl}.secs" 2>/dev/null || echo 0)
+  [[ -n $(answer_of "$out") ]] || status=failed
+  printf 'offload: %-28s $%.4f  %sk tok  %ss\n' "$kind ($model)" "$cost" "$((tokens / 1000))" "$secs" >&2
+  log_row "$kind" "$model" "$cost" "$tokens" "$secs" "$status" "${out%/*}" "$summary"
 }
 
 fail_hint() {
@@ -154,7 +174,7 @@ cmd_ask() {
   answer=$(answer_of "$out")
   if [[ -z $answer ]]; then fail_hint "$model" "$out"; exit 1; fi
   printf '%s\n' "$answer"
-  stats_line "$model" "$out"
+  report_run "ask:$agent" "$model" "$out" "$*"
 }
 
 # Panel order = priority; -n N takes the first N. Measured 2026-09-22 on a
@@ -251,8 +271,10 @@ cmd_review() {
   cd "$(git rev-parse --show-toplevel)"
   local dir
   dir=$(new_run_dir)
-  printf 'offload: reviewing ' >&2
-  diff_to_review "$base" "${paths[@]}" >"$dir/diff.patch"
+  # diff_to_review describes the scope on stderr; keep it for the log.
+  local scope
+  scope=$(diff_to_review "$base" "${paths[@]}" 2>&1 >"$dir/diff.patch")
+  echo "offload: reviewing $scope" >&2
   if [[ ! -s $dir/diff.patch ]]; then echo "offload: empty diff, nothing to review" >&2; exit 1; fi
 
   local lens model i pids=()
@@ -268,7 +290,7 @@ cmd_review() {
   for ((i = 0; i < n; i++)); do
     lens=${LENSES[$i]}
     model=$(resolve_model "${LENS_MODEL[$lens]}")
-    stats_line "$lens ($model)" "$dir/$lens.jsonl"
+    report_run "review:$lens" "$model" "$dir/$lens.jsonl" "$scope${focus:+ — $focus}"
     total=$(jq -n "$total + $(cost_of "$dir/$lens.jsonl")")
     answer=$(answer_of "$dir/$lens.jsonl")
     if [[ -z $answer ]]; then
@@ -282,7 +304,7 @@ cmd_review() {
 
   run_one "$dir/merge.jsonl" "$(resolve_model glm)" inspect "$AGG_PROMPT" "${reviews[@]}" "$dir/diff.patch"
   answer=$(answer_of "$dir/merge.jsonl")
-  stats_line "merge" "$dir/merge.jsonl"
+  report_run "review:merge" "$(resolve_model glm)" "$dir/merge.jsonl" "$scope"
   total=$(jq -n "$total + $(cost_of "$dir/merge.jsonl")")
   if [[ -z $answer ]]; then
     fail_hint "merge" "$dir/merge.jsonl"
@@ -295,6 +317,41 @@ cmd_review() {
   printf 'offload: total $%.4f for %d reviewers + merge\n' "$total" "${#reviews[@]}" >&2
 }
 
+cmd_log() {
+  if [[ ! -s $LOG ]]; then echo "offload: nothing logged yet ($LOG)"; return; fi
+  {
+    printf 'WHEN\tKIND\tMODEL\tCOST\tTOKENS\tSECS\tSTATUS\tWHAT\n'
+    tail -n "${1:-20}" "$LOG" | cut -f1,2,3,4,5,6,7,9 | sed 's/\([0-9-]*\)T\([0-9:]*\)[-+][0-9:]*/\1 \2/'
+  } | column -t -s $'\t'
+}
+
+cmd_stats() {
+  if [[ ! -s $LOG ]]; then echo "offload: nothing logged yet ($LOG)"; return; fi
+  local days=${1:-7} cutoff
+  cutoff=$(date -Iseconds -d "$days days ago")
+  awk -F'\t' -v cutoff="$cutoff" -v days="$days" '
+    $1 < cutoff { next }
+    $2 == "note" { notes = notes "  " $9 "\n"; next }
+    {
+      runs++; cost += $4; tokens += $5
+      if ($7 != "ok") failed++
+      model_runs[$3]++; model_cost[$3] += $4
+      split($2, parts, ":"); kind[parts[1]]++
+    }
+    END {
+      printf "last %s days: %d runs, $%.2f, %.0fk tokens, %d failed\n", days, runs, cost, tokens / 1000, failed
+      printf "by kind:"; for (k in kind) printf " %s=%d", k, kind[k]; printf "\n"
+      printf "by model:\n"
+      for (m in model_runs) printf "  %-28s %3d runs  $%.3f\n", m, model_runs[m], model_cost[m]
+      if (notes) printf "notes (quality):\n%s", notes
+    }' "$LOG"
+}
+
+cmd_note() {
+  if [[ $# -eq 0 ]]; then echo "usage: offload note TEXT" >&2; exit 2; fi
+  log_row note - 0 0 0 ok - "$*"
+}
+
 cmd_models() {
   local k
   for k in "${!MODELS[@]}"; do printf '%-9s %s\n' "$k" "${MODELS[$k]}"; done | sort
@@ -303,6 +360,9 @@ cmd_models() {
 case ${1:-} in
   ask) shift; cmd_ask "$@" ;;
   review) shift; cmd_review "$@" ;;
+  log) shift; cmd_log "$@" ;;
+  stats) shift; cmd_stats "$@" ;;
+  note) shift; cmd_note "$@" ;;
   models) cmd_models ;;
   *) usage; exit 2 ;;
 esac

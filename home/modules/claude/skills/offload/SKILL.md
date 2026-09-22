@@ -30,4 +30,5 @@ Design decisions, tricky debugging, security-sensitive changes, anything where c
 - Modes: default reads the repo in the current directory (no shell, no web); `-w` does web research with no repo access; `-e` can edit and run commands. Use `-e` only for bounded tasks in a clean git tree, so `git diff` shows exactly what it did.
 - Cost and time print to stderr: a typical ask is $0.001-0.05 and 10-120 s. Run independent asks in parallel (background Bash) when useful.
 - Code is sent to third-party model providers. Do not offload employer or client code unless the user has said that is allowed for that repo.
-- If a run fails or answers nonsense, retry at most once, then do the task yourself.
+- If a run fails or answers nonsense, retry at most once, then do the task yourself, and record it: `offload note "ask <topic>: wrong answer, did it myself"`.
+- Every run is logged to `~/.local/state/offload/log.tsv`. `offload log [N]` lists recent runs; `offload stats [DAYS]` totals cost by model and shows quality notes. Use them when the user asks whether this is working.
