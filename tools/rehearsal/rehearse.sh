@@ -10,8 +10,9 @@
 #      both namespaces differ from pid 1's;
 #   3. mounts a fresh 0700 tmpfs (noswap) with a random source tag, and
 #      refuses to go on unless /proc/self/mountinfo shows exactly that;
-#   4. reads the age identity from the terminal with echo off (or one line
-#      of stdin when stdin is not a terminal) into a shell variable;
+#   4. reads the age identity from the terminal with echo off (or from
+#      stdin when stdin is not a terminal) into a shell variable: the first
+#      line that is neither blank nor a # comment, so a whole key file works;
 #   5. starts the sandbox (bubblewrap: no network but loopback, no host
 #      paths but /nix/store read-only, the tmpfs and the backup, no
 #      capabilities) and hands it the identity on its stdin;
@@ -231,17 +232,48 @@ mount_is_ours || die "the mount at $mnt is not the tmpfs this run created; refus
 [ -z "$(find "$mnt" -mindepth 1 -print -quit)" ] || die "the fresh tmpfs is not empty; refusing"
 printf '\ntmpfs: %s (%s, %s); visible only in this mount namespace\n' "$mnt" "$tmpfs_size" "$swap_note"
 
+# The identity is the first line that is neither blank nor a # comment, so
+# a whole pasted age key file (# created:, # public key:, then the key)
+# works. At most 8 lines are read. On a terminal, whatever else was pasted
+# with it is then read and dropped, so nothing is left queued for the shell
+# after the harness exits. Builtins only: the key never reaches argv, the
+# environment or a file.
+read_identity() { # fd
+  local line eof n=0
+  key=""
+  while [ "$n" -lt 8 ]; do
+    eof=0
+    IFS= read -r -s -u "$1" line || eof=1
+    n=$((n + 1))
+    line=${line%$'\r'}
+    line=${line#"${line%%[![:space:]]*}"}
+    line=${line%"${line##*[![:space:]]}"}
+    case $line in
+      '' | '#'*) if [ "$eof" = 0 ]; then continue; fi; break ;;
+    esac
+    key=$line
+    break
+  done
+  line=""
+}
+drain_tty() { # fd
+  local n=0
+  while [ "$n" -lt 64 ] && IFS= read -r -s -t 0.2 -u "$1" _; do n=$((n + 1)); done
+}
 if [ -t 0 ]; then
-  printf 'Paste the age identity (AGE-SECRET-KEY-1...), then Enter. Nothing is echoed: ' > /dev/tty
-  IFS= read -r -s key < /dev/tty || key=""
+  printf 'Paste the age identity (the AGE-SECRET-KEY-1... line, or the whole key file), then Enter. Nothing is echoed: ' > /dev/tty
+  exec 3< /dev/tty
+  read_identity 3
+  drain_tty 3
   printf '\n' > /dev/tty
 else
-  IFS= read -r key || true
+  exec 3<&0
+  read_identity 3
 fi
-exec 0</dev/null
+exec 3<&- 0</dev/null
 if ! [[ $key =~ ^AGE-SECRET-KEY-1[0-9A-Z]{58}$ ]]; then
   key=""
-  die "that is not an age X25519 identity (AGE-SECRET-KEY-1 and 58 more characters)"
+  die "no age X25519 identity (AGE-SECRET-KEY-1 and 58 more characters) in the first 8 lines, or a line before it that is neither blank nor a # comment"
 fi
 
 inner_args=()

@@ -168,9 +168,18 @@ sudo /nix/store/…-malli-rehearse/bin/malli-rehearse \
   2>&1 | tee ~/rehearsal-report.txt
 ```
 
+Run it with `sudo` from your own shell, as above. Never run it from a
+root shell (`sudo -i`, `sudo su`): anything you paste that the harness
+does not read goes to the shell that started it, and a root shell's
+history is one more place a key could be written.
+
 The only thing you type is the identity. At
-`Paste the age identity (AGE-SECRET-KEY-1...), then Enter. Nothing is echoed:`,
-paste the key and press Enter. If you know the backup's recipient, add
+`Paste the age identity (the AGE-SECRET-KEY-1... line, or the whole key file), then Enter. Nothing is echoed:`,
+paste the `AGE-SECRET-KEY-1…` line, or the whole key file as `age-keygen`
+wrote it, and press Enter. Blank lines and `#` lines (`# created:`,
+`# public key:`) are skipped; the first other line must be the key, within
+the first 8 lines. Whatever else was pasted with it is read and dropped,
+so nothing is left for your shell. If you know the backup's recipient, add
 `--recipient age1…` and the harness will refuse any other identity before
 it decrypts anything.
 
@@ -228,8 +237,10 @@ runs itself as pid 1 of a pid namespace of its own, as root of an
 unprivileged user namespace, so the harness can compare its namespaces with
 pid 1's as it does on vista. It runs the harness in these cases:
 
-- good data, with the identity on stdin and typed at the hidden prompt:
-  every check passes;
+- good data, with the whole key file on stdin and pasted at the hidden
+  prompt: every check passes;
+- a key file whose first line that is not blank or a comment is not the
+  key: refused before anything is decrypted;
 - a wrong count;
 - a corrupt archive;
 - a v0.9 that leaves the store unreadable to v0.6;
