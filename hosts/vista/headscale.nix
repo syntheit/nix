@@ -1008,6 +1008,14 @@ in
         address = "0.0.0.0";
         port = 8085;
 
+        # Local patch: skip ViaRoutesForPeer's per-pair source resolution when
+        # the policy has no via grants (ours has none). Upstream 0.29.3 and
+        # main both resolve every grant for every viewer-peer pair; that was
+        # 46% of headscale's CPU in a perf profile on 2026-09-23.
+        package = pkgs.headscale.overrideAttrs (old: {
+          patches = (old.patches or [ ]) ++ [ ./headscale-via-early-return.patch ];
+        });
+
         settings = {
           server_url = "https://headscale.matv.io";
           dns = {
