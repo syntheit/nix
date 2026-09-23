@@ -181,6 +181,127 @@ in
   # when idle and still ramps for transcoding/playback.
   powerManagement.cpuFreqGovernor = "schedutil";
 
+  # ── Battery guard: full power, but never run the battery flat on AC ───────
+  # The firmware lets the i9 alone draw 100 W sustained / 125 W burst (RAPL
+  # PL1/PL2), more than any brick can feed this Mac, so under heavy load the
+  # battery tops up the difference. That boost is welcome — but on 2026-09-22 a
+  # six-hour headscale reconnect storm kept every core busy and took the battery
+  # from full to 3% while plugged in, and at 0% the next spike browns the Mac out
+  # (and a powered-off vista stays off; see the reboot note above).
+  #
+  # The brick matters as much as the load. The Mac caps its own input at 4.65 A,
+  # ~87 W, and only gets that from a 96 W+ brick on a 5 A cable with nothing else
+  # sharing it: the storm hit while it sat on a 61 W Apple brick (57 W in), and a
+  # multi-port brick splitting power with a phone gave 62 W. The SMC reports the
+  # truth — keys PDTR (watts in), ID0R (amps in) and ACIC (input limit, mA),
+  # readable via applesmc's key_at_index files under /sys/devices/…/APP0001:00.
+  #
+  # Three zones by charge, with a gap at the top so it can't flap:
+  #   • boost (≥ 35%, until < 30%): firmware limits; the battery covers spikes.
+  #   • hold (15–30%): every 15 s, measure the battery's average net power and
+  #     keep it gaining ≥ 3 W — the CPU gets everything else the brick supplies.
+  #   • refill (< 15%): the same, but keep the battery gaining ≥ 15 W, so a low
+  #     battery climbs out of brown-out range in minutes, not hours.
+  # A shortfall is cut in one step (never less than 5 W). The limit only rises,
+  # 5 W at a time, when there's surplus AND the CPU is actually pressing against
+  # it — otherwise an idle stretch would wind it up to 100 W and the next build
+  # would drain the battery while it stepped back down. Guard starts at the
+  # chip's rated 45 W and never goes below 20 W; with the AC unplugged the
+  # battery can't gain at all, so it drops to the floor, which is also right for
+  # riding out an outage.
+  systemd.services.battery-guard = {
+    description = "Cap CPU power only while the battery is low";
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      Restart = "always";
+      RestartSec = 10;
+    };
+    script = ''
+      rapl=/sys/class/powercap/intel-rapl:0
+      bat=/sys/class/power_supply/BAT0
+
+      set_limit() { # sustained watts; burst = +25 W, up to the firmware's 125
+        pl2=$(( $1 + 25 ))
+        if [ $pl2 -gt 125 ]; then pl2=125; fi
+        echo $(( $1 * 1000000 )) > $rapl/constraint_0_power_limit_uw
+        echo $(( pl2 * 1000000 )) > $rapl/constraint_1_power_limit_uw
+      }
+
+      read -r erange < $rapl/max_energy_range_uj
+
+      # Over ~15 s, set net (average battery power in mW, + = charging) and cpu
+      # (average CPU package power in W). One uevent read per sample keeps
+      # status and current from the same instant; the driver reports current
+      # unsigned, so the sign comes from the status.
+      measure() {
+        read -r e1 < $rapl/energy_uj
+        sum=0 n=0
+        while [ $n -lt 30 ]; do
+          status="" cur=0 volt=0
+          while IFS="=" read -r k v; do
+            case $k in
+              POWER_SUPPLY_STATUS) status=$v ;;
+              POWER_SUPPLY_CURRENT_NOW) cur=$v ;;
+              POWER_SUPPLY_VOLTAGE_NOW) volt=$v ;;
+            esac
+          done < $bat/uevent
+          p=$(( cur / 1000 * (volt / 1000) / 1000 ))
+          case $status in
+            Charging) ;;
+            Discharging) p=$(( -p )) ;;
+            *) p=0 ;;
+          esac
+          sum=$(( sum + p )) n=$(( n + 1 ))
+          sleep 0.5
+        done
+        read -r e2 < $rapl/energy_uj
+        if [ "$e2" -lt "$e1" ]; then e2=$(( e2 + erange )); fi
+        net=$(( sum / n ))
+        cpu=$(( (e2 - e1) / 15000000 ))
+      }
+
+      mode="" limit=100
+      while true; do
+        read -r pct < $bat/capacity
+        if [ "$pct" -lt 30 ] || { [ -z "$mode" ] && [ "$pct" -lt 35 ]; }; then
+          new=guard
+        elif [ "$pct" -ge 35 ]; then
+          new=boost
+        else
+          new=$mode
+        fi
+        if [ "$new" != "$mode" ]; then
+          mode=$new
+          if [ $mode = guard ]; then limit=45; else limit=100; fi
+          echo "battery $pct%: $mode mode, CPU limit $limit W"
+        fi
+
+        # Re-asserted every pass, in case anything else resets the limits.
+        set_limit $limit
+
+        if [ $mode = boost ]; then
+          sleep 15
+          continue
+        fi
+        if [ "$pct" -lt 15 ]; then want=15000; else want=3000; fi # mW
+        measure
+        old=$limit
+        if [ $net -lt $want ]; then
+          short=$(( (want - net + 999) / 1000 ))
+          if [ $short -lt 5 ]; then short=5; fi
+          limit=$(( limit - short ))
+          if [ $limit -lt 20 ]; then limit=20; fi
+        elif [ $net -gt $(( want + 7000 )) ] && [ $cpu -ge $(( limit - 5 )) ]; then
+          limit=$(( limit + 5 ))
+          if [ $limit -gt 100 ]; then limit=100; fi
+        fi
+        if [ $limit -ne $old ]; then
+          echo "battery $pct%, net $(( net / 1000 )) W, CPU $cpu W: limit $limit W"
+        fi
+      done
+    '';
+  };
+
   # Bluetooth off — its only purpose here was casting to a BT speaker under the
   # old HTPC role, which is gone. Headless server has no use for it.
   hardware.bluetooth.enable = false;
