@@ -6,6 +6,10 @@
 # Costs are printed with printf %f, which follows LC_NUMERIC (es_AR uses a comma).
 export LC_NUMERIC=C
 
+# Run dirs hold diffs and reviews of private code. A NixOS home is 0700 anyway,
+# but a macOS home is 0750 — group `staff` could read them.
+umask 077
+
 usage() {
   cat <<'EOF'
 usage:
