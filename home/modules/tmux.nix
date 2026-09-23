@@ -1,4 +1,9 @@
-{ pkgs, lib, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 
 {
   programs.tmux = {
@@ -94,5 +99,25 @@
       # PgUp directly enters copy-mode and scrolls up one page (OSK PgUp tap)
       bind -n PPage copy-mode -u
     '';
+  };
+
+  # All sessions share one tmux server, and whichever client starts it decides
+  # the login session every pane runs in. If a mosh connection starts it first,
+  # panes can't reach the screen, so sudo's Touch ID (pam_tid) says "UI not
+  # available" and falls back to the password, even in a local `s` session.
+  # Start the server from launchd at login instead, inside the GUI session.
+  # -D keeps it in the foreground for launchd; KeepAlive brings it back after a
+  # kill-server (while another server holds the socket, -D just exits).
+  launchd.agents.tmux-server = lib.mkIf pkgs.stdenv.isDarwin {
+    enable = true;
+    config = {
+      ProgramArguments = [
+        "${config.programs.tmux.package}/bin/tmux"
+        "-D"
+      ];
+      EnvironmentVariables.LANG = "en_US.UTF-8";
+      KeepAlive = true;
+      RunAtLoad = true;
+    };
   };
 }
