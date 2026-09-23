@@ -9,6 +9,7 @@ let
       jq
       curl
       coreutils
+      procps
       file
       hyprland
     ];
@@ -79,8 +80,10 @@ let
 
       apply_wallpaper() {
         local wallpaper="$1"
-        # Ensure awww-daemon is running
-        if ! awww query &>/dev/null; then
+        # Ensure awww-daemon is running. `awww query` fails transiently even
+        # when the daemon is healthy, so check for the process before spawning:
+        # a second daemon aborts on the shared socket and dumps core.
+        if ! awww query &>/dev/null && ! pgrep -f "bin/awww-daemon\$" >/dev/null; then
           setsid awww-daemon &>/dev/null &
           disown
           sleep 1
