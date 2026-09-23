@@ -302,6 +302,17 @@ in
     '';
   };
 
+  # ── Charge limit: stop at 80% ─────────────────────────────────────────────
+  # vista never leaves AC, so the battery would otherwise sit at 100% around
+  # the clock — the state that wears lithium cells fastest. BCLM is the SMC's
+  # own charge ceiling, which linux-t2's applesmc exposes as
+  # battery_charge_limit; set it whenever the driver binds so neither a reboot
+  # nor an SMC reset can quietly put it back to 100. 80% is still far above
+  # the battery guard's 35% boost threshold.
+  services.udev.extraRules = ''
+    ACTION=="add|bind", SUBSYSTEM=="acpi", DRIVER=="applesmc", ATTR{battery_charge_limit}="80"
+  '';
+
   # Bluetooth off — its only purpose here was casting to a BT speaker under the
   # old HTPC role, which is gone. Headless server has no use for it.
   hardware.bluetooth.enable = false;
