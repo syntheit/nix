@@ -14,11 +14,13 @@ usage:
       shell, no web. -w: web research instead, with no repo access. -e: edits +
       shell allowed (git repo required).
       -i attaches stdin:  nix build 2>&1 | offload ask -i "why did this fail?"
-  offload review [-n 1-5] [-b BASE] [-p PATH]... [FOCUS]
+  offload review [-n 1-5] [-b BASE] [-H REF] [-P PR] [-p PATH]... [FOCUS]
       Parallel review of a diff by N different models, each with its own lens,
-      merged into one deduplicated list. Diff: `git diff BASE` if -b, else
+      merged into one deduplicated list. Diff: `gh pr diff PR` with -P, else
+      `git diff BASE...REF` with -b and -H, else `git diff BASE` with -b, else
       uncommitted changes (incl. untracked), else the last commit.
       -p limits the review to those paths (repeatable).
+      Writes merged.md and the per-reviewer files to the run dir it prints.
   offload log [N]        Last N runs (default 20): when, model, what for, cost.
   offload stats [DAYS]   Totals for the last DAYS (default 7), by model and kind.
   offload note TEXT      Record a quality note (Claude logs review verdicts here).
@@ -130,6 +132,20 @@ fail_hint() {
   tail -n 5 "${2%.jsonl}.err" >&2 || true
 }
 
+# Why a run produced no answer, in one line. opencode reports some failures in
+# the event stream (a rejected model id), others on stderr, and a run killed by
+# the timeout leaves neither.
+run_error() {
+  local msg
+  msg=$(grep -oE '"message":"[^"]+"' "$1" 2>/dev/null | tail -1 | cut -d'"' -f4)
+  [[ -n $msg ]] || msg=$(grep -oE '"message":"[^"]+"' "${1%.jsonl}.err" 2>/dev/null | tail -1 | cut -d'"' -f4)
+  [[ -n $msg ]] || msg=$(tr '\n' ' ' <"${1%.jsonl}.err" 2>/dev/null | tail -c 160)
+  [[ -n $msg ]] || msg="no answer (timed out?)"
+  # Provider stderr can carry ANSI escapes, and this string is printed and
+  # written into merged.md.
+  printf '%.160s' "$(printf '%s' "$msg" | tr -cd '[:print:]')"
+}
+
 cmd_ask() {
   local model=glm agent=inspect stdin=0 files=() opt
   OPTIND=1
@@ -233,11 +249,32 @@ Output exactly:
 
 If every review says NO FINDINGS, output: No findings.'
 
-# diff_to_review BASE [PATH...]
+# opencode rejects a model id its models.dev cache doesn't know ("Model not
+# found"), which is how a stale cache silently killed the security lens on
+# harbor on 2026-09-22 — it failed in 1s and the merge still printed a
+# confident-looking list. Listing models warms that cache AND creates
+# opencode's sqlite state, so parallel reviewers don't race its first-run
+# migration (the other failure in that report).
+warm_opencode() {
+  opencode models >"$1" 2>/dev/null || true
+}
+
+model_known() {
+  # -F: ids contain dots, which as a regex would match near-miss ids too.
+  [[ ! -s $2 ]] || grep -qxF "openrouter/$1" "$2"
+}
+
+# diff_to_review BASE HEAD PR [PATH...]
 diff_to_review() {
-  local base=$1
-  shift
-  if [[ -n $base ]]; then
+  local base=$1 head=$2 pr=$3
+  shift 3
+  if [[ -n $pr ]]; then
+    echo "PR #$pr" >&2
+    gh pr diff "$pr"
+  elif [[ -n $base && -n $head ]]; then
+    echo "git diff $base...$head" >&2
+    git diff "$base...$head" -- "$@"
+  elif [[ -n $base ]]; then
     echo "git diff $base" >&2
     git diff "$base" -- "$@"
   elif ! git diff --quiet HEAD -- "$@" || [[ -n $(git ls-files --others --exclude-standard -- "$@") ]]; then
@@ -254,65 +291,111 @@ diff_to_review() {
 }
 
 cmd_review() {
-  local n=3 base="" paths=() opt
+  local n=3 base="" head="" pr="" paths=() opt
   OPTIND=1
-  while getopts "n:b:p:h" opt; do
+  while getopts "n:b:H:P:p:h" opt; do
     case $opt in
       n) n=$OPTARG ;;
       b) base=$OPTARG ;;
+      H) head=$OPTARG ;;
+      P) pr=$OPTARG ;;
       p) paths+=("$(realpath -m "$OPTARG")") ;;
       *) usage; exit 2 ;;
     esac
   done
   shift $((OPTIND - 1))
   if ! [[ $n =~ ^[1-5]$ ]]; then echo "offload: -n must be 1-5" >&2; exit 2; fi
+  # `gh pr diff` takes no pathspecs, so -p with -P would be silently ignored.
+  if [[ -n $pr && ${#paths[@]} -gt 0 ]]; then
+    echo "offload: -p cannot be combined with -P (gh pr diff takes no paths)" >&2
+    exit 2
+  fi
+  if [[ -n $pr ]] && ! [[ $pr =~ ^[0-9]+$ ]]; then
+    echo "offload: -P takes a PR number" >&2
+    exit 2
+  fi
+  # A ref starting with '-' would be read as an option by git.
+  local ref
+  for ref in "$base" "$head"; do
+    if [[ -n $ref ]] && ! git rev-parse --verify --quiet "$ref" >/dev/null 2>&1; then
+      echo "offload: '$ref' is not a git ref this repo knows" >&2
+      exit 2
+    fi
+  done
   local focus="$*"
+  # A ref left as a positional would silently become focus text and review the
+  # wrong thing; -H/-P are how you point at something you haven't checked out.
+  if [[ -n $focus ]] && git rev-parse --verify --quiet "$focus" >/dev/null 2>&1; then
+    echo "offload: '$focus' is a git ref, not focus text — use -H $focus (or -P for a PR)" >&2
+    exit 2
+  fi
 
   cd "$(git rev-parse --show-toplevel)"
   local dir
   dir=$(new_run_dir)
+  echo "offload: run dir $dir"
   # diff_to_review describes the scope on stderr; keep it for the log.
   local scope
-  scope=$(diff_to_review "$base" "${paths[@]}" 2>&1 >"$dir/diff.patch")
+  scope=$(diff_to_review "$base" "$head" "$pr" "${paths[@]}" 2>&1 >"$dir/diff.patch")
   echo "offload: reviewing $scope" >&2
-  if [[ ! -s $dir/diff.patch ]]; then echo "offload: empty diff, nothing to review" >&2; exit 1; fi
+  if [[ ! -s $dir/diff.patch ]]; then echo "offload: empty diff ($scope), nothing to review" >&2; exit 1; fi
 
-  local lens model i pids=()
+  warm_opencode "$dir/known-models.txt"
+
+  local lens model i pids=() skipped=()
   for ((i = 0; i < n; i++)); do
     lens=${LENSES[$i]}
     model=$(resolve_model "${LENS_MODEL[$lens]}")
+    if ! model_known "$model" "$dir/known-models.txt"; then
+      skipped+=("$lens ($model): opencode does not know this model id")
+      continue
+    fi
     run_one "$dir/$lens.jsonl" "$model" inspect "$(review_prompt "$lens" "$focus")" "$dir/diff.patch" &
     pids+=($!)
   done
-  wait "${pids[@]}"
+  if ((${#pids[@]} > 0)); then wait "${pids[@]}"; fi
 
-  local reviews=() answer total=0
+  local reviews=() names=() answer total=0
   for ((i = 0; i < n; i++)); do
     lens=${LENSES[$i]}
     model=$(resolve_model "${LENS_MODEL[$lens]}")
+    [[ -f $dir/$lens.jsonl ]] || continue
     report_run "review:$lens" "$model" "$dir/$lens.jsonl" "$scope${focus:+ — $focus}"
     total=$(jq -n "$total + $(cost_of "$dir/$lens.jsonl")")
     answer=$(answer_of "$dir/$lens.jsonl")
     if [[ -z $answer ]]; then
+      skipped+=("$lens ($model): $(run_error "$dir/$lens.jsonl")")
       fail_hint "$lens ($model)" "$dir/$lens.jsonl"
       continue
     fi
     printf '# Review — lens: %s, model: %s\n\n%s\n' "$lens" "$model" "$answer" >"$dir/review-$lens.md"
     reviews+=("$dir/review-$lens.md")
+    names+=("$lens")
   done
-  if ((${#reviews[@]} == 0)); then echo "offload: every reviewer failed" >&2; exit 1; fi
 
-  run_one "$dir/merge.jsonl" "$(resolve_model glm)" inspect "$AGG_PROMPT" "${reviews[@]}" "$dir/diff.patch"
+  # Always tell the caller how many lenses actually ran: a merged list from 1 of
+  # 3 reviewers looks exactly like a complete review otherwise.
+  local status="${#reviews[@]} of $n reviewers succeeded"
+  if ((${#skipped[@]} > 0)); then
+    status+=$'\n'"failed: $(printf '%s; ' "${skipped[@]}")"
+  fi
+  if ((${#reviews[@]} == 0)); then
+    printf '%s\n' "$status"
+    echo "offload: every reviewer failed" >&2
+    exit 1
+  fi
+
+  run_one "$dir/merge.jsonl" "$(resolve_model glm)" inspect \
+    "$AGG_PROMPT"$'\n\nReviews attached: '"$(printf '%s ' "${names[@]}")" "${reviews[@]}" "$dir/diff.patch"
   answer=$(answer_of "$dir/merge.jsonl")
   report_run "review:merge" "$(resolve_model glm)" "$dir/merge.jsonl" "$scope"
   total=$(jq -n "$total + $(cost_of "$dir/merge.jsonl")")
   if [[ -z $answer ]]; then
     fail_hint "merge" "$dir/merge.jsonl"
     echo "offload: falling back to raw reviews" >&2
-    cat "${reviews[@]}"
-  else
-    printf '%s\n' "$answer"
+    answer=$(cat "${reviews[@]}")
   fi
+  printf '%s\n\n%s\n' "$status" "$answer" | tee "$dir/merged.md"
   printf '\nRaw reviews: %s/review-*.md\n' "$dir"
   printf 'offload: total $%.4f for %d reviewers + merge\n' "$total" "${#reviews[@]}" >&2
 }
