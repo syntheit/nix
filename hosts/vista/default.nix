@@ -25,6 +25,7 @@
     ./mdm-credentials.nix # dormant private MDM/ADE credential cutover
     ./registry.nix # docker registry:2 on :5000
     ./zot.nix # zot OCI registry on :5001
+    ./mdm-5fro.nix # sequence A switches (see ~/malli-5fro-m2-runbook.md)
     ./mdm.nix # nanomdm/scep/nanodep/enroll — migrated from mantle (2026-08)
     ../../system
     ../../services
