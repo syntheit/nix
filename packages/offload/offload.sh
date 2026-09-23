@@ -28,6 +28,7 @@ usage:
   offload log [N]        Last N runs (default 20): when, model, what for, cost.
   offload stats [DAYS]   Totals for the last DAYS (default 7), by model and kind.
   offload note TEXT      Record a quality note (Claude logs review verdicts here).
+  offload mode [MODE]    Show or set the backend: auto, codex, openrouter, claude.
   offload models
       List model aliases.
 
@@ -67,6 +68,82 @@ new_run_dir() {
   echo "$dir"
 }
 
+MODE_FILE=${XDG_STATE_HOME:-$HOME/.local/state}/offload/mode
+
+# Which backend does the grunt work. codex is a flat-rate subscription, so it
+# costs nothing at the margin; OpenRouter is metered.
+current_mode() {
+  local m
+  m=$(cat "$MODE_FILE" 2>/dev/null || echo auto)
+  case $m in
+    claude | codex | openrouter | auto) printf '%s' "$m" ;;
+    *) printf 'auto' ;;
+  esac
+}
+
+cmd_mode() {
+  if [[ $# -eq 0 ]]; then
+    cat <<EOF
+mode: $(current_mode)
+
+  auto        codex first, OpenRouter if codex fails (default)
+  codex       codex only — flat-rate subscription, no per-run cost
+  openrouter  cheap open models, metered (see: offload stats)
+  claude      offload refuses, so Claude does the work itself
+EOF
+    return
+  fi
+  case $1 in
+    claude | codex | openrouter | auto)
+      mkdir -p "${MODE_FILE%/*}"
+      printf '%s\n' "$1" >"$MODE_FILE"
+      echo "offload: mode $1"
+      ;;
+    *)
+      echo "offload: mode must be claude, codex, openrouter or auto" >&2
+      exit 2
+      ;;
+  esac
+}
+
+# run_codex OUT.jsonl PROMPT [FILE...] — files go in on stdin, which codex
+# appends as a <stdin> block; -o leaves just the final message.
+run_codex() {
+  local out=$1 prompt=$2
+  shift 2
+  local t0=$SECONDS
+  if [[ $# -gt 0 ]]; then
+    cat "$@" 2>/dev/null
+  fi | timeout "${OFFLOAD_TIMEOUT:-600}" \
+    codex exec -s read-only --color never -o "${out%.jsonl}.answer" "$prompt" \
+    >"${out%.jsonl}.err" 2>&1 || true
+  echo $((SECONDS - t0)) >"${out%.jsonl}.secs"
+}
+
+# run_task OUT.jsonl MODEL AGENT PROMPT [FILE...] — dispatches on the mode and,
+# in auto, retries an empty codex answer on OpenRouter once. Safe to background:
+# it prints nothing.
+run_task() {
+  local out=$1 model=$2 agent=$3 prompt=$4
+  shift 4
+  local mode
+  mode=$(current_mode)
+  if [[ $mode == codex || $mode == auto ]]; then
+    run_codex "$out" "$prompt" "$@"
+    if [[ -s ${out%.jsonl}.answer || $mode == codex ]]; then
+      return
+    fi
+    # codex came back empty (quota, auth, timeout): fall through to OpenRouter.
+    rm -f "${out%.jsonl}.answer"
+  fi
+  run_one "$out" "$model" "$agent" "$prompt" "$@"
+}
+
+# Which backend actually produced this run, for labelling and the log.
+backend_of() {
+  if [[ -s ${1%.jsonl}.answer ]]; then printf 'codex'; else printf '%s' "$2"; fi
+}
+
 # run_one OUT.jsonl MODEL AGENT PROMPT [FILE...]
 # Never fails: a broken run leaves an empty answer that callers report.
 run_one() {
@@ -92,11 +169,16 @@ run_one() {
 
 # JSON event lines only: opencode also prints warnings, and a run killed by the
 # timeout can leave a truncated last line. Empty output is fine.
-events() { grep '^{' "$1" | jq -c -R 'fromjson? // empty' || true; }
+events() { grep '^{' "$1" 2>/dev/null | jq -c -R 'fromjson? // empty' || true; }
 
 # Final text of a run that finished. A run killed by the timeout also has text
-# parts, but its last one is mid-task narration, not an answer.
+# parts, but its last one is mid-task narration, not an answer. codex writes its
+# final message straight to <run>.answer.
 answer_of() {
+  if [[ -s ${1%.jsonl}.answer ]]; then
+    cat "${1%.jsonl}.answer"
+    return
+  fi
   events "$1" | jq -rs '
     if any(.[]; .type == "step_finish" and .part.reason == "stop")
     then [.[] | select(.type == "text") | .part.text] | last // ""
@@ -152,6 +234,10 @@ run_error() {
 
 cmd_ask() {
   local model=glm agent=inspect stdin=0 files=() opt
+  if [[ $(current_mode) == claude ]]; then
+    echo "offload: mode is claude — do this yourself (offload mode auto to delegate again)" >&2
+    exit 3
+  fi
   OPTIND=1
   while getopts "m:weif:h" opt; do
     case $opt in
@@ -189,12 +275,12 @@ cmd_ask() {
     files+=("$dir/stdin.txt")
   fi
   out="$dir/ask.jsonl"
-  run_one "$out" "$model" "$agent" "$*" "${files[@]}"
+  run_task "$out" "$model" "$agent" "$*" "${files[@]}"
   local answer
   answer=$(answer_of "$out")
   if [[ -z $answer ]]; then fail_hint "$model" "$out"; exit 1; fi
   printf '%s\n' "$answer"
-  report_run "ask:$agent" "$model" "$out" "$*"
+  report_run "ask:$agent" "$(backend_of "$out" "$model")" "$out" "$*"
 }
 
 # Panel order = priority; -n N takes the first N. Measured 2026-09-22 on a
@@ -334,6 +420,11 @@ cmd_review() {
     exit 2
   fi
 
+  if [[ $(current_mode) == claude ]]; then
+    echo "offload: mode is claude — review this yourself (offload mode auto to delegate again)" >&2
+    exit 3
+  fi
+
   cd "$(git rev-parse --show-toplevel)"
   local dir
   dir=$(new_run_dir)
@@ -344,17 +435,18 @@ cmd_review() {
   echo "offload: reviewing $scope" >&2
   if [[ ! -s $dir/diff.patch ]]; then echo "offload: empty diff ($scope), nothing to review" >&2; exit 1; fi
 
-  warm_opencode "$dir/known-models.txt"
+  # Only OpenRouter runs go through opencode, so only they need its catalog.
+  if [[ $(current_mode) != codex ]]; then warm_opencode "$dir/known-models.txt"; fi
 
   local lens model i pids=() skipped=()
   for ((i = 0; i < n; i++)); do
     lens=${LENSES[$i]}
     model=$(resolve_model "${LENS_MODEL[$lens]}")
-    if ! model_known "$model" "$dir/known-models.txt"; then
+    if [[ $(current_mode) != codex ]] && ! model_known "$model" "$dir/known-models.txt"; then
       skipped+=("$lens ($model): opencode does not know this model id")
       continue
     fi
-    run_one "$dir/$lens.jsonl" "$model" inspect "$(review_prompt "$lens" "$focus")" "$dir/diff.patch" &
+    run_task "$dir/$lens.jsonl" "$model" inspect "$(review_prompt "$lens" "$focus")" "$dir/diff.patch" &
     pids+=($!)
   done
   if ((${#pids[@]} > 0)); then wait "${pids[@]}"; fi
@@ -364,7 +456,7 @@ cmd_review() {
     lens=${LENSES[$i]}
     model=$(resolve_model "${LENS_MODEL[$lens]}")
     [[ -f $dir/$lens.jsonl ]] || continue
-    report_run "review:$lens" "$model" "$dir/$lens.jsonl" "$scope${focus:+ — $focus}"
+    report_run "review:$lens" "$(backend_of "$dir/$lens.jsonl" "$model")" "$dir/$lens.jsonl" "$scope${focus:+ — $focus}"
     total=$(jq -n "$total + $(cost_of "$dir/$lens.jsonl")")
     answer=$(answer_of "$dir/$lens.jsonl")
     if [[ -z $answer ]]; then
@@ -389,10 +481,10 @@ cmd_review() {
     exit 1
   fi
 
-  run_one "$dir/merge.jsonl" "$(resolve_model glm)" inspect \
+  run_task "$dir/merge.jsonl" "$(resolve_model glm)" inspect \
     "$AGG_PROMPT"$'\n\nReviews attached: '"$(printf '%s ' "${names[@]}")" "${reviews[@]}" "$dir/diff.patch"
   answer=$(answer_of "$dir/merge.jsonl")
-  report_run "review:merge" "$(resolve_model glm)" "$dir/merge.jsonl" "$scope"
+  report_run "review:merge" "$(backend_of "$dir/merge.jsonl" "$(resolve_model glm)")" "$dir/merge.jsonl" "$scope"
   total=$(jq -n "$total + $(cost_of "$dir/merge.jsonl")")
   if [[ -z $answer ]]; then
     fail_hint "merge" "$dir/merge.jsonl"
@@ -450,6 +542,7 @@ case ${1:-} in
   log) shift; cmd_log "$@" ;;
   stats) shift; cmd_stats "$@" ;;
   note) shift; cmd_note "$@" ;;
+  mode) shift; cmd_mode "$@" ;;
   models) cmd_models ;;
   *) usage; exit 2 ;;
 esac
