@@ -1,12 +1,12 @@
 # hosts/vista/mdm-5fro.nix: sequence A switches for the 5fro canary.
 # Each step uncomments its own block with sed; see ~/malli-5fro-m2-runbook.md.
 { ... }: {
-  #S3 malli.mdm.nanomdmPatchedSourcePin = {
-  #S3   deusRev = "af0140b4597a2e77bab3327adf75be85e128c900";
-  #S3   nanomdmCommit = "3c52ba4a031c6d2035cea0722a47c598318fc59d";
-  #S3   hash = "sha256-lhhXPgBp7SmdMCQc1c9/3ZBmrAbElvdXDtEWN68BP/Y=";
-  #S3   vendorHash = "sha256-W49woVx8MjNZsfGHPudYReTRggnjfZ4f3VKCwgqaaV0=";
-  #S3 };
+  malli.mdm.nanomdmPatchedSourcePin = {
+    deusRev = "af0140b4597a2e77bab3327adf75be85e128c900";
+    nanomdmCommit = "3c52ba4a031c6d2035cea0722a47c598318fc59d";
+    hash = "sha256-lhhXPgBp7SmdMCQc1c9/3ZBmrAbElvdXDtEWN68BP/Y=";
+    vendorHash = "sha256-W49woVx8MjNZsfGHPudYReTRggnjfZ4f3VKCwgqaaV0=";
+  };
   #S4 malli.mdm.deusDedicatedIdentity.enable = true;
   #S4 malli.mdm.deusDedicatedIdentity.migrationConfirmed = true;
   #S5a malli.mdm.privateCredentials.prepare = true;
