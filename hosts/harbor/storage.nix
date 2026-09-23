@@ -101,6 +101,25 @@
           monthly = 3;
           recursive = true;
         };
+        # syncoid target: sanoid must not snapshot it (breaks incrementals),
+        # only prune the snapshots replicated from platapool/seafile
+        "iotapool/seafile-replica" = {
+          autosnap = false;
+          autoprune = true;
+          hourly = 0;
+          daily = 7;
+          monthly = 3;
+        };
+      };
+    };
+
+    # Hourly replica of the Seafile store onto a second disk. -u: the syncoid
+    # user can't mount, so receive unmounted.
+    syncoid = {
+      enable = true;
+      commands."platapool/seafile" = {
+        target = "iotapool/seafile-replica";
+        recvOptions = "u";
       };
     };
 
@@ -157,6 +176,7 @@
 
         # Seafile (file data + config + MariaDB)
         "/arespool/appdata/seafile"
+        "/platapool/seafile"
 
         # Pelican game servers (panel config, MariaDB, Wings config + game data)
         "/arespool/appdata/pelican"
@@ -194,6 +214,8 @@
         "**/trickplay"
         # Backup copies we made manually
         "**/*_backup_*"
+        # Ben's Seafile video library: local copies only, too big for the offsite box
+        "**/storage/*/fba8e833-530e-45c8-bf47-dab245445e79"
       ];
 
       extraOptions = [
