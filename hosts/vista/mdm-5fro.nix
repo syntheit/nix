@@ -9,10 +9,10 @@
   };
   malli.mdm.deusDedicatedIdentity.enable = true;
   malli.mdm.deusDedicatedIdentity.migrationConfirmed = true;
-  #S5a malli.mdm.privateCredentials.prepare = true;
-  #S5a malli.mdm.privateCredentials.receiverVerified = true;
-  #S5a malli.mdm.privateCredentials.hmacSopsFile = ../../secrets/vista/nanomdm_webhook_hmac;
-  #S5a malli.mdm.privateCredentials.nanodepSopsFile = ../../secrets/vista/nanodep_api;
+  malli.mdm.privateCredentials.prepare = true;
+  malli.mdm.privateCredentials.receiverVerified = true;
+  malli.mdm.privateCredentials.hmacSopsFile = ../../secrets/vista/nanomdm_webhook_hmac;
+  malli.mdm.privateCredentials.nanodepSopsFile = ../../secrets/vista/nanodep_api;
   #S5b malli.mdm.privateCredentials.enable = true;
   #S5b malli.mdm.privateCredentials.apiKeyVerified = true;
   #S5b malli.mdm.privateCredentials.prepareDeployedAndVerified = true;
