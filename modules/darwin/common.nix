@@ -47,6 +47,16 @@ in
 
     system.primaryUser = vars.user.name;
 
+    # Shared user secrets, same mechanism as the NixOS hosts: sops-nix's darwin
+    # module installs them to /run/secrets (a symlink to private/var/run) from
+    # a launchd daemon, decrypting with the host's ssh key — both Macs' age keys
+    # are already on secrets/shared.yaml in .sops.yaml. Without this, opencode
+    # falls back to `opencode auth login` and an auth.json outside Nix.
+    sops = {
+      defaultSopsFile = ../../secrets/shared.yaml;
+      secrets.openrouter_key.owner = vars.user.name;
+    };
+
     # Nix daemon managed by Determinate Systems installer
     nix.enable = false;
 
@@ -98,12 +108,86 @@ in
         chmod 0644 /var/root/.ssh/known_hosts
       fi
 
-      # Raise per-process file descriptor limit. macOS defaults to 256
-      # which Nix evaluation blows through instantly. 65536 matches
-      # typical Linux server defaults. Both soft + hard set so children
-      # (including sudo'd darwin-rebuild) inherit the new limit.
+      # Raise per-process file descriptor limit for the CURRENT boot.
+      # macOS defaults to 256, which Nix evaluation blows through the
+      # moment it has to fetch an input or rebuild the lazy-trees libgit2
+      # tarball-cache (both open many fds at once) → "Too many open files"
+      # → the eval thread pool tears down → "cannot enqueue a work item
+      # while the thread pool is shutting down". 65536 stays under the
+      # kern.maxfilesperproc ceiling (92160). This only bumps the live
+      # launchd default; the LaunchDaemon below makes it survive reboots.
       launchctl limit maxfiles 65536 65536 2>/dev/null || true
     '';
+
+    # `launchctl limit maxfiles` does NOT persist across reboots — every
+    # boot resets the systemwide default back to 256, so a rebuild that
+    # happens to refetch an input exhausts fds until the next activation
+    # (chicken-and-egg: the rebuild that raises the limit is the one that
+    # fails). This RunAtLoad daemon re-applies the limit at every boot so
+    # the terminal → shell → sudo → nix chain inherits 65536 from the
+    # start. Labelled limit.maxfiles per the well-known macOS convention.
+    launchd.daemons.limit-maxfiles = {
+      serviceConfig = {
+        Label = "limit.maxfiles";
+        ProgramArguments = [
+          "launchctl"
+          "limit"
+          "maxfiles"
+          "65536"
+          "65536"
+        ];
+        RunAtLoad = true;
+        ServiceIPC = false;
+      };
+    };
+
+    # Keep the machine reachable for as long as someone is connected, on battery
+    # too. `pmset ttyskeepawake` is not enough: it only counts sessions that own
+    # a tty (so `ssh host <cmd>`, which shows up as "sshd-session: user@notty",
+    # never counts), and a tty stops counting once it has been idle longer than
+    # the sleep timer — which is 1 minute on swift's battery. mosh is invisible
+    # to it either way: `s`/`m`/`v` (home/shell.nix) reach swift over mosh, whose
+    # ssh connection exits the moment mosh-server takes over. So watch for both
+    # kinds of session directly and hold an idle-sleep assertion while any lives.
+    # An abandoned mosh-server would hold it forever, hence the client-side
+    # MOSH_SERVER_NETWORK_TMOUT in home/shell.nix.
+    # `caffeinate -i` blocks system sleep only: the display still sleeps and
+    # locks on schedule, and closing the lid still sleeps the machine.
+    launchd.daemons.ssh-keepawake = {
+      serviceConfig = {
+        Label = "ssh.keepawake";
+        ProgramArguments = [
+          "/bin/sh"
+          "-c"
+          ''
+            # One long-lived caffeinate, started when a session appears and
+            # killed when the last one goes. Re-running `caffeinate -t 60` in a
+            # loop instead leaves a sub-second gap between assertions every
+            # minute, and powerd sleeps an already-idle machine the moment the
+            # assertion drops — swift slept at 19:33 on 2026-09-22 with a live
+            # mosh session for exactly that reason.
+            pid=""
+            cleanup() { [ -n "$pid" ] && kill "$pid" 2>/dev/null; exit 0; }
+            trap cleanup TERM INT EXIT
+            while :; do
+              if /usr/bin/pgrep -f 'sshd(-session)?: .*@|mosh-server' >/dev/null 2>&1; then
+                if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+                  /usr/bin/caffeinate -i &
+                  pid=$!
+                fi
+              elif [ -n "$pid" ]; then
+                kill "$pid" 2>/dev/null
+                pid=""
+              fi
+              sleep 20
+            done
+          ''
+        ];
+        RunAtLoad = true;
+        KeepAlive = true;
+      };
+    };
+
 
     system.defaults = {
       dock = {
@@ -371,19 +455,45 @@ in
       pmset -a lessbright 0
       rm -f /var/vm/sleepimage 2>/dev/null || true
 
+      # An active tty — which an ssh login is — blocks idle sleep. This is the
+      # macOS default; set it explicitly so a machine that once had it turned
+      # off doesn't silently drop ssh sessions. On the MacBook it only covers
+      # idle sleep: closing the lid still sleeps.
+      pmset -a ttyskeepawake 1 || true
+${lib.optionalString (hostName == "mini") ''
+      # The mini is always-on infrastructure (aarch64 builder, ssh target), so
+      # it never system-sleeps. Display sleep and screen lock are untouched.
+      pmset -a sleep 0 || true
+      pmset -a disksleep 0 || true
+      pmset -a womp 1 || true
+''}
+
       # ================================================================
       # TCC permissions (requires SIP disabled)
+      #
+      # csrutil disable puts Apple Silicon in Permissive Security, which
+      # leaves the OS "Not Paired" (bputil -d) — and macOS OTA updates then
+      # fail at preflight with "Failed to personalize" (MSU error 1259).
+      # macOS update runbook:
+      #   1. recovery -> csrutil enable (needs Wi-Fi) -> reboot
+      #   2. install the macOS update
+      #   3. recovery -> csrutil disable -> reboot
+      #   4. darwin-rebuild switch (re-applies these grants)
       # ================================================================
-      TCC_DB="/Library/Application Support/com.apple.TCC/TCC.db"
-      ${lib.concatMapStringsSep "\n" (g: ''
-        # ${g.reason}
-        sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) VALUES ('${g.service}', '$(readlink -f ${g.package}/bin/${g.exec})', 1, 2, 4, 1);"
-      '') config.matv.darwin.tccGrants}
+      if csrutil status | grep -q 'disabled'; then
+        TCC_DB="/Library/Application Support/com.apple.TCC/TCC.db"
+        ${lib.concatMapStringsSep "\n" (g: ''
+          # ${g.reason}
+          sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) VALUES ('${g.service}', '$(readlink -f ${g.package}/bin/${g.exec})', 1, 2, 4, 1);"
+        '') config.matv.darwin.tccGrants}
 
-      # Force tccd to reload from TCC.db — direct sqlite writes don't invalidate
-      # its in-memory cache, so yabai/skhd would otherwise launch without
-      # effective accessibility until tccd is restarted.
-      killall tccd 2>/dev/null || true
+        # Force tccd to reload from TCC.db — direct sqlite writes don't invalidate
+        # its in-memory cache, so yabai/skhd would otherwise launch without
+        # effective accessibility until tccd is restarted.
+        killall tccd 2>/dev/null || true
+      else
+        echo "warning: SIP is enabled — skipped TCC.db grants; run 'darwin-rebuild switch' again after csrutil disable" >&2
+      fi
 
       # Bounce yabai/skhd only when their launchd plist actually changed.
       # Yabai keeps no on-disk bsp state, so each restart rebuilds the tree

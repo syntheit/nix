@@ -12,6 +12,7 @@ let
 in
 {
   imports = [
+    ../../modules/numtide-cache.nix
     ../../modules/gnome-mobile.nix
     ./secrets.nix
     ./audio.nix

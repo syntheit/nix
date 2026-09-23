@@ -235,6 +235,7 @@ in
       # a Mac. Best-effort like the rest: absent file => deus leaves the
       # placement routes disabled rather than failing activation.
       stage_optional /run/secrets/deus_malli_admin_token    /var/lib/deus-keys/malli-admin-token     0400
+      stage_optional /run/secrets/deus_malli_admin_token_dev /var/lib/deus-keys/malli-admin-token-dev 0400
       # Dark-host alerting sinks. NOT best-effort: these are staged only
       # when the encrypted file exists at eval time, in which case sops
       # has already rendered /run/secrets and the copy must succeed. The
@@ -264,6 +265,11 @@ in
       # Best-effort: until it's added to secrets/conduit.yaml the file is
       # absent and deus-server leaves the ADE orchestrator disabled.
       ${lib.optionalString (!stageMDMCredentials) "stage_optional /run/secrets/nanomdm_api               /var/lib/deus-tokens/nanomdm-api         0444"}
+      # ADE admin password: the fixed password deus-server gives the admin on
+      # every ADE-provisioned Mac. NOT best-effort: the sops secret is declared
+      # unconditionally (./secrets.nix), and deus-server names this file as a
+      # LoadCredential source, which systemd refuses to start without.
+      ${pkgs.coreutils}/bin/install -m 0400 /run/secrets/deus_ade_admin_password /var/lib/deus-keys/ade-admin-password
       # ADE bootstrap-creds vend: the fleet sops age key deus-server
       # hands a bootstrapping Mac. Best-effort — absent until the sops
       # secret is added (see the gating note at the top of this file).
@@ -572,6 +578,8 @@ in
         # the migration has not reached. The key is read-only on ECS in one
         # cluster and can do nothing else.
         malliAdminTokenFile = "/etc/deus-keys/malli-admin-token";
+        # Dev bots' customer identity from api.dev.themalli.ai (read-only display; deus refuses changes to dev bots).
+        malliAdmin.dev.tokenFile = "/etc/deus-keys/malli-admin-token-dev";
         awsCredentialsFile = "/etc/deus-keys/aws-credentials";
 
         # ── Dark-host watch: the fleet's only alert ──
@@ -807,7 +815,12 @@ in
           # Known fleet-wide admin password (Daniel's call) — every ADE-
           # provisioned Mac gets tars with this password instead of a
           # per-device random one.
-          adminPassword = "tech123";
+          #
+          # adminPassword is deliberately UNSET. The value lives in sops
+          # (secrets/vista/deus_ade_admin_password) and reaches deus-server
+          # through the `package` wrapper and LoadCredential just below this
+          # block. Setting adminPassword here would put it back into the
+          # world-readable unit file and into this public repo.
 
           # ── Bootstrap-creds vend (POST /ade/bootstrap-creds) ────────
           # Fleet nodes register under the headscale `malli` user (see
@@ -850,7 +863,39 @@ in
         # headscaleCommand defaults to `headscale nodes list -o json`,
         # which is exactly what we want; the unix socket is world-
         # readable (see unix_socket_permission below) so no sudo wrapper.
+
+        # ── ADE admin password, from sops ──
+        # deus-server takes this password only as `-ade-admin-password <value>`.
+        # There is no file flag (checked through deus 0.57.30), so it cannot
+        # arrive the way the other credentials do. This wrapper reads it from
+        # the systemd credential at start and execs the real binary with it.
+        # The value is still on deus-server's argv, as it was before, but it is
+        # no longer in this repo or in the world-readable nix store.
+        # Follow-up: a Deus -ade-admin-password-file flag takes it off argv.
+        #
+        # Fails closed: a missing or empty credential stops the unit instead of
+        # letting deus fall back to random per-device passwords. lowPrio so the
+        # real deus-server, not this wrapper, is the one on PATH (the unwrapped
+        # package is also in environment.systemPackages below).
+        package = lib.lowPrio (pkgs.writeShellScriptBin "deus-server" ''
+          cred="''${CREDENTIALS_DIRECTORY:-}/ade-admin-password"
+          if [ -z "''${CREDENTIALS_DIRECTORY:-}" ] || [ ! -s "$cred" ]; then
+            echo "deus-server: ade-admin-password credential missing or empty; refusing to start" >&2
+            exit 1
+          fi
+          exec ${inputs.deus.packages.${pkgs.stdenv.hostPlatform.system}.default}/bin/deus-server \
+            -ade-admin-password "$(< "$cred")" "$@"
+        '');
       };
+
+      # The credential the deus-server wrapper above reads. The source is the
+      # host's /var/lib/deus-keys (bind-mounted read-only at /etc/deus-keys),
+      # staged 0400 root by deus-stage; systemd copies it as root before
+      # dropping to User=deus. The module's own LoadCredential list is kept:
+      # list definitions concatenate.
+      systemd.services.deus-server.serviceConfig.LoadCredential = [
+        "ade-admin-password:/etc/deus-keys/ade-admin-password"
+      ];
 
       # Bootstrap DNS: real resolvers so headscale can fetch its DERP map
       # (controlplane.tailscale.com) and the git mirror can reach github at
@@ -989,6 +1034,14 @@ in
         # also logs in against this via http://localhost:8085.
         address = "0.0.0.0";
         port = 8085;
+
+        # Local patch: skip ViaRoutesForPeer's per-pair source resolution when
+        # the policy has no via grants (ours has none). Upstream 0.29.3 and
+        # main both resolve every grant for every viewer-peer pair; that was
+        # 46% of headscale's CPU in a perf profile on 2026-09-23.
+        package = pkgs.headscale.overrideAttrs (old: {
+          patches = (old.patches or [ ]) ++ [ ./headscale-via-early-return.patch ];
+        });
 
         settings = {
           server_url = "https://headscale.matv.io";

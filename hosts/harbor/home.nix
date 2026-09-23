@@ -12,6 +12,7 @@
     ../../home/modules/neovim.nix
     ../../home/modules/tmux.nix
     ../../home/modules/opencode.nix
+    ../../home/modules/offload.nix
   ];
 
   home.username = "matv";
@@ -45,6 +46,7 @@
     codex
     restic
     awscli2
+    aws-sam-cli
     yazi
   ];
 

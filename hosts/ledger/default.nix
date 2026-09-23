@@ -1,6 +1,7 @@
 { pkgs, ... }:
 {
   imports = [
+    ../../modules/numtide-cache.nix
     ./hardware-configuration.nix
     ./hardware.nix
     ../../system

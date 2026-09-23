@@ -6,6 +6,11 @@
   ...
 }:
 
+let
+  ravenLanProxy = pkgs.writeShellScript "raven-lan-proxy" ''
+    exec ssh -o ControlMaster=no -o ControlPath=none raven-phone 'exec nc "$(ip -4 neigh | awk "/avf_tap/ {print \$1; exit}")" 22'
+  '';
+in
 {
   home.file.".ssh/config".force = true;
 
@@ -48,7 +53,9 @@
         IdentityFile = "~/.ssh/mainkey";
         User = "daniel";
       };
-      "mac" = {
+      # `mini` is the primary user-facing name. Keep `mac` during the rename:
+      # it is referenced by older operational notes and has the same endpoint.
+      "mini mac" = {
         HostName = "100.75.241.25";
         IdentityFile = "~/.ssh/mainkey";
         User = "daniel";
@@ -72,15 +79,17 @@
       # On mantle (always home), reach raven's VM over the LAN by hopping
       # through the phone's own sshd — deterministic, ~3ms, no Tailscale
       # double-NAT hole-punch to go stale. Everyone else uses Tailscale.
+      # The VM's DHCP subnet on the phone's AVF tap changes across reboots
+      # (was 10.232.129.3, now 10.140.192.x), so look its IP up live.
       "raven" = {
         IdentityFile = "~/.ssh/mainkey";
         User = "droid";
+        ConnectTimeout = 10;
       }
       // (
         if hostName == "mantle" then
           {
-            HostName = "10.232.129.3";
-            ProxyJump = "raven-phone";
+            ProxyCommand = "${ravenLanProxy}";
           }
         else
           {

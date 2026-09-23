@@ -8,6 +8,7 @@ let
 in
 {
   imports = [
+    ../../modules/numtide-cache.nix
     ../../modules/darwin/common.nix
     ./homebrew.nix
     # ./sharp-corners.nix  # temporarily disabled — breaks hardened apps (Ghostty)

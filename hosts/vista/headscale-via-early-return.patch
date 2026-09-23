@@ -1,0 +1,17 @@
+--- a/hscontrol/policy/v2/policy.go
++++ b/hscontrol/policy/v2/policy.go
+@@ -1146,6 +1146,14 @@
+ 		grants = append(grants, aclToGrants(acl)...)
+ 	}
+ 
++	// No via grant means no via effect: every pass below skips grants
++	// without Via. Return before resolving each grant's sources and
++	// destinations, which rebuilds IP sets over every node on each
++	// viewer-peer call.
++	if !slices.ContainsFunc(grants, func(g Grant) bool { return len(g.Via) > 0 }) {
++		return result
++	}
++
+ 	// Resolve each grant's sources against the viewer once, and each
+ 	// grant's destinations into a flat prefix list. The three passes
+ 	// below reuse both results instead of re-resolving per pass.

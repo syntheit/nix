@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Malli Fleet — System Overview</title>
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --surface: #ffffff;
+    --surface-2: #f2f4f7;
+    --text: #1b1f27;
+    --muted: #5b6472;
+    --border: #e3e6ea;
+    --chip-bg: #eef1f6;
+    --accent: #5b53e0;
+    --accent-soft: #ecebfb;
+    --shadow: 0 1px 2px rgba(16,20,30,.04), 0 6px 20px rgba(16,20,30,.05);
+    --c-apple:#6b7280; --c-conduit:#6366f1; --c-mantle:#d97706; --c-harbor:#0d9488;
+    --c-mac:#2563eb; --c-vm:#16a34a; --c-uservm:#7c3aed; --c-public:#ea580c;
+    --edge:#98a1b0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#0d1016; --surface:#141922; --surface-2:#1b2130; --text:#e7ebf2;
+      --muted:#9aa4b4; --border:#252c39; --chip-bg:#1c2230; --accent:#8b83f5;
+      --accent-soft:#20213a; --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 28px rgba(0,0,0,.35);
+      --edge:#5c6675;
+    }
+  }
+  * { box-sizing:border-box; }
+  html { background:var(--bg); color:var(--text); scroll-behavior:smooth; scroll-padding-top:1.5rem; }
+  body {
+    margin:0; font-size:16px; line-height:1.62;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Inter","Noto Sans",Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  code { font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+         font-size:.85em; background:var(--chip-bg); padding:.12em .4em; border-radius:5px; }
+  pre { background:var(--surface-2); border:1px solid var(--border); border-radius:10px;
+        padding:.9rem 1rem; overflow-x:auto; font-size:13px; line-height:1.5; margin:.9rem 0; }
+  pre code { background:none; padding:0; font-size:inherit; }
+
+  /* layout */
+  .wrap { display:flex; align-items:flex-start; max-width:1320px; margin:0 auto; }
+  nav.toc {
+    position:sticky; top:0; align-self:flex-start; width:260px; flex:0 0 260px;
+    height:100vh; overflow-y:auto; padding:2rem 1.1rem 3rem 1.6rem;
+    border-right:1px solid var(--border); font-size:13.5px;
+  }
+  nav.toc .brand { font-weight:700; font-size:15px; letter-spacing:-.01em; margin-bottom:.15rem; }
+  nav.toc .brand span { color:var(--accent); }
+  nav.toc .tag { color:var(--muted); font-size:11.5px; margin-bottom:1.3rem; }
+  nav.toc ol { list-style:none; margin:0; padding:0; counter-reset:s; }
+  nav.toc li { margin:.08rem 0; }
+  nav.toc a { display:block; color:var(--muted); padding:.28rem .5rem; border-radius:7px; }
+  nav.toc a:hover { color:var(--text); background:var(--surface-2); text-decoration:none; }
+  main { flex:1 1 auto; min-width:0; padding:2.4rem clamp(1.2rem,3vw,3rem) 6rem; max-width:1000px; }
+
+  h1 { font-size:2.05rem; letter-spacing:-.02em; margin:0 0 .3rem; }
+  .lede { color:var(--muted); font-size:1.08rem; margin:0 0 1.4rem; max-width:70ch; }
+  h2 { font-size:1.42rem; letter-spacing:-.015em; margin:3.2rem 0 .5rem; padding-top:.4rem; }
+  h2 .n { color:var(--accent); font-variant-numeric:tabular-nums; font-size:.9rem; font-weight:600;
+          margin-right:.55rem; vertical-align:.12em; }
+  h3 { font-size:1.08rem; margin:1.8rem 0 .4rem; }
+  p { margin:.6rem 0; }
+  section > p:first-of-type { margin-top:.3rem; }
+  hr { border:0; border-top:1px solid var(--border); margin:0; }
+
+  /* stat strip */
+  .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:.8rem; margin:1.4rem 0 .4rem; }
+  .stat { background:var(--surface); border:1px solid var(--border); border-radius:12px;
+          padding:.9rem 1rem; box-shadow:var(--shadow); }
+  .stat .v { font-size:1.7rem; font-weight:700; letter-spacing:-.02em; line-height:1; }
+  .stat .k { color:var(--muted); font-size:12.5px; margin-top:.35rem; }
+
+  /* cards */
+  .grid { display:grid; gap:1rem; margin:1.1rem 0; }
+  .grid.g2 { grid-template-columns:repeat(2,1fr); }
+  .grid.g4 { grid-template-columns:repeat(4,1fr); }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:12px;
+          padding:1rem 1.1rem; box-shadow:var(--shadow); }
+  .card h4 { margin:.1rem 0 .35rem; font-size:1rem; display:flex; align-items:center; gap:.5rem; }
+  .card p { margin:.25rem 0; font-size:14px; color:var(--muted); }
+  .dot { width:9px; height:9px; border-radius:50%; flex:0 0 auto; display:inline-block; }
+
+  /* figure */
+  figure { margin:1.3rem 0; background:var(--surface); border:1px solid var(--border);
+           border-radius:14px; padding:1.2rem; box-shadow:var(--shadow); }
+  figure svg { display:block; width:100%; height:auto; }
+  figcaption { color:var(--muted); font-size:12.5px; margin-top:.7rem; text-align:center; }
+  .shot { border-style:dashed; background:var(--surface-2); text-align:center; }
+  .shot .ph { display:flex; flex-direction:column; align-items:center; justify-content:center;
+              gap:.4rem; min-height:150px; color:var(--muted); }
+  .shot .ph .badge { font-size:11px; letter-spacing:.08em; text-transform:uppercase;
+                     border:1px solid var(--border); border-radius:999px; padding:.2rem .7rem; }
+  .shot img { max-width:100%; border-radius:8px; display:block; margin:0 auto; }
+
+  /* tables */
+  table { border-collapse:collapse; width:100%; margin:1rem 0; font-size:14px; }
+  th,td { border-bottom:1px solid var(--border); padding:.55rem .7rem; text-align:left; vertical-align:top; }
+  thead th { color:var(--muted); font-weight:600; font-size:12.5px; text-transform:uppercase; letter-spacing:.03em; }
+  tbody tr:hover { background:var(--surface-2); }
+  td code { white-space:nowrap; }
+
+  /* note */
+  .note { border:1px solid var(--border); border-left:3px solid var(--accent);
+          background:var(--accent-soft); border-radius:0 10px 10px 0; padding:.8rem 1rem; margin:1.1rem 0; font-size:14.5px; }
+  .note.warn { border-left-color:var(--c-mantle); }
+
+  /* pills / tags */
+  .pill { display:inline-block; background:var(--chip-bg); border:1px solid var(--border);
+          border-radius:999px; padding:.08rem .55rem; font-size:12px; color:var(--muted); margin:.1rem .12rem; }
+  .tags { margin:.5rem 0; }
+
+  figure img { width:100%; height:auto; border-radius:8px; display:block; }
+
+  /* small horizontal flow of chips */
+  .flow { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; margin:1rem 0 1.2rem; }
+  .fchip { background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--accent);
+           border-radius:8px; padding:.4rem .7rem; font-size:13px; box-shadow:var(--shadow); }
+  .farr { color:var(--muted); font-weight:600; }
+
+  /* timeline */
+  .tl { list-style:none; margin:1.2rem 0; padding:0; position:relative; }
+  .tl::before { content:""; position:absolute; left:15px; top:6px; bottom:6px; width:2px; background:var(--border); }
+  .tl li { position:relative; padding:0 0 1.1rem 3rem; }
+  .tl .num { position:absolute; left:0; top:0; width:32px; height:32px; border-radius:50%;
+             background:var(--surface); border:2px solid var(--accent); color:var(--accent);
+             font-weight:700; font-size:14px; display:flex; align-items:center; justify-content:center; }
+  .tl h4 { margin:.25rem 0 .2rem; font-size:1rem; }
+  .tl p { margin:.15rem 0; font-size:14px; color:var(--muted); }
+
+  .dg-box { fill:var(--surface); stroke:var(--border); stroke-width:1.5; }
+  .dg-inner { fill:var(--surface-2); stroke:var(--border); stroke-width:1; }
+  .dg-t { fill:var(--text); font-size:14px; font-weight:600; }
+  .dg-s { fill:var(--muted); font-size:12px; }
+  .dg-p { fill:var(--chip-bg); stroke:var(--border); }
+  .dg-pt { fill:var(--text); font-size:11.5px; }
+  .dg-e { stroke:var(--edge); stroke-width:1.6; fill:none; }
+  .dg-et { fill:var(--muted); font-size:11px; }
+
+  @media (max-width:1000px){
+    nav.toc { display:none; }
+    .stats{ grid-template-columns:repeat(2,1fr); }
+    .grid.g2,.grid.g4{ grid-template-columns:1fr; }
+    .grid.g4{ grid-template-columns:repeat(2,1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="toc">
+  <div class="brand">Malli <span>Fleet</span></div>
+  <div class="tag">System overview · 2026-07-29</div>
+  <ol>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#architecture">Architecture</a></li>
+    <li><a href="#pieces">The pieces</a></li>
+    <li><a href="#layers">One Mac, three layers</a></li>
+    <li><a href="#setup">How a Mac sets itself up</a></li>
+    <li><a href="#apple">Apple Business and enrollment</a></li>
+    <li><a href="#nixosvm">The NixOS VM</a></li>
+    <li><a href="#uservm">The macOS user VM</a></li>
+    <li><a href="#remote">Remote access</a></li>
+    <li><a href="#secrets">Secrets with sops</a></li>
+    <li><a href="#roles">Per-machine config and roles</a></li>
+    <li><a href="#cache">The Nix cache</a></li>
+    <li><a href="#deus">deus: running the fleet</a></li>
+    <li><a href="#future">Where this is heading</a></li>
+    <li><a href="#glossary">Glossary</a></li>
+  </ol>
+</nav>
+
+<main>
+<h1>Malli Fleet</h1>
+<p class="lede">How we build, provision, and run a fleet of about 575 Apple-silicon Mac Minis. Each Mac configures itself from a factory state, with no keyboard and no person involved, and comes up as a live node on the internet.</p>
+
+<div class="stats">
+  <div class="stat"><div class="v">~575</div><div class="k">Mac Minis planned</div></div>
+  <div class="stat"><div class="v">173</div><div class="k">tracked in the deus console</div></div>
+  <div class="stat"><div class="v">22</div><div class="k">bootstrap steps, automated</div></div>
+  <div class="stat"><div class="v">0</div><div class="k">human touches per Mac</div></div>
+</div>
+
+<section id="overview">
+<h2><span class="n">01</span>Overview</h2>
+<p>Every machine is described in Nix code and driven to that state on its own. Plug a new Mac into ethernet and about 30 minutes later it is running our software and is reachable at <code>m-XXXX.themalli.ai</code>. There is no golden image to hand-maintain and no manual setup.</p>
+<p>Three repositories build and run the fleet. <code>malli-nix</code> describes what each Mac looks like. <code>malli-deus</code> (which we call "deus") is the Go program that provisions and manages the machines. <code>~/nix</code> defines the control-plane server, "conduit", plus the homelab servers behind it. The rest of this page walks through each of these and the flows that connect them.</p>
+</section>
+
+<section id="architecture">
+<h2><span class="n">02</span>Architecture</h2>
+<p>Apple tells a fresh Mac where to enroll. conduit is the public front door and the brain. mantle answers Apple's management protocol, harbor serves the container images, and each Mac configures itself and runs our software, published through a Cloudflare tunnel.</p>
+<figure>
+<svg viewBox="0 0 960 560" role="img" aria-label="Fleet architecture diagram">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#98a1b0"/>
+    </marker>
+  </defs>
+
+  <!-- Apple -->
+  <rect class="dg-box" x="360" y="16" width="240" height="52" rx="11"/>
+  <rect x="360" y="16" width="5" height="52" rx="2.5" fill="var(--c-apple)"/>
+  <text class="dg-t" x="480" y="40" text-anchor="middle">Apple Business</text>
+  <text class="dg-s" x="480" y="57" text-anchor="middle">device enrollment (ADE)</text>
+
+  <!-- conduit -->
+  <rect class="dg-box" x="40" y="112" width="880" height="104" rx="13"/>
+  <rect x="40" y="112" width="5" height="104" rx="2.5" fill="var(--c-conduit)"/>
+  <text class="dg-t" x="62" y="138">conduit</text>
+  <text class="dg-s" x="132" y="138">public VPS · control plane</text>
+  <!-- pills -->
+  <g>
+    <rect class="dg-p" x="62"  y="156" width="140" height="42" rx="8"/>
+    <text class="dg-pt" x="132" y="173" text-anchor="middle">Headscale</text>
+    <text class="dg-pt" x="132" y="188" text-anchor="middle" fill="var(--muted)">mesh VPN</text>
+    <rect class="dg-p" x="214" y="156" width="140" height="42" rx="8"/>
+    <text class="dg-pt" x="284" y="173" text-anchor="middle">deus-server</text>
+    <text class="dg-pt" x="284" y="188" text-anchor="middle" fill="var(--muted)">fleet brain</text>
+    <rect class="dg-p" x="366" y="156" width="130" height="42" rx="8"/>
+    <text class="dg-pt" x="431" y="173" text-anchor="middle">Caddy</text>
+    <text class="dg-pt" x="431" y="188" text-anchor="middle" fill="var(--muted)">TLS front door</text>
+    <rect class="dg-p" x="508" y="156" width="140" height="42" rx="8"/>
+    <text class="dg-pt" x="578" y="173" text-anchor="middle">git mirror</text>
+    <text class="dg-pt" x="578" y="188" text-anchor="middle" fill="var(--muted)">malli-nix</text>
+    <rect class="dg-p" x="660" y="156" width="120" height="42" rx="8"/>
+    <text class="dg-pt" x="720" y="173" text-anchor="middle">Nix cache</text>
+    <text class="dg-pt" x="720" y="188" text-anchor="middle" fill="var(--muted)">Harmonia</text>
+    <rect class="dg-p" x="792" y="156" width="106" height="42" rx="8"/>
+    <text class="dg-pt" x="845" y="173" text-anchor="middle">user-VPN</text>
+    <text class="dg-pt" x="845" y="188" text-anchor="middle" fill="var(--muted)">access</text>
+  </g>
+
+  <!-- mantle -->
+  <rect class="dg-box" x="96" y="266" width="330" height="88" rx="12"/>
+  <rect x="96" y="266" width="5" height="88" rx="2.5" fill="var(--c-mantle)"/>
+  <text class="dg-t" x="118" y="291">mantle</text>
+  <text class="dg-s" x="182" y="291">Apple MDM server</text>
+  <text class="dg-s" x="118" y="315">nanomdm · nanodep · scep · mdmenroll</text>
+  <text class="dg-s" x="118" y="335" fill="var(--muted)">issues commands, profiles, and the enroll profile</text>
+
+  <!-- harbor -->
+  <rect class="dg-box" x="534" y="266" width="330" height="88" rx="12"/>
+  <rect x="534" y="266" width="5" height="88" rx="2.5" fill="var(--c-harbor)"/>
+  <text class="dg-t" x="556" y="291">harbor</text>
+  <text class="dg-s" x="620" y="291">image registry</text>
+  <text class="dg-s" x="556" y="315">Docker :5000 · OCI/Zot :5001</text>
+  <text class="dg-s" x="556" y="335" fill="var(--muted)">serves container and macOS VM images</text>
+
+  <!-- Mac -->
+  <rect class="dg-box" x="270" y="410" width="420" height="128" rx="12"/>
+  <rect x="270" y="410" width="5" height="128" rx="2.5" fill="var(--c-mac)"/>
+  <text class="dg-t" x="292" y="435">Mac Mini · m-XXXX</text>
+  <rect class="dg-inner" x="292" y="448" width="376" height="24" rx="6"/>
+  <text class="dg-pt" x="302" y="464">macOS host (nix-darwin) · tailscaled · Lima · Tart</text>
+  <rect class="dg-inner" x="292" y="476" width="376" height="24" rx="6"/>
+  <text class="dg-pt" x="302" y="492">NixOS VM (Lima) · our application containers</text>
+  <rect class="dg-inner" x="292" y="504" width="376" height="24" rx="6"/>
+  <text class="dg-pt" x="302" y="520">macOS user VM (Tart) · optional, per user</text>
+
+  <!-- public -->
+  <rect class="dg-box" x="726" y="446" width="196" height="56" rx="11"/>
+  <rect x="726" y="446" width="5" height="56" rx="2.5" fill="var(--c-public)"/>
+  <text class="dg-t" x="824" y="470" text-anchor="middle" font-size="13">m-XXXX.themalli.ai</text>
+  <text class="dg-s" x="824" y="488" text-anchor="middle">public HTTPS</text>
+
+  <!-- edges -->
+  <path class="dg-e" d="M480,68 L480,110" marker-end="url(#ar)"/>
+  <text class="dg-et" x="490" y="94">enroll redirect</text>
+
+  <path class="dg-e" d="M250,216 L250,264" marker-end="url(#ar)"/>
+  <text class="dg-et" x="120" y="245">WireGuard · MDM proxy</text>
+
+  <path class="dg-e" d="M710,216 L710,264" marker-end="url(#ar)"/>
+  <text class="dg-et" x="720" y="245">image pulls</text>
+
+  <path class="dg-e" d="M300,354 C300,385 360,388 400,408" marker-end="url(#ar)"/>
+  <text class="dg-et" x="250" y="392">MDM commands</text>
+
+  <path class="dg-e" d="M690,354 C690,386 600,388 560,408" marker-end="url(#ar)"/>
+  <text class="dg-et" x="600" y="392">tailnet · images</text>
+
+  <path class="dg-e" d="M690,474 L724,474" marker-end="url(#ar)"/>
+
+  <path class="dg-e" d="M80,216 C60,320 90,470 268,486" marker-end="url(#ar)"/>
+  <text class="dg-et" x="34" y="360" transform="rotate(-90 34 360)">tailnet · deploys · creds</text>
+</svg>
+<figcaption>The control plane (conduit) sits between Apple and the fleet. mantle and harbor are homelab servers that conduit fronts over WireGuard.</figcaption>
+</figure>
+</section>
+
+<section id="pieces">
+<h2><span class="n">03</span>The pieces</h2>
+<div class="grid g2">
+  <div class="card"><h4><span class="dot" style="background:var(--c-conduit)"></span>conduit</h4>
+    <p>A rented VPS with a public IP. It runs Headscale (the mesh VPN), deus-server, Caddy, a git mirror of the config repos, a Nix binary cache, and the user-VPN gateway. Everything Apple and every Mac talks to starts here.</p></div>
+  <div class="card"><h4><span class="dot" style="background:var(--c-mantle)"></span>mantle</h4>
+    <p>A homelab server running the self-hosted Apple MDM stack: nanomdm, nanodep, scep, and the enrollment-profile server. conduit reverse-proxies <code>mdm/scep/enroll.matv.io</code> to it over WireGuard.</p></div>
+  <div class="card"><h4><span class="dot" style="background:var(--c-harbor)"></span>harbor</h4>
+    <p>A homelab server that hosts the container-image registries the fleet pulls from: a Docker registry on 5000 and an OCI registry (Zot) on 5001 for the macOS VM images.</p></div>
+  <div class="card"><h4><span class="dot" style="background:var(--c-mac)"></span>the fleet</h4>
+    <p>The Mac Minis, named <code>m-XXXX</code> (for example <code>m-5fro</code>). About 575 are planned. The deus console tracks 173 today, most still offline as they are brought online.</p></div>
+</div>
+</section>
+
+<section id="layers">
+<h2><span class="n">04</span>One Mac, three layers</h2>
+<p>A single Mac Mini is really three stacked machines. The macOS host is the bare metal. Inside it, Lima runs a NixOS VM where our software runs today. Some Macs also run a second macOS VM under Tart that an end user can log into.</p>
+<figure>
+<svg viewBox="0 0 720 336" role="img" aria-label="The three layers inside one Mac Mini">
+  <!-- host -->
+  <rect class="dg-box" x="20" y="16" width="680" height="94" rx="12"/>
+  <rect x="20" y="16" width="6" height="94" rx="3" fill="var(--c-mac)"/>
+  <text class="dg-t" x="42" y="42">macOS host</text>
+  <text class="dg-s" x="150" y="42">nix-darwin · headless · auto-login as tars</text>
+  <rect class="dg-inner" x="42" y="56" width="150" height="40" rx="7"/><text class="dg-pt" x="117" y="80" text-anchor="middle">tailscaled</text>
+  <rect class="dg-inner" x="202" y="56" width="150" height="40" rx="7"/><text class="dg-pt" x="277" y="80" text-anchor="middle">Lima (Linux VMs)</text>
+  <rect class="dg-inner" x="362" y="56" width="150" height="40" rx="7"/><text class="dg-pt" x="437" y="80" text-anchor="middle">Tart (macOS VMs)</text>
+  <rect class="dg-inner" x="522" y="56" width="156" height="40" rx="7"/><text class="dg-pt" x="600" y="80" text-anchor="middle">socat port forwards</text>
+
+  <!-- nixos vm -->
+  <rect class="dg-box" x="20" y="122" width="680" height="94" rx="12"/>
+  <rect x="20" y="122" width="6" height="94" rx="3" fill="var(--c-vm)"/>
+  <text class="dg-t" x="42" y="148">NixOS VM</text>
+  <text class="dg-s" x="140" y="148">via Lima · runs Docker · where our software runs today</text>
+  <rect class="dg-inner" x="42" y="162" width="126" height="40" rx="7"/><text class="dg-pt" x="105" y="186" text-anchor="middle">orchestrator</text>
+  <rect class="dg-inner" x="178" y="162" width="126" height="40" rx="7"/><text class="dg-pt" x="241" y="186" text-anchor="middle">cursor-runner</text>
+  <rect class="dg-inner" x="314" y="162" width="120" height="40" rx="7"/><text class="dg-pt" x="374" y="186" text-anchor="middle">dashboard</text>
+  <rect class="dg-inner" x="444" y="162" width="110" height="40" rx="7"/><text class="dg-pt" x="499" y="186" text-anchor="middle">sandbox</text>
+  <rect class="dg-inner" x="564" y="162" width="114" height="40" rx="7"/><text class="dg-pt" x="621" y="186" text-anchor="middle">cloudflared</text>
+
+  <!-- user vm -->
+  <rect class="dg-box" x="20" y="228" width="680" height="92" rx="12"/>
+  <rect x="20" y="228" width="6" height="92" rx="3" fill="var(--c-uservm)"/>
+  <text class="dg-t" x="42" y="254">macOS user VM</text>
+  <text class="dg-s" x="188" y="254">via Tart · optional · a desktop the end user logs into</text>
+  <rect class="dg-inner" x="42" y="268" width="170" height="40" rx="7"/><text class="dg-pt" x="127" y="292" text-anchor="middle">nix-darwin inside guest</text>
+  <rect class="dg-inner" x="222" y="268" width="150" height="40" rx="7"/><text class="dg-pt" x="297" y="292" text-anchor="middle">SSH · port 2222</text>
+  <rect class="dg-inner" x="382" y="268" width="180" height="40" rx="7"/><text class="dg-pt" x="472" y="292" text-anchor="middle">screen sharing · port 5900</text>
+</svg>
+<figcaption>The host, the NixOS VM, and the optional macOS user VM. The <a href="#future">plan below</a> collapses this to two layers.</figcaption>
+</figure>
+</section>
+
+<section id="setup">
+<h2><span class="n">05</span>How a Mac sets itself up</h2>
+<p>A person unboxes the Mac and plugs in ethernet. Nothing else. The rest runs on its own, driven by Apple's enrollment program and then by deus.</p>
+<ol class="tl">
+  <li><span class="num">1</span>
+    <h4>Assignment in Apple Business</h4>
+    <p>The Mac's serial number is assigned to our MDM server. A timer on mantle pushes our enrollment profile onto it, so the device knows where to enroll before it is ever switched on.</p></li>
+  <li><span class="num">2</span>
+    <h4>First boot and enrollment</h4>
+    <p>On ethernet, the Mac uses Auto Advance to skip Setup Assistant with no prompts. It requests an identity certificate over SCEP, then enrolls with nanomdm on mantle.</p></li>
+  <li><span class="num">3</span>
+    <h4>MDM configures the device</h4>
+    <p>deus watches each check-in and drives the device: it creates a hidden admin account (<code>tars</code>), installs five configuration profiles, and installs the bootstrap package. Setup Assistant is held on a "configuring" screen (<code>await_device_configured</code>) until deus releases it with the <code>DeviceConfigured</code> command.</p></li>
+  <li><span class="num">4</span>
+    <h4>Phase A, before anyone logs in</h4>
+    <p>The package runs as root. It asks deus-server for this serial's one-time credentials (its hostname, a Headscale key, the secrets key, an agent token, an auto-login password), turns on auto-login, and reboots.</p></li>
+  <li><span class="num">5</span>
+    <h4>Phase B: <code>deus bootstrap-run</code></h4>
+    <p>After auto-login, deus runs 22 small, idempotent steps that each check their own result. In order: install Nix, join the tailnet, seed the Nix cache, rebuild the macOS host, start the NixOS VM, rebuild the VM, register the host, run the granter, and finish with a health check.</p></li>
+  <li><span class="num">6</span>
+    <h4>Live</h4>
+    <p>The node is online as <code>m-XXXX</code>, its containers are up, and <code>https://m-XXXX.themalli.ai/health</code> returns 200. This has run start to finish on real hardware.</p></li>
+</ol>
+<div class="note">The granter is one of the bootstrap steps. The VM asks deus-server, which creates a Cloudflare tunnel and DNS record for <code>m-XXXX.themalli.ai</code>, writes that machine's secrets back into <code>malli-nix</code> in git (encrypted), and refreshes the mirror. The VM then rebuilds with its real secrets and starts serving.</div>
+</section>
+
+<section id="apple">
+<h2><span class="n">06</span>Apple Business and enrollment</h2>
+<p>Apple renamed Apple Business Manager to just "Apple Business" in April 2026, folding in Business Essentials and Business Connect. The enrollment mechanics did not change, only the name and portal. We buy Macs so they land in our Apple Business account by serial, and each serial is assigned to our self-hosted MDM server.</p>
+<p>Automated Device Enrollment (ADE) is the modern name for what used to be called DEP. When an ADE Mac first boots on a network, it contacts Apple, receives our enrollment URL, and enrolls in our MDM. ADE devices are supervised, which gives the management server the wider set of controls Apple reserves for organization-owned hardware. We set the enrollment as non-removable, so the machine cannot drop management from the UI.</p>
+<p>Two settings make the hands-off flow work. <code>await_device_configured</code> parks Setup Assistant after enrollment so deus can install everything first, and the <code>DeviceConfigured</code> command releases it once deus is done. Auto Advance lets an ethernet-connected Mac skip the remaining panes with no clicks.</p>
+<table>
+  <thead><tr><th>Piece</th><th>What it does here</th></tr></thead>
+  <tbody>
+    <tr><td>nanodep</td><td>Talks to Apple's ADE service using the server token, syncs the list of our serials, and assigns the enrollment profile to them.</td></tr>
+    <tr><td>nanomdm</td><td>The MDM server. Devices check in here and receive commands. Apple's push service (APNs) is what wakes a device to check in.</td></tr>
+    <tr><td>scep</td><td>The certificate authority. Enrollment issues each device an identity certificate that authenticates its MDM connection.</td></tr>
+    <tr><td>mdmenroll</td><td>Serves the enrollment profile that the device fetches at first boot.</td></tr>
+  </tbody>
+</table>
+<div class="note warn">Worth tracking, though we do not use them yet: Apple now prefers Declarative Device Management (DDM) over imperative commands, and Managed Device Attestation binds identity certificates to the Secure Enclave. Return to Service (fast wipe-and-re-enroll) covers iPhone and iPad but not Mac, so a wiped Mac re-enrolls through the normal ADE path we already use.</div>
+</section>
+
+<section id="nixosvm">
+<h2><span class="n">07</span>The NixOS VM</h2>
+<p>Each Mac runs one NixOS VM under Lima, using Apple's virtualization. This is where our application containers run today. It joins the same tailnet as the host and takes the hostname <code>m-XXXX-vm</code>. We deploy it with Colmena.</p>
+<div class="grid g2">
+  <div class="card"><h4>VM shape</h4>
+    <table style="margin:.3rem 0">
+      <tbody>
+        <tr><td>Type</td><td>Apple Virtualization (vz), aarch64</td></tr>
+        <tr><td>CPU / RAM</td><td>4 vCPU / 8 GiB</td></tr>
+        <tr><td>Disk</td><td>100 GiB</td></tr>
+        <tr><td>Mount</td><td>the Mac user home, over virtiofs</td></tr>
+        <tr><td>Rosetta</td><td>on, so x86_64 images run</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="card"><h4>What runs inside</h4>
+    <p>Docker runs four containers. Three are ours, pulled from conduit's registry and pinned by digest; the fourth is a small utility container.</p>
+    <div class="tags">
+      <span class="pill">orchestrator :8787</span>
+      <span class="pill">cursor-runner :8791 / :8792</span>
+      <span class="pill">dashboard :3000</span>
+      <span class="pill">sandbox (alpine)</span>
+    </div>
+    <p>Also: cloudflared for the public tunnel, Tailscale, and a weekly Docker prune.</p>
+  </div>
+</div>
+<p>The VM learns its name from the host. The Mac writes its hostname to <code>~/.malli-hostname</code> on the shared mount; a small service in the VM reads it, appends <code>-vm</code>, and sets its Tailscale name. For fast rebuilds, the VM points at the fleet's LAN Nix cache first (see <a href="#cache">the cache</a>) and falls back to the public cache.</p>
+</section>
+
+<section id="uservm">
+<h2><span class="n">08</span>The macOS user VM</h2>
+<p>Some Macs run a second, full macOS desktop inside a Tart VM. This is the machine an end user actually logs into. It is not hardened like the fleet host; it is a normal desktop that happens to be managed by Nix.</p>
+<div class="grid g2">
+  <div class="card"><h4>VM shape</h4>
+    <table style="margin:.3rem 0"><tbody>
+      <tr><td>Runner</td><td>Tart 2.32.1</td></tr>
+      <tr><td>Base image</td><td>macOS Sequoia, about 23 GB, from conduit's OCI registry</td></tr>
+      <tr><td>CPU / RAM</td><td>4 vCPU / 8 GiB</td></tr>
+      <tr><td>Disk</td><td>80 GB</td></tr>
+    </tbody></table>
+  </div>
+  <div class="card"><h4>How a user reaches it</h4>
+    <p>The host forwards two ports into the guest with socat: SSH on 2222 and screen sharing (VNC) on 5900. A user connects through the Malli client described <a href="#remote">below</a>.</p>
+    <p>Assigned by the <code>user-vm</code> role, currently on <code>m-g94t</code>, <code>m-pg4i</code>, and <code>m-qvlm</code>.</p>
+  </div>
+</div>
+<p>The guest runs nix-darwin, so the whole desktop is declarative. On first boot it creates the user account and password from a secrets file, turns on auto-login and screen sharing, and runs <code>darwin-rebuild</code> against a Nix store that was pre-seeded into the base image. That pre-seed turns a 30-minute cold install into a rebuild of about a minute or two.</p>
+</section>
+
+<section id="remote">
+<h2><span class="n">09</span>Remote access: the Malli client</h2>
+<p>Users reach their Mac through a small macOS client (the "Malli" app) that runs a private WireGuard tunnel to conduit. This is separate from Tailscale, so it never collides with a user's own Tailscale. An operator grants access with one command; the user redeems a token and connects.</p>
+<figure>
+<svg viewBox="0 0 760 190" role="img" aria-label="User remote access path">
+  <defs>
+    <marker id="ar2" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#98a1b0"/></marker>
+  </defs>
+  <rect class="dg-box" x="20" y="60" width="180" height="70" rx="11"/>
+  <rect x="20" y="60" width="5" height="70" rx="2.5" fill="var(--c-uservm)"/>
+  <text class="dg-t" x="110" y="90" text-anchor="middle" font-size="13">user's Mac</text>
+  <text class="dg-s" x="110" y="110" text-anchor="middle">Malli client (WireGuard)</text>
+
+  <rect class="dg-box" x="290" y="52" width="180" height="86" rx="11"/>
+  <rect x="290" y="52" width="5" height="86" rx="2.5" fill="var(--c-conduit)"/>
+  <text class="dg-t" x="380" y="80" text-anchor="middle" font-size="13">conduit</text>
+  <text class="dg-s" x="380" y="100" text-anchor="middle">wg-malli gateway</text>
+  <text class="dg-s" x="380" y="118" text-anchor="middle">per-user firewall rule</text>
+
+  <rect class="dg-box" x="560" y="60" width="180" height="70" rx="11"/>
+  <rect x="560" y="60" width="5" height="70" rx="2.5" fill="var(--c-mac)"/>
+  <text class="dg-t" x="650" y="86" text-anchor="middle" font-size="13">their Mac Mini</text>
+  <text class="dg-s" x="650" y="106" text-anchor="middle">SSH 2222 · VNC 5900</text>
+
+  <path class="dg-e" d="M200,95 L288,95" marker-end="url(#ar2)"/>
+  <path class="dg-e" d="M470,95 L558,95" marker-end="url(#ar2)"/>
+  <text class="dg-et" x="244" y="86" text-anchor="middle">encrypted</text>
+  <text class="dg-et" x="514" y="86" text-anchor="middle">scoped access</text>
+</svg>
+<figcaption>Access is scoped per user at conduit. A firewall rule allows one user's tunnel to reach exactly one Mac on exactly ports 2222 and 5900, and nothing else.</figcaption>
+</figure>
+<p>The grant is a single command. It mints a WireGuard config for the user and opens a firewall entry allowing that user's address to reach that one machine on those two ports:</p>
+<pre><code>deus user vpn create owen --allow m-pg4i:2222,5900</code></pre>
+<p>The user gets a token and a welcome link, installs the client, and pastes the token. From then on they can <code>ssh -p 2222</code> into their Mac and open its screen with any VNC client. The full native app is still being built; the server side and the tunnel are already running.</p>
+</section>
+
+<section id="secrets">
+<h2><span class="n">10</span>Secrets with sops</h2>
+<p>Secrets live in git, encrypted with sops and age. They are only ever decrypted on the machine that needs them, at the moment Nix applies its configuration. Two keys can read any secret: a single fleet key that every Mac and VM holds, and Daniel's personal key. The fleet key is dropped onto each machine during the bootstrap, so a freshly provisioned Mac can decrypt its own config.</p>
+<p>There are two layers of secret files. <code>secrets/fleet.yaml</code> holds shared values used by every machine. <code>hosts/&lt;name&gt;/secrets.yaml</code> holds values specific to one machine, such as its Cloudflare tunnel token or its user-VM passwords. A per-machine file wins over the shared one.</p>
+<p>Nix does not hand raw secrets to services. It renders small env files from templates and points each service at the file it needs:</p>
+<table>
+  <thead><tr><th>Template</th><th>Feeds</th></tr></thead>
+  <tbody>
+    <tr><td><code>malli.env</code></td><td>the application containers (identity, API keys, config)</td></tr>
+    <tr><td><code>tailscale-authkey</code></td><td>the VM joining the tailnet</td></tr>
+    <tr><td><code>cloudflared-tunnel-env</code></td><td>the public tunnel</td></tr>
+    <tr><td><code>vm-secrets.env</code></td><td>the macOS user VM's account and screen-sharing passwords</td></tr>
+  </tbody>
+</table>
+<p>To edit a secret, open the file with sops. It re-encrypts to both keys on save, and the next deploy of that machine picks up the change:</p>
+<pre><code>sops secrets/fleet.yaml            # shared
+sops hosts/m-1w6l-vm/secrets.yaml  # one machine</code></pre>
+</section>
+
+<section id="roles">
+<h2><span class="n">11</span>Per-machine config and roles</h2>
+<p>The flake turns the registry of hostnames into config automatically. For every entry in <code>hosts/registry.nix</code> it produces a <code>darwinConfigurations."m-XXXX"</code> for the Mac and a <code>nixosConfigurations."m-XXXX-vm"</code> for its VM. You rarely touch the flake to change a machine.</p>
+
+<h3>Change one machine: drop a file named after it</h3>
+<p>If a file exists at <code>hosts/&lt;hostname&gt;/host.nix</code>, the flake imports it for that machine and no other. Create it and the machine picks it up; delete it and the machine goes back to the standard config. The whole mechanism is one line:</p>
+<pre><code>hostOverride = hostName:
+  let f = ./hosts/${hostName}/host.nix;
+  in lib.optional (builtins.pathExists f) f;</code></pre>
+
+<h3>Roles: where Nix and deus meet</h3>
+<p>A role is a single name that maps to a set of Nix modules. Give a machine a role and it gains that capability on its next rebuild. The interesting part is that a role is the join between two systems that would each be limited on their own. Nix says what a capability <em>is</em>. deus decides <em>which machines</em> have it, and writes that decision straight into the config repo.</p>
+<div class="flow">
+  <span class="fchip">toggle a role in deus</span><span class="farr">&rarr;</span>
+  <span class="fchip">deus commits <code>roles.json</code> to git</span><span class="farr">&rarr;</span>
+  <span class="fchip">the next rebuild folds the module in</span><span class="farr">&rarr;</span>
+  <span class="fchip">the machine has the capability</span>
+</div>
+<p>An operator flips a role in the console, deus commits it to <code>hosts/roles.json</code> and pushes, and the next rebuild of that machine picks up the matching module. The console and the source of truth are the same thing. Every capability change is a normal git commit, so it is revertible and auditable, and the same action can target one machine or a hundred. The roles we use today:</p>
+<div class="grid g4">
+  <div class="card"><h4><span class="dot" style="background:var(--c-vm)"></span>cache</h4><p>Run a LAN Nix binary cache on this machine.</p></div>
+  <div class="card"><h4><span class="dot" style="background:var(--c-uservm)"></span>user-vm</h4><p>Run a macOS user VM for an end user.</p></div>
+  <div class="card"><h4><span class="dot" style="background:var(--c-mantle)"></span>bake</h4><p>Build the golden macOS VM image.</p></div>
+  <div class="card"><h4><span class="dot" style="background:var(--c-mac)"></span>queen</h4><p>Reserved for a coordinator role.</p></div>
+</div>
+
+<h3>Carving the fleet by hardware</h3>
+<p>The fleet is not one kind of machine. Alongside the base M4 Mac Minis we have M4 Pro units with more memory and a larger disk, an extra 8 GB of RAM and 256 GB of storage each. deus already knows the shape of every machine, because each agent reports its CPU, memory, and disk on every heartbeat. Roles turn that knowledge into policy.</p>
+<div class="note">
+<p style="margin:0 0 .4rem"><strong>A concrete example.</strong> Define a <code>reserved</code> role that both marks the M4 Pro machines and keeps them for our own workloads instead of a customer user-VM. Those bigger boxes then host our own services, an internal database, a larger shared build cache, or heavier internal tools, while each base mini runs one user-VM. Because the hardware is visible in the heartbeat, deus can pick the targets by capability, so "the M4 Pro machines host our stuff" becomes a rule rather than a hand-kept list.</p>
+</div>
+<p>That is the payoff of putting roles at the seam between Nix and deus: a pile of Macs of different sizes becomes a fleet you can carve up by capability, from one console, with every decision living in git.</p>
+</section>
+
+<section id="cache">
+<h2><span class="n">12</span>The Nix cache</h2>
+<p>Rebuilding hundreds of machines against the public Nix cache would be slow and wasteful. Instead, one machine on the fleet holds the <code>cache</code> role and serves a shared LAN cache; every other machine pulls from it first.</p>
+<p>The cache machine runs nginx as a caching proxy. Port 5080 fronts the public Nix cache, and port 5081 fronts the Determinate and NixOS-Lima download sources. Both are reachable only over the tailnet. Today the role sits on <code>m-1w6l</code>. Every other VM lists that cache as its first substituter, at a higher priority than the public cache, so a package already fetched once is served locally to the rest of the fleet.</p>
+<p>A matching cache on the macOS side, serving Mac store paths plus Apple's own content caching, is planned but not built yet.</p>
+</section>
+
+<section id="deus">
+<h2><span class="n">13</span>deus: running the fleet</h2>
+<p>deus is the Go program that provisions and operates the fleet. deus-server runs on conduit and holds the state. A deus-agent on every Mac and VM heartbeats home every 30 seconds with health, disk, network, container state, and current revision. Operators drive it from a terminal console.</p>
+<pre><code>ssh -p 2222 fleet@conduit.matv.io   # then run: deus</code></pre>
+
+<h3>The console</h3>
+<p>The console opens on a grid of the whole fleet, each machine shown with a health dot and its current revision. From there you drill into one machine, or open the other views.</p>
+<table>
+  <thead><tr><th>View</th><th>What it is for</th></tr></thead>
+  <tbody>
+    <tr><td>Fleet grid</td><td>Every machine at a glance, with health and revision drift. Select one or many.</td></tr>
+    <tr><td>Host detail</td><td>One machine's full state: health, revision, uptime, disk, network graph, containers, tunnel status.</td></tr>
+    <tr><td>Provisioning</td><td>Live view of machines currently enrolling and bootstrapping.</td></tr>
+    <tr><td>Bootstrap detail</td><td>The 22 steps for one machine, with a status glyph and log tail per step.</td></tr>
+    <tr><td>Revisions</td><td>Which config commit each machine is on. The starting point for a rollback.</td></tr>
+    <tr><td>Rollouts</td><td>Progress of a phased rollout, and every machine's job within it.</td></tr>
+    <tr><td>Jobs</td><td>Recent deploys with live log tails.</td></tr>
+  </tbody>
+</table>
+
+<figure>
+  <img src="deus-1.png" alt="deus fleet grid">
+  <figcaption>The fleet grid. One cell per machine with a health dot, and a header that counts healthy and offline. The bottom row lists the actions: deploy, roles, rollout, jobs, provisioning.</figcaption>
+</figure>
+<div class="grid g2">
+  <figure><img src="deus-2.png" alt="deus revisions view"><figcaption>Revisions. Which config commit each machine runs. Pick an earlier one and redeploy to roll back.</figcaption></figure>
+  <figure><img src="deus-3.png" alt="deus host detail"><figcaption>Host detail. One machine's health, revision, resources, and its running containers.</figcaption></figure>
+</div>
+
+<h3>Deploy</h3>
+<p>A deploy is initiated from the grid or the CLI. deus-server does not run the build on itself; it opens an SSH connection to the target and runs the rebuild there, pinned to a specific config commit from conduit's mirror:</p>
+<pre><code>sudo darwin-rebuild switch --flake 'git://conduit/malli-nix.git?rev=&lt;sha&gt;#m-XXXX'      # a Mac
+sudo nixos-rebuild  switch --flake 'git://conduit/malli-nix.git?rev=&lt;sha&gt;#m-XXXX-vm'   # its VM</code></pre>
+<p>Up to 20 deploys run at once. Every deploy streams its log back, which the console tails live.</p>
+
+<h3>Rollback</h3>
+<p>Rollback is a deploy to an earlier commit. In the revisions view you pick a prior commit and redeploy the machines that are not already on it. Because every deploy is pinned to a commit, going back is the same operation as going forward.</p>
+
+<h3>Phased rollouts</h3>
+<p>For a fleet-wide change you start a rollout instead of deploying to everything at once. It ships in batches of five and stops on the first failure, so a bad change hits five machines rather than all of them. The rollouts view shows progress and lets you open any machine's log. State lives in the database, so a server restart resumes a rollout cleanly.</p>
+</section>
+
+<section id="future">
+<h2><span class="n">14</span>Where this is heading</h2>
+<p>The current design puts our software in a NixOS VM and gives users a separate macOS VM. The plan simplifies the middle and expands what users can do.</p>
+<div class="grid g2">
+  <div class="card"><h4>Retire the NixOS VM</h4>
+    <p>Move our own containers off the Linux VM and run them directly on the macOS host. That removes a whole layer per Mac and the Lima runtime with it.</p></div>
+  <div class="card"><h4>The macOS VM becomes the user's space</h4>
+    <p>The macOS VM is where users build and run their own apps. They ask Malli for something, and an app comes up with its own SQLite database, running locally in their VM.</p></div>
+  <div class="card"><h4>Each app is a flake</h4>
+    <p>The macOS VM runs nix-darwin, so every user app is packaged as its own flake. That keeps a machine full of ad-hoc apps organized and reproducible.</p></div>
+  <div class="card"><h4>Local build, host-side exposure</h4>
+    <p>An app is exposed locally in the VM. The public Cloudflare tunnel runs on the host side, so the user gets a real URL without managing any of the networking.</p></div>
+</div>
+<p>The end state: a user reaches their macOS VM by SSH and screen sharing, talks to Malli, and ends up with a running app backed by a database and reachable on the internet. The host runs our services and the tunnels; the VM runs the user's world.</p>
+</section>
+
+<section id="glossary">
+<h2><span class="n">15</span>Glossary</h2>
+<table>
+  <tbody>
+    <tr><td><strong>ADE</strong></td><td>Automated Device Enrollment. A Mac auto-enrolls in our MDM at first boot with no setup. The modern name for DEP.</td></tr>
+    <tr><td><strong>MDM</strong></td><td>The Apple protocol for managing Macs remotely. Our server is nanomdm.</td></tr>
+    <tr><td><strong>nix-darwin / NixOS</strong></td><td>Declarative configuration for macOS and for Linux.</td></tr>
+    <tr><td><strong>Lima / Tart</strong></td><td>Run a Linux VM and a macOS VM, respectively, on a Mac.</td></tr>
+    <tr><td><strong>Headscale / tailnet</strong></td><td>Our self-hosted Tailscale control server and the private mesh network every machine joins.</td></tr>
+    <tr><td><strong>deus</strong></td><td>The Go program that provisions and runs the fleet.</td></tr>
+    <tr><td><strong>granter</strong></td><td>The deus step that gives a machine its Cloudflare tunnel, DNS, and secrets.</td></tr>
+    <tr><td><strong>sops / age</strong></td><td>How secrets are encrypted in git.</td></tr>
+    <tr><td><strong>Colmena</strong></td><td>Deploys NixOS config to the fleet VMs.</td></tr>
+    <tr><td><strong>m-XXXX</strong></td><td>A fleet Mac. Its VM is <code>m-XXXX-vm</code> and it serves at <code>m-XXXX.themalli.ai</code>.</td></tr>
+  </tbody>
+</table>
+</section>
+
+</main>
+</div>
+</body>
+</html>
