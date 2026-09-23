@@ -34,6 +34,7 @@
           "map.matv.io" = "http://localhost:8100";
           "files.matv.io" = "http://localhost:4717";
           "asado-list.matv.io" = "http://localhost:4730";
+          "malli-overview.matv.io" = "http://localhost:8098";
           "malli-dev.sudoman.net" = "http://localhost:8787";
           "pro-malli-dev.sudoman.net" = "http://localhost:3000";
           # (Mac fleet MDM moved to vista 2026-08; served via conduit Caddy, not this tunnel.)

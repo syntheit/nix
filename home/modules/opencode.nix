@@ -11,14 +11,22 @@
 #                   subagents (in parallel), keeping its own context lean.
 #
 # Model tiers:
-#   commander / plan / implement / review → GLM-5.2   ($0.93/$3)
+#   commander / plan / implement / review → GLM-5.2   (~$0.65/$2, fp8+ hosts only)
 #   broad research fan-out (`general`)    → GLM-4.7-Flash ($0.06/$0.40)
 #   code recon (`explore`/`scout`)        → Qwen3-Coder-Next ($0.11/$0.80)
 #   deep/trust-critical (`@research`)     → Kimi K3    ($3/$15), cites sources
 #
 # Web search: Exa via OPENCODE_ENABLE_EXA (free, no key), wrapped onto the binary.
-{ pkgs, lib, ... }:
+{
+  pkgs,
+  lib,
+  osConfig ? null,
+  ...
+}:
 let
+  # sops-provided key: only some hosts declare it (see provider options below).
+  hasSopsKey = osConfig != null && ((osConfig.sops.secrets or { }) ? openrouter_key);
+
   commander = "openrouter/z-ai/glm-5.2";
   reader = "openrouter/z-ai/glm-4.7-flash";
   coder = "openrouter/qwen/qwen3-coder-next";
@@ -81,11 +89,25 @@ in
       model = commander;
       small_model = reader;
 
-      # Linux hosts read the key from the sops-decrypted file. On darwin the
-      # sops secrets path isn't wired yet, so omit apiKey there and let opencode
-      # use `opencode auth login` (auth.json) until the darwin path is verified.
-      provider.openrouter.options = lib.optionalAttrs pkgs.stdenv.isLinux {
-        apiKey = "{file:/run/secrets/openrouter_key}";
+      # Read the key from the sops-decrypted file, taking the path from the
+      # host's own secret definition, and only on hosts that declare it —
+      # pointing at a missing file would break opencode's startup. Hosts without
+      # sops (e.g. ledger) authenticate once with `opencode auth login`.
+      provider.openrouter.options = lib.optionalAttrs hasSopsKey {
+        apiKey = "{file:${osConfig.sops.secrets.openrouter_key.path}}";
+      };
+
+      # OpenRouter routes price-first, which lands on re-quantized fp4 hosts
+      # (e.g. deepinfra/fp4 for GLM). Keep the commander on fp8+ — Z.AI's own
+      # endpoint is fp8 too, at ~2x the price. Kimi K3 goes to Moonshot, whose
+      # native build is mxfp4 anyway (other hosts are still the fallback).
+      provider.openrouter.models = {
+        ${lib.removePrefix "openrouter/" commander}.options.provider.quantizations = [
+          "fp8"
+          "bf16"
+          "fp16"
+        ];
+        ${lib.removePrefix "openrouter/" researcher}.options.provider.order = [ "moonshotai" ];
       };
 
       agent = {
@@ -138,6 +160,45 @@ in
             subagents' own context windows are for. Integrate their results and report
             back concisely, flagging anything the reviewer failed.
           '';
+        };
+
+        # Headless workers for the `offload` script (Claude Code hands them
+        # reviews, recon, log triage, research). Primary because
+        # `opencode run --agent` refuses subagents. `steps` forces a text answer
+        # after 15 tool rounds; uncapped reviewers wander (GLM took 22 rounds /
+        # 36 tool calls on a ~300-line diff).
+        #
+        # They read untrusted content (repos under review, web pages), so each
+        # gets either the repo or the web, never both, and no shell: even
+        # "read-only" commands execute or write (`rg --pre`, `git grep -O`,
+        # `git diff --output`), and no subagents, which carry their own wider
+        # permissions. A prompt-injected run has no way out but its answer.
+        inspect = {
+          mode = "primary";
+          model = commander;
+          description = "Repo-only reader for headless runs: reads and searches code, answers. No shell, no web, cannot edit.";
+          steps = 15;
+          permission = {
+            edit = "deny";
+            bash = "deny";
+            webfetch = "deny";
+            websearch = "deny";
+            external_directory = "deny";
+            task = "deny";
+          };
+        };
+        # Web research; `offload ask -w` runs it in an empty directory.
+        browse = {
+          mode = "primary";
+          model = commander;
+          description = "Web-only researcher for headless runs: searches and fetches pages, answers with citations. No shell, no repo, cannot edit.";
+          steps = 15;
+          permission = {
+            edit = "deny";
+            bash = "deny";
+            external_directory = "deny";
+            task = "deny";
+          };
         };
 
         # ── Role subagents (used by the orchestrator) ──

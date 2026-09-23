@@ -61,6 +61,7 @@ in
     ../../home/modules/ssh.nix
     ../../home/modules/tmux.nix
     ../../home/modules/opencode.nix
+    ../../home/modules/offload.nix
   ];
 
   home.username = "daniel";

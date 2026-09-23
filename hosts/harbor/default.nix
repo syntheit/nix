@@ -6,6 +6,7 @@
 
 {
   imports = [
+    ../../modules/numtide-cache.nix
     ./hardware-configuration.nix
     ./hardware.nix
     ./secrets.nix
@@ -13,6 +14,7 @@
     ./storage.nix
     ./containers
     ./access.nix
+    ./malli-overview.nix
     ./monitoring.nix
     ./virt.nix
     ../../modules/server-safety.nix
@@ -156,8 +158,10 @@
   };
 
   # Elliot — Telegram monitoring bot
+  # Disabled 2026-09-22: runs Opus on the Claude Max subscription token and eats
+  # weekly quota. Re-enable (maybe with model = "sonnet") once limits allow.
   services.elliot = {
-    enable = true;
+    enable = false;
     telegramTokenFile = config.sops.secrets.elliot_telegram_token.path;
     claudeOAuthTokenFile = config.sops.templates."elliot-claude.env".path;
     allowedUserIDs = [ 921730321 ]; # Daniel

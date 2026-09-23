@@ -8,6 +8,37 @@ let
   overlays = {
     modifications = final: prev: {
       antigravity = inputs.antigravity.packages.${final.stdenv.hostPlatform.system}.default;
+
+      # AI agents from the llm-agents flake (updated daily) instead of nixpkgs,
+      # which runs days behind — and a lagging claude-code cannot select a newly
+      # released model (Opus 5.5 needs 2.1.280; nixpkgs has 2.1.278). The
+      # `or prev.<pkg>` fallback keeps nixpkgs on platforms that flake skips.
+      claude-code =
+        inputs.llm-agents.packages.${final.stdenv.hostPlatform.system}.claude-code or prev.claude-code;
+      codex = inputs.llm-agents.packages.${final.stdenv.hostPlatform.system}.codex or prev.codex;
+      opencode =
+        inputs.llm-agents.packages.${final.stdenv.hostPlatform.system}.opencode or prev.opencode;
+      # yabai's scripting addition is pattern-matched against Dock's binary per
+      # macOS build. A macOS update (build 26A428) broke the `add_space` pattern
+      # in released 7.1.25, so every SA op silently fails ("cannot create space
+      # due to an error with the scripting-addition") and `space --focus` no-ops
+      # — i.e. caps(→fn)+N stops switching spaces while non-SA bindings still
+      # work. Fix lands only in master (dd84572, "#2799 fix scripting-addition
+      # add_space for macOS 26.6 Apple Silicon"), unreleased as of 7.1.25. Pin to
+      # that commit until a release carries it; drop this override then.
+      yabai = prev.yabai.overrideAttrs (_: {
+        version = "7.1.25-unstable-2026-06-14";
+        src = final.fetchFromGitHub {
+          owner = "koekeishiya";
+          repo = "yabai";
+          rev = "dd845723416f5fe92af49fad5ebab00369e07edd";
+          hash = "sha256-RPiGAuJS+tGsexekIzwgKYf/v+kA3lVn0+qMVIMC2Vk=";
+        };
+        # yabai hardcodes "7.1.25" in --version output, so versionCheckHook
+        # can't match our master-commit version string. The version override
+        # above is kept for store-path provenance; skip the check instead.
+        doInstallCheck = false;
+      });
       direnv = prev.direnv.overrideAttrs { doCheck = false; };
       passes = prev.passes.overrideAttrs (_: {
         src = inputs.passes;

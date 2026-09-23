@@ -99,6 +99,14 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # AI coding agents (claude-code, codex, opencode), updated daily from the
+    # vendors' own release binaries/sources. nixpkgs lags days behind, which
+    # matters when a release adds a model: Opus 5.5 needs claude-code 2.1.280,
+    # nixpkgs is on 2.1.278. Deliberately no `nixpkgs.follows`: that changes
+    # every derivation hash, so codex (built from Rust source) would miss
+    # cache.numtide.com and compile locally. See modules/numtide-cache.nix.
+    llm-agents.url = "github:numtide/llm-agents.nix";
+
     disko = {
       url = "github:nix-community/disko";
       inputs.nixpkgs.follows = "nixpkgs";

@@ -12,6 +12,7 @@
   # import the full ./home kitchen sink either), and affinity is gated off in
   # system/default.nix.
   imports = [
+    ../../modules/numtide-cache.nix
     ./hardware.nix
     ./disko.nix
     ./secrets.nix

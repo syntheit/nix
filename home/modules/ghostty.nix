@@ -58,7 +58,12 @@
       macos-titlebar-style = "hidden";
 
       # Linux
-      gtk-single-instance = true;
+      # One process per window. Ghostty 1.3.1 has open crashes on Linux that
+      # kill the whole process (window-icon loading through glycin, and
+      # unsynchronized fontconfig calls from surface render threads); in
+      # single-instance mode that closes every window at once. Separate
+      # processes cost a GTK init per window and contain the damage to one.
+      gtk-single-instance = false;
       gtk-tabs-location = "hidden";
 
       # Keybindings

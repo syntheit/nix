@@ -96,6 +96,26 @@
     mode = "0444";
   };
 
+  # ADE admin password: the fixed password deus-server gives the admin on
+  # every ADE-provisioned Mac. It used to be a literal in headscale.nix, which
+  # put it in this public repo and in the world-readable unit file. The file
+  # holds exactly the bytes deus-server receives, with no trailing newline.
+  #
+  # Declared unconditionally, unlike the gated secrets below: without it ADE
+  # would quietly fall back to random per-device passwords, so a missing file
+  # has to fail the build. 0400/root: it reaches deus-server through systemd
+  # LoadCredential (see the deus-server wrapper in headscale.nix).
+  #
+  # Re-create (on vista, from the repo root) without the value touching argv:
+  #   printf '%s' "$pw" | sops encrypt --filename-override \
+  #     secrets/vista/deus_ade_admin_password --input-type binary \
+  #     --output-type binary /dev/stdin > secrets/vista/deus_ade_admin_password
+  sops.secrets.deus_ade_admin_password = {
+    sopsFile = ../../secrets/vista/deus_ade_admin_password;
+    format = "binary";
+    mode = "0400";
+  };
+
   # ── Dark-host alerting sinks ──────────────────────────────────────
   # deus-server's dark-host watch has been merged and deployed since the
   # September incident and has never fired once, for one reason: it was
@@ -186,6 +206,7 @@
   # principal; the orchestrator already accepts MALLI_PRO_ADMIN_API_KEY under a
   # separate name, so one can be minted without resharing this key.
   sops.secrets.deus_malli_admin_token = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0400"; };
+  sops.secrets.deus_malli_admin_token_dev = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0400"; };
 
   # Read-only AWS credentials for deus-server, so the console can show the bots
   # that are STILL on Fargate alongside the ones already on Macs. Each bot has
