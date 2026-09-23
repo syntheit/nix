@@ -1,4 +1,4 @@
-{ config, ... }:
+{ config, pkgs, ... }:
 
 {
   virtualisation.oci-containers.containers = {
@@ -24,6 +24,9 @@
       ports = [ "127.0.0.1:4717:80" ];
       volumes = [
         "/arespool/appdata/seafile/data:/shared"
+        # Whole object store on platapool: blocks are rename()d in from
+        # tmpfiles/httptemp, so they must share one filesystem (EXDEV otherwise)
+        "/platapool/seafile/seafile-data:/shared/seafile/seafile-data"
       ];
       dependsOn = [ "seafile_db" "seafile_redis" ];
       extraOptions = [ "--network=seafile_default" ];
@@ -52,7 +55,20 @@
   };
 
   # Network dependencies
-  systemd.services.docker-seafile.after = [ "docker-networks.service" ];
   systemd.services.docker-seafile_db.after = [ "docker-networks.service" ];
   systemd.services.docker-seafile_redis.after = [ "docker-networks.service" ];
+
+  # platapool datasets are mounted by zfs-mount.service, not fstab
+  systemd.services.docker-seafile = {
+    after = [ "docker-networks.service" "zfs-mount.service" ];
+    # Never start on an empty store: if platapool/seafile isn't mounted, docker
+    # would bind the bare mountpoint dir and Seafile would see no libraries.
+    preStart = ''
+      if ! ${pkgs.util-linux}/bin/mountpoint -q /platapool/seafile \
+        || [ ! -d /platapool/seafile/seafile-data/storage/blocks ]; then
+        echo "Refusing to start Seafile: /platapool/seafile is not mounted or has no seafile-data/storage/blocks" >&2
+        exit 1
+      fi
+    '';
+  };
 }
