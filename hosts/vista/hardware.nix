@@ -220,11 +220,9 @@ in
       rapl=/sys/class/powercap/intel-rapl:0
       bat=/sys/class/power_supply/BAT0
 
-      set_limit() { # sustained watts; burst = +25 W, up to the firmware's 125
-        pl2=$(( $1 + 25 ))
-        if [ $pl2 -gt 125 ]; then pl2=125; fi
+      set_limit() { # sustained watts, burst watts
         echo $(( $1 * 1000000 )) > $rapl/constraint_0_power_limit_uw
-        echo $(( pl2 * 1000000 )) > $rapl/constraint_1_power_limit_uw
+        echo $(( $2 * 1000000 )) > $rapl/constraint_1_power_limit_uw
       }
 
       read -r erange < $rapl/max_energy_range_uj
@@ -277,7 +275,12 @@ in
         fi
 
         # Re-asserted every pass, in case anything else resets the limits.
-        set_limit $limit
+        # In guard the burst limit equals the sustained one. PL1 is a ~28 s
+        # average, so after a lull any PL2 above it lets a new build run well
+        # past the limit for most of a 15 s window (seen: 82 W against a 55 W
+        # limit); that read as a deficit, got cut to 22 W, and left the CPU
+        # underfed for a minute and a half while the limit climbed back.
+        if [ $mode = boost ]; then set_limit 100 125; else set_limit $limit $limit; fi
 
         if [ $mode = boost ]; then
           sleep 15
