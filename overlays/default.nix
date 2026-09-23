@@ -19,14 +19,15 @@ let
       opencode =
         inputs.llm-agents.packages.${final.stdenv.hostPlatform.system}.opencode or prev.opencode;
       # yabai's scripting addition is pattern-matched against Dock's binary per
-      # macOS build. A macOS update (build 26A428) broke the `add_space` pattern
-      # in released 7.1.25, so every SA op silently fails ("cannot create space
-      # due to an error with the scripting-addition") and `space --focus` no-ops
-      # — i.e. caps(→fn)+N stops switching spaces while non-SA bindings still
-      # work. Fix lands only in master (dd84572, "#2799 fix scripting-addition
-      # add_space for macOS 26.6 Apple Silicon"), unreleased as of 7.1.25. Pin to
-      # that commit until a release carries it; drop this override then.
-      yabai = prev.yabai.overrideAttrs (_: {
+      # macOS build, and upstream only knows macOS 11-15 and 26. On macOS 27
+      # (build 26A428) the payload rejects the OS version before hooking Dock,
+      # so every SA op fails ("cannot create space due to an error with the
+      # scripting-addition") and caps(→fn)+N stops switching spaces. Pin master
+      # (dd84572, unreleased as of 7.1.25) and add a 27 branch with the Dock
+      # offsets for 26A428 (koekeishiya/yabai#2800, #2802). After a macOS update,
+      # re-check the offsets against the arm64e slice of Dock with the #2802
+      # verify_offsets.py script; drop this override once a release supports 27.
+      yabai = prev.yabai.overrideAttrs (old: {
         version = "7.1.25-unstable-2026-06-14";
         src = final.fetchFromGitHub {
           owner = "koekeishiya";
@@ -34,6 +35,13 @@ let
           rev = "dd845723416f5fe92af49fad5ebab00369e07edd";
           hash = "sha256-RPiGAuJS+tGsexekIzwgKYf/v+kA3lVn0+qMVIMC2Vk=";
         };
+        patches = (old.patches or [ ]) ++ [ ./patches/yabai-macos27.patch ];
+        # nixpkgs links with -Wl,-no_uuid, but macOS 27's dyld refuses to load a
+        # dylib with no LC_UUID, so Dock silently fails to dlopen the SA payload
+        # (the loader still exits 0; the socket never comes up).
+        postPatch = old.postPatch + ''
+          substituteInPlace makefile --replace-fail "-Wl,-no_uuid" ""
+        '';
         # yabai hardcodes "7.1.25" in --version output, so versionCheckHook
         # can't match our master-commit version string. The version override
         # above is kept for store-path provenance; skip the check instead.
