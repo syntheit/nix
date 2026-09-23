@@ -10,6 +10,7 @@ description: Multi-model code review of the current changes on cheap non-Claude 
    `offload review [-n 3] [-P PR | -b BASE [-H REF]] [-p PATH]... ["extra focus"]`
    - `-n 3` (default): correctness (GLM-5.2), security (Qwen3.8-max), integration (MiniMax M3).
    - `-n 5` adds edge cases (GLM-5.3) and simplification (Qwen3-Coder). Use it for large changes.
+   - Panel size is about cost, not quality: on Codex (flat-rate) use the full panel freely; on OpenRouter drop to `-n 2` for diffs under ~200 lines. `offload mode` shows which backend is active.
 3. Verify every finding before reporting it: open the cited location and trace the failure scenario. Findings from two or more reviewers are more often real, but check them too. Cheap models produce false positives, and filtering them is your job.
 4. Report only confirmed findings (location, problem, failure scenario) and one line saying how many you discarded. Fix only if the user asked.
 5. Record the verdict so the user can see whether this is worth its cost: `offload note "review <scope>: N confirmed, M discarded"`.

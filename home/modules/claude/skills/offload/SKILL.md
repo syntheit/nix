@@ -28,7 +28,16 @@ Design decisions, tricky debugging, security-sensitive changes, anything where c
 - Treat answers like a junior's report: verify what you act on, never relay them to the user as fact.
 - Models (`offload models`): `glm` default, strongest open coder; `deepseek`, `mimo`, `minimax` cheap; `qwen` multilingual; `coder` cheap recon; `kimi` deep research only (slow, $0.20-0.50 per agentic run).
 - Modes: default reads the repo in the current directory (no shell, no web); `-w` does web research with no repo access; `-e` can edit and run commands. Use `-e` only for bounded tasks in a clean git tree, so `git diff` shows exactly what it did.
-- Cost and time print to stderr: a typical ask is $0.001-0.05 and 10-120 s. Run independent asks in parallel (background Bash) when useful.
+- Cost and time print to stderr. Run independent asks in parallel (background Bash) when useful.
+
+## Backends and cost
+
+`offload mode` shows which backend runs the work; `offload mode <auto|codex|openrouter|claude>` switches it. Default is `auto`: Codex first, OpenRouter if Codex fails.
+
+- **Codex is flat-rate** — no per-run cost, so prefer it and don't ration it.
+- **OpenRouter is metered.** An ask is $0.001–0.05. A 3-model review of a large diff is $0.20–0.45, and a day of heavy reviewing ran to $9. On this backend: scope the diff with `-p`, use `-n 2` for changes under ~200 lines, don't re-review unchanged code, and prefer `glm`/`minimax` over `qwen` (the priciest).
+- **`claude` mode** makes offload refuse with exit 3. That is the user telling you to do the work yourself — do it, don't work around it.
+- If the user says OpenRouter credit is running low, suggest `offload mode codex`. Check spend with `offload stats 1`.
 - Code is sent to third-party model providers (OpenRouter). Daniel has approved this for his own and his company's repos. Ask first only for someone else's code, e.g. a client's private repo.
 - If a run fails or answers nonsense, retry at most once, then do the task yourself, and record it: `offload note "ask <topic>: wrong answer, did it myself"`.
 - Every run is logged to `~/.local/state/offload/log.tsv`. `offload log [N]` lists recent runs; `offload stats [DAYS]` totals cost by model and shows quality notes. Use them when the user asks whether this is working.
