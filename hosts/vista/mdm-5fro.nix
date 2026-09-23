@@ -7,8 +7,8 @@
     hash = "sha256-lhhXPgBp7SmdMCQc1c9/3ZBmrAbElvdXDtEWN68BP/Y=";
     vendorHash = "sha256-W49woVx8MjNZsfGHPudYReTRggnjfZ4f3VKCwgqaaV0=";
   };
-  #S4 malli.mdm.deusDedicatedIdentity.enable = true;
-  #S4 malli.mdm.deusDedicatedIdentity.migrationConfirmed = true;
+  malli.mdm.deusDedicatedIdentity.enable = true;
+  malli.mdm.deusDedicatedIdentity.migrationConfirmed = true;
   #S5a malli.mdm.privateCredentials.prepare = true;
   #S5a malli.mdm.privateCredentials.receiverVerified = true;
   #S5a malli.mdm.privateCredentials.hmacSopsFile = ../../secrets/vista/nanomdm_webhook_hmac;
