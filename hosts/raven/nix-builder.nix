@@ -3,11 +3,11 @@
 # raven's builds → the mini's native aarch64 builder VM (hosts/mini/linux-builder.nix).
 #
 # raven is aarch64-linux, the same as the mini's VM, so nothing needs emulating:
-# this only moves the work off the phone. The phone is also the host that
-# compiles the most per nixpkgs bump: nixos-avf builds a patched 6.1 kernel
-# (avf.useGenericKernel is off), a patched systemd and four Rust guest agents,
-# none of which is on cache.nixos.org, plus direnv (overlay) and foyer. All of
-# that ran inside the AVF VM, next to the website, status page and foyer.
+# this only moves the work off the phone, which compiles a lot per nixpkgs bump:
+# nixos-avf builds a patched 6.1 kernel (avf.useGenericKernel is off), a patched
+# systemd and four Rust guest agents, none of which is on cache.nixos.org, plus
+# direnv (overlay) and the foyer package. All of that compiled inside the AVF VM,
+# alongside the services it hosts (website, status page, foyer dashboard).
 #
 # max-jobs = 0: raven builds nothing itself. Leaving local builds on is not
 # "remote with a fallback": nix sends a derivation to the builder only while
@@ -47,10 +47,12 @@
       sshKey = config.sops.secrets.mac_builder_ssh_key.path;
       protocol = "ssh-ng";
       systems = [ "aarch64-linux" ];
-      # 4 for the same reason as harbor: the guest has 8 GiB and OOMs with more
-      # heavy jobs than that. Slots are counted per client, so these stack on
-      # top of whatever harbor and vista are running.
-      maxJobs = 4;
+      # 2, not harbor's 4: slots are counted per client, so raven's jobs stack
+      # on top of harbor's (and vista's) in the same 8 GiB guest, and harbor
+      # saw OOM-killed builds at 8 concurrent jobs. harbor's 4 + raven's 2
+      # stays under that. raven's heavy set (kernel, systemd, the Rust agents)
+      # is only a handful of derivations, so 2 costs little.
+      maxJobs = 2;
       speedFactor = 4;
       supportedFeatures = [ "kvm" "benchmark" "big-parallel" ];
       publicHostKey = "c3NoLWVkMjU1MTkgQUFBQUMzTnphQzFsWkRJMU5URTVBQUFBSUpCV2N4Yi9CbGFxdDFhdU90RStGOFFVV3JVb3RpQzVxQkorVXVFV2RWQ2Igcm9vdEBuaXhvcwo=";
