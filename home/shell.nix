@@ -13,6 +13,7 @@ let
   sessionHosts = {
     f = "fajita";
     h = "harbor";
+    i = "mini";
     m = "mantle";
     r = "raven";
     s = "swift";
