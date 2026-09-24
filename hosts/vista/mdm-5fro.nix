@@ -2,7 +2,7 @@
 # Each step uncomments its own block with sed; see ~/malli-5fro-m2-runbook.md.
 { ... }: {
   malli.mdm.nanomdmPatchedSourcePin = {
-    deusRev = "d8ee3f2f7b50e97d0f9cda20cfef35a3ad995a1a";
+    deusRev = "af0140b4597a2e77bab3327adf75be85e128c900";
     nanomdmCommit = "3c52ba4a031c6d2035cea0722a47c598318fc59d";
     hash = "sha256-lhhXPgBp7SmdMCQc1c9/3ZBmrAbElvdXDtEWN68BP/Y=";
     vendorHash = "sha256-W49woVx8MjNZsfGHPudYReTRggnjfZ4f3VKCwgqaaV0=";
@@ -16,13 +16,13 @@
   malli.mdm.privateCredentials.enable = true;
   malli.mdm.privateCredentials.apiKeyVerified = true;
   malli.mdm.privateCredentials.prepareDeployedAndVerified = true;
-  malli.mdm.declarativeManagement.enable = true;
-  malli.mdm.declarativeManagement.sendHmacSopsFile = ../../secrets/vista/nanomdm_dm_send_hmac;
-  malli.mdm.declarativeManagement.recvHmacSopsFile = ../../secrets/vista/nanomdm_dm_recv_hmac;
-  malli.mdm.declarativeManagement.receiptHmacSopsFile = ../../secrets/vista/deus_ddm_receipt_hmac;
-  malli.mdm.ddmBridge.enable = true;
-  malli.mdm.ddmBridge.enrollmentID = "88A36832-E552-5F84-9040-B43CEABEA35A";
-  malli.mdm.ddmBridge.identityMigrationConfirmed = true;
-  malli.mdm.ddmBridge.receiverConfigured = true;
-  malli.mdm.ddmBridge.credentialMigrationConfirmed = true;
+  #S6 malli.mdm.declarativeManagement.enable = true;
+  #S6 malli.mdm.declarativeManagement.sendHmacSopsFile = ../../secrets/vista/nanomdm_dm_send_hmac;
+  #S6 malli.mdm.declarativeManagement.recvHmacSopsFile = ../../secrets/vista/nanomdm_dm_recv_hmac;
+  #S6 malli.mdm.declarativeManagement.receiptHmacSopsFile = ../../secrets/vista/deus_ddm_receipt_hmac;
+  #S6 malli.mdm.ddmBridge.enable = true;
+  #S6 malli.mdm.ddmBridge.enrollmentID = "88A36832-E552-5F84-9040-B43CEABEA35A";
+  #S6 malli.mdm.ddmBridge.identityMigrationConfirmed = true;
+  #S6 malli.mdm.ddmBridge.receiverConfigured = true;
+  #S6 malli.mdm.ddmBridge.credentialMigrationConfirmed = true;
 }
