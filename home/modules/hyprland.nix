@@ -443,6 +443,7 @@ let
  │    Super + T          Terminal (Ghostty)                │
  │    Super + B          Bluetooth (bluetuith)             │
  │    Super + N          Network (nmtui)                   │
+ │    Super + M          Sound output (pavucontrol)        │
  │    Super + E          File manager (Nautilus)           │
  │    Super + V          Clipboard (CopyQ)                 │
  │    Super + Shift + V  Clipboard menu                    │
@@ -560,6 +561,7 @@ in
         "$mod, T, exec, ghostty"
         "$mod, B, exec, ghostty --class=com.matv.bluetooth --confirm-close-surface=false -e bluetuith"
         "$mod, N, exec, ghostty --class=com.matv.network --confirm-close-surface=false -e nmtui"
+        "$mod, M, exec, pavucontrol --tab=3"
         "$mod, E, exec, nautilus"
         "$mod, C, exec, ${pkgs.copyq}/bin/copyq toggle"
         "$mod SHIFT, L, exec, ${pkgs.hyprlock}/bin/hyprlock"
