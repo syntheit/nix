@@ -18,6 +18,7 @@ in
     # nix.linux-builder.enable requires nix.enable, which Determinate nix
     # forbids (it owns /etc/nix/nix.conf) — details inside.
     ./linux-builder.nix
+    ./speaker.nix
   ];
 
   networking.hostName = "mini";
