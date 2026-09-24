@@ -13,9 +13,9 @@
   malli.mdm.privateCredentials.receiverVerified = true;
   malli.mdm.privateCredentials.hmacSopsFile = ../../secrets/vista/nanomdm_webhook_hmac;
   malli.mdm.privateCredentials.nanodepSopsFile = ../../secrets/vista/nanodep_api;
-  #S5b malli.mdm.privateCredentials.enable = true;
-  #S5b malli.mdm.privateCredentials.apiKeyVerified = true;
-  #S5b malli.mdm.privateCredentials.prepareDeployedAndVerified = true;
+  malli.mdm.privateCredentials.enable = true;
+  malli.mdm.privateCredentials.apiKeyVerified = true;
+  malli.mdm.privateCredentials.prepareDeployedAndVerified = true;
   #S6 malli.mdm.declarativeManagement.enable = true;
   #S6 malli.mdm.declarativeManagement.sendHmacSopsFile = ../../secrets/vista/nanomdm_dm_send_hmac;
   #S6 malli.mdm.declarativeManagement.recvHmacSopsFile = ../../secrets/vista/nanomdm_dm_recv_hmac;
