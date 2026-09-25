@@ -44,6 +44,7 @@
 # }
 # ─────────────────────────────────────────────────────────────────────────────
 {
+  # M2 5fro DDM canary: status 26.3 / 25D125 / J773gAP; max(error_count)=0; see ~/m2-5fro/step6-6g.ok.
   revisions = [ { deusRev = "d8ee3f2f7b50e97d0f9cda20cfef35a3ad995a1a"; nanomdmCommit = "3c52ba4a031c6d2035cea0722a47c598318fc59d";
     hash = "sha256-lhhXPgBp7SmdMCQc1c9/3ZBmrAbElvdXDtEWN68BP/Y="; reviewer = "Daniel Miller"; reviewDate = "2026-09-24";
     reason = "Vendored tree is the reviewed canary 3c52ba4 (git tree db41e28); -dm endpoint confinement reviewed."; } ];
