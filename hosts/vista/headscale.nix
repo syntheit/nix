@@ -750,6 +750,10 @@ in
         # RPCs are not even mounted.
         ecsControl.enable = false;
 
+        # Evidence-gated ECS standby (SleepBotEcs/WakeBotEcs): a PASSED +24 h
+        # post-move watch is required per bot. Legacy ecsControl stays off.
+        ecsStandby.controlEnable = true;
+
         granter = {
           enable = true;
           domain = "themalli.ai";
