@@ -194,7 +194,7 @@ in
         hotkey = "home";
         # mantle's 1440p monitors run at scale 1: enlarge text and icons to
         # roughly the proportions swift's Retina screen shows.
-        theme.scale = 1.5;
+        theme.scale = 1.25;
         # No calendar backend on Linux until an ICS source is set up: drop the
         # calendar source and the agenda.
         sources.calendar = null;
