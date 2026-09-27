@@ -27,6 +27,12 @@ in
     # Linux: a Hyprland bind for the hotkey (platform.linux.hotkey below) that
     # runs `vestal toggle`, and blur for the dashboard's layer surface.
     hyprland.enable = isLinux;
+    # Claude plan usage for the aiUsage row: Claude Code's statusLine runs
+    # `vestal claude-statusline` (added to ~/.claude/settings.json in place).
+    claudeStatusLine.enable = builtins.elem hostName [
+      "swift"
+      "mantle"
+    ];
 
     settings = {
       # Built-in hotkey on swift only: mini's skhd uses F3 for space 3.
@@ -83,7 +89,6 @@ in
             "uptime"
             "disk"
             "battery"
-            "claudeUsage"
             "network"
             "privacy"
           ];
@@ -95,12 +100,9 @@ in
             stateFile = "/tmp/.privacy-mode";
           };
         };
-        claude = {
-          type = "claudeUsage";
-          path = "~/.claude/projects";
-          fiveHourLimit = 8000000;
-          weeklyLimit = 95000000;
-        };
+        # Claude and Codex plan usage: 5-hour and weekly bars. A service
+        # with no data on a host (no status line, no codex) is left out.
+        usage.type = "aiUsage";
         # Replace the default `media` widget with the Spotify one below.
         media = null;
         spotify = {
@@ -182,6 +184,7 @@ in
       views.main.order = [
         "clock"
         "systemBar"
+        "usage"
         "spotify"
         "agenda"
         "systems"
@@ -220,7 +223,6 @@ in
               "uptime"
               "disk"
               "battery"
-              "claudeUsage"
               "network"
             ];
             privacy = null;
@@ -229,6 +231,7 @@ in
         views.main.order = [
           "clock"
           "systemBar"
+          "usage"
           "spotify"
           "systems"
           "exchange"
