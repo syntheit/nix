@@ -54,7 +54,6 @@
       "windows-app"
       "windscribe"
       "zen"
-      "zed"
     ];
     brews = [
       "awscli-local"
