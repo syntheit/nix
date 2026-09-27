@@ -627,6 +627,14 @@ in
         # comment in ../user-vpn.nix), so we just point at it again.
         uservpnTokenFile = "/var/lib/deus-tokens/operator-token";
 
+        # ── Browser remote console ──
+        # /ws/* bypasses the BFF and the operator token entirely, so this is
+        # the one Origin the console accepts; cloudflared below routes
+        # /ws/ssh straight to this port. sshKeyFile (above) is reused for the
+        # SSH console's own auth. remoteSessionsDir/remoteSessionsRetention
+        # keep the module defaults (/var/lib/deus/sessions, 2160h).
+        consoleOrigin = "https://deus.mallimax.net";
+
         # ── Granter ──
         # Cloudflare per-device provisioning (Twilio was removed in
         # deus 0.16.0). The credential files are populated by the
@@ -974,6 +982,48 @@ in
       };
       # Mirror raven/harbor: never bounce the tunnel on an unrelated switch.
       systemd.services.cloudflared-tunnel-deus.restartIfChanged = false;
+
+      # ── Browser remote console: /ws/ssh path override ──
+      # nixpkgs' cloudflared module (nixos/modules/services/networking/
+      # cloudflared.nix) types `ingress` as attrsOf-by-hostname: the
+      # generated rule's `hostname` field is forced to equal the attribute
+      # NAME (`hostname = key;`), so a single tunnel cannot hold two
+      # entries for the same hostname — there is no list-of-{hostname,path}
+      # form in this pin. The `ingress.<hostname>.path` field only lets one
+      # rule per hostname carry a path filter, which is not enough here: we
+      # need TWO rules for deus.mallimax.net (the /ws/ssh path rule ahead of
+      # the host-wide one above), so the module's `ingress` option alone
+      # cannot express it.
+      #
+      # Work around it by overriding just this unit's ExecStart with a
+      # hand-written config file in the same shape cloudflared.nix would
+      # generate (same tunnel name, same credentials-file path from its own
+      # LoadCredential, same catch-all) plus the spliced-in path rule,
+      # ordered first since cloudflared matches ingress rules top-down.
+      # LoadCredential, the restart-avoidance line above, and the
+      # TUNNEL_EDGE_IP_VERSION/TUNNEL_TRANSPORT_PROTOCOL env vars still come
+      # from the module unchanged.
+      systemd.services.cloudflared-tunnel-deus.serviceConfig.ExecStart = lib.mkForce (
+        let
+          consoleIngressConfig = pkgs.writeText "cloudflared-deus-console.json" (builtins.toJSON {
+            tunnel = "deus";
+            "credentials-file" = "/run/credentials/cloudflared-tunnel-deus.service/credentials.json";
+            ingress = [
+              {
+                hostname = "deus.mallimax.net";
+                path = "^/ws/ssh$";
+                service = "http://127.0.0.1:8086"; # deus-server, inside this same nspawn
+              }
+              {
+                hostname = "deus.mallimax.net";
+                service = "http://10.100.1.1:3300"; # malli-web, host-wide rule (unchanged)
+              }
+              { service = "http_status:404"; }
+            ];
+          });
+        in
+        "${config.services.cloudflared.package}/bin/cloudflared tunnel --config=${consoleIngressConfig} --no-autoupdate run"
+      );
 
       services.caddy.enable = true;
       services.caddy.virtualHosts.":8088".extraConfig = ''
