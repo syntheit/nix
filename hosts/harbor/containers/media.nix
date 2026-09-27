@@ -120,26 +120,43 @@ in
             return 1
           }
 
-          fetch "https://raw.githubusercontent.com/AumGupta/abyss-jellyfin/main/scripts/spotlight/spotlight.html" "$WEBDIR/ui/spotlight.html" || true
-          fetch "https://raw.githubusercontent.com/AumGupta/abyss-jellyfin/main/scripts/spotlight/spotlight.css" "$WEBDIR/ui/spotlight.css" || true
+          # Upstream (AumGupta/abyss-jellyfin) moved Spotlight install for
+          # Jellyfin 12 to a loader-script + tag-injection method, replacing
+          # the old "patch the home-html chunk.js in place" approach below.
+          # All three assets are tens of KB, so a 1000-byte floor is plenty
+          # to reject a GitHub error page while never rejecting a real file.
+          fetch "https://raw.githubusercontent.com/AumGupta/abyss-jellyfin/main/scripts/spotlight/spotlight.html" "$WEBDIR/ui/spotlight.html" 1000 || true
+          fetch "https://raw.githubusercontent.com/AumGupta/abyss-jellyfin/main/scripts/spotlight/spotlight.css" "$WEBDIR/ui/spotlight.css" 1000 || true
+          fetch "https://raw.githubusercontent.com/AumGupta/abyss-jellyfin/main/scripts/spotlight/spotlight-loader.js" "$WEBDIR/ui/spotlight-loader.js" 1000 || true
 
-          CHUNK=$(find "$WEBDIR" -name "home-html.*.chunk.js" ! -name "*.bak" | head -1)
-          if [ -n "$CHUNK" ]; then
-            # Restore from backup if a prior run corrupted the chunk (e.g. wrote a
-            # 429 error page into it). The pristine chunk is ~542 bytes; a patched
-            # one is larger. Anything under 400 bytes is a corrupted download.
-            if [ -f "$CHUNK.bak" ] && [ "$(wc -c < "$CHUNK")" -lt 400 ]; then
-              echo "[abyss] chunk looks corrupted, restoring from backup"
+          # Undo the legacy chunk-patch method if a prior run applied it:
+          # restore the pristine home-html chunk from its .bak. The pristine
+          # chunk is ~543 bytes; the legacy-patched one is ~3727 bytes and
+          # matches on "spotlight" (or the older "featurediframe" /
+          # "abyss-spotlight-frame" markers). Only trust a .bak that looks
+          # like a real pristine chunk, not a corrupted/truncated one.
+          for CHUNK in "$WEBDIR"/home-html.*.chunk.js; do
+            [ -f "$CHUNK" ] || continue
+            if [ -f "$CHUNK.bak" ] && [ "$(wc -c < "$CHUNK.bak")" -ge 400 ] \
+                && grep -Eq "featurediframe|abyss-spotlight-frame|spotlight" "$CHUNK"; then
               cp "$CHUNK.bak" "$CHUNK"
+              rm -f "$CHUNK.bak"
+              echo "[abyss] restored legacy-patched home chunk from backup: $CHUNK"
             fi
-            # Patch if not already patched. Only overwrite the live chunk once the
-            # download is confirmed valid (patched chunk is well over 1KB).
-            if ! grep -q "spotlight" "$CHUNK" 2>/dev/null; then
-              [ ! -f "$CHUNK.bak" ] && cp "$CHUNK" "$CHUNK.bak"
-              fetch "https://raw.githubusercontent.com/AumGupta/abyss-jellyfin/main/scripts/spotlight/home-html.chunk.js" "$CHUNK" 1000 \
-                || echo "[abyss] skipping chunk patch this run; will retry on next restart"
-            fi
+          done
+
+          # Inject the loader <script> tag before </body>, only once we know
+          # the loader script actually landed, and only if not already
+          # present. Another init script (jelly-recs-inject) also
+          # sed-patches index.html before </body>, so edit in place rather
+          # than rewriting the whole file from a template.
+          INDEX="$WEBDIR/index.html"
+          LOADER_TAG='<script src="ui/spotlight-loader.js" data-abyss-spotlight></script>'
+          if [ -f "$WEBDIR/ui/spotlight-loader.js" ] && [ -f "$INDEX" ]; then
+            grep -qF 'ui/spotlight-loader.js' "$INDEX" || sed -i "s|</body>|$LOADER_TAG</body>|" "$INDEX"
+            echo "[abyss] spotlight loader tag present in index.html"
           fi
+
           echo "[abyss] Spotlight installed"
         ''}:/custom-cont-init.d/abyss-spotlight"
       ];
