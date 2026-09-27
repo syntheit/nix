@@ -27,12 +27,6 @@ in
     # Linux: a Hyprland bind for the hotkey (platform.linux.hotkey below) that
     # runs `vestal toggle`, and blur for the dashboard's layer surface.
     hyprland.enable = isLinux;
-    # Claude plan usage for the aiUsage row: Claude Code's statusLine runs
-    # `vestal claude-statusline` (added to ~/.claude/settings.json in place).
-    claudeStatusLine.enable = builtins.elem hostName [
-      "swift"
-      "mantle"
-    ];
 
     settings = {
       # Built-in hotkey on swift only: mini's skhd uses F3 for space 3.
