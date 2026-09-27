@@ -1015,7 +1015,7 @@ in
             ingress = [
               {
                 hostname = "deus.mallimax.net";
-                path = "^/ws/ssh$";
+                path = "^/ws/(ssh|vnc)$";
                 service = "http://127.0.0.1:8086"; # deus-server, inside this same nspawn
               }
               {
