@@ -34,7 +34,6 @@ in
       theme = {
         palette = "tokyo-night";
         background = "aurora";
-        density = "compact";
       };
 
       sources = {
