@@ -197,6 +197,12 @@ in
       decoration = {
         rounding = 0;
         inactive_opacity = 1.0;
+        # Heavier than Hyprland's default (8, 1 pass) so text behind vestal's
+        # overlay (and translucent Ghostty) smears out like macOS's HUD blur.
+        blur = {
+          size = 10;
+          passes = 3;
+        };
       };
 
       animation = [
