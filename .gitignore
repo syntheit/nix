@@ -3,3 +3,5 @@ result*
 main
 *.o
 .build/hosts/fajita/TODO.md
+# Claude Code per-machine permissions (personal, never shared)
+.claude/settings.local.json
