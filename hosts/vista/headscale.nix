@@ -638,6 +638,7 @@ in
         # SSH console's own auth. remoteSessionsDir/remoteSessionsRetention
         # keep the module defaults (/var/lib/deus/sessions, 2160h).
         consoleOrigin = "https://deus.mallimax.net";
+        remoteDesktop = true; # m-5fro live test only (2026-09-27); set back to false after
 
         # ── Granter ──
         # Cloudflare per-device provisioning (Twilio was removed in
