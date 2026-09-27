@@ -128,6 +128,59 @@
   # /boot after a couple of kernel bumps. Cap retention so systemd-boot prunes.
   boot.loader.systemd-boot.configurationLimit = 2;
 
+  # The AVF balloon patch bundles six commits. Its last hunk no longer matches
+  # Linux 6.1.188 because virtballoon_validate gained an indirect-descriptor
+  # check. Keep the first five commits and rebase only the last hunk.
+  boot.kernelPatches =
+    let
+      avfBase = pkgs.fetchgit {
+        url = "https://android.googlesource.com/platform/packages/modules/Virtualization/";
+        rev = "android-16.0.0_r3";
+        hash = "sha256-boWayfOI88ejnXZ5yQzYdSuMANJLB5/Wd30ZWtsXuHw=";
+      };
+      originalBalloonPatch = "${avfBase}/build/debian/kernel/patches/avf/arm64-balloon.patch";
+      tab = "\t";
+      balloonFirstFive = pkgs.runCommand "avf-arm64-balloon-first-five.patch" { } ''
+        ${pkgs.gnugrep}/bin/grep -q '^From 49de3a1d0bb478858eb66a5b853f0d0a5b1909dc ' ${originalBalloonPatch}
+        ${pkgs.gnused}/bin/sed '/^From 49de3a1d0bb478858eb66a5b853f0d0a5b1909dc /,$d' ${originalBalloonPatch} > "$out"
+      '';
+      balloonAccessPlatform = pkgs.writeText "avf-balloon-access-platform-6.1.188.patch" ''
+        diff --git a/drivers/virtio/virtio_balloon.c b/drivers/virtio/virtio_balloon.c
+        --- a/drivers/virtio/virtio_balloon.c
+        +++ b/drivers/virtio/virtio_balloon.c
+        @@ -1103,4 +1103,3 @@ static int virtballoon_validate(struct virtio_device *vdev)
+         ${tab} */
+         ${tab}__virtio_clear_bit(vdev, VIRTIO_RING_F_INDIRECT_DESC);
+        -${tab}__virtio_clear_bit(vdev, VIRTIO_F_ACCESS_PLATFORM);
+         ${tab}return 0;
+      '';
+    in
+    lib.mkForce [
+      {
+        name = "avf-balloon-first-five";
+        patch = balloonFirstFive;
+        structuredExtraConfig = with lib.kernel; {
+          SND_VIRTIO = module;
+          SND = yes;
+          SOUND = yes;
+        };
+      }
+      {
+        name = "avf-balloon-access-platform";
+        patch = balloonAccessPlatform;
+      }
+      {
+        name = "avf-cpufreq";
+        patch = "${avfBase}/build/debian/kernel/patches/avf/virtual-cpufreq.patch";
+        structuredExtraConfig = with lib.kernel; {
+          CPU_FREQ = yes;
+          IKCONFIG = yes;
+          IKCONFIG_PROC = yes;
+          ANDROID_V_CPUFREQ_VIRT = yes;
+        };
+      }
+    ];
+
   # Network tunables — BBR congestion control + larger buffers for tunnel traffic
   boot.kernel.sysctl = {
     "net.ipv4.tcp_congestion_control" = "bbr";
