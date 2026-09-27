@@ -198,6 +198,9 @@ in
           scale = 1.25;
           # fontconfig maps Helvetica to TeX Gyre Heros, a free clone.
           fonts.sans = "Helvetica";
+          # Hyprland blurs every layer the same (size 8, 1 pass, kept for the
+          # terminals); a darker tint hides busy windows behind the dashboard.
+          dim = 0.8;
         };
         # No calendar backend on Linux until an ICS source is set up: drop the
         # calendar source and the agenda.
