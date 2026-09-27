@@ -22,6 +22,7 @@
     tmux
     toilet
     mosh
+    foyer # foyer-api, for vestal's Systems widget (home/modules/vestal.nix)
     lazygit
     yazi
     tldr
