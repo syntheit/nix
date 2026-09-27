@@ -80,6 +80,12 @@ let
       })
       // {
         foyer = inputs.foyer.packages.${final.stdenv.hostPlatform.system}.default;
+        # vestal built with this host's nixpkgs. The flake input follows
+        # nixpkgs-darwin (the darwin toolchain pin), which a Linux host should
+        # not inherit: there vestal's GTK UI has to share glibc and Mesa with
+        # the graphics drivers in /run/opengl-driver. Used on Linux only; see
+        # home/modules/vestal.nix.
+        vestal = (inputs.vestal.overlays.default final _prev).vestal;
         elliot = inputs.elliot.packages.${final.stdenv.hostPlatform.system}.default;
         jelly-recs = inputs.jelly-recs.packages.${final.stdenv.hostPlatform.system}.default;
         anchorage = inputs.anchorage.packages.${final.stdenv.hostPlatform.system}.default;

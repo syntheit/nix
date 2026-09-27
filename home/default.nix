@@ -20,6 +20,7 @@
     ./modules/opencode.nix
     ./modules/offload.nix
     ./modules/hyprland.nix
+    ./modules/vestal.nix
     ./modules/rofi.nix
     ./modules/ghostty.nix
     ./modules/thunderbird.nix

@@ -1,20 +1,32 @@
 {
   inputs,
   hostName,
+  lib,
+  pkgs,
   ...
 }:
 
-# Vestal dashboard. The settings are meant to be shared across platforms:
-# the same config drives swift (macOS) and, later, the Hyprland hosts. Put
-# per-OS tweaks under settings.platform.<macos|linux>; vestal merges them
-# over the rest. Schema: docs/CONFIG.md in github:syntheit/vestal.
+# Vestal dashboard, on swift and mini (home/darwin.nix) and on the Hyprland
+# hosts mantle and ledger (home/default.nix). The settings are shared across
+# platforms: put per-OS tweaks under settings.platform.<macos|linux>; vestal
+# merges them over the rest. Schema: docs/CONFIG.md in github:syntheit/vestal.
+let
+  inherit (pkgs.stdenv.hostPlatform) isLinux;
+in
 {
   imports = [ inputs.vestal.homeManagerModules.default ];
 
   programs.vestal = {
     enable = true;
-    # Stable signature, so calendar and Spotify permissions survive rebuilds.
+    # Linux: built with the system's nixpkgs (overlays/default.nix). macOS
+    # keeps the flake's package, which follows nixpkgs-darwin.
+    package = lib.mkIf isLinux pkgs.vestal;
+    # macOS only (ignored on Linux): a stable signature, so calendar and
+    # Spotify permissions survive rebuilds.
     signingIdentity = "Developer ID Application: Daniel Miller (6NHZWHQX37)";
+    # Linux: a Hyprland bind for the hotkey (platform.linux.hotkey below) that
+    # runs `vestal toggle`, and blur for the dashboard's layer surface.
+    hyprland.enable = isLinux;
 
     settings = {
       # Built-in hotkey on swift only: mini's skhd uses F3 for space 3.
@@ -176,6 +188,42 @@
         "exchange"
         "weather"
       ];
+
+      platform.linux = {
+        # Home, as the old tmux dashboard had; Hyprland binds it (above).
+        hotkey = "home";
+        # mantle's 1440p monitors run at scale 1: enlarge text and icons to
+        # roughly the proportions swift's Retina screen shows.
+        theme.scale = 1.5;
+        # No calendar backend on Linux until an ICS source is set up: drop the
+        # calendar source and the agenda.
+        sources.calendar = null;
+        widgets = {
+          agenda = null;
+          # The privacy toggle above is macOS's (toggle-privacy in
+          # sketchybar.nix, state in /tmp/.privacy-mode). The Linux hosts have
+          # only usb-toggle (system/default.nix), per device and without a
+          # state file, so no privacy item here.
+          systemBar = {
+            show = [
+              "uptime"
+              "disk"
+              "battery"
+              "claudeUsage"
+              "network"
+            ];
+            privacy = null;
+          };
+        };
+        views.main.order = [
+          "clock"
+          "systemBar"
+          "spotify"
+          "systems"
+          "exchange"
+          "weather"
+        ];
+      };
     };
   };
 }

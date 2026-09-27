@@ -80,339 +80,6 @@ let
     fi
   '';
 
-  serverHealthScript = pkgs.writeShellScript "server-health" ''
-    days=$(( $(cut -d. -f1 /proc/uptime | cut -d" " -f1) / 86400 ))
-    load=$(cut -d" " -f1 /proc/loadavg)
-    eval $(awk '/MemTotal/{printf "total=%d ", $2/1048576} /MemAvailable/{printf "avail=%d", $2/1048576}' /proc/meminfo)
-    used=$((total - avail))
-    temp=""
-    for tz in /sys/class/thermal/thermal_zone*/temp; do
-      t=$(cat "$tz" 2>/dev/null)
-      [ -n "$t" ] && [ "$t" -gt 0 ] 2>/dev/null && { temp=$t; break; }
-    done
-    # Fallback: grab Android host battery temp via gateway (for NixOS VMs on Android)
-    if [ -z "$temp" ]; then
-      gw=$(ip route | awk '/default/ {print $3}')
-      bat=$(ssh -p 8022 -i ~/.ssh/mainkey -o BatchMode=yes -o ConnectTimeout=2 -o StrictHostKeyChecking=no "$gw" cat /sys/class/power_supply/battery/temp 2>/dev/null)
-      [ -n "$bat" ] && temp=$(( bat / 10 * 1000 ))
-    fi
-    temp_str=""; [ -n "$temp" ] && temp_str="  󰔏 ''${temp%???}°C"
-    ct=$(docker ps -q 2>/dev/null | wc -l)
-    echo "''${days}d  󰄧 $load   ''${used}/''${total}G''${temp_str}  󰡨 $ct"
-  '';
-
-  clockScript = pkgs.writeShellScript "dashboard-clock" ''
-    tput civis
-    trap 'tput cnorm' EXIT
-
-    suffix() {
-      case $1 in
-        1|21|31) echo "st" ;;
-        2|22)    echo "nd" ;;
-        3|23)    echo "rd" ;;
-        *)       echo "th" ;;
-      esac
-    }
-
-    while true; do
-      cols=$(tput cols)
-      rows=$(tput lines)
-      time_str=$(date +"%H:%M:%S")
-      day=$(date +%-d)
-      date_str="$(LC_TIME=en_US.UTF-8 date +"%B") ''${day}$(suffix "$day"), $(LC_TIME=en_US.UTF-8 date +%Y)"
-
-      # Render time with metal gradient, replace dark gray with blue for readability
-      rendered=$(${pkgs.toilet}/bin/toilet -f mono9 -F metal "$time_str" | sed 's/\x1b\[0;1;30;90m/\x1b[0;34m/g')
-      # Visible width (strip ANSI escapes, measure widest line)
-      rwidth=$(echo "$rendered" | sed 's/\x1b\[[0-9;]*m//g' | wc -L)
-      rheight=$(echo "$rendered" | wc -l)
-      date_width=''${#date_str}
-
-      # Center vertically and horizontally
-      pad_top=$(( (rows - rheight - 2) / 2 ))
-      pad_left=$(( (cols - rwidth) / 2 ))
-      date_pad=$(( (cols - date_width) / 2 ))
-      [ "$pad_top" -lt 0 ] && pad_top=0
-      [ "$pad_left" -lt 0 ] && pad_left=0
-      [ "$date_pad" -lt 0 ] && date_pad=0
-
-      hpad=$(printf '%*s' "$pad_left" "")
-      dpad=$(printf '%*s' "$date_pad" "")
-
-      buf=""
-      for i in $(seq 1 "$pad_top"); do buf+="\n"; done
-      while IFS= read -r line; do
-        buf+="''${hpad}''${line}\n"
-      done <<< "$rendered"
-      buf+="\n\033[1;34m''${dpad}''${date_str}\033[0m\n"
-
-      printf '\033[H\033[J%b' "$buf"
-      sleep 1
-    done
-  '';
-
-  dashboardInfoScript = pkgs.writeShellScript "dashboard-info" ''
-    tput civis
-    trap 'tput cnorm' EXIT
-
-    # Slow data cached to files (fetched in background, never blocks render)
-    cache_dir="/tmp/dashboard-cache"
-    mkdir -p "$cache_dir"
-    weather_last=0
-    wallpaper_last=0
-    capture_last=0
-    exchange_last=0
-    servers_last=0
-
-    while true; do
-      now=$(date +%s)
-
-      # ── Background fetches for slow data ──
-      if [ $((now - weather_last)) -gt 1800 ]; then
-        (curl -s --max-time 10 "wttr.in/Buenos+Aires,Argentina?0" > "$cache_dir/weather" 2>/dev/null) &
-        weather_last=$now
-      fi
-      if [ $((now - wallpaper_last)) -gt 300 ]; then
-        (wallpaper-cycle info 2>/dev/null | sed -n 's/^URL:  *//p' > "$cache_dir/wallpaper") &
-        wallpaper_last=$now
-      fi
-      if [ $((now - exchange_last)) -gt 1800 ]; then
-        (
-          ars=$(curl -s --max-time 10 "https://dolarapi.com/v1/dolares" 2>/dev/null | ${pkgs.jq}/bin/jq -r '
-            [.[] | select(.casa == "blue" or .casa == "oficial" or .casa == "bolsa")] |
-            sort_by(if .casa == "oficial" then 0 elif .casa == "blue" then 1 else 2 end) |
-            .[] | "\(if .casa == "oficial" then "Official" elif .casa == "blue" then "Blue" else "MEP" end): \(.compra | floor) / \(.venta | floor)"
-          ')
-          brl=$(curl -s --max-time 10 "https://raw.githubusercontent.com/syntheit/exchange-rates/refs/heads/main/rates.json" 2>/dev/null | ${pkgs.jq}/bin/jq -r '.rates.BRL | . * 100 | round | . / 100 | tostring | "BRL: " + .')
-          { [ -n "$ars" ] && echo "$ars"; [ -n "$brl" ] && echo "$brl"; } > "$cache_dir/exchange"
-        ) &
-        exchange_last=$now
-      fi
-      if [ $((now - servers_last)) -gt 1800 ]; then
-        for srv in raven harbor; do
-          (ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$srv" bash < ${serverHealthScript} > "$cache_dir/server_$srv" 2>/dev/null) &
-        done
-        servers_last=$now
-      fi
-      if [ $((now - capture_last)) -gt 5 ]; then
-        (pw-dump 2>/dev/null | ${pkgs.jq}/bin/jq -r '.[] | select(.info.props["media.class"] == "Stream/Input/Audio") | .info.props["application.name"] // empty' > "$cache_dir/capture" 2>/dev/null) &
-        capture_last=$now
-      fi
-
-      # ── Fast data (collected inline) ──
-      player_status=$(${pkgs.playerctl}/bin/playerctl status 2>/dev/null)
-      now_playing=""
-      if [ "$player_status" = "Playing" ] || [ "$player_status" = "Paused" ]; then
-        title=$(${pkgs.playerctl}/bin/playerctl metadata title 2>/dev/null)
-        artist=$(${pkgs.playerctl}/bin/playerctl metadata artist 2>/dev/null)
-        icon="▶"; [ "$player_status" = "Paused" ] && icon="⏸"
-        now_playing="  $icon $title — $artist"
-      fi
-
-      vol_info=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null)
-      vol_num=$(echo "$vol_info" | ${pkgs.gawk}/bin/awk '{printf "%.0f", $2 * 100}')
-      vol_line=""
-      if echo "$vol_info" | grep -q MUTED; then
-        vol_line="  󰝟 Muted"
-      else
-        filled=$((vol_num / 5))
-        bar=""
-        for i in $(seq 1 20); do
-          if [ "$i" -le "$filled" ]; then bar="''${bar}█"; else bar="''${bar}░"; fi
-        done
-        vol_line="  󰕾 ''${vol_num}%  ''${bar}"
-      fi
-
-      mic_json=$(usb-toggle mic waybar 2>/dev/null)
-      cam_json=$(usb-toggle cam waybar 2>/dev/null)
-      mic_icon=$(echo "$mic_json" | ${pkgs.jq}/bin/jq -r '.text // ""')
-      cam_icon=$(echo "$cam_json" | ${pkgs.jq}/bin/jq -r '.text // ""')
-      mic_tip=$(echo "$mic_json" | ${pkgs.jq}/bin/jq -r '.tooltip // ""')
-      cam_tip=$(echo "$cam_json" | ${pkgs.jq}/bin/jq -r '.tooltip // ""')
-      dev_line=""
-      [ -n "$mic_icon" ] && dev_line="  $mic_icon $mic_tip  [m]"
-      [ -n "$cam_icon" ] && dev_line="''${dev_line}    $cam_icon $cam_tip  [c]"
-
-      # ── Read cached slow data from files ──
-      capture_apps=$(cat "$cache_dir/capture" 2>/dev/null)
-      exchange_cache=$(cat "$cache_dir/exchange" 2>/dev/null)
-      raven_cache=$(cat "$cache_dir/server_raven" 2>/dev/null)
-      harbor_cache=$(cat "$cache_dir/server_harbor" 2>/dev/null)
-      weather_cache=$(cat "$cache_dir/weather" 2>/dev/null)
-      wallpaper_cache=$(cat "$cache_dir/wallpaper" 2>/dev/null)
-
-      # ── Render everything at once ──
-      buf=""
-      [ -n "$now_playing" ] && buf+="$now_playing\033[K\n\033[K\n"
-      buf+="$vol_line\033[K\n\033[K\n"
-      [ -n "$dev_line" ] && buf+="$dev_line\033[K\n"
-      if [ -n "$capture_apps" ]; then
-        buf+="\033[K\n  ⚠  Audio capture: $capture_apps\033[K\n"
-      fi
-      if [ -n "$exchange_cache" ]; then
-        buf+="\033[K\n"
-        while IFS= read -r eline; do buf+="$eline\033[K\n"; done <<< "$exchange_cache"
-        buf+="\033[K\n"
-      fi
-      if [ -n "$raven_cache" ] || [ -n "$harbor_cache" ]; then
-        [ -n "$raven_cache" ]  && buf+="$(printf '󱗆 %-8s %s' raven  "$raven_cache")\033[K\n"
-        [ -n "$harbor_cache" ] && buf+="$(printf '󰒋 %-8s %s' harbor "$harbor_cache")\033[K\n"
-        buf+="\033[K\n"
-      fi
-      if [ -n "$weather_cache" ]; then
-        weather_body=$(echo "$weather_cache" | tail -n +2)
-        buf+="Buenos Aires, Argentina\033[K\n"
-        while IFS= read -r wline; do buf+="$wline\033[K\n"; done <<< "$weather_body"
-        buf+="\033[K\n"
-      fi
-      if [ -n "$wallpaper_cache" ] && [ "$wallpaper_cache" != "(local file)" ]; then
-        buf+="── Wallpaper [w] ──\033[K\n$wallpaper_cache\033[K\n"
-      fi
-
-      printf '\033[H%b\033[J' "$buf"
-
-      read -rsn1 -t 1 key
-      case $key in
-        m|M) sudo usb-toggle mic toggle 2>/dev/null ;;
-        c|C) sudo usb-toggle cam toggle 2>/dev/null ;;
-        w|W) [ -n "$wallpaper_cache" ] && xdg-open "$wallpaper_cache" 2>/dev/null & ;;
-      esac
-    done
-  '';
-
-  dashboardScript = pkgs.writeShellScript "dashboard" ''
-    T="${pkgs.tmux}/bin/tmux"
-    S="dashboard"
-
-    if $T -L $S has-session -t $S 2>/dev/null; then
-      exec $T -L $S attach -t $S
-    fi
-
-    $T -L $S new-session -d -s $S
-
-    # Clean look: no status bar, invisible pane borders
-    $T -L $S set status off
-    $T -L $S set mouse on
-    $T -L $S set pane-border-style "fg=black"
-    $T -L $S set pane-active-border-style "fg=black"
-
-    # Escape hides dashboard
-    $T -L $S bind -T root Escape run-shell "${config.wayland.windowManager.hyprland.package}/bin/hyprctl dispatch togglespecialworkspace dashboard"
-
-    # Scroll anywhere adjusts volume
-    $T -L $S bind -T root WheelUpPane run-shell -b "wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+"
-    $T -L $S bind -T root WheelDownPane run-shell -b "wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%-"
-
-    # Create all pane splits and sizing first, then launch programs.
-
-    # pane 0 (left): btop
-    $T -L $S split-window -h -l 40%          # pane 1 (right top)
-    $T -L $S split-window -v -l 90%          # pane 2 (right middle)
-    $T -L $S split-window -v -l 40%          # pane 3 (right bottom)
-
-    # Now launch programs in each pane. Each is wrapped in a restart loop: if
-    # the program ever exits (crash, transient terminal error, whatever) tmux's
-    # default behavior is to CLOSE the pane, which silently collapses the whole
-    # layout (verified: this had already happened here — btop's and pipes.sh's
-    # panes were both gone, leaving the clock pane rendering where btop used to
-    # be). The pane's actual process is this loop, not the program, so the pane
-    # itself never dies — it just relaunches.
-    $T -L $S send-keys -t 0 "while true; do btop; sleep 1; done" Enter
-    $T -L $S send-keys -t 1 "while true; do ${clockScript}; sleep 1; done" Enter
-    $T -L $S send-keys -t 2 "while true; do ${dashboardInfoScript}; sleep 1; done" Enter
-    $T -L $S send-keys -t 3 "while true; do pipes.sh -t 0 -t 1 -p 2 -R -f 30 -r 3000 -c 1 -c 2 -c 3 -c 4 -c 5 -c 6 -c 7; sleep 1; done" Enter
-
-    # Focus status pane for mic/cam key toggles
-    $T -L $S select-pane -t 2
-
-    exec $T -L $S attach -t $S
-  '';
-
-  # Freeze/thaw the dashboard's worker processes so it costs nothing (a true 0%)
-  # while it is hidden on its special workspace. We use the cgroup-v2 freezer
-  # rather than SIGSTOP: tmux places each pane in its own `tmux-spawn-*.scope`
-  # and reclaims the pty foreground group when a pane process stops, so SIGSTOP'd
-  # workers that read the terminal (the info loop, pipes.sh) get re-stopped by
-  # SIGTTIN on resume. The cgroup freezer is transparent to tmux — no job-control
-  # signals — and only touches the pane scopes, leaving ghostty (a separate
-  # scope) responsive so the compositor never sees a hung client.
-  mkDashFreezer = name: val: pkgs.writeShellScript name ''
-    panes=$(${pkgs.tmux}/bin/tmux -L dashboard list-panes -a -F '#{pane_pid}' 2>/dev/null) || exit 0
-    [ -z "$panes" ] && exit 0
-    collect() {
-      local p
-      for p in "$@"; do
-        printf '%s\n' "$p"
-        collect $(${pkgs.procps}/bin/pgrep -P "$p" 2>/dev/null)
-      done
-    }
-    for p in $(collect $panes); do
-      # /proc/<pid>/cgroup is a single `0::<path>` line on cgroup-v2.
-      # Group the redirect so a process that exited mid-walk is silently skipped.
-      { read -r line < /proc/"$p"/cgroup; } 2>/dev/null || continue
-      f="/sys/fs/cgroup''${line#0::}/cgroup.freeze"
-      [ -w "$f" ] && echo ${val} > "$f"
-    done
-  '';
-  dashboardFreeze = mkDashFreezer "dashboard-freeze" "1";
-  dashboardThaw = mkDashFreezer "dashboard-thaw" "0";
-
-  # Listens on Hyprland's event socket and freezes the dashboard whenever it
-  # stops being the visible special workspace, thawing it when shown again.
-  # Reacting to `activespecial` events (and reconciling actual state via hyprctl)
-  # covers every path that hides/shows it: Home, in-dashboard Escape, and the
-  # spotify special-workspace button.
-  dashboardWatcher = pkgs.writeShellScript "dashboard-watcher" ''
-    hyprctl=${config.wayland.windowManager.hyprland.package}/bin/hyprctl
-    jq=${pkgs.jq}/bin/jq
-    sock="''${XDG_RUNTIME_DIR}/hypr/''${HYPRLAND_INSTANCE_SIGNATURE}/.socket2.sock"
-
-    reconcile() {
-      if $hyprctl monitors -j \
-        | $jq -e '.[] | select(.specialWorkspace.name == "special:dashboard")' >/dev/null 2>&1; then
-        ${dashboardThaw}
-      else
-        ${dashboardFreeze}
-      fi
-    }
-
-    # Wait for the event socket to appear after login.
-    for _ in $(seq 1 120); do [ -S "$sock" ] && break; sleep 0.5; done
-
-    # Startup settle: the dashboard launches hidden, so freeze it once its panes
-    # exist (freeze is a no-op until then). Idempotent retry wins the launch race.
-    for _ in $(seq 1 20); do reconcile; sleep 1; done &
-
-    ${pkgs.socat}/bin/socat -u UNIX-CONNECT:"$sock" - | while IFS= read -r line; do
-      case "$line" in
-        activespecial*) reconcile ;;
-      esac
-    done
-  '';
-
-  toggleDashboard = pkgs.writeShellScript "toggle-dashboard" ''
-    # Hold a lock for the whole relaunch-check + spawn. Without this, pressing
-    # Home twice quickly (e.g. because the first press looked like it did
-    # nothing) races two of this script: both see no com.matv.dashboard client
-    # yet and both spawn `ghostty -e dashboardScript`, which both then race on
-    # tmux's has-session/new-session/split-window/send-keys against the SAME
-    # session name — verified live to corrupt the pane layout (duplicate
-    # split-window and send-keys calls hitting whatever panes already exist).
-    exec ${pkgs.util-linux}/bin/flock -n /tmp/dashboard-toggle.lock -c '
-      hyprctl=${config.wayland.windowManager.hyprland.package}/bin/hyprctl
-      jq=${pkgs.jq}/bin/jq
-
-      # Relaunch if dashboard window was closed
-      if ! $hyprctl clients -j | $jq -e ".[] | select(.class == \"com.matv.dashboard\")" > /dev/null 2>&1; then
-        ${pkgs.ghostty}/bin/ghostty --class=com.matv.dashboard -e ${dashboardScript} &
-        disown
-        sleep 0.3
-      fi
-
-      $hyprctl dispatch togglespecialworkspace dashboard
-    '
-  '';
-
   handleEscapeScript = pkgs.writeShellScript "handle-escape" ''
     # Check if Rofi is running and kill it
     if ${pkgs.procps}/bin/pgrep -x rofi >/dev/null; then
@@ -449,7 +116,7 @@ let
  │    Super + Shift + V  Clipboard menu                    │
  │    Super + C          Clipboard (CopyQ)                 │
  │    Super + X          Power menu                        │
- │    Home               Dashboard                         │
+ │    Home               Dashboard (vestal)                │
  ├─────────────────────────────────────────────────────────┤
  │  Windows                                                │
  │    Super + Q          Kill window                       │
@@ -507,11 +174,6 @@ in
   home.packages = [ keybinds ];
 
   # Hyprland configuration
-  # Kill dashboard tmux session on rebuild so it picks up changes on next toggle
-  home.activation.restartDashboard = lib.hm.dag.entryAfter ["writeBoundary"] ''
-    ${pkgs.tmux}/bin/tmux -L dashboard kill-server 2>/dev/null || true
-  '';
-
   wayland.windowManager.hyprland = {
     enable = true;
     # Keep the legacy hyprlang serialization for `settings` (the new default
@@ -592,7 +254,6 @@ in
         "$mod SHIFT, P, exec, ${togglePip}"
         "$mod, V, exec, ${pkgs.copyq}/bin/copyq toggle"
         "$mod SHIFT, V, exec, ${pkgs.copyq}/bin/copyq menu"
-        ", Home, exec, ${toggleDashboard}"
         # Relative workspace movement
         "$mod, period, workspace, +1"
         "$mod, comma, workspace, -1"
@@ -663,10 +324,6 @@ in
         # the theme (CopyQ bug, not a startup race), so don't rely on it here.
         "${pkgs.copyq}/bin/copyq --start-server"
         "${pkgs.hyprpolkitagent}/libexec/hyprpolkitagent"
-        # Start dashboard in background (hidden), then watch for show/hide to
-        # freeze its workers while off-screen so it idles at ~0% in the background.
-        "${pkgs.ghostty}/bin/ghostty --class=com.matv.dashboard -e ${dashboardScript}"
-        "${dashboardWatcher}"
         # Track most-recently-active MPRIS player so media keys follow it
         "${pkgs.playerctl}/bin/playerctld daemon"
         # hyprsunset is managed by systemd (see below)
@@ -784,9 +441,6 @@ in
 
         # Spotify → hidden special workspace
         "workspace special:spotify silent, match:class (?i)^spotify$"
-
-        # Dashboard → hidden special workspace (toggled with Super+Home)
-        "workspace special:dashboard silent, match:initial_class ^(com\.matv\.dashboard)$"
       ];
       env = [
         "XDG_SESSION_TYPE,wayland"
