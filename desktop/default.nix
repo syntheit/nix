@@ -71,6 +71,7 @@
 
     # Popular sans-serif fonts
     inter
+    apple-fonts # SF Pro, SF Mono (packages/apple-fonts)
     roboto
     open-sans
     source-sans-pro

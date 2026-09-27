@@ -196,8 +196,13 @@ in
         # roughly the proportions swift's Retina screen shows.
         theme = {
           scale = 1.25;
-          # fontconfig maps Helvetica to TeX Gyre Heros, a free clone.
-          fonts.sans = "Helvetica";
+          # Apple's fonts, as on swift (packages/apple-fonts, installed by
+          # desktop/default.nix).
+          fonts = {
+            sans = "SF Pro";
+            mono = "SF Mono";
+            rounded = "SF Pro Rounded";
+          };
           # Tint over vestal's own blurred snapshot of the desktop.
           dim = 0.6;
         };
