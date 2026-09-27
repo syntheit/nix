@@ -55,8 +55,19 @@ and it goes to the Mac. It's native, not qemu.
   qemu and free of the qemu fork/exec failures. Just build fajita and watch it land
   on `ssh-ng://builder@mac-linux-builder`.
 
+## raven (Pixel 6 Pro AVF VM) builds here too
+- raven is aarch64-linux itself, but compiling on the phone is slow and competes
+  with the website/status page, and nixos-avf gives it a patched kernel + systemd
+  that are never on cache.nixos.org. So `sudo nixos-rebuild switch --flake ~/nix#raven`
+  on raven sends every build to the Mac VM (hosts/raven/nix-builder.nix): same
+  ProxyJump path over Tailscale, same key (mac_builder_ssh_key in secrets/raven.yaml).
+- raven runs with `max-jobs = 0`: it builds nothing locally. If the mini is down,
+  raven rebuilds fail with "local builds are disabled (max-jobs = 0)"; add
+  `--max-jobs auto` to build on the phone anyway.
+
 ## Config (all committed on main)
 - hosts/harbor/nix-builder.nix  — build machine + ProxyJump ssh_config + sops secret
 - hosts/harbor/hardware.nix     — binfmt aarch64 disabled (commented, with note)
 - hosts/mini/linux-builder.nix  — the VM (sizing, launchd daemon)
 - hosts/mini/default.nix        — the jump key (authorizedKeys)
+- hosts/raven/nix-builder.nix   — raven's build machine (max-jobs = 0, fail-fast ssh)

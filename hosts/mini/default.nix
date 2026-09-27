@@ -25,12 +25,14 @@ in
 
   matv.darwin.tccGrants = tccGrants;
 
-  # harbor offloads aarch64-linux builds to this mini's builder VM, reaching it
-  # via ssh ProxyJump through this host (the VM's slirp port isn't reliably
-  # reachable across Tailscale — see hosts/harbor/nix-builder.nix). The jump
-  # authenticates with the VM's own builder key; add its public half here,
-  # restricted to port-forwarding only so it can do nothing but open the tunnel
-  # to the VM. Merges with the login key set in modules/darwin/common.nix.
+  # harbor, vista and raven offload aarch64-linux builds to this mini's
+  # builder VM, reaching it via ssh ProxyJump through this host (the VM's slirp
+  # port isn't reliably reachable across Tailscale — see
+  # hosts/harbor/nix-builder.nix). The jump authenticates with the VM's own
+  # builder key; add its public half here, restricted to port-forwarding only
+  # so it can do nothing but open the tunnel to the VM. Merges with the login
+  # key set in modules/darwin/common.nix. Rotating the builder key means
+  # updating this line and mac_builder_ssh_key in secrets/{harbor,vista,raven}.yaml.
   users.users.${vars.user.name}.openssh.authorizedKeys.keys = [
     ''restrict,port-forwarding ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBTH8l3CLJK5SxnTBUYxZsWpA85+L7J3pqti8ZBQyarX builder@localhost''
   ];

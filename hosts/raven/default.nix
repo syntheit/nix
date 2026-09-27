@@ -13,6 +13,8 @@
     ../../modules/server-safety.nix
     ../../modules/foyer.nix
     ./secrets.nix
+    # Builds run on the mini's aarch64 VM, not on the phone (sets max-jobs = 0).
+    ./nix-builder.nix
   ];
 
   services.serverSafety = {
@@ -104,7 +106,6 @@
         "pipe-operators"
       ];
       auto-optimise-store = true;
-      max-jobs = "auto";
       cores = 0;
     };
     gc = {
