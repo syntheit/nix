@@ -12,6 +12,49 @@
 # merges them over the rest. Schema: docs/CONFIG.md in github:syntheit/vestal.
 let
   inherit (pkgs.stdenv.hostPlatform) isLinux;
+
+  # USB mic/camera privacy on Linux, through usb-toggle (system/default.nix).
+  usbState = device: {
+    type = "command";
+    argv = [
+      "usb-toggle"
+      device
+      "waybar"
+    ];
+    refresh = "2s";
+    when = "visible";
+  };
+  usbToggle = device: icon: {
+    type = "icon";
+    source = device;
+    "when" = ".class != null";
+    size = 11;
+    weight = "fill";
+    name.expr = ''if .class == "on" then "${icon}" else "${icon}-slash" end'';
+    color.expr = ''if .class == "on" then "bad" else "good" end'';
+    action = {
+      run = [
+        "sudo"
+        "-n"
+        "/run/current-system/sw/bin/usb-toggle"
+        device
+        "toggle"
+      ];
+      optimistic = ''. + {class: (if .class == "on" then "off" else "on" end)}'';
+    };
+  };
+  # The same toggle as a dashboard-wide key, so it works even before the
+  # device's state has loaded (a widget's own key needs the widget shown).
+  usbKey = device: {
+    run = [
+      "sudo"
+      "-n"
+      "/run/current-system/sw/bin/usb-toggle"
+      device
+      "toggle"
+    ];
+    refreshAfter = [ device ];
+  };
 in
 {
   imports = [ inputs.vestal.homeManagerModules.default ];
@@ -205,7 +248,13 @@ in
         };
         # No calendar backend on Linux until an ICS source is set up: drop the
         # calendar source and the agenda.
-        sources.calendar = null;
+        # mic and cam: usb-toggle (system/default.nix) prints each USB device's
+        # state as {"class": "on"|"off"} (no class when unplugged).
+        sources = {
+          calendar = null;
+          mic = usbState "mic";
+          cam = usbState "cam";
+        };
         widgets = {
           agenda = null;
           # The privacy toggle above is macOS's (toggle-privacy in
@@ -220,7 +269,17 @@ in
               "network"
             ];
             privacy = null;
+            # Mic and camera toggles at the right end, as the old tmux
+            # dashboard had: click, or ctrl+m / ctrl+c while it's open.
+            trailing = [
+              (usbToggle "mic" "microphone")
+              (usbToggle "cam" "video-camera")
+            ];
           };
+        };
+        keys = {
+          "ctrl+m" = usbKey "mic";
+          "ctrl+c" = usbKey "cam";
         };
         views.main.order = [
           "clock"
