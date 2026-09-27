@@ -24,7 +24,7 @@
     # macOS-specific modules
     ./modules/sketchybar.nix
     ./modules/app-tweaks.nix
-    ./modules/vestal-darwin.nix
+    ./modules/vestal.nix
     ./modules/tmux.nix
     ./modules/eq.nix
     ./modules/overview.nix
@@ -39,8 +39,6 @@
 
   home.username = vars.user.name;
   home.homeDirectory = "/Users/${vars.user.name}";
-
-  programs.vestal.enable = true;
 
   home.stateVersion = "24.11";
 
