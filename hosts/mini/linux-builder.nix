@@ -71,6 +71,11 @@ in
     mkdir -p /var/lib/linux-builder
   '';
 
+  # Copies of the builder key (/etc/nix/builder_ed25519) outside this VM:
+  # mac_builder_ssh_key in secrets/{harbor,vista,raven}.yaml, and its public
+  # half as the jump key in default.nix. A deliberate rotation has to update
+  # all of them. (The note inside the script below only names harbor; it is
+  # left as is because editing the script restarts the VM on the next switch.)
   launchd.daemons.linux-builder = {
     # The VM shares host CA certs via TMPDIR; macOS purges /tmp files idle for
     # 3+ days (sleeping laptop → vanished certs), so use /run instead.
