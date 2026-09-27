@@ -1934,11 +1934,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1790543638,
-        "narHash": "sha256-wPWCNG7602w52ZwYfX6U3MkcDioYtR0BczQTNtWrAIw=",
+        "lastModified": 1790544724,
+        "narHash": "sha256-0MxZyjEWCoJmVjZH3EOGjkKRk0X+JPB9CdLiaZADhFw=",
         "owner": "syntheit",
         "repo": "vestal",
-        "rev": "addf2df7b8799b15d24a4376d13175a42079e3b0",
+        "rev": "fd1ed1fe6e0c895b393967656b0a489bedf453cf",
         "type": "github"
       },
       "original": {
