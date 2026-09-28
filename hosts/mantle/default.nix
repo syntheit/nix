@@ -6,6 +6,7 @@
     ./hardware.nix
     ./secrets.nix
     ./mac-speakers.nix
+    ./zero-red-eq.nix
     # ./mdm.nix — MDM stack migrated to vista 2026-08 (hosts/vista/mdm.nix).
     #   /var/lib/mdm state kept here + backup ~/backups/ until retention window ends.
     ../../system
