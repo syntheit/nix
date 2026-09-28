@@ -822,6 +822,11 @@ in
           else "/var/lib/deus-tokens/nanomdm-api";
           webhookHMACKeyFile = lib.optionalString stageMDMCredentials
             "/var/lib/deus-tokens/private-mdm/webhook-hmac";
+          # Record signed DeviceInformation acknowledgements as receipts
+          # (nix/modules/server.nix ade.deviceInfoReceipts). Requires
+          # webhookHMACKeyFile, which vista already sets above via
+          # stageMDMCredentials.
+          deviceInfoReceipts = true;
 
           # Managed admin the AccountConfiguration step creates on each
           # Mac. "tars" (== vars.user.name) so auto-login-as-tars works,
