@@ -2,9 +2,9 @@
 # Each step uncomments its own block with sed; see ~/malli-5fro-m2-runbook.md.
 { ... }: {
   malli.mdm.nanomdmPatchedSourcePin = {
-    deusRev = "b9f95a8859baeb84777859bc25e869b3d3ea550c";
+    deusRev = "933a1571a4a8a41e8f4cc3a903087d20fa66a860";
     nanomdmCommit = "3c52ba4a031c6d2035cea0722a47c598318fc59d";
-    hash = "sha256-j+LMBqMu9EMBveYquqX6EQQngPyj18fL0OlFc+Vnepc=";
+    hash = "sha256-Ubj5I4G8v42tFY1WVtLoM4kSx4mhtLrykbkfmfqvgQY=";
     vendorHash = "sha256-W49woVx8MjNZsfGHPudYReTRggnjfZ4f3VKCwgqaaV0=";
   };
   malli.mdm.deusDedicatedIdentity.enable = true;

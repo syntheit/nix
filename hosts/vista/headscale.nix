@@ -801,6 +801,10 @@ in
         ddm = lib.mkIf config.malli.mdm.ddmBridge.enable {
           enable = true;
           enrollmentID = config.malli.mdm.ddmBridge.enrollmentID;
+          # macOS rollout worker (deus 0.90.0): drives one-Mac rollouts started from the
+          # console; the server refuses any rollout that is not exactly one host until the
+          # fleet fixes land (malli-context.md DEFERRED).
+          rollouts.enable = true;
         };
 
         # ── ADE / zero-touch orchestrator ──
