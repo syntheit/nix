@@ -521,6 +521,9 @@ in
         # PAUSED: nothing moves until hosts are enrolled and v2 is unpaused.
         # Bot-secret keys live in /var/lib/deus/bot-secrets.* (deus-owned).
         placementV2.enable = true;
+        # Runner image for prod bots imported from ECS (ECS→Mac moves): the
+        # arm64 digest every prod Mac bot ran under v1 on 2026-09-28.
+        placementV2.defaultImage.prod = "malli/cursor-runner@sha256:067e370955c9b4adf2cd2720aa4b8cd263200a47eeb3144aff3073b1011ca727";
         # registryFile = null (default) — inventory comes from headscale.
         #
         # ── Roles ──
