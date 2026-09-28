@@ -13,40 +13,8 @@ let
       # which runs days behind — and a lagging claude-code cannot select a newly
       # released model (Opus 5.5 needs 2.1.280; nixpkgs has 2.1.278). The
       # `or prev.<pkg>` fallback keeps nixpkgs on platforms that flake skips.
-      # TEMP: 2.1.284 (Sonnet 5.5) ahead of llm-agents, still on 2.1.283 as of
-      # 2026-09-28. Drop this override once `nix flake update llm-agents` brings
-      # in 2.1.284 or newer.
       claude-code =
-        let
-          upstream =
-            inputs.llm-agents.packages.${final.stdenv.hostPlatform.system}.claude-code or prev.claude-code;
-          version = "2.1.284";
-          platforms = {
-            x86_64-linux = {
-              name = "linux-x64";
-              hash = "sha256-XNkKq9g/ihUTbDWqN7sdkrNImTVzMWZD3D/k4Er7+I8=";
-            };
-            aarch64-linux = {
-              name = "linux-arm64";
-              hash = "sha256-PdD5bXraRjFS0gMAGG9s/Gq5S1fiGPSeOshttCrGlaY=";
-            };
-            aarch64-darwin = {
-              name = "darwin-arm64";
-              hash = "sha256-UKFML1D1Zmg4D92kkBZ/HTYw1cwY+4rtMHPCx+pzFP4=";
-            };
-          };
-          platform = platforms.${final.stdenv.hostPlatform.system} or null;
-        in
-        if platform == null || lib.versionAtLeast upstream.version version then
-          upstream
-        else
-          upstream.overrideAttrs {
-            inherit version;
-            src = final.fetchurl {
-              url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/${version}/${platform.name}/claude";
-              inherit (platform) hash;
-            };
-          };
+        inputs.llm-agents.packages.${final.stdenv.hostPlatform.system}.claude-code or prev.claude-code;
       codex = inputs.llm-agents.packages.${final.stdenv.hostPlatform.system}.codex or prev.codex;
       opencode =
         inputs.llm-agents.packages.${final.stdenv.hostPlatform.system}.opencode or prev.opencode;
