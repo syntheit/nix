@@ -118,7 +118,14 @@
     scrcpy
     tor-browser
     brave
-    inputs.zen-browser.packages.${pkgs.stdenv.hostPlatform.system}.default
+    # The flake's passthru still says `ffmpegSupport`, but nixpkgs' wrapFirefox
+    # now reads `withFFmpeg`, so the stock package ships without libavcodec and
+    # H.264/AAC media (Instagram, many news sites) silently fails to play.
+    (pkgs.wrapFirefox
+      (inputs.zen-browser.packages.${pkgs.stdenv.hostPlatform.system}.zen-browser-unwrapped.overrideAttrs (old: {
+        passthru = old.passthru // { withFFmpeg = true; };
+      }))
+      { pname = "zen-browser"; })
     signal-desktop
     telegram-desktop
     slack
