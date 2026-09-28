@@ -52,7 +52,12 @@
     # read-only /v1/inventory and /v1/command. Owner sign-off in chat 2026-09-27 ~11:00.
     { deusRev = "b9f95a8859baeb84777859bc25e869b3d3ea550c"; nanomdmCommit = "3c52ba4a031c6d2035cea0722a47c598318fc59d";
     hash = "sha256-j+LMBqMu9EMBveYquqX6EQQngPyj18fL0OlFc+Vnepc="; reviewer = "Daniel Miller"; reviewDate = "2026-09-27";
-    reason = "Canary 3c52ba4 plus the phase-2a patch; -dm endpoint confinement byte-identical (Codex + Opus security reviews)."; } ];
+    reason = "Canary 3c52ba4 plus the phase-2a patch; -dm endpoint confinement byte-identical (Codex + Opus security reviews)."; }
+    # macOS queue gate (malli-deus PR #123, head 933a1571): read-only GET /v1/queue/<id> counts, fail-closed
+    # counting (Opus review + re-review 09-28). Owner sign-off in chat 2026-09-28 ~12:00.
+    { deusRev = "933a1571a4a8a41e8f4cc3a903087d20fa66a860"; nanomdmCommit = "3c52ba4a031c6d2035cea0722a47c598318fc59d";
+    hash = "sha256-Ubj5I4G8v42tFY1WVtLoM4kSx4mhtLrykbkfmfqvgQY="; reviewer = "Daniel Miller"; reviewDate = "2026-09-28";
+    reason = "Canary 3c52ba4 plus phase 2a plus the read-only queue count; -dm endpoint confinement byte-identical (Opus review + re-review)."; } ];
 
   # Trees that can NEVER be allowlisted, whatever else is written above or
   # overridden in a host configuration: stock upstream, whose `-dm` endpoint
