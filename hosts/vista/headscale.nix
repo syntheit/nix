@@ -807,6 +807,10 @@ in
           rollouts.enable = true;
         };
 
+        # macOS release catalog cache (deus 0.94.3): fills the Update dialog and fleet
+        # wizard release pickers; display-only, assignments still fetch GDMF live.
+        gdmfCachePath = "/var/lib/deus/gdmf-cache/catalog.sqlite";
+
         # ── ADE / zero-touch orchestrator ──
         # Drives Apple Automated Device Enrollment through the self-hosted
         # nanomdm runs on vista (hosts/vista/mdm.nix, migrated from mantle
