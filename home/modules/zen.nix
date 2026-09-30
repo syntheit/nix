@@ -62,6 +62,7 @@ in
             cat > "$USER_JS" <<'EOF'
 user_pref("network.trr.mode", 5);
 user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
+user_pref("full-screen-api.macos-native-full-screen", false);
 EOF
           else
             if grep -q "network.trr.mode" "$USER_JS"; then
@@ -71,6 +72,11 @@ EOF
             fi
             if ! grep -q "toolkit.legacyUserProfileCustomizations.stylesheets" "$USER_JS"; then
               echo 'user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);' >> "$USER_JS"
+            fi
+            # macOS: fullscreen in place, not as a new Space at the end of the
+            # desktop list (Firefox 124 made native the default).
+            if ! grep -q "full-screen-api.macos-native-full-screen" "$USER_JS"; then
+              echo 'user_pref("full-screen-api.macos-native-full-screen", false);' >> "$USER_JS"
             fi
           fi
 

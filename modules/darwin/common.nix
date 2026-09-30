@@ -8,6 +8,27 @@
 }:
 
 let
+
+  # Keeps a Zen window in its tile across fullscreen (see yabai extraConfig).
+  zenTile = pkgs.writeShellScript "yabai-zen-tile" ''
+    dir=/tmp/yabai-zen; mkdir -p "$dir"; id=$YABAI_WINDOW_ID
+    q() { /run/current-system/sw/bin/yabai -m query "$@"; }
+    jq=${pkgs.jq}/bin/jq
+    case "$1" in
+      save)
+        q --windows --window "$id" | $jq -r 'select(."is-floating"|not) | "\(.space) \(.frame.x + .frame.w/2) \(.frame.y + .frame.h/2)"' > "$dir/$id.tmp" \
+          && [ -s "$dir/$id.tmp" ] && mv "$dir/$id.tmp" "$dir/$id" ;;
+      destroyed)
+        [ -f "$dir/$id" ] && mv "$dir/$id" "$dir/pending" ;;
+      created)
+        p="$dir/pending"
+        [ -f "$p" ] && [ $(( $(/bin/date +%s) - $(/usr/bin/stat -f %m "$p") )) -le 3 ] || exit 0
+        read -r space x y < "$p"; rm -f "$p"
+        target=$(q --windows --space "$space" | $jq -r --argjson id "$id" --argjson x "$x" --argjson y "$y" \
+          'map(select(.id != $id and (."is-floating"|not) and .frame.x <= $x and $x < .frame.x + .frame.w and .frame.y <= $y and $y < .frame.y + .frame.h)) | .[0].id // empty')
+        [ -n "$target" ] && /run/current-system/sw/bin/yabai -m window "$id" --swap "$target" ;;
+    esac
+  '';
   daemons = import ./disabled-daemons.nix;
 
   # Generates a bash for-loop that bootouts + disables every listed launchd
@@ -370,6 +391,16 @@ in
 
         # Spotify → scratchpad (floating overlay)
         yabai -m rule --add app="^Spotify$" scratchpad=spotify
+
+        # Zen replaces its window on entering and leaving (non-native)
+        # fullscreen, and yabai inserts the new one as second_child, so Zen
+        # hopped sides. Remember each Zen window's tile; when one is destroyed
+        # and another appears within 3s, swap it back into that tile.
+        yabai -m signal --add app="^Zen$" event=window_focused action="${zenTile} save"
+        yabai -m signal --add app="^Zen$" event=window_moved action="${zenTile} save"
+        yabai -m signal --add app="^Zen$" event=window_resized action="${zenTile} save"
+        yabai -m signal --add app="^Zen$" event=window_destroyed action="${zenTile} destroyed"
+        yabai -m signal --add app="^Zen$" event=window_created action="${zenTile} created"
       '';
     };
 
