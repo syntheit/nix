@@ -806,6 +806,9 @@ in
           # Command settlement loop (deus 0.95.4+ requires it with rollouts): looks up
           # command state in NanoMDM and re-pushes queued commands; it never sends new ones.
           senderEnable = true;
+          # macOS Targets (deus 0.97.0+): declare a macOS version, Deus reconciles the fleet to it
+          # in small rollouts. New targets start paused; Activate in the console.
+          targets.enable = true;
         };
 
         # macOS release catalog cache (deus 0.94.3): fills the Update dialog and fleet
