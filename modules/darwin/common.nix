@@ -9,6 +9,32 @@
 
 let
 
+  # Rebuilds restart yabai whenever its config changes, and a fresh yabai
+  # re-tiles every window in its own order. `save` records each tiled
+  # window's centre before activation; `restore` swaps windows back into
+  # those spots once the new yabai is up.
+  yabaiLayout = pkgs.writeShellScript "yabai-layout" ''
+    f=/tmp/yabai-layout.json
+    y=/run/current-system/sw/bin/yabai
+    jq=${pkgs.jq}/bin/jq
+    case "$1" in
+      save)
+        $y -m query --windows 2>/dev/null | $jq -c '[.[] | select((."is-floating"|not) and ."has-ax-reference") | {id, space, x: (.frame.x + .frame.w/2), y: (.frame.y + .frame.h/2)}]' > "$f.tmp" \
+          && mv "$f.tmp" "$f" ;;
+      restore)
+        [ -f "$f" ] || exit 0
+        for _ in $(seq 1 20); do $y -m query --spaces >/dev/null 2>&1 && break; sleep 0.5; done
+        sleep 2
+        $jq -c '.[]' "$f" | while read -r w; do
+          id=$($jq -r .id <<<"$w"); space=$($jq -r .space <<<"$w")
+          target=$($y -m query --windows --space "$space" 2>/dev/null | $jq -r --argjson w "$w" \
+            'map(select(.id != $w.id and (."is-floating"|not) and .frame.x <= $w.x and $w.x < .frame.x + .frame.w and .frame.y <= $w.y and $w.y < .frame.y + .frame.h)) | .[0].id // empty')
+          [ -n "$target" ] && $y -m window "$id" --swap "$target" 2>/dev/null
+        done
+        rm -f "$f" ;;
+    esac
+  '';
+
   # Keeps a Zen window in its tile across fullscreen (see yabai extraConfig).
   zenTile = pkgs.writeShellScript "yabai-zen-tile" ''
     dir=/tmp/yabai-zen; mkdir -p "$dir"; id=$YABAI_WINDOW_ID
@@ -111,6 +137,10 @@ in
     #   sudo mkdir -p /var/root/.ssh
     #   sudo ln -sf /Users/daniel/.ssh/mainkey /var/root/.ssh/mainkey
     system.activationScripts.preActivation.text = ''
+      # Record the tiling layout before a possible yabai restart (restored
+      # at the end of postActivation).
+      launchctl asuser "$(id -u -- ${vars.user.name})" /usr/bin/sudo -u ${vars.user.name} ${yabaiLayout} save || true
+
       install -d -m 0700 /var/root/.ssh
       cat > /var/root/.ssh/config <<'SSHCFG'
       Host github-malli-deus
@@ -593,6 +623,8 @@ ${lib.optionalString (hostName == "mini") ''
           || echo "[activation] yabai window_shadow refresh failed (exit $?)"
         launchctl asuser "$GUI_UID" /usr/bin/sudo -u ${vars.user.name} /run/current-system/sw/bin/yabai -m rule --apply \
           || echo "[activation] yabai rule --apply failed (exit $?)"
+        launchctl asuser "$GUI_UID" /usr/bin/sudo -u ${vars.user.name} ${yabaiLayout} restore \
+          || echo "[activation] yabai layout restore failed (exit $?)"
       fi
 
       # ================================================================
