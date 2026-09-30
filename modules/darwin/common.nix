@@ -198,9 +198,6 @@ in
         show-recents = false;
         minimize-to-application = true;
         mineffect = "scale";
-        # Thumb + three finger pinch (Launchpad): off; vestal's `gesture`
-        # setting (home/modules/vestal.nix) takes the pinch instead.
-        showLaunchpadGestureEnabled = false;
       };
 
       finder = {
@@ -251,9 +248,6 @@ in
           TrackpadThreeFingerHorizSwipeGesture = 2;
           TrackpadFourFingerHorizSwipeGesture = 2;
         };
-        # macOS 26+: the thumb + three finger pinch opens Spotlight's Applications
-        # view, with its own key (showLaunchpadGestureEnabled no longer covers it).
-        "com.apple.dock".showSpotlightGestureEnabled = false;
         # Disable personalized ads
         "com.apple.AdLib" = {
           allowApplePersonalizedAdvertising = false;

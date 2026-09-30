@@ -27,7 +27,7 @@
     ./modules/vestal.nix
     ./modules/tmux.nix
     ./modules/eq.nix
-    ./modules/overview.nix
+    # ./modules/overview.nix  # off for now: 3-finger gestures were annoying; OmniWM trial may replace it
     ./modules/volume-panel.nix
     ./modules/bluetooth-panel.nix
     ./modules/wifi-panel.nix
