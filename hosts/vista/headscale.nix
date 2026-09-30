@@ -801,10 +801,11 @@ in
         ddm = lib.mkIf config.malli.mdm.ddmBridge.enable {
           enable = true;
           enrollmentID = config.malli.mdm.ddmBridge.enrollmentID;
-          # macOS rollout worker (deus 0.90.0): drives one-Mac rollouts started from the
-          # console; the server refuses any rollout that is not exactly one host until the
-          # fleet fixes land (malli-context.md DEFERRED).
+          # macOS rollout worker: drives fleet and one-Mac rollouts started from the console.
           rollouts.enable = true;
+          # Command settlement loop (deus 0.95.4+ requires it with rollouts): looks up
+          # command state in NanoMDM and re-pushes queued commands; it never sends new ones.
+          senderEnable = true;
         };
 
         # macOS release catalog cache (deus 0.94.3): fills the Update dialog and fleet
