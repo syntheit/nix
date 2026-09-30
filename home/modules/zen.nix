@@ -34,10 +34,11 @@ in
 {
   # Activation script to find the profile and write the file
   home.activation.installZenUserChrome = lib.hm.dag.entryAfter ["writeBoundary"] ''
-    ZEN_DIR="$HOME/.zen"
     CSS_FILE="${pkgs.writeText "userChrome.css" userChromeCss}"
 
-    if [ -d "$ZEN_DIR" ]; then
+    # Linux keeps profiles in ~/.zen, macOS in ~/Library/Application Support/zen/Profiles
+    for ZEN_DIR in "$HOME/.zen" "$HOME/Library/Application Support/zen/Profiles"; do
+      [ -d "$ZEN_DIR" ] || continue
       for profile in "$ZEN_DIR"/*; do
         if [ -d "$profile" ] && [ -f "$profile/prefs.js" ]; then
           profile_name=$(basename "$profile")
@@ -64,7 +65,7 @@ user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
 EOF
           else
             if grep -q "network.trr.mode" "$USER_JS"; then
-              sed -i 's/^user_pref("network.trr.mode".*$/user_pref("network.trr.mode", 5);/' "$USER_JS"
+              ${pkgs.gnused}/bin/sed -i 's/^user_pref("network.trr.mode".*$/user_pref("network.trr.mode", 5);/' "$USER_JS"
             else
               echo 'user_pref("network.trr.mode", 5);' >> "$USER_JS"
             fi
@@ -76,6 +77,6 @@ EOF
           echo "Updated Zen Browser config in $profile"
         fi
       done
-    fi
+    done
   '';
 }
