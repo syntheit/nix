@@ -16,10 +16,60 @@ class BrightnessManager: ObservableObject {
         brightness = getBrightness()
     }
 
+    /// Level the display is heading to (equals `brightness` when idle).
+    var target: Float { fadeTimer != nil ? goal : getBrightness() }
+    private var goal: Float = 0
+    private var fadeTimer: DispatchSourceTimer?
+    private var fadeGen = 0
+    private let fadeQueue = DispatchQueue(label: "brightness.fade", qos: .userInteractive)
+    private var activity: NSObjectProtocol?
+
+    /// Latest press wins: a new call cancels any in-flight fade and starts a new
+    /// one from the display's actual current level toward the new target.
     func adjustBrightness(by delta: Float) {
-        let newVal = max(0, min(1, getBrightness() + delta))
-        setBrightness(newVal)
-        refresh()
+        goal = max(0, min(1, target + delta))
+        fade(to: goal)
+    }
+
+    // The fade runs on a strict dispatch timer off the main thread: RunLoop timers
+    // in this background (accessory) app get coalesced/throttled to ~30-70ms gaps,
+    // which turned the ramp into a handful of visible jumps.
+    private func fade(to goal: Float, duration: TimeInterval = 0.25) {
+        fadeTimer?.cancel()
+        fadeTimer = nil
+        fadeGen += 1
+        let gen = fadeGen
+        let from = getBrightness()
+        if abs(goal - from) < 0.002 || duration <= 0 {
+            setBrightness(goal)
+            refresh()
+            return
+        }
+        if activity == nil {
+            activity = ProcessInfo.processInfo.beginActivity(
+                options: [.userInitiated, .latencyCritical], reason: "brightness fade")
+        }
+        let start = ProcessInfo.processInfo.systemUptime
+        let timer = DispatchSource.makeTimerSource(flags: .strict, queue: fadeQueue)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(8), leeway: .microseconds(500))
+        timer.setEventHandler { [weak self] in
+            guard let self, self.fadeGen == gen else { return }
+            let p = min(1, (ProcessInfo.processInfo.systemUptime - start) / duration)
+            let eased = Float(0.5 - 0.5 * cos(Double.pi * p))  // ease-in-out (sine)
+            let v = p >= 1 ? goal : from + (goal - from) * eased
+            self.setBrightness(v)
+            DispatchQueue.main.async {
+                guard self.fadeGen == gen else { return }
+                self.brightness = v
+                if p >= 1 {
+                    self.fadeTimer?.cancel(); self.fadeTimer = nil
+                    if let a = self.activity { ProcessInfo.processInfo.endActivity(a); self.activity = nil }
+                }
+            }
+            if p >= 1 { timer.cancel() }
+        }
+        fadeTimer = timer
+        timer.resume()
     }
 
     private func getBrightness() -> Float {

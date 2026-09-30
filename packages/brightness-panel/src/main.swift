@@ -41,11 +41,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             keyboard.adjust(by: 1.0 / 16.0)
         case "kbdown":
             keyboard.adjust(by: -1.0 / 16.0)
-        default:
+        default:  // "get" and unknown commands just report
             break
         }
 
-        let pct = Int(display.brightness * 100)
+        // Report the level the display is heading to (a fade may be in flight)
+        let level = cmd.hasPrefix("kb") ? keyboard.brightness : display.target
+        let pct = Int((level * 100).rounded())
         return "{\"brightness\":\(pct)}"
     }
 
