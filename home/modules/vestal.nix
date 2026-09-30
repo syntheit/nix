@@ -13,6 +13,16 @@
 let
   inherit (pkgs.stdenv.hostPlatform) isLinux;
 
+  # wttr.in JSON for wherever ipinfo.io places this machine, plus .place (the
+  # city). Falls back to wttr.in's own IP lookup if ipinfo is unreachable.
+  weatherHere = pkgs.writeShellScript "vestal-weather" ''
+    geo=$(${pkgs.curl}/bin/curl -fsm5 https://ipinfo.io/json) || geo='{}'
+    loc=$(${pkgs.jq}/bin/jq -r '.loc // empty' <<<"$geo")
+    ${pkgs.curl}/bin/curl -fsm15 "https://wttr.in/$loc?m&format=j1" |
+      ${pkgs.jq}/bin/jq -c --argjson geo "$geo" \
+        '. + {place: ($geo.city // .nearest_area[0].areaName[0].value)}'
+  '';
+
   # USB mic/camera privacy on Linux, through usb-toggle (system/default.nix).
   usbState = device: {
     type = "command";
@@ -74,20 +84,31 @@ in
     settings = {
       # Built-in hotkey on swift only: mini's skhd uses F3 for space 3.
       hotkey = if hostName == "swift" then "f3" else null;
+      # Thumb + three finger pinch toggles the dashboard (macOS; the Dock's
+      # own pinch is off in modules/darwin/common.nix).
+      gesture = if hostName == "swift" then "pinch" else null;
       theme = {
         palette = "tokyo-night";
         background = "aurora";
       };
 
       sources = {
-        weather = {
-          type = "http";
-          # mantle is stationary: pin Buenos Aires (CABA). Without a location
-          # wttr.in geolocates the IP, which lands on General Alvear (a town
-          # ~300 km away in the province). Other hosts keep IP lookup.
-          url = if hostName == "mantle" then "https://wttr.in/-34.6037,-58.3816?m&format=j1" else "https://wttr.in/?m&format=j1";
-          refresh = "30m";
-        };
+        # wttr.in's own IP lookup lands ~300 km off (General Alvear), so
+        # mantle (stationary) pins Buenos Aires and the rest locate through
+        # ipinfo.io, which gets the city right, then query wttr.in by coords.
+        weather =
+          if hostName == "mantle" then
+            {
+              type = "http";
+              url = "https://wttr.in/-34.6037,-58.3816?m&format=j1";
+              refresh = "30m";
+            }
+          else
+            {
+              type = "command";
+              argv = [ "${weatherHere}" ];
+              refresh = "30m";
+            };
         dolares = {
           type = "http";
           url = "https://dolarapi.com/v1/dolares";
@@ -215,10 +236,10 @@ in
           source = "weather";
           units = "metric";
           fields = {
-            # A pinned lookup names the nearest wttr.in area ("Centro"), so
-            # mantle shows a fixed label instead.
-            location = if hostName == "mantle" then ''"Buenos Aires"'' else ".nearest_area[0].areaName[0].value";
-            region = if hostName == "mantle" then ''"Argentina"'' else ".nearest_area[0].region[0].value";
+            # A coordinate lookup names the nearest wttr.in area ("Centro"),
+            # so mantle shows a fixed label and the rest use ipinfo's city.
+            location = if hostName == "mantle" then ''"Buenos Aires"'' else ".place";
+            region = if hostName == "mantle" then ''"Argentina"'' else ".nearest_area[0].country[0].value";
             condition = ".current_condition[0].weatherDesc[0].value";
             temp = ".current_condition[0].temp_C";
             sunrise = ".weather[0].astronomy[0].sunrise";
