@@ -115,7 +115,6 @@ with open('$DB', 'w') as f: json.dump(data, f)
         padding_left=9 \
         padding_right=9
 
-
       for i in {1..10}; do
         sketchybar --add space space.$i left \
           --set space.$i \
@@ -260,6 +259,18 @@ with open('$DB', 'w') as f: json.dump(data, f)
           update_freq=10 \
           icon.drawing=off \
           script="$CONFIG_DIR/plugins/clock.sh"
+
+      # Clicking the bare bar background makes WindowServer raise the bar
+      # window above its item windows (same level), and the bar turns solid
+      # black. A transparent bracket around every item sits over the bar and
+      # takes those clicks instead; sketchybar forwards clicks on a bracket
+      # to the item under the cursor, so the items stay clickable. Added
+      # last so its regex matches every item.
+      sketchybar --add bracket bar_click '/.*/' \
+        --set bar_click \
+          background.drawing=on \
+          background.color=0x00000000 \
+          background.height=38
 
       sketchybar --update
     '';
