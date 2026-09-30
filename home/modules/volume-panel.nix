@@ -22,12 +22,14 @@
       [ -f "$STATE" ] && source "$STATE"
 
       case "$ACTION" in
-        up)   LEVEL=$((LEVEL + 6));;
-        down) LEVEL=$((LEVEL - 6));;
+        up)   LEVEL=$(( (LEVEL + 2) / 5 * 5 + 5 ));;
+        down) LEVEL=$(( (LEVEL + 2) / 5 * 5 - 5 ));;
         mute) [ "$MUTED" = "true" ] && MUTED=false || MUTED=true;;
       esac
       [ $LEVEL -gt 100 ] && LEVEL=100
       [ $LEVEL -lt 0 ] && LEVEL=0
+      # Mirrors the daemon: 0 means muted, any step off 0 unmutes
+      case "$ACTION" in up|down) [ $LEVEL -eq 0 ] && MUTED=true || MUTED=false;; esac
 
       printf 'LEVEL=%d\nMUTED=%s\n' "$LEVEL" "$MUTED" > "$STATE"
 
