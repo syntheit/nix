@@ -106,11 +106,16 @@ class AudioManager: ObservableObject {
         return ids
     }
 
+    /// Steps snap to a grid of `delta` so hardware-quantized readbacks can't leave
+    /// a sliver above zero. At zero the device is muted: 0.0 on the virtual main
+    /// volume is the quietest dB step, not silence.
     func adjustVolume(by delta: Float) {
         let device = volumeTargetDevice()
-        if getMuted(device) { setMuted(device, false) }
-        let newVol = max(0, min(1, getVolume(device) + delta))
+        let step = abs(delta)
+        let steps = (getVolume(device) / step).rounded() + (delta > 0 ? 1 : -1)
+        let newVol = max(0, min(1, steps * step))
         setVolume(device, newVol)
+        setMuted(device, newVol == 0)
         refresh()
     }
 

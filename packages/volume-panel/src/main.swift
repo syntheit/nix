@@ -38,10 +38,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func handleCommand(_ cmd: String) -> String {
         switch cmd {
         case "up":
-            audio.adjustVolume(by: 1.0 / 16.0)
+            audio.adjustVolume(by: 0.05)
             showHUD()
         case "down":
-            audio.adjustVolume(by: -1.0 / 16.0)
+            audio.adjustVolume(by: -0.05)
             showHUD()
         case "mute":
             audio.toggleMute()
@@ -65,7 +65,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             break
         }
 
-        let vol = Int(audio.volume * 100)
+        let vol = Int((audio.volume * 100).rounded())
         let muted = audio.isMuted
         return "{\"volume\":\(vol),\"muted\":\(muted)}"
     }
