@@ -82,7 +82,10 @@ in
       sources = {
         weather = {
           type = "http";
-          url = "https://wttr.in/?m&format=j1";
+          # mantle is stationary: pin Buenos Aires (CABA). Without a location
+          # wttr.in geolocates the IP, which lands on General Alvear (a town
+          # ~300 km away in the province). Other hosts keep IP lookup.
+          url = if hostName == "mantle" then "https://wttr.in/-34.6037,-58.3816?m&format=j1" else "https://wttr.in/?m&format=j1";
           refresh = "30m";
         };
         dolares = {
@@ -117,6 +120,10 @@ in
             {
               label = "CHI";
               tz = "America/Chicago";
+            }
+            {
+              label = "AZ";
+              tz = "America/Phoenix";
             }
           ];
         };
@@ -208,8 +215,10 @@ in
           source = "weather";
           units = "metric";
           fields = {
-            location = ".nearest_area[0].areaName[0].value";
-            region = ".nearest_area[0].region[0].value";
+            # A pinned lookup names the nearest wttr.in area ("Centro"), so
+            # mantle shows a fixed label instead.
+            location = if hostName == "mantle" then ''"Buenos Aires"'' else ".nearest_area[0].areaName[0].value";
+            region = if hostName == "mantle" then ''"Argentina"'' else ".nearest_area[0].region[0].value";
             condition = ".current_condition[0].weatherDesc[0].value";
             temp = ".current_condition[0].temp_C";
             sunrise = ".weather[0].astronomy[0].sunrise";
