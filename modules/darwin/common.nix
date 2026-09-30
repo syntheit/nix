@@ -198,6 +198,9 @@ in
         show-recents = false;
         minimize-to-application = true;
         mineffect = "scale";
+        # Thumb + three finger pinch (Launchpad): off; vestal's `gesture`
+        # setting (home/modules/vestal.nix) takes the pinch instead.
+        showLaunchpadGestureEnabled = false;
       };
 
       finder = {
@@ -248,6 +251,9 @@ in
           TrackpadThreeFingerHorizSwipeGesture = 2;
           TrackpadFourFingerHorizSwipeGesture = 2;
         };
+        # macOS 26+: the thumb + three finger pinch opens Spotlight's Applications
+        # view, with its own key (showLaunchpadGestureEnabled no longer covers it).
+        "com.apple.dock".showSpotlightGestureEnabled = false;
         # Disable personalized ads
         "com.apple.AdLib" = {
           allowApplePersonalizedAdvertising = false;
@@ -343,11 +349,11 @@ in
         mouse_action1 = "move";
         mouse_action2 = "resize";
         mouse_drop_action = "swap";
-        # Both off: with these on, the cursor sitting over a window in the
-        # original space pulls focus back when programmatically switching to
-        # an empty / less-active space (fn+N bounces back to current space).
+        # mouse_follows_focus stays off: with it (and the old autoraise) on,
+        # fn+N to an empty space bounced back to the current one. autofocus
+        # focuses the window under the cursor without raising it, as Hyprland.
         mouse_follows_focus = "off";
-        focus_follows_mouse = "off";
+        focus_follows_mouse = "autofocus";
         active_window_opacity = "1.0";
         normal_window_opacity = "1.0";
       };
@@ -379,6 +385,13 @@ in
 
     environment.etc."sudoers.d/privacy".text = ''
       ${vars.user.name} ALL=(root) NOPASSWD: /usr/bin/killall VDCAssistant, /usr/bin/killall AppleCameraAssistant
+    '';
+
+    # One sudo per rebuild: darwin-rebuild's sudo and the one brew runs for
+    # casks (under `sudo -u` from activation, where Touch ID can't prompt)
+    # share a single timestamp instead of one per tty/session.
+    environment.etc."sudoers.d/timestamp".text = ''
+      Defaults:${vars.user.name} timestamp_type=global
     '';
 
     programs.zsh.enable = true;
