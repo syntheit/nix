@@ -135,11 +135,15 @@ with open('$DB', 'w') as f: json.dump(data, f)
       # by space_select.sh via the per-space $SELECTED edge; this observer
       # only handles drawing=on/off for empty non-current spaces, where a
       # ~100ms delay isn't perceptible.
+      # Optimistic event fired by skhd on fn+N before yabai runs; space.sh
+      # highlights $SPACE immediately, space_select.sh resyncs on the native edge.
+      sketchybar --add event space_switch
+
       sketchybar --add item space_observer left \
         --set space_observer \
           drawing=off \
           script="$CONFIG_DIR/plugins/space.sh" \
-        --subscribe space_observer space_change space_windows_change
+        --subscribe space_observer space_change space_windows_change space_switch
 
       sketchybar --add event spotify_change
       sketchybar --add event brightness_change
@@ -285,6 +289,20 @@ with open('$DB', 'w') as f: json.dump(data, f)
     executable = true;
     text = ''
       #!/bin/bash
+      # Hot path: optimistic highlight from skhd, one sketchybar call, no yabai.
+      if [ "$SENDER" = "space_switch" ]; then
+        ARGS=()
+        for i in {1..10}; do
+          if [ "$i" = "$SPACE" ]; then
+            ARGS+=(--set space.$i background.color=0xff7aa2f7 icon.color=0xff1a1b26 drawing=on)
+          else
+            ARGS+=(--set space.$i background.color=0x00000000 icon.color=0xffa9b1d6)
+          fi
+        done
+        sketchybar "''${ARGS[@]}"
+        exit 0
+      fi
+
       CURRENT_SPACE=$(yabai -m query --spaces --space 2>/dev/null | jq -r '.index')
       WINDOWS=$(yabai -m query --windows 2>/dev/null)
 
@@ -378,20 +396,38 @@ with open('$DB', 'w') as f: json.dump(data, f)
     executable = true;
     text = ''
       #!/bin/bash
-      if [ "$SENDER" = "brightness_change" ]; then
-        if [ "$KIND" = "keyboard" ]; then
-          ICON="󰥻"
-        else
-          ICON="󰖨"
-        fi
-        sketchybar \
-          --set spotify drawing=off \
-          --set brightness_overlay drawing=on icon="$ICON" slider.percentage="$LEVEL"
-      elif [ "$SENDER" = "brightness_hide" ]; then
-        sketchybar \
-          --set brightness_overlay drawing=off \
-          --set spotify drawing=on
-      fi
+      # `sketchybar --update` (end of sketchybarrc) replays every subscribed
+      # custom event once with empty variables. Only act on real triggers.
+      case "$SENDER" in
+        brightness_change)
+          [ -n "$LEVEL" ] || exit 0
+          if [ "$KIND" = "keyboard" ]; then
+            ICON="󰥻"
+          else
+            ICON="󰖨"
+          fi
+          if [ "$VISIBLE" = "1" ]; then
+            # Already on screen: animate the fill to the new value
+            sketchybar \
+              --set spotify drawing=off \
+              --set brightness_overlay icon="$ICON" drawing=on \
+              --animate sin 4 --set brightness_overlay slider.percentage="$LEVEL"
+          else
+            # Value first, then reveal, so the bar never shows a stale/empty fill
+            sketchybar \
+              --set spotify drawing=off \
+              --set brightness_overlay icon="$ICON" slider.percentage="$LEVEL" \
+              --set brightness_overlay drawing=on
+          fi
+          ;;
+        brightness_hide)
+          # A newer press stamps the cookie; stand down if it exists
+          [ -f /tmp/brightness-cookie ] && exit 0
+          sketchybar \
+            --set brightness_overlay drawing=off \
+            --set spotify drawing=on
+          ;;
+      esac
     '';
   };
 
