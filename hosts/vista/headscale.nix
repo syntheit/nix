@@ -811,6 +811,11 @@ in
           targets.enable = true;
         };
 
+        # Nix Targets (deus 0.103.2+): declare a malli-nix revision, Deus moves the fleet to it
+        # through the same night lane (04:00-07:00 AZ, canary first); macOS Targets has priority.
+        # A new target starts paused; with no target set nothing runs.
+        nixTargets.enable = true;
+
         # macOS release catalog cache (deus 0.94.3): fills the Update dialog and fleet
         # wizard release pickers; display-only, assignments still fetch GDMF live.
         gdmfCachePath = "/var/lib/deus/gdmf-cache/catalog.sqlite";
