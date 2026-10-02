@@ -1,6 +1,34 @@
-{ config, ... }:
+{ config, pkgs, ... }:
 
 let
+  # CouchDB settings Obsidian Self-hosted LiveSync needs (single node, CORS
+  # for the desktop + mobile app origins, large request/doc limits).
+  couchdbLivesyncIni = pkgs.writeText "couchdb-livesync.ini" ''
+    [couchdb]
+    single_node = true
+    max_document_size = 50000000
+
+    [chttpd]
+    require_valid_user = true
+    max_http_request_size = 4294967296
+    enable_cors = true
+
+    [chttpd_auth]
+    require_valid_user = true
+    authentication_redirect = /_utils/session.html
+
+    [httpd]
+    WWW-Authenticate = Basic realm="couchdb"
+    enable_cors = true
+
+    [cors]
+    origins = app://obsidian.md,capacitor://localhost,http://localhost
+    credentials = true
+    headers = accept, authorization, content-type, origin, referer
+    methods = GET, PUT, POST, HEAD, DELETE
+    max_age = 3600
+  '';
+
   linuxserverEnv = {
     PUID = "1000";
     PGID = "1000";
@@ -157,7 +185,26 @@ in
       extraOptions = [ "--network=docmost_default" ];
 
     };
+
+    # ===== COUCHDB (Obsidian Self-hosted LiveSync backend) =====
+    couchdb = {
+      image = "couchdb:3";
+      environmentFiles = [ config.sops.templates."couchdb.env".path ];
+      ports = [ "127.0.0.1:5984:5984" ];
+      volumes = [
+        "/arespool/appdata/couchdb/data:/opt/couchdb/data"
+        "/arespool/appdata/couchdb/local.d:/opt/couchdb/etc/local.d"
+      ];
+
+    };
   };
+
+  # The image's entrypoint chowns/chmods everything under /opt/couchdb and
+  # writes the admin hash into local.d, so local.d must be writable — a
+  # read-only store mount would fail. Re-seed the LiveSync ini on every start.
+  systemd.services.docker-couchdb.preStart = ''
+    install -D -m 0644 ${couchdbLivesyncIni} /arespool/appdata/couchdb/local.d/livesync.ini
+  '';
 
   # Network dependencies
   systemd.services.docker-karakeep.after = [ "docker-networks.service" ];

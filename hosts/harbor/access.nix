@@ -31,6 +31,7 @@
           "paperless.matv.io" = "http://localhost:28981";
           "keep.matv.io" = "http://localhost:3030";
           "docs.matv.io" = "http://localhost:3040";
+          "couch.matv.io" = "http://localhost:5984";
           "map.matv.io" = "http://localhost:8100";
           "files.matv.io" = "http://localhost:4717";
           "asado-list.matv.io" = "http://localhost:4730";

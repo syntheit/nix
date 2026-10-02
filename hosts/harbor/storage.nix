@@ -152,6 +152,7 @@
         "/arespool/photos-videos"
         "/arespool/appdata/karakeep"
         "/arespool/appdata/docmost"
+        "/arespool/appdata/couchdb"
         "/arespool/appdata/prowlarr"
 
         # Radarr/Sonarr/Bazarr (DBs only, exclude MediaCover)
