@@ -347,11 +347,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1790951162,
-        "narHash": "sha256-8b6fp2x7WWwG+eStCLeAyBFUIUnpgMhc6BIIzI4Rfow=",
+        "lastModified": 1790959461,
+        "narHash": "sha256-O/YmV7Ne2cvZ966I05sk3kuT8oTbIaBpdwh615B0FQg=",
         "ref": "refs/heads/main",
-        "rev": "746466b48091db2953838f58baba424d2d983dee",
-        "revCount": 2052,
+        "rev": "645ecb41ff72c85c7285499fbb4113f4cda19550",
+        "revCount": 2076,
         "type": "git",
         "url": "ssh://git@github-malli-deus/NRE-Product/malli-deus.git"
       },

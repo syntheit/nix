@@ -803,6 +803,10 @@ in
           enrollmentID = config.malli.mdm.ddmBridge.enrollmentID;
           # macOS rollout worker: drives fleet and one-Mac rollouts started from the console.
           rollouts.enable = true;
+          # vista's T2 resets every 5 days at about 20:38 -03 (next 2026-10-05): no new macOS
+          # assignment or Nix target switch starts after 18:30 on those days.
+          rollouts.resetDates = "2026-10-05,2026-10-10,2026-10-15";
+          rollouts.resetZone = "America/Argentina/Buenos_Aires";
           # Command settlement loop (deus 0.95.4+ requires it with rollouts): looks up
           # command state in NanoMDM and re-pushes queued commands; it never sends new ones.
           senderEnable = true;
