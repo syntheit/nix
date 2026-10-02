@@ -15,7 +15,29 @@ let
       # `or prev.<pkg>` fallback keeps nixpkgs on platforms that flake skips.
       claude-code =
         inputs.llm-agents.packages.${final.stdenv.hostPlatform.system}.claude-code or prev.claude-code;
-      codex = inputs.llm-agents.packages.${final.stdenv.hostPlatform.system}.codex or prev.codex;
+      codex =
+        let
+          codex' = inputs.llm-agents.packages.${final.stdenv.hostPlatform.system}.codex or prev.codex;
+        in
+        # codex >= 0.157 starts a shared background app-server by default, which
+        # needs a package dir with codex-package.json to install into
+        # ~/.codex/packages. This Nix build is a bare bin/ + libexec/ layout
+        # without it, so a plain `codex` dies with "this CLI has no complete
+        # local package". `--no-daemon` is the escape hatch the error itself
+        # suggests; it is a top-level flag and works before every subcommand.
+        # Linux only: that is where the failure was seen. Drop this once the
+        # package ships codex-package.json.
+        if final.stdenv.hostPlatform.isLinux then
+          final.symlinkJoin {
+            inherit (codex') name meta;
+            paths = [ codex' ];
+            nativeBuildInputs = [ final.makeWrapper ];
+            postBuild = ''
+              wrapProgram $out/bin/codex --add-flags --no-daemon
+            '';
+          }
+        else
+          codex';
       opencode =
         inputs.llm-agents.packages.${final.stdenv.hostPlatform.system}.opencode or prev.opencode;
       # yabai's scripting addition is pattern-matched against Dock's binary per
