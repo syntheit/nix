@@ -46,6 +46,7 @@
   sops.secrets.karakeep_meili_master_key = { };
   sops.secrets.docmost_app_secret = { };
   sops.secrets.docmost_db_password = { };
+  sops.secrets.couchdb_password = { };
   sops.secrets.elliot_telegram_token = lib.mkIf config.services.elliot.enable { owner = "elliot"; };
   sops.secrets.elliot_claude_oauth_token = lib.mkIf config.services.elliot.enable { owner = "elliot"; };
   sops.secrets.jelly_recs_jellyfin_api_key = { owner = "jelly-recs"; };
@@ -189,6 +190,12 @@
     POSTGRES_USER=docmost
     POSTGRES_PASSWORD=${config.sops.placeholder.docmost_db_password}
     POSTGRES_DB=docmost
+  '';
+
+  # CouchDB env file (Obsidian LiveSync)
+  sops.templates."couchdb.env".content = ''
+    COUCHDB_USER=obsidian
+    COUCHDB_PASSWORD=${config.sops.placeholder.couchdb_password}
   '';
 
   # Elliot Claude OAuth env file
