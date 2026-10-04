@@ -16,7 +16,7 @@
     ../../home/modules/neovim.nix
     ../../home/shell.nix
     ../../home/modules/opencode.nix
-    ../../home/modules/offload.nix
+    ../../home/modules/agents.nix
   ];
 
   home.username = "${vars.user.name}";

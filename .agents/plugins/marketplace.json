@@ -1,0 +1,12 @@
+{
+  "name": "syntheit",
+  "interface": { "displayName": "syntheit" },
+  "plugins": [
+    {
+      "name": "kit",
+      "source": { "source": "local", "path": "./agent-kit" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Productivity"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "name": "kit",
+  "description": "Daniel's skills and global rules, shared by every host. Source: syntheit/nix agent-kit/.",
+  "author": { "name": "Daniel Miller" },
+  "repository": "https://github.com/syntheit/nix",
+  "license": "MIT",
+  "hooks": "./claude-hooks.json"
+}

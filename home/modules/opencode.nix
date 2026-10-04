@@ -162,45 +162,6 @@ in
           '';
         };
 
-        # Headless workers for the `offload` script (Claude Code hands them
-        # reviews, recon, log triage, research). Primary because
-        # `opencode run --agent` refuses subagents. `steps` forces a text answer
-        # after 15 tool rounds; uncapped reviewers wander (GLM took 22 rounds /
-        # 36 tool calls on a ~300-line diff).
-        #
-        # They read untrusted content (repos under review, web pages), so each
-        # gets either the repo or the web, never both, and no shell: even
-        # "read-only" commands execute or write (`rg --pre`, `git grep -O`,
-        # `git diff --output`), and no subagents, which carry their own wider
-        # permissions. A prompt-injected run has no way out but its answer.
-        inspect = {
-          mode = "primary";
-          model = commander;
-          description = "Repo-only reader for headless runs: reads and searches code, answers. No shell, no web, cannot edit.";
-          steps = 15;
-          permission = {
-            edit = "deny";
-            bash = "deny";
-            webfetch = "deny";
-            websearch = "deny";
-            external_directory = "deny";
-            task = "deny";
-          };
-        };
-        # Web research; `offload ask -w` runs it in an empty directory.
-        browse = {
-          mode = "primary";
-          model = commander;
-          description = "Web-only researcher for headless runs: searches and fetches pages, answers with citations. No shell, no repo, cannot edit.";
-          steps = 15;
-          permission = {
-            edit = "deny";
-            bash = "deny";
-            external_directory = "deny";
-            task = "deny";
-          };
-        };
-
         # ── Role subagents (used by the orchestrator) ──
 
         planner = {
