@@ -29,5 +29,4 @@
   gnome-mobile-torch = pkgs.callPackage ./gnome-mobile-torch { }; # flashlight QS toggle
   budslink = pkgs.callPackage ./budslink { };
   apple-fonts = pkgs.callPackage ./apple-fonts { }; # SF Pro + SF Mono (vestal on Linux)
-  offload = pkgs.callPackage ./offload { }; # Claude Code -> cheap OpenRouter models
 }

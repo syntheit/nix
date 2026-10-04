@@ -1,0 +1,25 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "syntheit",
+  "owner": { "name": "Daniel Miller" },
+  "metadata": {
+    "description": "Daniel's Claude Code plugins. Every host enables these via home/modules/agents.nix; see agent-kit/README.md."
+  },
+  "plugins": [
+    {
+      "name": "kit",
+      "description": "Personal skills (handoff, humanizer, security-audit) and global rules injected at session start.",
+      "source": "./agent-kit"
+    },
+    {
+      "name": "impeccable",
+      "description": "Frontend design skill (/impeccable audit, polish, harden, ...) with a per-edit anti-pattern hook. Pinned; bump sha to upgrade.",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/pbakaus/impeccable.git",
+        "path": "plugin",
+        "sha": "e103efe779e2dd01274dabae83531fef00bf2563"
+      }
+    }
+  ]
+}

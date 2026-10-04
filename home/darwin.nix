@@ -18,7 +18,7 @@
     ./modules/neovim.nix
     ./modules/ssh.nix
     ./modules/opencode.nix
-    ./modules/offload.nix
+    ./modules/agents.nix
     ./shell.nix
 
     # macOS-specific modules

@@ -1,0 +1,9 @@
+{
+  "name": "kit",
+  "description": "Daniel's skills, shared by every host. Source: syntheit/nix agent-kit/. Codex gets the global rules from AGENTS.md (linked by home/modules/agents.nix), not from a hook.",
+  "author": { "name": "Daniel Miller" },
+  "repository": "https://github.com/syntheit/nix",
+  "license": "MIT",
+  "skills": "./skills/",
+  "interface": { "displayName": "Kit", "category": "Productivity", "capabilities": ["Instructions"] }
+}
