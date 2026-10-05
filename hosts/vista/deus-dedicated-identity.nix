@@ -263,6 +263,26 @@ in
   config = lib.mkIf cfg.enable {
     assertions = [
       {
+        # The host half of the UID 3999 boundary that deus-server's own runtime
+        # check (internal/bridgecheck, "uid-dedicated") cannot see: it reads the
+        # container's passwd only. Exactly one declared host user and one host
+        # group may hold 3999 (the bridge's), and exactly one declared account
+        # and group inside the container (deus). NixOS already refuses two
+        # declared users with one UID; this makes the claim explicit and covers
+        # the container. Accounts created by hand outside this configuration
+        # are not visible at evaluation time; the bridge's start preflight
+        # (ddm-bridge.nix) checks the live host passwd/group for those.
+        assertion =
+          let
+            holders = attrs: field: lib.attrNames (lib.filterAttrs (_: v: v.${field} == uid) attrs);
+          in
+          holders config.users.users "uid" == [ "deus-ddm-bridge" ]
+          && holders config.users.groups "gid" == [ "deus-ddm-bridge" ]
+          && holders inner.users.users "uid" == [ "deus" ]
+          && holders inner.users.groups "gid" == [ "deus" ];
+        message = "UID/GID 3999 must belong only to the host's deus-ddm-bridge and the container's deus; another declared account or group shares it, which would break the private DDM bridge's UID boundary.";
+      }
+      {
         assertion = cfg.migrationConfirmed;
         message = "Dedicated Deus UID 3999 requires a separately approved backup, ownership migration, and validation of all bind-mounted Deus state.";
       }

@@ -119,6 +119,12 @@ let
     test ! -L ${socketPath}
     test -S ${socketPath}
     test "$(${pkgs.coreutils}/bin/stat -c '%u:%g:%a' ${socketPath})" = '${bridgeID}:${bridgeID}:600'
+    # Host side of the UID boundary, from the live passwd/group (so accounts
+    # made by hand count too, which the evaluation-time assertion in
+    # deus-dedicated-identity.nix cannot see): the bridge's account is the only
+    # one with UID ${bridgeID}, and its group the only group with that GID.
+    test "$(${pkgs.getent}/bin/getent passwd | ${pkgs.gawk}/bin/awk -F: '$3 == ${bridgeID} { print $1 }')" = deus-ddm-bridge
+    test "$(${pkgs.getent}/bin/getent group | ${pkgs.gawk}/bin/awk -F: '$3 == ${bridgeID} { print $1 }')" = deus-ddm-bridge
   '';
   # Runs inside the headscale container, in deus-server itself and as its
   # user (UID 3999), before EVERY Deus start. Deus never creates the socket's
