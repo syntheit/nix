@@ -1129,10 +1129,22 @@ in
         port = 8085;
 
         # Local patch: skip ViaRoutesForPeer's per-pair source resolution when
-        # the policy has no via grants (ours has none). Upstream 0.29.3 and
-        # main both resolve every grant for every viewer-peer pair; that was
-        # 46% of headscale's CPU in a perf profile on 2026-09-23.
-        package = pkgs.headscale.overrideAttrs (old: {
+        # the policy has no via grants (ours has none). Upstream 0.29.3/0.29.4
+        # still resolve every grant for every viewer-peer pair (RoutesForPeer
+        # -> ViaRoutesForPeer); that was 46% of headscale's CPU in a perf
+        # profile on 2026-09-23.
+        #
+        # Also pins 0.29.4 (reconnect-storm fixes #3417/#3450), which nixpkgs
+        # does not ship yet. Drop version/src/vendorHash once nixpkgs catches up.
+        package = pkgs.headscale.overrideAttrs (old: rec {
+          version = "0.29.4";
+          src = pkgs.fetchFromGitHub {
+            owner = "juanfont";
+            repo = "headscale";
+            tag = "v${version}";
+            hash = "sha256-oBl8oQuZ8LUhK6FsGZkTXCJtwqmegmUDreeIILH4wRg=";
+          };
+          vendorHash = "sha256-fzKyXNMw/2yAEhaTZu0n1NXatPO2IP0HFA2ey1vZIYM="; # unchanged from 0.29.3
           patches = (old.patches or [ ]) ++ [ ./headscale-via-early-return.patch ];
         });
 
@@ -1162,6 +1174,8 @@ in
             };
           };
           logtail.enabled = false;
+          # Buffered per-node map-session channel (default 30).
+          tuning.node_mapsession_buffered_chan_size = 128;
           disable_check_updates = true;
           node.expiry = 0;
           # Allow the deus user (granter) to call `headscale nodes list`
