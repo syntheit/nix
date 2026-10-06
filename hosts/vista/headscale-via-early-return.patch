@@ -1,6 +1,6 @@
 --- a/hscontrol/policy/v2/policy.go
 +++ b/hscontrol/policy/v2/policy.go
-@@ -1146,6 +1146,14 @@
+@@ -1169,6 +1169,14 @@
  		grants = append(grants, aclToGrants(acl)...)
  	}
  
