@@ -326,6 +326,21 @@
     },
     "crane_6": {
       "locked": {
+        "lastModified": 1790899423,
+        "narHash": "sha256-THGtz65UGJU+sonZidRboyCMk+9DclpMF7pwL4uDV4M=",
+        "owner": "ipetkov",
+        "repo": "crane",
+        "rev": "47b6b27ed9a3a9181415e4367d0c30ab2a0e0250",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ipetkov",
+        "repo": "crane",
+        "type": "github"
+      }
+    },
+    "crane_7": {
+      "locked": {
         "lastModified": 1784172867,
         "narHash": "sha256-hzzeOgTP0MXMvg4djVwysTDvvUXIpsUCgsA0wPMF/Qk=",
         "owner": "ipetkov",
@@ -1493,6 +1508,7 @@
         "passes": "passes",
         "sops-nix": "sops-nix_2",
         "stylix": "stylix",
+        "telmo": "telmo",
         "vestal": "vestal",
         "warden": "warden",
         "windscribe": "windscribe",
@@ -1824,6 +1840,27 @@
         "type": "github"
       }
     },
+    "telmo": {
+      "inputs": {
+        "crane": "crane_6",
+        "nixpkgs": [
+          "nixpkgs-darwin"
+        ]
+      },
+      "locked": {
+        "lastModified": 1791332980,
+        "narHash": "sha256-QBBhOXa0RmE1r+Moyz0TGWNDP/piOP+a26ko9Iub3Nc=",
+        "owner": "syntheit",
+        "repo": "telmo",
+        "rev": "190ccd410744869f4e4cbb287fc5b57cb108abcb",
+        "type": "github"
+      },
+      "original": {
+        "owner": "syntheit",
+        "repo": "telmo",
+        "type": "github"
+      }
+    },
     "tinted-kitty": {
       "flake": false,
       "locked": {
@@ -1949,7 +1986,7 @@
     },
     "warden": {
       "inputs": {
-        "crane": "crane_6",
+        "crane": "crane_7",
         "fenix": "fenix_5",
         "flake-utils": "flake-utils_9",
         "nixpkgs": [

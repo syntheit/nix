@@ -161,6 +161,12 @@
       inputs.nixpkgs.follows = "nixpkgs-darwin";
     };
 
+    # Telmo — network/bluetooth/sound popups (home/modules/telmo.nix).
+    telmo = {
+      url = "github:syntheit/telmo";
+      inputs.nixpkgs.follows = "nixpkgs-darwin";
+    };
+
     # Anchorage — native GTK4/libadwaita Linkding client (Linkding bookmarks).
     anchorage = {
       url = "git+ssh://git@github.com/syntheit/anchorage.git";

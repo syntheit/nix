@@ -208,7 +208,7 @@ with open('$DB', 'w') as f: json.dump(data, f)
           label.drawing=off \
           icon="" \
           script="$CONFIG_DIR/plugins/bluetooth.sh" \
-          click_script="bluetooth-panel dropdown"
+          click_script="telmo popup bt"
 
       sketchybar --add item network right \
         --set network \
@@ -217,7 +217,7 @@ with open('$DB', 'w') as f: json.dump(data, f)
           label.drawing=off \
           icon="󰤨" \
           script="$CONFIG_DIR/plugins/network.sh" \
-          click_script="wifi-panel dropdown"
+          click_script="telmo popup net"
 
       sketchybar --add event privacy_change
       sketchybar --add event dnd_change
@@ -571,7 +571,7 @@ with open('$DB', 'w') as f: json.dump(data, f)
       KeepAlive = true;
       RunAtLoad = true;
       EnvironmentVariables = {
-        PATH = "${pkgs.sketchybar}/bin:${pkgs.yabai}/bin:${pkgs.jq}/bin:${pkgs.systemstats}/bin:${pkgs.volume-panel}/bin:${pkgs.bluetooth-panel}/bin:${pkgs.wifi-panel}/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+        PATH = "${pkgs.sketchybar}/bin:${pkgs.yabai}/bin:${pkgs.jq}/bin:${pkgs.systemstats}/bin:${pkgs.volume-panel}/bin:${config.programs.telmo.package}/bin:/usr/bin:/bin:/usr/sbin:/sbin";
         CONFIG_DIR = "${config.home.homeDirectory}/.config/sketchybar";
       };
     };

@@ -12,8 +12,6 @@
   eq = pkgs.callPackage ./eq { };
   overview = pkgs.callPackage ./overview { };
   volume-panel = pkgs.callPackage ./volume-panel { };
-  bluetooth-panel = pkgs.callPackage ./bluetooth-panel { };
-  wifi-panel = pkgs.callPackage ./wifi-panel { };
   brightness-panel = pkgs.callPackage ./brightness-panel { };
   wallpaper-cycle = pkgs.callPackage ./wallpaper-cycle { };
   menubar-blocker = pkgs.callPackage ./menubar-blocker { };
