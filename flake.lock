@@ -1848,11 +1848,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1791382138,
-        "narHash": "sha256-Up6TBeKIJvCWuC9s9VNKyH1RrrcHboG75OrDsiW6A28=",
+        "lastModified": 1791384670,
+        "narHash": "sha256-cRBQwuX1BZQF9s/P76o1eGru6YIjMHJD/IeW4DAMp5E=",
         "owner": "syntheit",
         "repo": "telmo",
-        "rev": "3551e81778af927ff4fa25c0045acae54293feba",
+        "rev": "8f3e42ebc0fa5e14e547e664ddffc5a96304f5dd",
         "type": "github"
       },
       "original": {
