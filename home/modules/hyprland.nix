@@ -95,7 +95,7 @@ let
       class=$(echo "$active_window" | $jq -r ".class")
       
       # Check if it matches our TUI list (case-insensitive)
-      if echo "$class" | grep -qEi "^(com\.matv\.speedtest|com\.matv\.btop|com.github.hluk.copyq|org\.pulseaudio\.pavucontrol)$"; then
+      if echo "$class" | grep -qEi "^(telmo\.perf|com\.matv\.speedtest|com\.matv\.btop|com.github.hluk.copyq|org\.pulseaudio\.pavucontrol)$"; then
         $hyprctl dispatch killactive
       fi
     fi

@@ -25,6 +25,9 @@ fn - e : open -na Ghostty --args -e yazi
 fn - b : telmo popup bt
 fn - n : telmo popup net
 fn - m : telmo popup sound
+fn - d : telmo popup display
+fn - i : telmo popup perf
+fn - u : telmo popup power
 
 # Window management
 fn - q : yabai -m window --close
