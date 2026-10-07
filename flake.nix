@@ -528,6 +528,8 @@
           };
           modules = [
             ./hosts/swift
+            ./hosts/swift/telmo-helper.nix
+            inputs.telmo.darwinModules.default
             inputs.sops-nix.darwinModules.sops
             inputs.nix-homebrew.darwinModules.nix-homebrew
             inputs.home-manager.darwinModules.home-manager
