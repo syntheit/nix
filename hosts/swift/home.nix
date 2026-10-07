@@ -10,6 +10,8 @@
     # mini's external monitors don't expose software brightness through that
     # path, so it stays out of hosts/mini/home.nix.
     ../../home/modules/brightness-panel.nix
+    # MacBook-only: Bluetooth off while asleep (headphones in the bag).
+    ../../home/modules/bluetooth-sleep.nix
   ];
 
   # Karabiner config managed declaratively. GUI edits in Karabiner-Elements
