@@ -95,7 +95,7 @@ let
       class=$(echo "$active_window" | $jq -r ".class")
       
       # Check if it matches our TUI list (case-insensitive)
-      if echo "$class" | grep -qEi "^(com\.matv\.network|com\.matv\.bluetooth|com\.matv\.speedtest|com\.matv\.btop|com.github.hluk.copyq|org\.pulseaudio\.pavucontrol)$"; then
+      if echo "$class" | grep -qEi "^(com\.matv\.speedtest|com\.matv\.btop|com.github.hluk.copyq|org\.pulseaudio\.pavucontrol)$"; then
         $hyprctl dispatch killactive
       fi
     fi
@@ -108,9 +108,9 @@ let
  │  Apps                                                   │
  │    Super + R          Rofi launcher                     │
  │    Super + T          Terminal (Ghostty)                │
- │    Super + B          Bluetooth (bluetuith)             │
- │    Super + N          Network (nmtui)                   │
- │    Super + M          Sound output (pavucontrol)        │
+ │    Super + B          Bluetooth (telmo)                 │
+ │    Super + N          Network (telmo)                   │
+ │    Super + M          Sound (telmo)                     │
  │    Super + E          File manager (Nautilus)           │
  │    Super + V          Clipboard (CopyQ)                 │
  │    Super + Shift + V  Clipboard menu                    │
@@ -221,9 +221,7 @@ in
         "$mod, R, exec, rofi -show drun"
         "CTRL $mod, Space, togglefloating"
         "$mod, T, exec, ghostty"
-        "$mod, B, exec, ghostty --class=com.matv.bluetooth --confirm-close-surface=false -e bluetuith"
-        "$mod, N, exec, ghostty --class=com.matv.network --confirm-close-surface=false -e nmtui"
-        "$mod, M, exec, pavucontrol --tab=3"
+        # Super+B/N/M: telmo popups, bound in home/modules/telmo.nix.
         "$mod, E, exec, nautilus"
         "$mod, C, exec, ${pkgs.copyq}/bin/copyq toggle"
         "$mod SHIFT, L, exec, ${pkgs.hyprlock}/bin/hyprlock"
@@ -409,17 +407,6 @@ in
         "size 800 600, match:initial_class ^(org.pulseaudio.pavucontrol)$"
         "dim_around 1, match:initial_class ^(org.pulseaudio.pavucontrol)$"
 
-        # Network Manager TUI
-        "float 1, match:initial_class ^(com\.matv\.network)$"
-        "center 1, match:initial_class ^(com\.matv\.network)$"
-        "size 600 900, match:initial_class ^(com\.matv\.network)$"
-        "dim_around 1, match:initial_class ^(com\.matv\.network)$"
-
-        # Bluetooth TUI
-        "float 1, match:initial_class ^(com\.matv\.bluetooth)$"
-        "center 1, match:initial_class ^(com\.matv\.bluetooth)$"
-        "size 1104 580, match:initial_class ^(com\.matv\.bluetooth)$"
-        "dim_around 1, match:initial_class ^(com\.matv\.bluetooth)$"
 
         # Speedtest TUI
         "float 1, match:initial_class ^(com\.matv\.speedtest)$"

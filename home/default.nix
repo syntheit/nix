@@ -21,6 +21,7 @@
     ./modules/agents.nix
     ./modules/hyprland.nix
     ./modules/vestal.nix
+    ./modules/telmo.nix
     ./modules/rofi.nix
     ./modules/ghostty.nix
     ./modules/thunderbird.nix

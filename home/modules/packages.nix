@@ -149,7 +149,6 @@
     papers
     snapshot
     zathura
-    bluetuith
     libnotify
     kdePackages.qt6ct
     libsForQt5.qt5ct

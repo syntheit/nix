@@ -25,12 +25,11 @@
     ./modules/sketchybar.nix
     ./modules/app-tweaks.nix
     ./modules/vestal.nix
+    ./modules/telmo.nix
     ./modules/tmux.nix
     ./modules/eq.nix
     # ./modules/overview.nix  # off for now: 3-finger gestures were annoying; OmniWM trial may replace it
     ./modules/volume-panel.nix
-    ./modules/bluetooth-panel.nix
-    ./modules/wifi-panel.nix
     ./modules/wallpaper-darwin.nix
     ./modules/menubar-blocker.nix
     ./modules/square-corners.nix
