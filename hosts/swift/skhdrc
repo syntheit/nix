@@ -29,6 +29,7 @@ fn - d : telmo popup display
 fn - i : telmo popup perf
 fn - u : telmo popup power
 fn - g : telmo popup scale
+fn - x : telmo popup system
 
 # Window management
 fn - q : yabai -m window --close

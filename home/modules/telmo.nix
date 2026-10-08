@@ -27,6 +27,7 @@
       display = "SUPER, D";
       perf = "SUPER, I";
       power = "SUPER, U";
+      system = "SUPER, X";
     };
   };
 }

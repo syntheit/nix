@@ -97,7 +97,6 @@
     baobab
 
     # Hyprland & desktop
-    rofi-power-menu
     hypridle
     hyprpicker
     hyprpolkitagent
