@@ -100,6 +100,30 @@ let
       fi
     fi
   '';
+  # Steps every external monitor's brightness over DDC/CI: `ddc-brightness + 5`.
+  # A press that arrives while the monitors are still answering is dropped, so
+  # key repeat can't pile up writes. `ddcutil detect` takes seconds, so the
+  # monitors' I2C buses are cached for the session and found again after a failure.
+  ddcBrightness = pkgs.writeShellScript "ddc-brightness" ''
+    ddcutil=${pkgs.ddcutil}/bin/ddcutil
+    dir=''${XDG_RUNTIME_DIR:-/tmp}
+    exec 9>"$dir/ddc-brightness.lock"
+    ${pkgs.util-linux}/bin/flock -n 9 || exit 0
+    buses="$dir/ddc-brightness.buses"
+    if [ ! -s "$buses" ]; then
+      $ddcutil detect --terse \
+        | ${pkgs.gawk}/bin/awk '/^Display/ { ok = 1; next } /^[^ ]/ { ok = 0 } ok && /I2C bus:/ { sub(/.*i2c-/, ""); print }' \
+        > "$buses"
+    fi
+    pids=()
+    while read -r bus; do
+      $ddcutil --bus "$bus" --noverify setvcp 10 "$1" "$2" &
+      pids+=($!)
+    done < "$buses"
+    for pid in "''${pids[@]}"; do
+      wait "$pid" || rm -f "$buses"
+    done
+  '';
   keybinds = pkgs.writeShellScriptBin "keybinds" ''
     cat <<'CHEATSHEET'
  ┌─────────────────────────────────────────────────────────┐
@@ -111,6 +135,9 @@ let
  │    Super + B          Bluetooth (telmo)                 │
  │    Super + N          Network (telmo)                   │
  │    Super + M          Sound (telmo)                     │
+ │    Super + D          Display (telmo)                   │
+ │    Super + U          Power (telmo)                     │
+ │    Super + I          System monitor (btop)             │
  │    Super + E          File manager (Nautilus)           │
  │    Super + V          Clipboard (CopyQ)                 │
  │    Super + Shift + V  Clipboard menu                    │
@@ -156,6 +183,7 @@ let
  ├─────────────────────────────────────────────────────────┤
  │  Media                                                  │
  │    Volume Up/Down     ±5% volume                        │
+ │    Brightness keys    ±10% monitors (mantle)            │
  │    Mute key           Toggle mute                       │
  │    Play key           Play/pause                        │
  │    Next/Prev key      Next/previous track               │
@@ -294,6 +322,10 @@ in
       ++ lib.optionals (hostName == "ledger") [
         ", XF86MonBrightnessUp, exec, brightnessctl s 5%+"
         ", XF86MonBrightnessDown, exec, brightnessctl s 5%-"
+      ]
+      ++ lib.optionals (hostName == "mantle") [
+        ", XF86MonBrightnessUp, exec, ${ddcBrightness} + 10"
+        ", XF86MonBrightnessDown, exec, ${ddcBrightness} - 10"
       ];
       bindl = [
         ", code:198, togglespecialworkspace, spotify" # MX Vertical top button (F20 via logid, evdev 190 + 8 = xkb 198)
