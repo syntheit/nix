@@ -517,6 +517,8 @@ in
         enable = true;
         address = "0.0.0.0";
         port = 8086;
+        # CPU profiling, loopback only inside the container (2026-10-07 CPU hunt).
+        pprofAddress = "127.0.0.1:6060";
         # Placement v2 (malli-deus plans/placement-v2). Starts globally
         # PAUSED: nothing moves until hosts are enrolled and v2 is unpaused.
         # Bot-secret keys live in /var/lib/deus/bot-secrets.* (deus-owned).
