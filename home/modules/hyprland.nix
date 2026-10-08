@@ -142,7 +142,7 @@ let
  │    Super + V          Clipboard (CopyQ)                 │
  │    Super + Shift + V  Clipboard menu                    │
  │    Super + C          Clipboard (CopyQ)                 │
- │    Super + X          Power menu                        │
+ │    Super + X          System menu (telmo)               │
  │    Home               Dashboard (vestal)                │
  ├─────────────────────────────────────────────────────────┤
  │  Windows                                                │
@@ -253,7 +253,6 @@ in
         "$mod, E, exec, nautilus"
         "$mod, C, exec, ${pkgs.copyq}/bin/copyq toggle"
         "$mod SHIFT, L, exec, ${pkgs.hyprlock}/bin/hyprlock"
-        "$mod, X, exec, rofi -show powermenu -modi \"powermenu:rofi-power-menu --choices=suspend/reboot/shutdown --confirm=reboot/shutdown\""
         "$mod, Q, killactive"
         "$mod, F, fullscreen"
         "$mod, h, movefocus, l"
