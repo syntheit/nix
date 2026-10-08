@@ -38,6 +38,7 @@
       "marta"
       "macwhisper"
       "notunes"
+      "obs"
       "obsidian"
       "orbstack"
       "raycast"
