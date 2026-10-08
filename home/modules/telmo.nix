@@ -1,5 +1,8 @@
 {
   inputs,
+  pkgs,
+  config,
+  hostName,
   ...
 }:
 
@@ -20,6 +23,29 @@
       size = "large";
       escape = "close";
     };
+    # `u` in the System popup (fn+X / Super+X) rebuilds this host in the
+    # background: Touch ID on macOS, the polkit dialog on Linux.
+    system.rebuild =
+      let
+        flake = "${config.home.homeDirectory}/nix#${hostName}";
+      in
+      if pkgs.stdenv.hostPlatform.isDarwin then
+        [
+          "/run/current-system/sw/bin/darwin-rebuild"
+          "switch"
+          "--flake"
+          flake
+          # Determinate's cache is flaky; cache.nixos.org only.
+          "--substituters"
+          "https://cache.nixos.org"
+        ]
+      else
+        [
+          "/run/current-system/sw/bin/nixos-rebuild"
+          "switch"
+          "--flake"
+          flake
+        ];
     hyprland.binds = {
       net = "SUPER, N";
       bt = "SUPER, B";
