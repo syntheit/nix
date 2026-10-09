@@ -16,7 +16,7 @@ brightness_down : $HOME/.local/bin/brightness-key down display
 fn - return : open -na Ghostty
 fn - t : open -na Ghostty
 fn - r : open -a Raycast
-fn - c : open -g "raycast://extensions/raycast/clipboard-history/clipboard-history"
+fn - c : telmo popup clipboard
 cmd - space : open -a Raycast
 fn - w : open -a "Zen Browser"
 fn - e : open -na Ghostty --args -e yazi

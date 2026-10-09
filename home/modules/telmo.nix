@@ -46,6 +46,8 @@
           "--flake"
           flake
         ];
+    # Clipboard history (fn+C / Super+V): last 50 items, 30 days, pins kept.
+    clipboard.enable = true;
     hyprland.binds = {
       net = "SUPER, N";
       bt = "SUPER, B";
@@ -54,6 +56,7 @@
       perf = "SUPER, I";
       power = "SUPER, U";
       system = "SUPER, X";
+      clipboard = "SUPER, V";
     };
   };
 }
