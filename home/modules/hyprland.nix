@@ -24,7 +24,7 @@ let
   '';
   # Script to handle Escape key behavior
   # 1. If Rofi is running, kill it (handles layer surface case)
-  # 2. If active window is a TUI app/CopyQ, kill it
+  # 2. If active window is a TUI app, kill it
   # 3. Otherwise do nothing (and let bindn pass the key to the app)
   toggleRecording = pkgs.writeShellScript "toggle-recording" ''
     if ${pkgs.procps}/bin/pgrep -x wf-recorder > /dev/null; then
@@ -95,7 +95,7 @@ let
       class=$(echo "$active_window" | $jq -r ".class")
       
       # Check if it matches our TUI list (case-insensitive)
-      if echo "$class" | grep -qEi "^(telmo\.perf|com\.matv\.speedtest|com\.matv\.btop|com.github.hluk.copyq|org\.pulseaudio\.pavucontrol)$"; then
+      if echo "$class" | grep -qEi "^(telmo\.perf|com\.matv\.speedtest|com\.matv\.btop|org\.pulseaudio\.pavucontrol)$"; then
         $hyprctl dispatch killactive
       fi
     fi
@@ -140,8 +140,6 @@ let
  │    Super + I          System monitor (btop)             │
  │    Super + E          File manager (Nautilus)           │
  │    Super + V          Clipboard (telmo)                 │
- │    Super + Shift + V  Clipboard menu                    │
- │    Super + C          Clipboard (CopyQ)                 │
  │    Super + X          System menu (telmo)               │
  │    Home               Dashboard (vestal)                │
  ├─────────────────────────────────────────────────────────┤
@@ -251,7 +249,6 @@ in
         "$mod, T, exec, ghostty"
         # Super+B/N/M: telmo popups, bound in home/modules/telmo.nix.
         "$mod, E, exec, nautilus"
-        "$mod, C, exec, ${pkgs.copyq}/bin/copyq toggle"
         "$mod SHIFT, L, exec, ${pkgs.hyprlock}/bin/hyprlock"
         "$mod, Q, killactive"
         "$mod, F, fullscreen"
@@ -277,7 +274,6 @@ in
         "$mod, P, exec, ${pkgs.hyprpicker}/bin/hyprpicker -a"
         # Picture-in-picture toggle
         "$mod SHIFT, P, exec, ${togglePip}"
-        "$mod SHIFT, V, exec, ${pkgs.copyq}/bin/copyq menu"
         # Relative workspace movement
         "$mod, period, workspace, +1"
         "$mod, comma, workspace, -1"
@@ -346,11 +342,6 @@ in
         "$mod, mouse:273, resizewindow"
       ];
       exec-once = [
-        # Theme is baked directly into ~/.config/copyq/copyq.conf at
-        # home-manager activation time now (see copyq.nix) — `copyq loadTheme`
-        # against a running server was verified not to reliably apply/persist
-        # the theme (CopyQ bug, not a startup race), so don't rely on it here.
-        "${pkgs.copyq}/bin/copyq --start-server"
         "${pkgs.hyprpolkitagent}/libexec/hyprpolkitagent"
         # Track most-recently-active MPRIS player so media keys follow it
         "${pkgs.playerctl}/bin/playerctld daemon"
@@ -418,12 +409,6 @@ in
       source = lib.optional (hostName != "vista") "~/.config/hypr/monitors.conf";
       windowrule = [
         "float 1, match:class ^(Rofi)$"
-
-        # CopyQ
-        "float 1, match:initial_class ^(com.github.hluk.copyq)$"
-        "center 1, match:initial_class ^(com.github.hluk.copyq)$"
-        "size 689 911, match:initial_class ^(com.github.hluk.copyq)$"
-        "dim_around 1, match:initial_class ^(com.github.hluk.copyq)$"
 
         # Network Manager
         "float 1, match:initial_class ^(nm-connection-editor)$"

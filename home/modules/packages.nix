@@ -110,7 +110,6 @@
     nwg-displays
     networkmanagerapplet
     wl-clipboard
-    copyq
     (pkgs.callPackage ../../packages/hyprland-dynamic-borders { })
 
     # System & apps

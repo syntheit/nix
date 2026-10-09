@@ -29,7 +29,6 @@
     ./modules/services.nix
     ./modules/zen.nix
     ./modules/dunst.nix
-    ./modules/copyq.nix
     ./modules/wallpaper.nix
     ./modules/zed.nix
     ./modules/raven-scrcpy.nix
