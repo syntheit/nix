@@ -139,7 +139,7 @@ let
  │    Super + U          Power (telmo)                     │
  │    Super + I          System monitor (btop)             │
  │    Super + E          File manager (Nautilus)           │
- │    Super + V          Clipboard (CopyQ)                 │
+ │    Super + V          Clipboard (telmo)                 │
  │    Super + Shift + V  Clipboard menu                    │
  │    Super + C          Clipboard (CopyQ)                 │
  │    Super + X          System menu (telmo)               │
@@ -277,7 +277,6 @@ in
         "$mod, P, exec, ${pkgs.hyprpicker}/bin/hyprpicker -a"
         # Picture-in-picture toggle
         "$mod SHIFT, P, exec, ${togglePip}"
-        "$mod, V, exec, ${pkgs.copyq}/bin/copyq toggle"
         "$mod SHIFT, V, exec, ${pkgs.copyq}/bin/copyq menu"
         # Relative workspace movement
         "$mod, period, workspace, +1"
