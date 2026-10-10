@@ -1703,7 +1703,7 @@ in
         # deus CLI/TUI — operators run `deus` here to watch the fleet and
         # the provisioning dashboard (press P). Same package the server
         # module pulls in, so it's already in the container closure.
-        inputs.deus.packages.${pkgs.system}.default
+        inputs.deus.packages.${pkgs.stdenv.hostPlatform.system}.default
       ];
 
       programs.zsh.enable = true;
