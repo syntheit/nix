@@ -6,7 +6,7 @@
 }:
 
 {
-  home.activation.checkAppTitleBars = lib.mkIf pkgs.stdenv.isDarwin (
+  home.activation.checkAppTitleBars = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin (
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       echo "Checking App Aesthetics..."
 

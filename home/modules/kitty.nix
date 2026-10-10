@@ -28,7 +28,7 @@
       allow_remote_control = "yes";
       listen_on = "unix:/tmp/kitty-sock";
     }
-    // lib.optionalAttrs pkgs.stdenv.isDarwin {
+    // lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
       hide_window_decorations = "yes"; # Remove title bar
       window_margin_width = 0;
       window_padding_width = 0;

@@ -95,7 +95,7 @@ in
       ll = "eza -l --icons=auto";
       la = "eza -la --icons=auto";
     }
-    // lib.optionalAttrs pkgs.stdenv.isLinux {
+    // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
       locate = "plocate";
     };
 

@@ -45,7 +45,7 @@
       ripgrep # telescope live grep
       fd # telescope file finder
     ]
-    ++ lib.optionals pkgs.stdenv.isLinux [
+    ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
       gcc # telescope-fzf-native compilation
       gnumake
     ];

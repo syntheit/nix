@@ -4,7 +4,7 @@
   programs.ghostty = {
     enable = true;
     # On macOS, Ghostty is installed via Homebrew cask — skip the nix package
-    package = if pkgs.stdenv.isDarwin then null else pkgs.ghostty;
+    package = if pkgs.stdenv.hostPlatform.isDarwin then null else pkgs.ghostty;
     enableZshIntegration = true;
     settings = {
       # Colors — kitty default palette (vibrant, saturated)
