@@ -130,7 +130,7 @@ let
  │                      KEYBINDINGS                        │
  ├─────────────────────────────────────────────────────────┤
  │  Apps                                                   │
- │    Super + R          Rofi launcher                     │
+ │    Super + R          Launcher (telmo)                  │
  │    Super + T          Terminal (Ghostty)                │
  │    Super + B          Bluetooth (telmo)                 │
  │    Super + N          Network (telmo)                   │
@@ -140,6 +140,7 @@ let
  │    Super + I          System monitor (btop)             │
  │    Super + E          File manager (Nautilus)           │
  │    Super + C          Clipboard (telmo)                 │
+ │    Super + Z          Clock (telmo)                     │
  │    Super + X          System menu (telmo)               │
  │    Home               Dashboard (vestal)                │
  ├─────────────────────────────────────────────────────────┤
@@ -244,7 +245,6 @@ in
       ];
 
       bind = [
-        "$mod, R, exec, rofi -show drun"
         "CTRL $mod, Space, togglefloating"
         "$mod, T, exec, ghostty"
         # Super+B/N/M: telmo popups, bound in home/modules/telmo.nix.
