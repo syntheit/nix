@@ -10,6 +10,7 @@ in
   imports = [
     ../../modules/numtide-cache.nix
     ../../modules/darwin/common.nix
+    ../../modules/darwin/battlog.nix
     ./homebrew.nix
     # Builds go to the mini's macOS when it's reachable, locally otherwise.
     ./mini-builder.nix
