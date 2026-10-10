@@ -139,7 +139,7 @@ let
  │    Super + U          Power (telmo)                     │
  │    Super + I          System monitor (btop)             │
  │    Super + E          File manager (Nautilus)           │
- │    Super + V          Clipboard (telmo)                 │
+ │    Super + C          Clipboard (telmo)                 │
  │    Super + X          System menu (telmo)               │
  │    Home               Dashboard (vestal)                │
  ├─────────────────────────────────────────────────────────┤
