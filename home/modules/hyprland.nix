@@ -23,9 +23,8 @@ let
     fi
   '';
   # Script to handle Escape key behavior
-  # 1. If Rofi is running, kill it (handles layer surface case)
-  # 2. If active window is a TUI app, kill it
-  # 3. Otherwise do nothing (and let bindn pass the key to the app)
+  # 1. If active window is a TUI app, kill it
+  # 2. Otherwise do nothing (and let bindn pass the key to the app)
   toggleRecording = pkgs.writeShellScript "toggle-recording" ''
     if ${pkgs.procps}/bin/pgrep -x wf-recorder > /dev/null; then
       ${pkgs.procps}/bin/pkill -INT wf-recorder
@@ -81,12 +80,6 @@ let
   '';
 
   handleEscapeScript = pkgs.writeShellScript "handle-escape" ''
-    # Check if Rofi is running and kill it
-    if ${pkgs.procps}/bin/pgrep -x rofi >/dev/null; then
-      ${pkgs.procps}/bin/pkill -x rofi
-      exit 0
-    fi
-
     # Get active window class
     hyprctl=${config.wayland.windowManager.hyprland.package}/bin/hyprctl
     jq=${pkgs.jq}/bin/jq
@@ -408,8 +401,6 @@ in
       # rules above) — sourcing a missing file is a Hyprland config error.
       source = lib.optional (hostName != "vista") "~/.config/hypr/monitors.conf";
       windowrule = [
-        "float 1, match:class ^(Rofi)$"
-
         # Network Manager
         "float 1, match:initial_class ^(nm-connection-editor)$"
         "center 1, match:initial_class ^(nm-connection-editor)$"
