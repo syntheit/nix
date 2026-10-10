@@ -9,11 +9,10 @@
 
 | Keybinding | Action |
 |------------|--------|
-| `SUPER + Enter` | Open **Rofi** application launcher |
+| `SUPER + R` | Open the **telmo** launcher |
 | `SUPER + Shift + Enter` | Open **Kitty** terminal |
 | `SUPER + B` | Open **zen** browser |
 | `SUPER + E` | Open **Nemo** file manager |
-| `SUPER + C` | Open **Cava** (audio visualizer) in Kitty |
 
 ---
 
@@ -111,8 +110,7 @@ The media player module in Waybar (displayed on the left, next to workspaces) sh
 
 | Keybinding | Action |
 |------------|--------|
-| `SUPER + V` | Toggle **CopyQ** clipboard manager |
-| `SUPER + Shift + V` | Open **CopyQ** menu |
+| `SUPER + C` | Open the **telmo** clipboard history (`fn + C` on swift) |
 
 ---
 
@@ -203,8 +201,8 @@ The **Right Alt** key is configured as the **Compose key** for typing accented c
 2. **Window Resizing**: Hold `SUPER` and drag with right mouse button to resize windows
 3. **Floating Windows**: Use `SUPER + Space` to toggle floating mode for any window
 4. **Workspace Organization**: Use workspaces to organize your workflow (e.g., workspace 1 for terminal, workspace 2 for browser)
-5. **Quick App Launch**: `SUPER + Enter` opens Rofi, which can launch any installed application
-6. **Clipboard History**: Use `SUPER + V` to access your clipboard history with CopyQ
+5. **Quick App Launch**: `SUPER + R` opens the telmo launcher, which can launch any installed application
+6. **Clipboard History**: Use `SUPER + C` to access your clipboard history with telmo
 
 ---
 
@@ -232,7 +230,7 @@ The **Right Alt** key is configured as the **Compose key** for typing accented c
 - Volume adjusts in 5% increments
 
 **Accessing clipboard history:**
-- `SUPER + V` to toggle CopyQ, `SUPER + Shift + V` for menu
+- `SUPER + C` for telmo clipboard history
 
 **Locking your screen:**
 - `SUPER + Shift + L`
