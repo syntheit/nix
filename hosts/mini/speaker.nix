@@ -26,15 +26,6 @@ in
     };
   };
 
-  # The application firewall (stealth mode, modules/darwin/common.nix) drops
-  # inbound UDP to unknown binaries and nix-darwin has no per-app allow
-  # option. Allow the current roc-recv and drop entries for old store paths.
-  system.activationScripts.postActivation.text = lib.mkAfter ''
-    fw=/usr/libexec/ApplicationFirewall/socketfilterfw
-    $fw --listapps | sed -n 's|^[0-9]* : \(/nix/store/[^ ]*/bin/roc-recv\) *$|\1|p' | while read -r old; do
-      [ "$old" = "${roc-recv}" ] || $fw --remove "$old" >/dev/null
-    done
-    $fw --add ${roc-recv} >/dev/null
-    $fw --unblockapp ${roc-recv} >/dev/null
-  '';
+  # Listens for UDP audio; unsigned, so allow it through the firewall.
+  matv.darwin.firewallAllowedApps = [ "${roc-recv}" ];
 }

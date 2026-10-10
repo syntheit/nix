@@ -79,6 +79,8 @@ let
   }.${hostName};
 in
 {
+  imports = [ ./firewall.nix ];
+
   options.matv.darwin.tccGrants = lib.mkOption {
     type = lib.types.listOf (lib.types.attrsOf lib.types.anything);
     default = [ ];
@@ -337,6 +339,8 @@ in
     # Firewall: block incoming, stealth mode (don't respond to probes)
     networking.applicationFirewall.enable = true;
     networking.applicationFirewall.enableStealthMode = true;
+    # Unsigned store binaries that listen; see modules/darwin/firewall.nix.
+    matv.darwin.firewallAllowedApps = [ "${pkgs.mosh}/bin/mosh-server" ];
 
     # SSH — Tailscale-only, key-only
     environment.etc."ssh/sshd_tailscale_config".text = ''
@@ -404,8 +408,11 @@ in
       };
       extraConfig = ''
         # Load scripting addition (requires sudoers entry below)
-        sudo yabai --load-sa
-        yabai -m signal --add event=dock_did_restart action="sudo yabai --load-sa"
+        # Full path: yabai's own PATH puts its store path first, and only
+        # /run/current-system/sw/bin/yabai is NOPASSWD in sudoers.d/yabai, so
+        # a bare `sudo yabai` asked for a password on every rebuild.
+        sudo /run/current-system/sw/bin/yabai --load-sa
+        yabai -m signal --add event=dock_did_restart action="sudo /run/current-system/sw/bin/yabai --load-sa"
 
         # Notify overview daemon on space change (for composite cache)
         yabai -m signal --add event=space_changed action="pkill -SIGUSR2 -x overview"
@@ -499,6 +506,8 @@ in
       # Privacy & Telemetry defaults
       # ================================================================
       set_default com.apple.assistant.support "Siri Data Sharing Opt-In Status" -int 2
+      # Opt out of sending Siri/Search query metadata to Apple (2 = declined; CIS "Help Apple Improve Search")
+      set_default com.apple.assistant.support "Search Queries Data Sharing Status" -int 2
       defaults write "/Library/Application Support/CrashReporter/DiagnosticMessagesHistory.plist" AutoSubmit -bool false 2>/dev/null || true
       defaults write "/Library/Application Support/CrashReporter/DiagnosticMessagesHistory.plist" ThirdPartyDataSubmit -bool false 2>/dev/null || true
       defaults write /Library/Preferences/SystemConfiguration/com.apple.captive.control Active -bool false
