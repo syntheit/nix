@@ -17,7 +17,6 @@
 
       "cursor"
       "dbeaver-community"
-      "blackhole-2ch"
       "iina"
       "karabiner-elements"
       "kiro"
