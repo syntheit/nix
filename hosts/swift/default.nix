@@ -4,7 +4,7 @@
 }:
 
 let
-  tccGrants = import ./tcc-grants.nix { inherit pkgs; };
+  tccGrants = import ../../modules/darwin/tcc-grants.nix { inherit pkgs; };
 in
 {
   imports = [
