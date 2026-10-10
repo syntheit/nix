@@ -36,15 +36,15 @@
 
   programs.rofi = {
     enable = true;
-    cycle = true;
     plugins = [
       pkgs.rofi-calc
       pkgs.rofi-emoji
       pkgs.rofi-systemd
     ];
-    xoffset = 0;
-    yoffset = -150;
-    extraConfig = {
+    settings = {
+      cycle = true;
+      xoffset = 0;
+      yoffset = -150;
       show-icons = true;
       kb-cancel = "Escape";
       modi = "window,run,ssh,emoji,calc";
