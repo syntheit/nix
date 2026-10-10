@@ -17,13 +17,13 @@
   networking.hostName = "mantle";
 
   services.tailscale.enable = true;
-  # wg0 = the point-to-point link to conduit for the MDM stack (mirrors
-  # harbor). conduit's deus-server reaches nanomdm at 10.100.0.3:9990 and
-  # nanomdm's webhook posts back to conduit at 10.100.0.1:8086 — all over wg,
-  # so trust the interface.
+  # wg0 = the point-to-point link to conduit (hub-and-spoke mesh, mantle =
+  # 10.100.0.3). The MDM stack that used to bind here now runs on vista
+  # (see the ./mdm.nix note above); conduit keeps mantle as its standby
+  # spoke. Trust the interface.
   networking.firewall.trustedInterfaces = [ "tailscale0" "wg0" ];
 
-  # WireGuard tunnel to conduit (VPS gateway) — MDM data plane.
+  # WireGuard tunnel to conduit (VPS gateway).
   networking.wg-quick.interfaces.wg0 = {
     address = [ "10.100.0.3/24" ];
     privateKeyFile = config.sops.secrets.mantle_wg_private_key.path;
