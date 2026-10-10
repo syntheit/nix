@@ -108,7 +108,7 @@
   # Start the server from launchd at login instead, inside the GUI session.
   # -D keeps it in the foreground for launchd; KeepAlive brings it back after a
   # kill-server (while another server holds the socket, -D just exits).
-  launchd.agents.tmux-server = lib.mkIf pkgs.stdenv.isDarwin {
+  launchd.agents.tmux-server = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin {
     enable = true;
     config = {
       ProgramArguments = [
