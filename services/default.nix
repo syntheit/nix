@@ -89,8 +89,6 @@
         ];
       };
     };
-    # Enable JACK support for JACK applications
-    #jack.enable = true;
   };
 
   # Docker (socket-activated: starts on first use, not at boot)
