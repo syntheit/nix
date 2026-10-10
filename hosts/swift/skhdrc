@@ -15,9 +15,9 @@ brightness_down : $HOME/.local/bin/brightness-key down display
 # Application launchers
 fn - return : open -na Ghostty
 fn - t : open -na Ghostty
-fn - r : open -a Raycast
+fn - r : telmo popup launcher
 fn - c : telmo popup clipboard
-cmd - space : open -a Raycast
+cmd - space : telmo popup launcher
 fn - w : open -a "Zen Browser"
 fn - e : open -na Ghostty --args -e yazi
 
@@ -30,6 +30,7 @@ fn - i : telmo popup perf
 fn - u : telmo popup power
 fn - g : telmo popup scale
 fn - x : telmo popup system
+fn - z : telmo popup clock
 
 # Window management
 fn - q : yabai -m window --close

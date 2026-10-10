@@ -3,6 +3,7 @@
   pkgs,
   config,
   hostName,
+  lib,
   ...
 }:
 
@@ -46,7 +47,7 @@
           "--flake"
           flake
         ];
-    # Clipboard history (fn+C / Super+V): last 50 items, 30 days, pins kept.
+    # Clipboard history (fn+C / Super+C): last 50 items, 30 days, pins kept.
     clipboard.enable = true;
     hyprland.binds = {
       net = "SUPER, N";
@@ -57,6 +58,13 @@
       power = "SUPER, U";
       system = "SUPER, X";
       clipboard = "SUPER, C"; # matches fn+C on swift
+      launcher = "SUPER, R"; # replaces rofi
+      clock = "SUPER, Z";
+    };
+    # Launcher letters: shown next to the apps; on swift skhd already binds them (hosts/swift/skhdrc).
+    launcher.keys = lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
+      t = "Ghostty";
+      w = "Zen";
     };
   };
 }
