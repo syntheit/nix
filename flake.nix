@@ -39,12 +39,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # Hyprland from nixpkgs is used instead (more stable builds)
-    # hyprland = {
-    #   url = "git+https://github.com/hyprwm/Hyprland?submodules=1&ref=refs/tags/v0.53.3";
-    #   inputs.nixpkgs.follows = "nixpkgs";
-    # };
-
     stylix = {
       url = "github:danth/stylix";
       inputs.nixpkgs.follows = "nixpkgs";

@@ -38,9 +38,6 @@
 
   programs.steam.enable = true;
 
-  # Firefox disabled - using zen-browser instead
-  # programs.firefox.enable = true;
-
   fonts.packages = with pkgs; [
     # Nerd Fonts (popular coding fonts with icons)
     nerd-fonts._0xproto
