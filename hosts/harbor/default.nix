@@ -15,6 +15,7 @@
     ./containers
     ./access.nix
     ./malli-overview.nix
+    ./vestal-site.nix
     ./monitoring.nix
     ./virt.nix
     ../../modules/server-safety.nix
