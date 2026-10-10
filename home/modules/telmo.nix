@@ -56,7 +56,7 @@
       perf = "SUPER, I";
       power = "SUPER, U";
       system = "SUPER, X";
-      clipboard = "SUPER, V";
+      clipboard = "SUPER, C"; # matches fn+C on swift
     };
   };
 }
