@@ -1,6 +1,4 @@
-# Homebrew config for mini. Mirrors swift's cask list minus karabiner-elements
-# (the Keychron Q1 Pro's QMK firmware handles all keyboard remapping; no
-# software remap is needed on this host). Brews are kept minimal and reserved
+# Homebrew config for mini. Mirrors swift's cask list. Brews are kept minimal and reserved
 # for things that genuinely need Homebrew's macOS-native build (e.g. ollama
 # for Metal/GPU integration). CLI tools that have nixpkgs equivalents live in
 # home.packages, not here.
