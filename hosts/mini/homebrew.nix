@@ -29,7 +29,6 @@
       "notunes"
       "obsidian"
       "orbstack"
-      "raycast"
       "royal-tsx"
       "seafile-client"
       "spotify"
