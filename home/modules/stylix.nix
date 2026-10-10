@@ -50,6 +50,7 @@ lib.mkMerge [
   # ── Linux-only targets ──
   (lib.mkIf isLinux {
     home.pointerCursor = {
+      enable = true;
       package = pkgs.kdePackages.breeze;
       name = "breeze_cursors";
       size = 24;
