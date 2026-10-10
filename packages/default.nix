@@ -8,7 +8,6 @@
   hyprland-dynamic-borders = pkgs.callPackage ./hyprland-dynamic-borders { };
   argus = pkgs.callPackage ./argus { };
   systemstats = pkgs.callPackage ./systemstats { };
-  eq = pkgs.callPackage ./eq { };
   overview = pkgs.callPackage ./overview { };
   volume-panel = pkgs.callPackage ./volume-panel { };
   brightness-panel = pkgs.callPackage ./brightness-panel { };

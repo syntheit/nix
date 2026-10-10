@@ -421,7 +421,6 @@ in
         yabai -m rule --add app="^System Preferences$" manage=off
         yabai -m rule --add app="^System Settings$" manage=off
         yabai -m rule --add app="^Calculator$" manage=off
-        yabai -m rule --add app="^Raycast$" manage=off
         yabai -m rule --add app="^Archive Utility$" manage=off
         yabai -m rule --add app="^Finder$" title="(Copy|Move|Delete|Connect)" manage=off
         yabai -m rule --add title="^vestal$" manage=off

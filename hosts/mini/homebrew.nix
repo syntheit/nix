@@ -16,10 +16,6 @@
       "cursor"
       "dbeaver-community"
       "karabiner-elements"
-      # "blackhole-2ch"  # existential.audio (162.241.218.190) is down; brew bundle has no
-                         # per-URL timeout and hangs forever. Re-enable once the upstream
-                         # is reachable, or install the .pkg from
-                         # https://github.com/ExistentialAudio/BlackHole/releases
       "iina"
       "kiro"
       "ghostty"
@@ -29,7 +25,6 @@
       "notunes"
       "obsidian"
       "orbstack"
-      "raycast"
       "royal-tsx"
       "seafile-client"
       "spotify"

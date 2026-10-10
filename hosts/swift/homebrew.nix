@@ -17,7 +17,6 @@
 
       "cursor"
       "dbeaver-community"
-      "blackhole-2ch"
       "iina"
       "karabiner-elements"
       "kiro"
@@ -29,7 +28,6 @@
       "obs"
       "obsidian"
       "orbstack"
-      "raycast"
       "royal-tsx"
       "seafile-client"
       "spotify"

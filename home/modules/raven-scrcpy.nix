@@ -80,7 +80,7 @@ lib.mkIf (hostName == "mantle") {
 
   # xdg.desktopEntries is a no-op in this config (xdg.enable = false disables
   # the xdg.dataFile wiring it depends on) — write the .desktop directly, same
-  # as the power-menu entries in rofi.nix.
+  # as the power entries in power-entries.nix.
   home.file.".local/share/applications/raven-scrcpy.desktop".text = ''
     [Desktop Entry]
     Name=Raven (scrcpy)
