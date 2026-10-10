@@ -276,17 +276,16 @@ in
           # Tint over vestal's own blurred snapshot of the desktop.
           dim = 0.6;
         };
-        # No calendar backend on Linux until an ICS source is set up: drop the
-        # calendar source and the agenda.
+        # Calendar from Thunderbird's local cache (its CalDAV calendars with
+        # offline support on); replaces EventKit, which Linux doesn't have.
         # mic and cam: usb-toggle (system/default.nix) prints each USB device's
         # state as {"class": "on"|"off"} (no class when unplugged).
         sources = {
-          calendar = null;
+          calendar = { thunderbird = true; };
           mic = usbState "mic";
           cam = usbState "cam";
         };
         widgets = {
-          agenda = null;
           # The privacy toggle above is macOS's (toggle-privacy in
           # sketchybar.nix, state in /tmp/.privacy-mode). The Linux hosts have
           # only usb-toggle (system/default.nix), per device and without a
