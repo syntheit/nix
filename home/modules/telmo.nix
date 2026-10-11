@@ -58,7 +58,7 @@
       power = "SUPER, U";
       system = "SUPER, X";
       clipboard = "SUPER, C"; # matches fn+C on swift
-      launcher = "SUPER, R"; # replaces rofi
+      launcher = "SUPER, SPACE"; # replaces rofi; matches Cmd+Space on swift
       clock = "SUPER, Z";
     };
     # Launcher letters: shown next to the apps; on swift skhd already binds them (hosts/swift/skhdrc).
