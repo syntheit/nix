@@ -130,7 +130,7 @@ let
  │                      KEYBINDINGS                        │
  ├─────────────────────────────────────────────────────────┤
  │  Apps                                                   │
- │    Super + R          Launcher (telmo)                  │
+ │    Super + Space      Launcher (telmo)                  │
  │    Super + T          Terminal (Ghostty)                │
  │    Super + B          Bluetooth (telmo)                 │
  │    Super + N          Network (telmo)                   │
