@@ -334,6 +334,17 @@ in
           Disabled = true;
         };
       };
+
+      # Keep Apple Intelligence models from re-downloading: point their asset
+      # types at a dead local URL (same trick as github:omlahore/RemoveMacAI,
+      # which forces it via a profile; here it's a plain system default).
+      CustomSystemPreferences."com.apple.MobileAsset" = lib.genAttrs (map (t: "DownloadServerBaseURLOverride-com.apple.MobileAsset.UAF.${t}") [
+        "FM.GenerativeModels"
+        "FM.Visual"
+        "FM.CodeLM"
+        "Photos.SpatialPhotosRelive"
+        "Photos.MagicCleanup"
+      ]) (_: "https://127.0.0.1:9/blocked/");
     };
 
     # Firewall: block incoming, stealth mode (don't respond to probes)
