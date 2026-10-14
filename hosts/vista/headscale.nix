@@ -527,8 +527,10 @@ in
         # imports and image updates, every entry is allowed. 7d005329… = the image
         # malli-ai deployed to ECS on 2026-10-02 (mirrored into vista's registry);
         # 067e3709… / bc3a54c0… = what prod / dev Mac bots ran before.
-        placementV2.defaultImage.prod = "malli/cursor-runner@sha256:7d005329684d88e92d5723738da0b7d1e53fe960740330f4ab7ed57912a0ddc9,malli/cursor-runner@sha256:067e370955c9b4adf2cd2720aa4b8cd263200a47eeb3144aff3073b1011ca727";
-        placementV2.defaultImage.dev = "malli/cursor-runner@sha256:7d005329684d88e92d5723738da0b7d1e53fe960740330f4ab7ed57912a0ddc9,malli/cursor-runner@sha256:bc3a54c0211d154cbfb873d30dd5a21a94291702b99f13e8f2fe980d4e5b27eb";
+        # agent-runner 2113e0e6… = malli-ai prod build c5277409 (2026-10-13,
+        # mirrored 10-14), the image a runner switch to Claude / Open models uses.
+        placementV2.defaultImage.prod = "malli/cursor-runner@sha256:7d005329684d88e92d5723738da0b7d1e53fe960740330f4ab7ed57912a0ddc9,malli/cursor-runner@sha256:067e370955c9b4adf2cd2720aa4b8cd263200a47eeb3144aff3073b1011ca727,malli/agent-runner@sha256:2113e0e61a31c830bf29c92c5d1df9b2b3a9b5d651f618f5c546a6c8fe851028";
+        placementV2.defaultImage.dev = "malli/cursor-runner@sha256:7d005329684d88e92d5723738da0b7d1e53fe960740330f4ab7ed57912a0ddc9,malli/cursor-runner@sha256:bc3a54c0211d154cbfb873d30dd5a21a94291702b99f13e8f2fe980d4e5b27eb,malli/agent-runner@sha256:2113e0e61a31c830bf29c92c5d1df9b2b3a9b5d651f618f5c546a6c8fe851028";
         # Where deus checks that an image exists before it tells a Mac to use it
         # (vista's registry as seen from inside the headscale container).
         placementV2.registryCheckUrl = "http://100.64.0.1:5000";
