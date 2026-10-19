@@ -140,6 +140,31 @@ in
     # allowlist, never reflected from the request. Any origin NOT listed is
     # still rejected.
     extraOrigins = [ "http://vista:3300" ];
+
+    # Per-client limits key on the real client address. Public traffic is
+    # Cloudflare -> cloudflared (in the nspawn) -> this web at 10.100.1.1:3300
+    # with no Caddy in between (see the ingress below), so the header is the
+    # one Cloudflare's edge sets and overwrites on every request.
+    #
+    # Tradeoff: the module says this is only safe if the proxy replaces any
+    # client-supplied copy. The break-glass path (vista:3300 over the tailnet)
+    # has no proxy, so a direct caller could send its own cf-connecting-ip.
+    # Limits keyed on it are best-effort on that path, which is already
+    # network-authenticated (tailnet members only).
+    clientIpHeader = "cf-connecting-ip";
+
+    # Console credential: the console names the acting person to deus-server
+    # (audit trail) and the CLI endpoints (/api/cli/**, `deus login`) turn on.
+    # Delivered by systemd LoadCredential (root reads it), so the 0400 staged
+    # file need not be readable by the web user. The unit FAILS if the file is
+    # missing, so deus_console_token must be in secrets/vista-deus.yaml first.
+    consoleTokenFile = "/var/lib/deus-tokens/console-token";
+
+    # TODO: needs the malli-deus PR that adds these options (not in the locked
+    # input yet; setting them now would fail eval). Enable after bumping the
+    # deus lock past it.
+    # cliReleaseDir = "/var/lib/deus-cli-release";
+    # cliReleasePubkey = "<from internal/cli/release/pubkey.txt>";
   };
 
   # The public tunnel for the console lives INSIDE the nspawn now — see
@@ -158,6 +183,9 @@ in
   networking.firewall.interfaces."ve-headscale".allowedTCPPorts = [ 3300 ];
 
   systemd.tmpfiles.rules = [
+    # CLI release artifacts served by the web console once cliReleaseDir is
+    # enabled above (see the TODO in services.deus.web). Harmless until then.
+    "d /var/lib/deus-cli-release 0755 root root -"
     # Headscale state (db.sqlite) — bind-mounted into the nspawn. Must exist on
     # the host before the container starts. On conduit this pre-existed; on a
     # fresh vista, create it (the container's headscale StateDirectory takes
@@ -216,6 +244,9 @@ in
       ${pkgs.coreutils}/bin/install -d -m 0750 /var/lib/deus-keys
       ${pkgs.coreutils}/bin/install -d -m 0755 /var/lib/deus-granter
       ${pkgs.coreutils}/bin/install -m 0444 /run/secrets/deus_operator_token /var/lib/deus-tokens/operator-token
+      # Console credential: required (the units fail without it), 0400 because
+      # both consumers load it via systemd LoadCredential as root.
+      ${pkgs.coreutils}/bin/install -m 0400 /run/secrets/deus_console_token  /var/lib/deus-tokens/console-token
       ${pkgs.coreutils}/bin/install -m 0444 /run/secrets/deus_agent_token    /var/lib/deus-tokens/agent-token
       ${pkgs.coreutils}/bin/install -m 0444 /run/secrets/deus_service_token  /var/lib/deus-tokens/service-token
       ${pkgs.coreutils}/bin/install -m 0400 /run/secrets/deus_deploy_key     /var/lib/deus-keys/deploy-malli-deus
@@ -571,6 +602,9 @@ in
         rolesFromMirror = true;
 
         operatorTokenFile = "/var/lib/deus-tokens/operator-token";
+        # Web console's own credential (same file the host web loads); lets
+        # deus-server attribute calls to the signed-in person. LoadCredential.
+        consoleTokenFile = "/var/lib/deus-tokens/console-token";
         agentTokenFile = "/var/lib/deus-tokens/agent-token";
         # Read-only lookup scope for the AWS orchestrator (GET /fleet/bots/{uid}).
         # Same value must be stored in AWS Secrets Manager as DEUS_SERVICE_TOKEN.
@@ -1702,9 +1736,11 @@ in
         # (`cloudflared tunnel info deus`, `tunnel list`) instead of hitting
         # "program not installed" and assuming the tunnel didn't deploy.
         cloudflared
-        # deus CLI/TUI — operators run `deus` here to watch the fleet and
-        # the provisioning dashboard (press P). Same package the server
-        # module pulls in, so it's already in the container closure.
+        # deus CLI v3 — `deus` talks to the console at deus.mallimax.net
+        # (`deus login` first). The old TUI/REST client (fleet watch,
+        # provisioning dashboard, press P) is `deus-legacy` in this same
+        # package. Same package the server module pulls in, so it's already
+        # in the container closure.
         inputs.deus.packages.${pkgs.stdenv.hostPlatform.system}.default
       ];
 

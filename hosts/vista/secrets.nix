@@ -59,6 +59,8 @@
   # sops renders to /run/secrets/; the deus-stage activation script in
   # headscale.nix copies the contents into the nspawn's bind-mounted paths.
   sops.secrets.deus_operator_token = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0444"; };
+  # Console credential (server + web consoleTokenFile); staged 0400, must differ from every other token.
+  sops.secrets.deus_console_token = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0444"; };
   sops.secrets.deus_agent_token = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0444"; };
   sops.secrets.deus_service_token = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0444"; };
   sops.secrets.cloudflare_api_token = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0444"; };
