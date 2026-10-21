@@ -67,6 +67,23 @@ grep -q 'cli-v9.9.8' "$DCR_STATE_DIR/failed" && fail "publish failure must stay 
 (notify() { :; }; dry=1; cur_tag=cli-v9.9.7; cur_sha=abc; stage=build; dcr_fail "x" 2>/dev/null) || true
 grep -q 'cli-v9.9.7' "$DCR_STATE_DIR/failed" && fail "dry run must not record"
 
+# --- lock_ok: only pinned github sources (review P1-2)
+cat >"$work/lock-ok.json" <<'J'
+{"root":"root","version":7,"nodes":{"root":{"inputs":{"a":"a"}},"a":{"locked":{"type":"github","owner":"o","repo":"r","rev":"1","narHash":"sha256-x"}},"b":{"locked":{"type":"git","url":"ssh://git@github.com/o/r","rev":"1","narHash":"sha256-y"}}}}
+J
+lock_ok "$work/lock-ok.json" || fail "good lock refused"
+jq '.nodes.a.locked={"type":"path","path":"/Users/daniel/.ssh","narHash":"sha256-x"}' "$work/lock-ok.json" >"$work/lock-path.json"
+lock_ok "$work/lock-path.json" && fail "path input accepted"
+jq '.nodes.a.locked={"type":"tarball","url":"https://evil/x.tgz","narHash":"sha256-x"}' "$work/lock-ok.json" >"$work/lock-tar.json"
+lock_ok "$work/lock-tar.json" && fail "tarball input accepted"
+jq '.nodes.b.locked.url="git+file:///Users/daniel/.ssh"' "$work/lock-ok.json" >"$work/lock-gf.json"
+lock_ok "$work/lock-gf.json" && fail "git file url accepted"
+jq 'del(.nodes.a.locked.narHash)' "$work/lock-ok.json" >"$work/lock-nh.json"
+lock_ok "$work/lock-nh.json" && fail "missing narHash accepted"
+jq '.nodes.c={}' "$work/lock-ok.json" >"$work/lock-nl.json"
+lock_ok "$work/lock-nl.json" && fail "node without locked accepted"
+lock_ok "$repo/flake.lock" || fail "the real malli-deus flake.lock is refused"
+
 # --- install_built: store-path, symlink and magic checks (review P0-2)
 export DCR_STORE_PREFIX="$work/store/"
 mkdir -p "$work/store/good/bin" "$work/store/sym/bin" "$work/store/bad/bin" "$work/store/mac/bin" "$work/outside"
