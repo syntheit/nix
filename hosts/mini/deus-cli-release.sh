@@ -178,21 +178,11 @@ make_manifest() {
   done
 }
 
-# signer_has_verify: the pinned signer supports `verify` (deus PR #271).
-# TODO: after malli-deus #271 merges, bump ~/nix's deus input so verify is
-# always present, then make this check mandatory (drop the detection).
-signer_has_verify() {
-  { "$DCR_RELEASE_BIN" 2>&1 || true; } | grep -qw verify
-}
-
 # verify_release DIR PUBKEY: checks signature, sizes and hashes the way a client
 # would, with the pinned signer, before anything is published (review P2-3).
+# Mandatory: the pinned deus input has `deus-release verify` (malli-deus #271).
 verify_release() {
-  if signer_has_verify; then
-    [ "$("$DCR_RELEASE_BIN" verify -pubkey "$2" -dir "$1" 2>/dev/null | head -n1)" = "ok $(jq -r .version "$1/manifest.json")" ]
-  else
-    log "pinned signer has no verify yet; skipping the pre-publish verify"
-  fi
+  [ "$("$DCR_RELEASE_BIN" verify -pubkey "$2" -dir "$1" 2>/dev/null | head -n1)" = "ok $(jq -r .version "$1/manifest.json")" ]
 }
 
 # lock_too_old DIR: the lock directory is older than DCR_LOCK_MAX_MIN minutes.
