@@ -31,6 +31,7 @@ export PATH="${PATH:-}:/usr/bin:/bin:/usr/sbin:/sbin:/nix/var/nix/profiles/defau
 : "${DCR_RELEASE_BIN:=deus-release}"
 : "${DCR_SIGN_BIN:=deus-cli-sign-and-notarize}"
 : "${DCR_STORE_PREFIX:=/nix/store/}"
+: "${DCR_LOCK_MAX_MIN:=360}"
 
 tag_re='^cli-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
 ver_re='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
@@ -158,6 +159,11 @@ make_manifest() {
   done
 }
 
+# lock_too_old DIR: the lock directory is older than DCR_LOCK_MAX_MIN minutes.
+lock_too_old() {
+  [ -n "$(find "$1" -maxdepth 0 -mmin "+$DCR_LOCK_MAX_MIN" 2>/dev/null)" ]
+}
+
 # read_key FILE: writes the release key from the login Keychain to FILE (0600).
 # On any failure FILE is removed. Callers delete FILE as soon as they are done
 # with it so the key is on disk only while a pinned-signer call needs it
@@ -252,15 +258,17 @@ main() {
   umask 077
   mkdir -p "$DCR_STATE_DIR/work" "$DCR_STATE_DIR/releases"
 
-  # Lock: mkdir is atomic. A leftover lock whose pid is gone is stale.
+  # Lock: mkdir is atomic. A leftover lock is stale when its pid is gone or the
+  # lock is older than DCR_LOCK_MAX_MIN (a pid can be reused after a reboot;
+  # a run takes well under that), review P2-6.
   lockdir="$DCR_STATE_DIR/lock"
   if ! mkdir "$lockdir" 2>/dev/null; then
     oldpid="$(cat "$lockdir/pid" 2>/dev/null || true)"
-    if [ -n "$oldpid" ] && kill -0 "$oldpid" 2>/dev/null; then
+    if [ -n "$oldpid" ] && kill -0 "$oldpid" 2>/dev/null && ! lock_too_old "$lockdir"; then
       lockdir=""
       exit 0
     fi
-    log "removing stale lock (pid ${oldpid:-unknown})"
+    log "removing stale lock (pid ${oldpid:-unknown}; dead or older than ${DCR_LOCK_MAX_MIN} min)"
     rm -rf "$lockdir"
     mkdir "$lockdir" || { lockdir=""; exit 0; }
   fi
