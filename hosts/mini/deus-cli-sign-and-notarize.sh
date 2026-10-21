@@ -26,7 +26,7 @@ for bin in "$@"; do
   echo "== $name: notarizing"
   zip="$tmp/$name.zip"
   ditto -c -k --keepParent "$bin" "$zip"
-  out="$(xcrun notarytool submit "$zip" --keychain-profile deus-notary --keychain "$KC" --wait 2>&1)" || {
+  out="$(xcrun notarytool submit "$zip" --keychain-profile deus-notary --keychain "$KC" --wait --timeout 30m 2>&1)" || {
     echo "$out" >&2
     exit 1
   }
