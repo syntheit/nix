@@ -30,7 +30,7 @@
 
     # Panel — web UI for managing game servers
     pelican_panel = {
-      image = "ghcr.io/pelican-dev/panel:latest";
+      image = "ghcr.io/pelican/panel:latest";
       environment = {
         APP_URL = "https://games.matv.io";
         APP_ENV = "production";
@@ -89,7 +89,7 @@
 
     # Wings — game server daemon (creates Docker containers for each game server)
     pelican_wings = {
-      image = "ghcr.io/pelican-dev/wings:latest";
+      image = "ghcr.io/pelican/wings:latest";
       environment = {
         TZ = "America/New_York";
         WINGS_UID = "988";
