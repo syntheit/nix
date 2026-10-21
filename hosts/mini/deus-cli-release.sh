@@ -58,6 +58,7 @@ notify() {
 }
 
 fail() {
+  in_fail=1
   log "FAIL [$stage] ${cur_tag:+$cur_tag }$*"
   # One notification per tag+commit+stage, not one every 5 minutes.
   marker="$DCR_STATE_DIR/notified"
@@ -82,6 +83,20 @@ fail() {
     esac
   fi
   exit 1
+}
+
+in_fail=0
+
+# Runs on every exit. A non-zero exit that did not come through fail() (a set -e
+# death, a missing file) still gets the FAIL log line and the deduped
+# notification (review P2-1). fail runs in a subshell so cleanup still happens.
+on_exit() {
+  local rc=$?
+  trap - EXIT
+  if [ "$rc" != 0 ] && [ "$in_fail" = 0 ]; then
+    (fail "exited unexpectedly with status $rc") || true
+  fi
+  cleanup
 }
 
 cleanup() {
@@ -239,7 +254,8 @@ main() {
     mkdir "$lockdir" || { lockdir=""; exit 0; }
   fi
   echo $$ >"$lockdir/pid"
-  trap cleanup EXIT
+  trap on_exit EXIT
+  trap 'exit 143' TERM INT HUP
 
   last=""
   [ ! -f "$DCR_STATE_DIR/published-version" ] || last="$(tr -d '[:space:]' <"$DCR_STATE_DIR/published-version")"
