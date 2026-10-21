@@ -105,7 +105,7 @@ in
     home = "/var/empty";
     shell = "${pkgs.bash}/bin/bash";
     openssh.authorizedKeys.keys = lib.optional (deusReleasePubkey != null)
-      ''restrict,command="${pkgs.rsync}/bin/rrsync -wo /var/lib/deus-cli-release" ${deusReleasePubkey}'';
+      ''restrict,command="${pkgs.rrsync}/bin/rrsync -wo /var/lib/deus-cli-release" ${deusReleasePubkey}'';
   };
 
   # malli-deus's flake builds this package with its own package set, before
