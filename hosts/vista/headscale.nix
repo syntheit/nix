@@ -98,6 +98,8 @@ in
   # confined to that directory; no shell commands, no forwarding, no pty. rrsync
   # still needs a login shell to exec the forced command. sshd has no
   # AllowUsers/AllowGroups on vista, so nothing else to open.
+  # -no-del refuses --delete*/--remove*; -munge neuters symlinks (review P2-5).
+  # --delay-updates (used by the pipeline) is allowed by rrsync 3.5.0.
   users.groups.deus-release = { };
   users.users.deus-release = {
     isSystemUser = true;
@@ -105,7 +107,7 @@ in
     home = "/var/empty";
     shell = "${pkgs.bash}/bin/bash";
     openssh.authorizedKeys.keys = lib.optional (deusReleasePubkey != null)
-      ''restrict,command="${pkgs.rrsync}/bin/rrsync -wo /var/lib/deus-cli-release" ${deusReleasePubkey}'';
+      ''restrict,command="${pkgs.rrsync}/bin/rrsync -wo -no-del -munge /var/lib/deus-cli-release" ${deusReleasePubkey}'';
   };
 
   # malli-deus's flake builds this package with its own package set, before
