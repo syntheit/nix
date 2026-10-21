@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Pinned deus CLI release pipeline (runs on mini as a launchd user agent).
 #
 # SECURITY BOUNDARY: this file and the deus-release signer live in ~/nix, not
@@ -157,6 +158,23 @@ make_manifest() {
     [ "$want" = "$got" ] || return 1
     [ "$(jq -r --arg p "$p" '.files[$p].url' "$dir/manifest.json")" = "deus-$p" ] || return 1
   done
+}
+
+# signer_has_verify: the pinned signer supports `verify` (deus PR #271).
+# TODO: after malli-deus #271 merges, bump ~/nix's deus input so verify is
+# always present, then make this check mandatory (drop the detection).
+signer_has_verify() {
+  { "$DCR_RELEASE_BIN" 2>&1 || true; } | grep -qw verify
+}
+
+# verify_release DIR PUBKEY: checks signature, sizes and hashes the way a client
+# would, with the pinned signer, before anything is published (review P2-3).
+verify_release() {
+  if signer_has_verify; then
+    [ "$("$DCR_RELEASE_BIN" verify -pubkey "$2" -dir "$1" 2>/dev/null | head -n1)" = "ok $(jq -r .version "$1/manifest.json")" ]
+  else
+    log "pinned signer has no verify yet; skipping the pre-publish verify"
+  fi
 }
 
 # lock_too_old DIR: the lock directory is older than DCR_LOCK_MAX_MIN minutes.
@@ -392,6 +410,9 @@ main() {
   chmod 0644 "$out/manifest.json" "$out/manifest.json.sig"
   log "manifest signed (version $version)"
   fi
+
+  stage="verify"
+  verify_release "${out:-$rel}" "$embedded" || fail "release dir failed the pre-publish verify"
 
   if [ "$dry" = 1 ]; then
     log "dry run complete: nothing published, state unchanged; output in $out"

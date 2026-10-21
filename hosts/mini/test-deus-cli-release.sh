@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Offline test of the pinned pipeline's logic (no network, no Keychain, no nix
+# shellcheck disable=SC2329,SC2154
 # build): tag selection, version ordering, and manifest generation, then the
 # result is checked by `deus-release verify`, which uses the same
 # internal/cli/release code as the CLI and the web console.
@@ -133,6 +134,16 @@ mkdir "$work/lk"
 lock_too_old "$work/lk" && fail "fresh lock reported old"
 touch -d '7 hours ago' "$work/lk" 2>/dev/null || touch -t "$(date -v-7H +%Y%m%d%H%M)" "$work/lk"
 lock_too_old "$work/lk" || fail "7 h old lock not reported old"
+
+# --- verify_release: runs only when the pinned signer has `verify` (review P2-3)
+DCR_RELEASE_BIN="$work/deus-release" verify_release "$rel" "$pub" 2>/dev/null && fail "tampered dir passed verify_release"
+rel3="$work/rel3"; mkdir "$rel3"; for p in $platforms; do printf 'b %s\n' "$p" >"$rel3/deus-$p"; done
+make_manifest "$rel3" 7.7.7 "$work/key" || fail "make_manifest rel3"
+verify_release "$rel3" "$pub" || fail "good dir failed verify_release"
+printf '#!/usr/bin/env bash\necho "usage: deus-release keygen|pubkey|manifest" >&2; exit 1\n' >"$fakebin/old-signer"; chmod +x "$fakebin/old-signer"
+DCR_RELEASE_BIN="$fakebin/old-signer" signer_has_verify && fail "old signer reported verify"
+DCR_RELEASE_BIN="$fakebin/old-signer" verify_release "$rel3" "$pub" 2>/dev/null || fail "old signer must skip verify, not fail"
+signer_has_verify || fail "new signer should report verify"
 
 # --- read_key: key file only exists while read (review P2-2)
 printf '#!/usr/bin/env bash\nprintf "seedseed\\n"\n' >"$fakebin/security"; chmod +x "$fakebin/security"
