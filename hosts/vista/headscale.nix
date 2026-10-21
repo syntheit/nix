@@ -590,6 +590,13 @@ in
         # Where deus checks that an image exists before it tells a Mac to use it
         # (vista's registry as seen from inside the headscale container).
         placementV2.registryCheckUrl = "http://100.64.0.1:5000";
+        # Runner images (deus 0.120+): the roll engine moves a target image
+        # through the bots, dev canary first; a new target starts paused.
+        # Discovery polls ECR with the read-only awsCredentialsFile key and
+        # mirrors new builds into registryCheckUrl. Once on, the image policy
+        # lives in the database, seeded once from defaultImage above.
+        imageTargets.enable = true;
+        runnerImages.ecrRegistry = "710590321205.dkr.ecr.us-east-1.amazonaws.com";
         # registryFile = null (default) — inventory comes from headscale.
         #
         # ── Roles ──
