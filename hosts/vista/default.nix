@@ -14,6 +14,7 @@
   imports = [
     ../../modules/numtide-cache.nix
     ./hardware.nix
+    ../../modules/btrbk-root.nix
     ./disko.nix
     ./secrets.nix
     ./invidious.nix
