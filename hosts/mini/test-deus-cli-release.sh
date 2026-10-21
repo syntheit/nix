@@ -49,4 +49,18 @@ make_manifest "$rel" 4.5.6 "$work/key" || fail "make_manifest"
 # tamper after signing must fail verify
 echo x >>"$rel/deus-linux-arm64"
 "$work/deus-release" verify -pubkey "$pub" -dir "$rel" 2>/dev/null && fail "tampered binary accepted"
+# --- publish: three rsync calls in order, right destination (fake rsync on PATH)
+fakebin="$work/fakebin"; mkdir "$fakebin"
+cat >"$fakebin/rsync" <<'R'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$RSYNC_REC"
+R
+chmod +x "$fakebin/rsync"
+export RSYNC_REC="$work/rsync.rec"; : >"$RSYNC_REC"
+rel2="$work/rel2"; mkdir "$rel2"
+(PATH="$fakebin:$PATH" DCR_PUBLISH_USER=u DCR_PUBLISH_HOST=h publish "$rel2") || fail "publish failed"
+[ "$(wc -l <"$RSYNC_REC")" = 3 ] || fail "publish: expected 3 rsync calls"
+sed -n 1p "$RSYNC_REC" | grep -q "$rel2/deus-linux-amd64 .*deus-darwin-amd64 u@h:./\$" || fail "publish: binaries first"
+sed -n 2p "$RSYNC_REC" | grep -q "$rel2/manifest.json.sig u@h:./\$" || fail "publish: sig second"
+sed -n 3p "$RSYNC_REC" | grep -q "$rel2/manifest.json u@h:./\$" || fail "publish: manifest last"
 echo "all ok"
