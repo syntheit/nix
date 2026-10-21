@@ -32,8 +32,8 @@ export PATH="${PATH:-}:/usr/bin:/bin:/usr/sbin:/sbin:/nix/var/nix/profiles/defau
 : "${DCR_SIGN_BIN:=deus-cli-sign-and-notarize}"
 : "${DCR_STORE_PREFIX:=/nix/store/}"
 
-tag_re='^cli-v([0-9]+)\.([0-9]+)\.([0-9]+)$'
-ver_re='^[0-9]+\.[0-9]+\.[0-9]+$'
+tag_re='^cli-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+ver_re='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
 platforms="linux-amd64 linux-arm64 darwin-arm64 darwin-amd64"
 
 dry=0
@@ -66,6 +66,21 @@ fail() {
     printf '%s\n' "$key" >>"$marker"
     notify "FAILED at $stage: ${cur_tag:-no tag}. See ~/Library/Logs/deus-cli-release.log"
   fi
+  # Timer runs skip a tag+commit that failed deterministically (review P1-1):
+  # no notarization storm, and a broken high tag does not block a fixed higher
+  # tag. Only `--tag` retries it. Transient stages (network, Keychain, vista
+  # upload) are not recorded; those retry on the next timer run.
+  if [ "$dry" = 0 ] && [ -n "$cur_tag" ] && [ -n "$cur_sha" ]; then
+    case "$stage" in
+      start | ls-remote | clone | keychain | publish-*) ;;
+      *)
+        if ! grep -qxF "$cur_tag $cur_sha" "$DCR_STATE_DIR/failed" 2>/dev/null; then
+          printf '%s %s\n' "$cur_tag" "$cur_sha" >>"$DCR_STATE_DIR/failed"
+          log "$cur_tag at $cur_sha is recorded as failed; timer runs skip it until a new commit or --tag"
+        fi
+        ;;
+    esac
+  fi
   exit 1
 }
 
@@ -87,10 +102,11 @@ repo_version() {
 }
 
 # pick_tag: reads `git ls-remote --tags` output on stdin plus the last
-# published version in $1; prints "<tag> <sha>" for the highest valid tag
+# published version in $1 and an optional failed-list file in $2 ("<tag> <sha>"
+# lines); prints "<tag> <sha>" for the highest valid, not-failed tag
 # greater than it. Peeled (^{}) entries win over the tag object.
 pick_tag() {
-  local last="$1" ref sha name peeled best="" bestsha="" v
+  local last="$1" failed="${2:-}" ref sha name peeled best="" bestsha="" v
   declare -A direct peel
   while read -r sha ref; do
     [ -n "$ref" ] || continue
@@ -101,9 +117,10 @@ pick_tag() {
     [[ "$name" =~ $tag_re ]] || continue
     v="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
     if [ -n "$last" ] && ! version_gt "$v" "$last"; then continue; fi
+    peeled="${peel[$name]:-${direct[$name]}}"
+    if [ -n "$failed" ] && grep -qxF "$name $peeled" "$failed" 2>/dev/null; then continue; fi
     if [ -z "$best" ] || version_gt "$v" "${best#cli-v}"; then
       best="$name"
-      peeled="${peel[$name]:-${direct[$name]}}"
       bestsha="$peeled"
     fi
   done
@@ -219,7 +236,7 @@ main() {
     [ -n "$sha" ] || { cur_tag="$only_tag"; fail "tag not found on $DCR_REPO_URL"; }
     pick="$only_tag $sha"
   else
-    pick="$(printf '%s\n' "$remote" | pick_tag "$last")"
+    pick="$(printf '%s\n' "$remote" | pick_tag "$last" "$DCR_STATE_DIR/failed")"
     [ -n "$pick" ] || exit 0
   fi
   cur_tag="${pick% *}"
