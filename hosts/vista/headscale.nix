@@ -160,11 +160,12 @@ in
     # missing, so deus_console_token must be in secrets/vista-deus.yaml first.
     consoleTokenFile = "/var/lib/deus-tokens/console-token";
 
-    # TODO: needs the malli-deus PR that adds these options (not in the locked
-    # input yet; setting them now would fail eval). Enable after bumping the
-    # deus lock past it.
-    # cliReleaseDir = "/var/lib/deus-cli-release";
-    # cliReleasePubkey = "<from internal/cli/release/pubkey.txt>";
+    # Signed CLI releases served to `deus update` and Settings, Install CLI.
+    # An admin publishes into this dir (malli-deus docs/runbooks/cli-release.md);
+    # until then the endpoints answer 404 no_release. The pubkey must equal
+    # malli-deus internal/cli/release/pubkey.txt, which the CLI embeds.
+    cliReleaseDir = "/var/lib/deus-cli-release";
+    cliReleasePubkey = "WJuU5VTtsY8rXk856bTiEAWzMSiI+1lMM8qnMIuVhTw=";
   };
 
   # The public tunnel for the console lives INSIDE the nspawn now — see
@@ -183,8 +184,8 @@ in
   networking.firewall.interfaces."ve-headscale".allowedTCPPorts = [ 3300 ];
 
   systemd.tmpfiles.rules = [
-    # CLI release artifacts served by the web console once cliReleaseDir is
-    # enabled above (see the TODO in services.deus.web). Harmless until then.
+    # CLI release artifacts the web console serves; cliReleaseDir is
+    # set in services.deus.web above. Empty until the first release.
     "d /var/lib/deus-cli-release 0755 root root -"
     # Headscale state (db.sqlite) — bind-mounted into the nspawn. Must exist on
     # the host before the container starts. On conduit this pre-existed; on a
