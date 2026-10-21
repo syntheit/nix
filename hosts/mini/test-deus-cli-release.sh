@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Offline test of the pinned pipeline's logic (no network, no Keychain, no nix
-# shellcheck disable=SC2329,SC2154
+# shellcheck disable=SC2329,SC2154,SC2034,SC2030,SC2031
 # build): tag selection, version ordering, and manifest generation, then the
 # result is checked by `deus-release verify`, which uses the same
 # internal/cli/release code as the CLI and the web console.

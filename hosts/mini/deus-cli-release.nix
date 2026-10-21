@@ -28,6 +28,15 @@ let
   publishHost = "vista";
   publishUser = "deus-release";
   sshKey = "${home}/.ssh/deus-release_ed25519";
+  # ACCEPTED RISK (review P2-7): the runbook stores the release key with
+  # `security add-generic-password ... -T /usr/bin/security`, so ANY process
+  # running as ${vars.user.name} on mini (agent sessions, npm/pip postinstalls,
+  # compromised dev tools) can run `security find-generic-password -w` and read
+  # it without a prompt. The key's real protection is that nothing malicious
+  # runs as that user on mini. The stronger option is a dedicated macOS user
+  # with its own keychain running this agent; not implemented. The signing
+  # keychain password also appears on `security unlock-keychain -p` argv in
+  # deus-cli-sign-and-notarize.sh (same-uid/root visible).
   keychainService = "deus-cli-release";
   keychainAccount = "release-key";
   stateDir = "${home}/Library/Application Support/deus-cli-release";
