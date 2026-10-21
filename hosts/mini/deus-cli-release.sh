@@ -88,6 +88,7 @@ fail() {
 }
 
 in_fail=0
+signalled=0
 
 # Runs on every exit. A non-zero exit that did not come through fail() (a set -e
 # death, a missing file) still gets the FAIL log line and the deduped
@@ -95,7 +96,11 @@ in_fail=0
 on_exit() {
   local rc=$?
   trap - EXIT
-  if [ "$rc" != 0 ] && [ "$in_fail" = 0 ]; then
+  if [ "$rc" != 0 ] && [ "$in_fail" = 0 ] && { [ "$signalled" = 1 ] || [ "$rc" -ge 128 ]; }; then
+    # Killed by TERM/INT/HUP (reboot, launchd reload): not a build failure.
+    # No failed-list entry, no notification (review N-1); the next run retries.
+    log "interrupted (status $rc) at stage ${stage:-?} ${cur_tag:-no tag}; not recorded as failed"
+  elif [ "$rc" != 0 ] && [ "$in_fail" = 0 ]; then
     (fail "exited unexpectedly with status $rc") || true
   fi
   cleanup
@@ -123,7 +128,7 @@ repo_version() {
 # lines); prints "<tag> <sha>" for the highest valid, not-failed tag
 # greater than it. Peeled (^{}) entries win over the tag object.
 pick_tag() {
-  local last="$1" failed="${2:-}" ref sha name peeled best="" bestsha="" v
+  local last="$1" failed="${2:-}" ref sha name peeled best="" bestsha="" v blocked=""
   declare -A direct peel
   while read -r sha ref; do
     [ -n "$ref" ] || continue
@@ -135,12 +140,25 @@ pick_tag() {
     v="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
     if [ -n "$last" ] && ! version_gt "$v" "$last"; then continue; fi
     peeled="${peel[$name]:-${direct[$name]}}"
-    if [ -n "$failed" ] && grep -qxF "$name $peeled" "$failed" 2>/dev/null; then continue; fi
+    if [ -n "$failed" ] && grep -qxF "$name $peeled" "$failed" 2>/dev/null; then
+      # Never fall back below a failed candidate (review N-2): a transient
+      # failure on 1.2.0 must not publish superseded 1.1.0. Remember the highest.
+      if [ -z "$blocked" ] || version_gt "$v" "${blocked#cli-v}"; then blocked="$name"; fi
+      continue
+    fi
     if [ -z "$best" ] || version_gt "$v" "${best#cli-v}"; then
       best="$name"
       bestsha="$peeled"
     fi
   done
+  if [ -n "$blocked" ] && { [ -z "$best" ] || version_gt "${blocked#cli-v}" "${best#cli-v}"; }; then
+    # The highest candidate failed: wait for a newer tag or a manual --tag.
+    if [ -n "$failed" ] && [ "$(cat "$failed.waiting" 2>/dev/null)" != "$blocked" ]; then
+      printf '%s\n' "$blocked" >"$failed.waiting" 2>/dev/null || true
+      log "waiting: highest candidate $blocked failed earlier; the timer picks nothing lower. Waiting for a newer tag or a manual --tag retry"
+    fi
+    return 0
+  fi
   [ -n "$best" ] && printf '%s %s\n' "$best" "$bestsha"
   return 0
 }
@@ -292,7 +310,7 @@ main() {
   fi
   echo $$ >"$lockdir/pid"
   trap on_exit EXIT
-  trap 'exit 143' TERM INT HUP
+  trap 'signalled=1; exit 143' TERM INT HUP
 
   last=""
   [ ! -f "$DCR_STATE_DIR/published-version" ] || last="$(tr -d '[:space:]' <"$DCR_STATE_DIR/published-version")"
