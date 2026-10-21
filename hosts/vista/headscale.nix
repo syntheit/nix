@@ -74,11 +74,9 @@ let
   haveDarkSentryDSN = builtins.pathExists darkSentryDSNEnc;
 
   # Public half of mini's ~/.ssh/deus-release_ed25519 (the CLI release
-  # pipeline, hosts/mini/deus-cli-release.nix). TODO: paste the ONE LINE from
-  # `cat ~/.ssh/deus-release_ed25519.pub` on mini, e.g.
-  # "ssh-ed25519 AAAA... deus-release@mini". Until then the account exists but
-  # has no key and cannot log in.
-  deusReleasePubkey = null;
+  # pipeline, hosts/mini/deus-cli-release.nix). Only rrsync into the release
+  # dir is allowed for it (see users.users.deus-release).
+  deusReleasePubkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ2sykW4XQ5qMunHtig/T+0rinOFba73jQ/piLOisBaO deus-release@mini";
 in
 {
   # deus operator web console (Next.js). HOST-level, NOT inside
