@@ -70,7 +70,7 @@ in
       };
       # fajita — OnePlus 6T phone on Tailscale. Used by the `f` session command (mosh).
       "fajita" = {
-        HostName = "100.125.151.79";
+        HostName = "100.120.75.37";
         IdentityFile = "~/.ssh/mainkey";
         User = "daniel";
       };
