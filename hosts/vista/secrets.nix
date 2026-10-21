@@ -13,6 +13,9 @@
   sops.secrets.invidious_hmac_key = { };
   sops.secrets.invidious_db_password = { };
 
+  # ── Foyer (server dashboard, api-only) ────────────────────────────────────
+  sops.secrets.foyer_jwt_secret = { owner = "foyer"; };
+
   # Full invidious config.yml, mounted into the container at
   # /invidious/config/config.yml. 0444 so the container's non-root user can
   # read it. invidious_companion_key MUST equal the companion's

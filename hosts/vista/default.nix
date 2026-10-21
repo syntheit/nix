@@ -15,6 +15,7 @@
     ../../modules/numtide-cache.nix
     ./hardware.nix
     ../../modules/btrbk-root.nix
+    ../../modules/foyer.nix
     ./disko.nix
     ./secrets.nix
     ./invidious.nix
@@ -35,6 +36,20 @@
 
   networking.hostName = "vista";
   networking.useDHCP = lib.mkDefault true;
+
+  # Foyer — server dashboard (API-only, no frontend needed). Reached over
+  # Tailscale only: port 8420 is NOT opened in the firewall; tailscale0 is a
+  # trusted interface below.
+  services.foyer = {
+    enable = true;
+    mode = "api-only";
+    domain = "vista.matv.io";
+    allowSignups = false;
+    jwtSecretFile = config.sops.secrets.foyer_jwt_secret.path;
+    authorizedKeys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdRcH2UWe31VdU62j3Ksbb6LDyS1APNW1BQMM8mvsej daniel@matv.io"
+    ];
+  };
 
   # Passwordless sudo for the wheel user — matches mantle/harbor/conduit/fajita.
   security.sudo.wheelNeedsPassword = false;
