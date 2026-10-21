@@ -21,6 +21,7 @@
     ../../modules/server-safety.nix
     ../../modules/argus.nix
     ../../modules/foyer.nix
+    ../../modules/btrbk-root.nix
     ../../modules/elliot.nix
     ../../modules/construct.nix
     ../../modules/jelly-recs.nix

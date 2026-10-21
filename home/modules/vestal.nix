@@ -200,6 +200,12 @@ in
               name = "conduit";
               url = "https://conduit.matv.io";
             }
+            {
+              name = "vista";
+              # foyer api-only on vista, over Tailscale (not public; port 8420 is
+              # open on tailscale0 only). IP, not MagicDNS: mini drops concurrent lookups.
+              url = "http://100.96.21.56:8420";
+            }
           ];
         };
         exchange =
