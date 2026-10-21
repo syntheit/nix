@@ -152,15 +152,13 @@ lock_too_old "$work/lk" && fail "fresh lock reported old"
 touch -d '7 hours ago' "$work/lk" 2>/dev/null || touch -t "$(date -v-7H +%Y%m%d%H%M)" "$work/lk"
 lock_too_old "$work/lk" || fail "7 h old lock not reported old"
 
-# --- verify_release: runs only when the pinned signer has `verify` (review P2-3)
+# --- verify_release: mandatory pre-publish check with the pinned signer (review P2-3)
 DCR_RELEASE_BIN="$work/deus-release" verify_release "$rel" "$pub" 2>/dev/null && fail "tampered dir passed verify_release"
 rel3="$work/rel3"; mkdir "$rel3"; for p in $platforms; do printf 'b %s\n' "$p" >"$rel3/deus-$p"; done
 make_manifest "$rel3" 7.7.7 "$work/key" || fail "make_manifest rel3"
 verify_release "$rel3" "$pub" || fail "good dir failed verify_release"
 printf '#!/usr/bin/env bash\necho "usage: deus-release keygen|pubkey|manifest" >&2; exit 1\n' >"$fakebin/old-signer"; chmod +x "$fakebin/old-signer"
-DCR_RELEASE_BIN="$fakebin/old-signer" signer_has_verify && fail "old signer reported verify"
-DCR_RELEASE_BIN="$fakebin/old-signer" verify_release "$rel3" "$pub" 2>/dev/null || fail "old signer must skip verify, not fail"
-signer_has_verify || fail "new signer should report verify"
+DCR_RELEASE_BIN="$fakebin/old-signer" verify_release "$rel3" "$pub" 2>/dev/null && fail "a signer without verify must fail the release, not skip"
 
 # --- read_key: key file only exists while read (review P2-2)
 printf '#!/usr/bin/env bash\nprintf "seedseed\\n"\n' >"$fakebin/security"; chmod +x "$fakebin/security"
