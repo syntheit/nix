@@ -72,6 +72,13 @@ let
   haveDarkWebhook   = builtins.pathExists darkWebhookEnc;
   darkSentryDSNEnc  = ../../secrets/vista/deus_dark_host_sentry_dsn;
   haveDarkSentryDSN = builtins.pathExists darkSentryDSNEnc;
+
+  # Public half of mini's ~/.ssh/deus-release_ed25519 (the CLI release
+  # pipeline, hosts/mini/deus-cli-release.nix). TODO: paste the ONE LINE from
+  # `cat ~/.ssh/deus-release_ed25519.pub` on mini, e.g.
+  # "ssh-ed25519 AAAA... deus-release@mini". Until then the account exists but
+  # has no key and cannot log in.
+  deusReleasePubkey = null;
 in
 {
   # deus operator web console (Next.js). HOST-level, NOT inside
@@ -85,6 +92,21 @@ in
   # fleet endpoint uses) so this admin console, which has real write access to
   # the fleet, never needs conduit to expose an origin IP for it.
   imports = [ inputs.deus.nixosModules.web ];
+
+  # CLI release drop: mini's pipeline rsyncs the signed binaries and manifest
+  # into cliReleaseDir over ssh. The key is forced to rrsync, write-only and
+  # confined to that directory; no shell commands, no forwarding, no pty. rrsync
+  # still needs a login shell to exec the forced command. sshd has no
+  # AllowUsers/AllowGroups on vista, so nothing else to open.
+  users.groups.deus-release = { };
+  users.users.deus-release = {
+    isSystemUser = true;
+    group = "deus-release";
+    home = "/var/empty";
+    shell = "${pkgs.bash}/bin/bash";
+    openssh.authorizedKeys.keys = lib.optional (deusReleasePubkey != null)
+      ''restrict,command="${pkgs.rsync}/bin/rrsync -wo /var/lib/deus-cli-release" ${deusReleasePubkey}'';
+  };
 
   # malli-deus's flake builds this package with its own package set, before
   # Vista's overlays apply. Its source still expects the old
@@ -185,8 +207,8 @@ in
 
   systemd.tmpfiles.rules = [
     # CLI release artifacts the web console serves; cliReleaseDir is
-    # set in services.deus.web above. Empty until the first release.
-    "d /var/lib/deus-cli-release 0755 root root -"
+    # set in services.deus.web above. Written by the deus-release user (rrsync), read-only for the web.
+    "d /var/lib/deus-cli-release 0755 deus-release deus-release -"
     # Headscale state (db.sqlite) — bind-mounted into the nspawn. Must exist on
     # the host before the container starts. On conduit this pre-existed; on a
     # fresh vista, create it (the container's headscale StateDirectory takes
