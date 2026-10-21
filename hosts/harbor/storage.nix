@@ -287,14 +287,6 @@
     };
   };
 
-  # btrfs top level, so btrbk can reach @ and keep snapshots in @snapshots.
-  # nofail so it can never block boot.
-  fileSystems."/mnt/btrfs-root" = {
-    device = "/dev/disk/by-uuid/85545d0b-04d9-4f1c-a70e-de08b4a0cd09";
-    fsType = "btrfs";
-    options = [ "subvolid=5" "compress=zstd" "nofail" ];
-  };
-
   # Give the post-backup integrity check enough time to download and verify
   # data over SFTP. The default TimeoutStopSec=90s kills it mid-check.
   systemd.services.restic-backups-offsite.serviceConfig.TimeoutStopSec = "30min";
@@ -353,8 +345,6 @@
   # exposing /movies, /shows, /downloads, mergerfs's link/rename functions
   # can always find a same-branch destination — keeping *arr's hardlink
   # imports atomic instead of falling back to copy.
-  #
-  # Also creates @snapshots (btrbk snapshot dir) as a btrfs subvolume.
   systemd.tmpfiles.rules =
     let
       pools = [ "delta" "epsil" "iota" "lambda" "plata" "rho" "theta" ];
@@ -362,6 +352,5 @@
     in
       builtins.concatMap (p:
         builtins.map (c: "d /${p}pool/media${c} 0775 matv users -") cats
-      ) pools
-      ++ [ "v /mnt/btrfs-root/@snapshots 0755 root root -" ];
+      ) pools;
 }
