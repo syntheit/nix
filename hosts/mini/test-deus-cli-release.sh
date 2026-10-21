@@ -145,7 +145,7 @@ rel2="$work/rel2"; mkdir "$rel2"
 (PATH="$fakebin:$PATH" DCR_PUBLISH_USER=u DCR_PUBLISH_HOST=h publish "$rel2") || fail "publish failed"
 [ "$(wc -l <"$RSYNC_REC")" = 1 ] || fail "publish: expected one rsync call"
 grep -q -- "--delay-updates" "$RSYNC_REC" || fail "publish: --delay-updates missing"
-grep -q "$rel2/deus-linux-amd64 .*deus-darwin-amd64 $rel2/manifest.json.sig $rel2/manifest.json u@h:./\$" "$RSYNC_REC" || fail "publish: order binaries, sig, manifest"
+grep -q "$rel2/deus-linux-amd64 .*deus-darwin-amd64 $rel2/manifest.json.sig $rel2/manifest.json u@h:\.\$" "$RSYNC_REC" || fail "publish: order binaries, sig, manifest"
 # --- lock_too_old: a lock with a live (reused) pid still goes stale (review P2-6)
 mkdir "$work/lk"
 lock_too_old "$work/lk" && fail "fresh lock reported old"
