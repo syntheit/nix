@@ -143,6 +143,25 @@ make_manifest() {
   done
 }
 
+# lock_ok FILE: every non-root flake.lock node is pinned by narHash and fetched
+# from github (or git over https/ssh from github.com). Anything else (path:,
+# file, tarball, git+file, other hosts) could pull local files such as ~/.ssh
+# into the store as daniel (review P1-2). malli-deus's lock uses only `github`.
+lock_ok() {
+  jq -e '
+    .root as $r
+    | [.nodes | to_entries[] | select(.key != $r) | .value.locked]
+    | all(
+        . != null
+        and (.narHash | type == "string" and length > 0)
+        and (
+          .type == "github"
+          or (.type == "git" and (.url | type == "string")
+              and (.url | test("^(https://github\\.com/|ssh://git@github\\.com/|git@github\\.com:)")))
+        )
+      )' "$1" >/dev/null 2>&1
+}
+
 # magic_ok PLATFORM FILE: first 4 bytes match the platform's executable format.
 magic_ok() {
   local m
@@ -269,6 +288,13 @@ main() {
   [[ "$version" =~ $ver_re ]] || fail "bad version $version"
   [ "$file_version" = "$version" ] || fail "VERSION at the tag is '$file_version', tag says '$version'"
 
+  stage="gate-flake"
+  if git -C "$repo" cat-file -e "$cur_sha:.gitmodules" 2>/dev/null; then
+    fail "tag tree has a .gitmodules (submodules are not fetched by this pipeline)"
+  fi
+  git -C "$repo" show "$cur_sha:flake.lock" >"$DCR_STATE_DIR/work/flake.lock.check" 2>/dev/null || fail "tag has no flake.lock"
+  lock_ok "$DCR_STATE_DIR/work/flake.lock.check" || fail "flake.lock has an input that is not a pinned github source (path/file/tarball/other host)"
+
   tmp="$(mktemp -d)"
   chmod 700 "$tmp"
   keyfile="$tmp/release.key"
@@ -298,7 +324,8 @@ main() {
   mkdir -p "$out"
   stage="build"
   for p in $platforms; do
-    path="$(cd "$src" && nix build --no-link --print-out-paths --no-write-lock-file \
+    path="$(cd "$src" && nix build --no-link --print-out-paths --no-update-lock-file --no-write-lock-file \
+      --option accept-flake-config false \
       --option allow-import-from-derivation false ".#deus-cli-$p")" || fail "nix build deus-cli-$p failed"
     install_built "$path" "$out/deus-$p" "$p" || fail "build output of deus-cli-$p refused (see log)"
     log "built $p"
