@@ -84,6 +84,15 @@ jq '.nodes.c={}' "$work/lock-ok.json" >"$work/lock-nl.json"
 lock_ok "$work/lock-nl.json" && fail "node without locked accepted"
 lock_ok "$repo/flake.lock" || fail "the real malli-deus flake.lock is refused"
 
+# --- unexpected exits still log, notify and record (review P2-1)
+: >"$DCR_LOG"
+( fail() { dcr_fail "$@"; }; notify() { echo notified >>"$work/notified.rec"; }; trap on_exit EXIT; dry=0; cur_tag=cli-v8.8.8; cur_sha=def; stage=manifest; exit 7 ) 2>/dev/null || true
+grep -q 'FAIL \[manifest\] cli-v8.8.8 exited unexpectedly with status 7' "$DCR_LOG" || fail "unexpected exit not logged"
+[ -s "$work/notified.rec" ] || fail "unexpected exit not notified"
+( fail() { dcr_fail "$@"; }; notify() { :; }; trap on_exit EXIT; exit 0 ) || fail "exit 0 must stay quiet"
+( fail() { dcr_fail "$@"; }; notify() { :; }; trap on_exit EXIT; dry=0; cur_tag=cli-v8.8.7; cur_sha=def; stage=manifest; dcr_fail "once" ) 2>/dev/null || true
+[ "$(grep -c 'cli-v8.8.7' "$DCR_LOG")" -le 2 ] || fail "fail() then exit must not double-report"
+
 # --- install_built: store-path, symlink and magic checks (review P0-2)
 export DCR_STORE_PREFIX="$work/store/"
 mkdir -p "$work/store/good/bin" "$work/store/sym/bin" "$work/store/bad/bin" "$work/store/mac/bin" "$work/outside"
