@@ -158,6 +158,18 @@ make_manifest() {
   done
 }
 
+# read_key FILE: writes the release key from the login Keychain to FILE (0600).
+# On any failure FILE is removed. Callers delete FILE as soon as they are done
+# with it so the key is on disk only while a pinned-signer call needs it
+# (review P2-2).
+read_key() {
+  if ! security find-generic-password -s "$DCR_KEYCHAIN_SERVICE" -a "$DCR_KEYCHAIN_ACCOUNT" -w >"$1" 2>/dev/null || [ ! -s "$1" ]; then
+    rm -f "$1"
+    return 1
+  fi
+  chmod 600 "$1"
+}
+
 # lock_ok FILE: every non-root flake.lock node is pinned by narHash and fetched
 # from github (or git over https/ssh from github.com). Anything else (path:,
 # file, tarball, git+file, other hosts) could pull local files such as ~/.ssh
@@ -316,13 +328,11 @@ main() {
   keyfile="$tmp/release.key"
 
   stage="keychain"
-  if ! security find-generic-password -s "$DCR_KEYCHAIN_SERVICE" -a "$DCR_KEYCHAIN_ACCOUNT" -w >"$keyfile" 2>/dev/null || [ ! -s "$keyfile" ]; then
-    fail "release key not readable from the login Keychain ($DCR_KEYCHAIN_SERVICE/$DCR_KEYCHAIN_ACCOUNT; locked or missing)"
-  fi
-  chmod 600 "$keyfile"
+  read_key "$keyfile" || fail "release key not readable from the login Keychain ($DCR_KEYCHAIN_SERVICE/$DCR_KEYCHAIN_ACCOUNT; locked or missing)"
 
   stage="gate-pubkey"
   derived="$("$DCR_RELEASE_BIN" pubkey "$keyfile" 2>/dev/null)" || fail "Keychain item is not a valid release key"
+  rm -f "$keyfile" # only the public half is needed until the manifest step
   embedded="$(git -C "$repo" show "$cur_sha:internal/cli/release/pubkey.txt" | tr -d '[:space:]')"
   [ "$derived" = "$embedded" ] || fail "tag's pubkey.txt does not match the Keychain key (key gives $derived)"
   log "gates passed"
@@ -357,7 +367,9 @@ main() {
   fi
 
   stage="manifest"
-  make_manifest "$out" "$version" "$keyfile" || fail "manifest generation or self-check failed"
+  read_key "$keyfile" || fail "release key not readable from the login Keychain at the manifest step"
+  make_manifest "$out" "$version" "$keyfile" || { rm -f "$keyfile"; fail "manifest generation or self-check failed"; }
+  rm -f "$keyfile"
   chmod 0755 "$out"/deus-*
   chmod 0644 "$out/manifest.json" "$out/manifest.json.sig"
   log "manifest signed (version $version)"

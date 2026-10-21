@@ -129,4 +129,13 @@ rel2="$work/rel2"; mkdir "$rel2"
 sed -n 1p "$RSYNC_REC" | grep -q "$rel2/deus-linux-amd64 .*deus-darwin-amd64 u@h:./\$" || fail "publish: binaries first"
 sed -n 2p "$RSYNC_REC" | grep -q "$rel2/manifest.json.sig u@h:./\$" || fail "publish: sig second"
 sed -n 3p "$RSYNC_REC" | grep -q "$rel2/manifest.json u@h:./\$" || fail "publish: manifest last"
+# --- read_key: key file only exists while read (review P2-2)
+printf '#!/usr/bin/env bash\nprintf "seedseed\\n"\n' >"$fakebin/security"; chmod +x "$fakebin/security"
+( PATH="$fakebin:$PATH"; read_key "$work/k1" ) || fail "read_key failed"
+[ "$(stat -c %a "$work/k1" 2>/dev/null || stat -f %Lp "$work/k1")" = 600 ] || fail "key file mode"
+printf '#!/usr/bin/env bash\nexit 44\n' >"$fakebin/security"
+( PATH="$fakebin:$PATH"; read_key "$work/k2" ) && fail "read_key succeeded without a key"
+[ ! -e "$work/k2" ] || fail "failed read_key left a file"
+rm -f "$fakebin/security"
+
 echo "all ok"
