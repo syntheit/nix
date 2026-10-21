@@ -30,6 +30,7 @@ export PATH="${PATH:-}:/usr/bin:/bin:/usr/sbin:/sbin:/nix/var/nix/profiles/defau
 # Pinned tools (nix wrapper sets these; bare names work for manual runs).
 : "${DCR_RELEASE_BIN:=deus-release}"
 : "${DCR_SIGN_BIN:=deus-cli-sign-and-notarize}"
+: "${DCR_STORE_PREFIX:=/nix/store/}"
 
 tag_re='^cli-v([0-9]+)\.([0-9]+)\.([0-9]+)$'
 ver_re='^[0-9]+\.[0-9]+\.[0-9]+$'
@@ -123,6 +124,33 @@ make_manifest() {
     [ "$want" = "$got" ] || return 1
     [ "$(jq -r --arg p "$p" '.files[$p].url' "$dir/manifest.json")" = "deus-$p" ] || return 1
   done
+}
+
+# magic_ok PLATFORM FILE: first 4 bytes match the platform's executable format.
+magic_ok() {
+  local m
+  m="$(head -c4 "$2" | od -An -tx1 | tr -d ' \n')"
+  case "$1" in
+    linux-*) [ "$m" = 7f454c46 ] ;;
+    darwin-*) [ "$m" = cffaedfe ] || [ "$m" = feedfacf ] ;;
+    *) return 1 ;;
+  esac
+}
+
+# install_built OUTPATH DEST PLATFORM: copies OUTPATH/bin/deus to DEST only if it
+# is a regular, non-symlink file that really lives in the nix store and has the
+# right executable magic. Tag code controls the build output, so a symlink to
+# ~/.ssh/... or a Keychain file must never be followed (review P0-2).
+install_built() {
+  local path="$1" dest="$2" plat="$3" f="$1/bin/deus" real realroot
+  [ ! -L "$path" ] && [ ! -L "$path/bin" ] && [ ! -L "$f" ] || { log "refusing symlinked build output for $plat"; return 1; }
+  real="$(realpath -e "$f" 2>/dev/null)" || { log "no bin/deus for $plat"; return 1; }
+  realroot="$(realpath -e "$path")" || return 1
+  case "$real" in "$DCR_STORE_PREFIX"*) ;; *) log "build output for $plat resolves outside the store"; return 1 ;; esac
+  [ "$real" = "$realroot/bin/deus" ] || { log "build output for $plat is not at its own path"; return 1; }
+  [ -f "$real" ] || { log "bin/deus for $plat is not a regular file"; return 1; }
+  magic_ok "$plat" "$real" || { log "bin/deus for $plat has the wrong executable format"; return 1; }
+  install -m 0755 "$real" "$dest"
 }
 
 publish() {
@@ -255,8 +283,7 @@ main() {
   for p in $platforms; do
     path="$(cd "$src" && nix build --no-link --print-out-paths --no-write-lock-file \
       --option allow-import-from-derivation false ".#deus-cli-$p")" || fail "nix build deus-cli-$p failed"
-    [ -f "$path/bin/deus" ] || fail "no bin/deus in $path"
-    install -m 0755 "$path/bin/deus" "$out/deus-$p"
+    install_built "$path" "$out/deus-$p" "$p" || fail "build output of deus-cli-$p refused (see log)"
     log "built $p"
   done
 

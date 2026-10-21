@@ -49,6 +49,28 @@ make_manifest "$rel" 4.5.6 "$work/key" || fail "make_manifest"
 # tamper after signing must fail verify
 echo x >>"$rel/deus-linux-arm64"
 "$work/deus-release" verify -pubkey "$pub" -dir "$rel" 2>/dev/null && fail "tampered binary accepted"
+# --- install_built: store-path, symlink and magic checks (review P0-2)
+export DCR_STORE_PREFIX="$work/store/"
+mkdir -p "$work/store/good/bin" "$work/store/sym/bin" "$work/store/bad/bin" "$work/store/mac/bin" "$work/outside"
+printf '\x7fELFxxxx' >"$work/store/good/bin/deus"
+printf '\xcf\xfa\xed\xfexxxx' >"$work/store/mac/bin/deus"
+printf 'secret' >"$work/outside/secret"
+ln -s "$work/outside/secret" "$work/store/sym/bin/deus"
+printf 'MZxxxxxx' >"$work/store/bad/bin/deus"
+install_built "$work/store/good" "$work/o1" linux-amd64 || fail "good ELF refused"
+[ -x "$work/o1" ] || fail "install_built did not copy"
+install_built "$work/store/mac" "$work/o2" darwin-arm64 || fail "good Mach-O refused"
+install_built "$work/store/sym" "$work/o3" linux-arm64 && fail "symlinked output accepted"
+[ ! -e "$work/o3" ] || fail "symlink target was copied"
+install_built "$work/store/bad" "$work/o4" linux-amd64 && fail "wrong magic accepted"
+install_built "$work/store/good" "$work/o5" darwin-arm64 && fail "ELF accepted for darwin"
+install_built "$work/store/mac" "$work/o6" linux-amd64 && fail "Mach-O accepted for linux"
+ln -s "$work/store/good" "$work/store/dirlink"
+install_built "$work/store/dirlink" "$work/o7" linux-amd64 && fail "symlinked out dir accepted"
+mkdir -p "$work/outside/bin"; printf '\x7fELFxxxx' >"$work/outside/bin/deus"
+install_built "$work/outside" "$work/o8" linux-amd64 && fail "path outside the store accepted"
+unset DCR_STORE_PREFIX
+
 # --- publish: three rsync calls in order, right destination (fake rsync on PATH)
 fakebin="$work/fakebin"; mkdir "$fakebin"
 cat >"$fakebin/rsync" <<'R'
