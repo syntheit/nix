@@ -128,6 +128,12 @@ rel2="$work/rel2"; mkdir "$rel2"
 [ "$(wc -l <"$RSYNC_REC")" = 1 ] || fail "publish: expected one rsync call"
 grep -q -- "--delay-updates" "$RSYNC_REC" || fail "publish: --delay-updates missing"
 grep -q "$rel2/deus-linux-amd64 .*deus-darwin-amd64 $rel2/manifest.json.sig $rel2/manifest.json u@h:./\$" "$RSYNC_REC" || fail "publish: order binaries, sig, manifest"
+# --- lock_too_old: a lock with a live (reused) pid still goes stale (review P2-6)
+mkdir "$work/lk"
+lock_too_old "$work/lk" && fail "fresh lock reported old"
+touch -d '7 hours ago' "$work/lk" 2>/dev/null || touch -t "$(date -v-7H +%Y%m%d%H%M)" "$work/lk"
+lock_too_old "$work/lk" || fail "7 h old lock not reported old"
+
 # --- read_key: key file only exists while read (review P2-2)
 printf '#!/usr/bin/env bash\nprintf "seedseed\\n"\n' >"$fakebin/security"; chmod +x "$fakebin/security"
 ( PATH="$fakebin:$PATH"; read_key "$work/k1" ) || fail "read_key failed"
