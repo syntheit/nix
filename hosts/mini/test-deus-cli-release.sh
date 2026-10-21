@@ -62,7 +62,7 @@ printf 'cli-v0.10.0 other\n' >"$work/failed"
 # fail() records the failure; dry runs and transient stages do not
 (notify() { :; }; dry=0; cur_tag=cli-v9.9.9; cur_sha=abc; stage=build; dcr_fail "x" 2>/dev/null) || true
 grep -qxF 'cli-v9.9.9 abc' "$DCR_STATE_DIR/failed" || fail "failure not recorded"
-(notify() { :; }; dry=0; cur_tag=cli-v9.9.8; cur_sha=abc; stage=publish-binaries; dcr_fail "x" 2>/dev/null) || true
+(notify() { :; }; dry=0; cur_tag=cli-v9.9.8; cur_sha=abc; stage=publish; dcr_fail "x" 2>/dev/null) || true
 grep -q 'cli-v9.9.8' "$DCR_STATE_DIR/failed" && fail "publish failure must stay retryable"
 (notify() { :; }; dry=1; cur_tag=cli-v9.9.7; cur_sha=abc; stage=build; dcr_fail "x" 2>/dev/null) || true
 grep -q 'cli-v9.9.7' "$DCR_STATE_DIR/failed" && fail "dry run must not record"
@@ -115,7 +115,7 @@ mkdir -p "$work/outside/bin"; printf '\x7fELFxxxx' >"$work/outside/bin/deus"
 install_built "$work/outside" "$work/o8" linux-amd64 && fail "path outside the store accepted"
 unset DCR_STORE_PREFIX
 
-# --- publish: three rsync calls in order, right destination (fake rsync on PATH)
+# --- publish: one rsync --delay-updates call, binaries then sig then manifest, right destination
 fakebin="$work/fakebin"; mkdir "$fakebin"
 cat >"$fakebin/rsync" <<'R'
 #!/usr/bin/env bash
@@ -125,10 +125,9 @@ chmod +x "$fakebin/rsync"
 export RSYNC_REC="$work/rsync.rec"; : >"$RSYNC_REC"
 rel2="$work/rel2"; mkdir "$rel2"
 (PATH="$fakebin:$PATH" DCR_PUBLISH_USER=u DCR_PUBLISH_HOST=h publish "$rel2") || fail "publish failed"
-[ "$(wc -l <"$RSYNC_REC")" = 3 ] || fail "publish: expected 3 rsync calls"
-sed -n 1p "$RSYNC_REC" | grep -q "$rel2/deus-linux-amd64 .*deus-darwin-amd64 u@h:./\$" || fail "publish: binaries first"
-sed -n 2p "$RSYNC_REC" | grep -q "$rel2/manifest.json.sig u@h:./\$" || fail "publish: sig second"
-sed -n 3p "$RSYNC_REC" | grep -q "$rel2/manifest.json u@h:./\$" || fail "publish: manifest last"
+[ "$(wc -l <"$RSYNC_REC")" = 1 ] || fail "publish: expected one rsync call"
+grep -q -- "--delay-updates" "$RSYNC_REC" || fail "publish: --delay-updates missing"
+grep -q "$rel2/deus-linux-amd64 .*deus-darwin-amd64 $rel2/manifest.json.sig $rel2/manifest.json u@h:./\$" "$RSYNC_REC" || fail "publish: order binaries, sig, manifest"
 # --- read_key: key file only exists while read (review P2-2)
 printf '#!/usr/bin/env bash\nprintf "seedseed\\n"\n' >"$fakebin/security"; chmod +x "$fakebin/security"
 ( PATH="$fakebin:$PATH"; read_key "$work/k1" ) || fail "read_key failed"
