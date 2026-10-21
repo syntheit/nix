@@ -19,6 +19,7 @@ in
     # forbids (it owns /etc/nix/nix.conf) — details inside.
     ./linux-builder.nix
     ./speaker.nix
+    ./deus-cli-release.nix
   ];
 
   networking.hostName = "mini";
