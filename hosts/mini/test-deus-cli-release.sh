@@ -57,7 +57,15 @@ lz="$(printf '%s\n' 'a1 refs/tags/cli-v01.2.0' 'a2 refs/tags/cli-v1.02.0' 'a3 re
 [ "$(printf '%s\n' "$lz" | pick_tag '')" = "cli-v0.0.1 a4" ] || fail "leading-zero tags must be ignored"
 [[ "cli-v01.2.0" =~ $tag_re ]] && fail "tag_re accepts leading zero"
 printf 'cli-v0.10.0 ddd\n' >"$work/failed"
-[ "$(printf '%s\n' "$ls" | pick_tag '' "$work/failed")" = "cli-v0.2.0 bbb" ] || [ "$(printf '%s\n' "$ls" | pick_tag '' "$work/failed")" = "cli-v0.2.0 ccc" ] || fail "failed tag+sha must be skipped, next highest picked"
+[ -z "$(printf '%s\n' "$ls" | pick_tag '' "$work/failed")" ] || fail "failed highest tag: timer must pick nothing, not fall back lower (N-2)"
+grep -q 'waiting: highest candidate cli-v0.10.0' "$DCR_LOG" || fail "waiting not logged"
+printf '%s\n' "$ls" | pick_tag '' "$work/failed" >/dev/null
+[ "$(grep -c 'waiting: highest' "$DCR_LOG")" = 1 ] || fail "waiting must be logged once"
+ls3="$(printf '%s\n' 'a refs/tags/cli-v1.1.0' 'b refs/tags/cli-v1.2.0')"
+printf 'cli-v1.2.0 b\n' >"$work/failed3"
+[ -z "$(printf '%s\n' "$ls3" | pick_tag 1.0.0 "$work/failed3")" ] || fail "failed 1.2.0 with 1.1.0 unpublished must pick nothing"
+ls4="$(printf '%s\n' "$ls3" 'c refs/tags/cli-v1.2.1')"
+[ "$(printf '%s\n' "$ls4" | pick_tag 1.0.0 "$work/failed3")" = "cli-v1.2.1 c" ] || fail "fixed higher tag must still be picked"
 printf 'cli-v0.10.0 other\n' >"$work/failed"
 [ "$(printf '%s\n' "$ls" | pick_tag '' "$work/failed")" = "cli-v0.10.0 ddd" ] || fail "same tag at a new commit must be retried"
 # fail() records the failure; dry runs and transient stages do not
@@ -93,6 +101,15 @@ grep -q 'FAIL \[manifest\] cli-v8.8.8 exited unexpectedly with status 7' "$DCR_L
 ( fail() { dcr_fail "$@"; }; notify() { :; }; trap on_exit EXIT; exit 0 ) || fail "exit 0 must stay quiet"
 ( fail() { dcr_fail "$@"; }; notify() { :; }; trap on_exit EXIT; dry=0; cur_tag=cli-v8.8.7; cur_sha=def; stage=manifest; dcr_fail "once" ) 2>/dev/null || true
 [ "$(grep -c 'cli-v8.8.7' "$DCR_LOG")" -le 2 ] || fail "fail() then exit must not double-report"
+
+# --- signals are interrupts, not failures (review N-1)
+: >"$DCR_LOG"; rm -f "$work/notified.rec" "$DCR_STATE_DIR/failed"
+( fail() { dcr_fail "$@"; }; notify() { echo notified >>"$work/notified.rec"; }; trap on_exit EXIT; trap 'signalled=1; exit 143' TERM INT HUP; dry=0; cur_tag=cli-v7.7.7; cur_sha=abc; stage=build; kill -TERM "$BASHPID" ) 2>/dev/null || true
+grep -q 'interrupted' "$DCR_LOG" || fail "interrupt not logged"
+[ ! -e "$work/notified.rec" ] || fail "interrupt must not notify"
+grep -q 'cli-v7.7.7' "$DCR_STATE_DIR/failed" 2>/dev/null && fail "interrupt must not record failed"
+( fail() { dcr_fail "$@"; }; notify() { echo notified >>"$work/notified.rec"; }; trap on_exit EXIT; dry=0; cur_tag=cli-v7.7.6; cur_sha=abc; stage=build; exit 143 ) 2>/dev/null || true
+[ ! -e "$work/notified.rec" ] || fail "rc 143 must not notify"
 
 # --- install_built: store-path, symlink and magic checks (review P0-2)
 export DCR_STORE_PREFIX="$work/store/"
