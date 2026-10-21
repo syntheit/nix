@@ -73,7 +73,7 @@ fail() {
   # upload) are not recorded; those retry on the next timer run.
   if [ "$dry" = 0 ] && [ -n "$cur_tag" ] && [ -n "$cur_sha" ]; then
     case "$stage" in
-      start | ls-remote | clone | keychain | publish-*) ;;
+      start | ls-remote | clone | keychain | publish) ;;
       *)
         if ! grep -qxF "$cur_tag $cur_sha" "$DCR_STATE_DIR/failed" 2>/dev/null; then
           printf '%s %s\n' "$cur_tag" "$cur_sha" >>"$DCR_STATE_DIR/failed"
@@ -220,18 +220,17 @@ publish() {
   local dir="$1" ssh_cmd dest
   ssh_cmd="ssh -i $DCR_SSH_KEY -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20"
   dest="$DCR_PUBLISH_USER@$DCR_PUBLISH_HOST:./"
-  stage="publish-binaries"
-  # rrsync on the other side pins the destination directory. Sources are
-  # regular files with the exact modes (install -m); -p keeps them.
-  rsync -t -p -e "$ssh_cmd" "$dir"/deus-linux-amd64 "$dir"/deus-linux-arm64 \
-    "$dir"/deus-darwin-arm64 "$dir"/deus-darwin-amd64 "$dest" || fail "rsync of the binaries failed"
-  log "published binaries"
-  stage="publish-sig"
-  rsync -t -p -e "$ssh_cmd" "$dir/manifest.json.sig" "$dest" || fail "rsync of manifest.json.sig failed"
-  log "published manifest.json.sig"
-  stage="publish-manifest"
-  rsync -t -p -e "$ssh_cmd" "$dir/manifest.json" "$dest" || fail "rsync of manifest.json failed"
-  log "published manifest.json"
+  stage="publish"
+  # One call: rrsync (checked in nixpkgs 3.5.0) allows --delay-updates unless
+  # -no-overwrite is used, and it makes the six files appear together at the
+  # end, so clients never see a new manifest.json.sig beside the old
+  # manifest.json (review P2-4). The pinned directory is on the other side;
+  # sources are regular files with the exact modes (install -m); -p keeps them.
+  rsync -t -p --delay-updates -e "$ssh_cmd" \
+    "$dir"/deus-linux-amd64 "$dir"/deus-linux-arm64 \
+    "$dir"/deus-darwin-arm64 "$dir"/deus-darwin-amd64 \
+    "$dir/manifest.json.sig" "$dir/manifest.json" "$dest" || fail "rsync of the release failed"
+  log "published binaries, manifest.json.sig and manifest.json"
 }
 
 main() {
@@ -337,6 +336,17 @@ main() {
   [ "$derived" = "$embedded" ] || fail "tag's pubkey.txt does not match the Keychain key (key gives $derived)"
   log "gates passed"
 
+  # A release that was fully built and signed but not published (vista down,
+  # host key change) is kept in releases/<ver> with a marker; the retry
+  # re-publishes it instead of rebuilding and re-notarizing (review P2-4).
+  rel="$DCR_STATE_DIR/releases/$version"
+  reuse=0
+  if [ "$dry" = 0 ] && [ "$(cat "$rel/.built-from" 2>/dev/null || true)" = "$cur_tag $cur_sha" ] \
+    && [ -s "$rel/manifest.json" ] && [ -s "$rel/manifest.json.sig" ]; then
+    reuse=1
+    log "re-publishing the already built $rel"
+  fi
+  if [ "$reuse" = 0 ]; then
   # --- build (tag code runs only here, under nixbld) ------------------------
   stage="checkout"
   src="$DCR_STATE_DIR/work/$version"
@@ -373,21 +383,25 @@ main() {
   chmod 0755 "$out"/deus-*
   chmod 0644 "$out/manifest.json" "$out/manifest.json.sig"
   log "manifest signed (version $version)"
+  fi
 
   if [ "$dry" = 1 ]; then
     log "dry run complete: nothing published, state unchanged; output in $out"
     exit 0
   fi
 
-  rel="$DCR_STATE_DIR/releases/$version"
-  rm -rf "$rel"
-  cp -R "$out" "$rel"
+  if [ "$reuse" = 0 ]; then
+    rm -rf "$rel.new" "$rel"
+    cp -R "$out" "$rel.new"
+    printf '%s %s\n' "$cur_tag" "$cur_sha" >"$rel.new/.built-from"
+    mv "$rel.new" "$rel"
+  fi
   publish "$rel"
 
   stage="state"
   printf '%s\n' "$version" >"$DCR_STATE_DIR/published-version.new"
   mv "$DCR_STATE_DIR/published-version.new" "$DCR_STATE_DIR/published-version"
-  rm -rf "$src"
+  [ -z "${src:-}" ] || rm -rf "$src"
   log "DONE published $version ($cur_tag)"
   notify "Published $version"
 }
