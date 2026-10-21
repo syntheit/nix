@@ -394,7 +394,10 @@ main() {
   mkdir -p "$out"
   stage="build"
   for p in $platforms; do
+    # sandbox true: mini's nix.conf leaves the sandbox off, and tag code must
+    # not read world-readable files under /Users (review N-3; verified on mini).
     path="$(cd "$src" && nix build --no-link --print-out-paths --no-update-lock-file --no-write-lock-file \
+      --option sandbox true \
       --option accept-flake-config false \
       --option allow-import-from-derivation false ".#deus-cli-$p")" || fail "nix build deus-cli-$p failed"
     install_built "$path" "$out/deus-$p" "$p" || fail "build output of deus-cli-$p refused (see log)"
