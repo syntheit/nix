@@ -126,7 +126,7 @@ make_manifest() {
 }
 
 publish() {
-  XX
+  local dir="$1" ssh_cmd dest
   ssh_cmd="ssh -i $DCR_SSH_KEY -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20"
   dest="$DCR_PUBLISH_USER@$DCR_PUBLISH_HOST:./"
   stage="publish-binaries"
