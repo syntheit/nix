@@ -4,6 +4,7 @@
     ../../modules/numtide-cache.nix
     ./hardware-configuration.nix
     ./hardware.nix
+    ../../modules/btrbk-root.nix
     ../../system
     ../../services
     ../../desktop

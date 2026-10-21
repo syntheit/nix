@@ -12,6 +12,7 @@
   # matching vista's pattern.
   imports = [
     ./hardware.nix
+    ../../modules/btrbk-root.nix
     ./disko.nix
     ../../system
     ../../services

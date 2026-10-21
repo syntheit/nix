@@ -61,7 +61,7 @@
     settings = {
       snapshot_preserve_min = "2d";
       snapshot_preserve = "7d 4w";
-      volume."/" = {
+      volume."/mnt/btrfs-root" = {
         subvolume."@" = { snapshot_dir = "@snapshots"; };
       };
     };
