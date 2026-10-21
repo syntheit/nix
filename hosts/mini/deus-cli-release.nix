@@ -69,6 +69,7 @@ let
       pkgs.rsync
       pkgs.openssh
       pkgs.coreutils
+      pkgs.findutils
       pkgs.gnugrep
       pkgs.gawk
       pkgs.jq
