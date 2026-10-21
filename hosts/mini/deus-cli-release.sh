@@ -251,13 +251,18 @@ install_built() {
 publish() {
   local dir="$1" ssh_cmd dest
   ssh_cmd="ssh -i $DCR_SSH_KEY -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20"
-  dest="$DCR_PUBLISH_USER@$DCR_PUBLISH_HOST:./"
+  # "." not "./": rrsync 3.5.0 refuses "./" as an unsafe arg (seen on the first live publish).
+  dest="$DCR_PUBLISH_USER@$DCR_PUBLISH_HOST:."
   stage="publish"
   # One call: rrsync (checked in nixpkgs 3.5.0) allows --delay-updates unless
   # -no-overwrite is used, and it makes the six files appear together at the
   # end, so clients never see a new manifest.json.sig beside the old
   # manifest.json (review P2-4). The pinned directory is on the other side;
-  # sources are regular files with the exact modes (install -m); -p keeps them.
+  # -p carries the source modes, so set them here: the web reads these files as
+  # another user, and the launchd umask (077) once made a copy 0700/0600.
+  chmod 0755 "$dir"/deus-linux-amd64 "$dir"/deus-linux-arm64 \
+    "$dir"/deus-darwin-arm64 "$dir"/deus-darwin-amd64 || fail "chmod of the release binaries failed"
+  chmod 0644 "$dir/manifest.json.sig" "$dir/manifest.json" || fail "chmod of the manifest failed"
   rsync -t -p --delay-updates -e "$ssh_cmd" \
     "$dir"/deus-linux-amd64 "$dir"/deus-linux-arm64 \
     "$dir"/deus-darwin-arm64 "$dir"/deus-darwin-amd64 \
@@ -432,7 +437,7 @@ main() {
 
   if [ "$reuse" = 0 ]; then
     rm -rf "$rel.new" "$rel"
-    cp -R "$out" "$rel.new"
+    cp -pR "$out" "$rel.new"
     printf '%s %s\n' "$cur_tag" "$cur_sha" >"$rel.new/.built-from"
     mv "$rel.new" "$rel"
   fi

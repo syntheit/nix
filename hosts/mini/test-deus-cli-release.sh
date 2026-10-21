@@ -142,10 +142,14 @@ R
 chmod +x "$fakebin/rsync"
 export RSYNC_REC="$work/rsync.rec"; : >"$RSYNC_REC"
 rel2="$work/rel2"; mkdir "$rel2"
+for p in $platforms; do : >"$rel2/deus-$p"; chmod 0700 "$rel2/deus-$p"; done
+: >"$rel2/manifest.json"; : >"$rel2/manifest.json.sig"; chmod 0600 "$rel2"/manifest.json*
 (PATH="$fakebin:$PATH" DCR_PUBLISH_USER=u DCR_PUBLISH_HOST=h publish "$rel2") || fail "publish failed"
+for p in $platforms; do [ "$(stat -c %a "$rel2/deus-$p" 2>/dev/null || stat -f %Lp "$rel2/deus-$p")" = 755 ] || fail "publish: deus-$p not 0755"; done
+[ "$(stat -c %a "$rel2/manifest.json" 2>/dev/null || stat -f %Lp "$rel2/manifest.json")" = 644 ] || fail "publish: manifest.json not 0644"
 [ "$(wc -l <"$RSYNC_REC")" = 1 ] || fail "publish: expected one rsync call"
 grep -q -- "--delay-updates" "$RSYNC_REC" || fail "publish: --delay-updates missing"
-grep -q "$rel2/deus-linux-amd64 .*deus-darwin-amd64 $rel2/manifest.json.sig $rel2/manifest.json u@h:./\$" "$RSYNC_REC" || fail "publish: order binaries, sig, manifest"
+grep -q "$rel2/deus-linux-amd64 .*deus-darwin-amd64 $rel2/manifest.json.sig $rel2/manifest.json u@h:\.\$" "$RSYNC_REC" || fail "publish: order binaries, sig, manifest"
 # --- lock_too_old: a lock with a live (reused) pid still goes stale (review P2-6)
 mkdir "$work/lk"
 lock_too_old "$work/lk" && fail "fresh lock reported old"
