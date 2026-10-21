@@ -17,6 +17,7 @@ export DCR_SOURCE_ONLY=1 DCR_RELEASE_BIN="$work/deus-release" DCR_LOG="$work/log
 # shellcheck source=/dev/null
 source "$here/deus-cli-release.sh"
 
+eval "$(declare -f fail | sed "1s/^fail/dcr_fail/")"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 # --- version ordering and tag picking
@@ -49,6 +50,23 @@ make_manifest "$rel" 4.5.6 "$work/key" || fail "make_manifest"
 # tamper after signing must fail verify
 echo x >>"$rel/deus-linux-arm64"
 "$work/deus-release" verify -pubkey "$pub" -dir "$rel" 2>/dev/null && fail "tampered binary accepted"
+# --- leading zeros are not tags (the Go signer rejects them), failed tags are skipped (review P1-1)
+mkdir -p "$DCR_STATE_DIR"
+lz="$(printf '%s\n' 'a1 refs/tags/cli-v01.2.0' 'a2 refs/tags/cli-v1.02.0' 'a3 refs/tags/cli-v1.2.00' 'a4 refs/tags/cli-v0.0.1')"
+[ "$(printf '%s\n' "$lz" | pick_tag '')" = "cli-v0.0.1 a4" ] || fail "leading-zero tags must be ignored"
+[[ "cli-v01.2.0" =~ $tag_re ]] && fail "tag_re accepts leading zero"
+printf 'cli-v0.10.0 ddd\n' >"$work/failed"
+[ "$(printf '%s\n' "$ls" | pick_tag '' "$work/failed")" = "cli-v0.2.0 bbb" ] || [ "$(printf '%s\n' "$ls" | pick_tag '' "$work/failed")" = "cli-v0.2.0 ccc" ] || fail "failed tag+sha must be skipped, next highest picked"
+printf 'cli-v0.10.0 other\n' >"$work/failed"
+[ "$(printf '%s\n' "$ls" | pick_tag '' "$work/failed")" = "cli-v0.10.0 ddd" ] || fail "same tag at a new commit must be retried"
+# fail() records the failure; dry runs and transient stages do not
+(notify() { :; }; dry=0; cur_tag=cli-v9.9.9; cur_sha=abc; stage=build; dcr_fail "x" 2>/dev/null) || true
+grep -qxF 'cli-v9.9.9 abc' "$DCR_STATE_DIR/failed" || fail "failure not recorded"
+(notify() { :; }; dry=0; cur_tag=cli-v9.9.8; cur_sha=abc; stage=publish-binaries; dcr_fail "x" 2>/dev/null) || true
+grep -q 'cli-v9.9.8' "$DCR_STATE_DIR/failed" && fail "publish failure must stay retryable"
+(notify() { :; }; dry=1; cur_tag=cli-v9.9.7; cur_sha=abc; stage=build; dcr_fail "x" 2>/dev/null) || true
+grep -q 'cli-v9.9.7' "$DCR_STATE_DIR/failed" && fail "dry run must not record"
+
 # --- install_built: store-path, symlink and magic checks (review P0-2)
 export DCR_STORE_PREFIX="$work/store/"
 mkdir -p "$work/store/good/bin" "$work/store/sym/bin" "$work/store/bad/bin" "$work/store/mac/bin" "$work/outside"
