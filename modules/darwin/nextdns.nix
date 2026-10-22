@@ -10,10 +10,10 @@
 # - A NextDNS configuration profile: takes every query, tailnet names too,
 #   which NextDNS can't answer; /etc/resolver entries don't get a look in.
 #
-# So the nextdns CLI runs as the local resolver (-auto-activate points every
-# network service at 127.0.0.1 and restores it when the daemon stops):
-# public names over DoH to the profile, *.ts.net forwarded to quad-100, which
-# still answers with accept-dns off. The tailnet search domain keeps short
+# So the nextdns CLI runs as the local resolver on 127.0.0.1 and every
+# network service points its DNS there (set below: -auto-activate did nothing
+# under launchd): public names over DoH to the profile, *.ts.net forwarded to
+# quad-100, which still answers with accept-dns off. The tailnet search domain keeps short
 # names (`harbor`, `mantle`) working. Don't install the NextDNS profile on
 # top: it would take over again.
 let
@@ -26,7 +26,6 @@ in
     arguments = [
       "-profile 57bc2c"
       "-listen 127.0.0.1:53"
-      "-auto-activate"
       "-forwarder ts.net.=100.100.100.100"
       "-report-client-info"
       "-detect-captive-portals"
@@ -39,7 +38,8 @@ in
     if [ -x ${tailscale} ]; then
       sudo -u ${vars.user.name} ${tailscale} set --accept-dns=false 2>/dev/null || true
     fi
-    networksetup -listallnetworkservices | tail -n +2 | sed 's/^\*//' | while read -r svc; do
+    networksetup -listallnetworkservices | tail -n +2 | sed 's/^\*//' | grep -v -x Tailscale | while read -r svc; do
+      networksetup -setdnsservers "$svc" 127.0.0.1 2>/dev/null || true
       networksetup -setsearchdomains "$svc" ${tailnet} 2>/dev/null || true
     done
   '';

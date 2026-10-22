@@ -82,6 +82,7 @@ in
   imports = [
     ./firewall.nix
     ./telmo-helper.nix
+    ./nextdns.nix
   ];
 
   options.matv.darwin.tccGrants = lib.mkOption {
