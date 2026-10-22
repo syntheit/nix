@@ -30,6 +30,13 @@ let
         "kit@syntheit" = true;
         "impeccable@syntheit" = true;
       };
+      # No Claude attribution anywhere: no Co-Authored-By trailer in commits,
+      # no "Generated with Claude Code" in PRs, no session link.
+      attribution = {
+        commit = "";
+        pr = "";
+        sessionUrl = false;
+      };
     }
   );
 
