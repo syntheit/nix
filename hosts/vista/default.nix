@@ -15,6 +15,7 @@
     ../../modules/numtide-cache.nix
     ./hardware.nix
     ../../modules/btrbk-root.nix
+    ../../modules/deus-cli.nix
     ../../modules/foyer.nix
     ./disko.nix
     ./secrets.nix

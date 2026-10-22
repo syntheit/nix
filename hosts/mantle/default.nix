@@ -5,6 +5,7 @@
     ./hardware-configuration.nix
     ./hardware.nix
     ../../modules/btrbk-root.nix
+    ../../modules/deus-cli.nix
     ./secrets.nix
     ./mac-speakers.nix
     ./brightness.nix
