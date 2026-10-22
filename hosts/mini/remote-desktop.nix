@@ -28,6 +28,10 @@ in
 
   home-manager.users.${vars.user.name}.xdg.configFile."sunshine/sunshine.conf".text = ''
     sunshine_name = mini
+    # The tray icon is updated from the RTSP thread at stream start, which
+    # traps (SIGTRAP) on macOS 27: every connection died at RTSP ANNOUNCE.
+    # Sunshine#5319, fixed upstream after 2026.516.
+    system_tray = disabled
     origin_web_ui_allowed = pc
     address_family = ipv4
     stream_audio = disabled
