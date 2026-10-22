@@ -1,54 +1,14 @@
-# Homebrew config for mini. Mirrors swift's cask list. Brews are kept minimal and reserved
-# for things that genuinely need Homebrew's macOS-native build (e.g. ollama
-# for Metal/GPU integration). CLI tools that have nixpkgs equivalents live in
-# home.packages, not here.
+# mini's Homebrew extras; the shared casks and brews are in
+# modules/darwin/homebrew-common.nix.
 { ... }:
 
 {
   imports = [ ../../modules/darwin/homebrew-common.nix ];
 
-  homebrew = {
-    casks = [
-      "affinity"
-      "antigravity"
-      "arc"
-      "claude"
-      "cursor"
-      "dbeaver-community"
-      "karabiner-elements"
-      # "blackhole-2ch"  # existential.audio (162.241.218.190) is down; brew bundle has no
-                         # per-URL timeout and hangs forever. Re-enable once the upstream
-                         # is reachable, or install the .pkg from
-                         # https://github.com/ExistentialAudio/BlackHole/releases
-      "iina"
-      "kiro"
-      "ghostty"
-      "lulu"
-      "marta"
-      "macwhisper"
-      "notunes"
-      "obsidian"
-      "orbstack"
-      "raycast"
-      "royal-tsx"
-      "seafile-client"
-      "spotify"
-      "syncthing-app"
-      "tailscale-app"
-      "telegram"
-      "thunderbird"
-      "transmission"
-      "visual-studio-code"
-      "vnc-viewer"
-      "whatsapp"
-      "windows-app"
-      "windscribe"
-      "zen"
-    ];
-    brews = [
-      "awscli-local"
-      "ollama" # Kept in Homebrew for better macOS Metal/GPU integration
-      "wifi-password"
-    ];
-  };
+  homebrew.casks = [
+    # "blackhole-2ch"  # existential.audio (162.241.218.190) is down; brew bundle has no
+                       # per-URL timeout and hangs forever. Re-enable once the upstream
+                       # is reachable, or install the .pkg from
+                       # https://github.com/ExistentialAudio/BlackHole/releases
+  ];
 }

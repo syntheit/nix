@@ -1,8 +1,10 @@
-{ vars, ... }:
+{ inputs, vars, ... }:
 
 # Root helper so Telmo can show and toggle Wi-Fi auto-join without prompts.
 # It only answers this user, and only processes signed by this team.
 {
+  imports = [ inputs.telmo.darwinModules.default ];
+
   users.users.${vars.user.name}.uid = 501;
   services.telmo-helper = {
     enable = true;

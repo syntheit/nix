@@ -82,8 +82,15 @@ in
     hyprland.enable = isLinux;
 
     settings = {
-      # Built-in hotkey on swift only: mini's skhd uses F3 for space 3.
-      hotkey = if hostName == "swift" then "f3" else null;
+      # Built-in hotkey: F3 on swift; Home on the mini, whose skhd uses F3 for
+      # space 3 (Home is also mantle's, under platform.linux below).
+      hotkey =
+        if hostName == "swift" then
+          "f3"
+        else if hostName == "mini" then
+          "home"
+        else
+          null;
       # Thumb + three finger pinch toggles the dashboard (macOS; the Dock's
       # own pinch is off in modules/darwin/common.nix).
       gesture = if hostName == "swift" then "pinch" else null;
