@@ -32,6 +32,7 @@
     ./modules/wallpaper.nix
     ./modules/zed.nix
     ./modules/raven-scrcpy.nix
+    ./modules/mac-mini-desktop.nix
     ./shell.nix
   ];
 
