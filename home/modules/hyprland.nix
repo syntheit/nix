@@ -249,7 +249,6 @@ in
         "$mod, T, exec, ghostty"
         # Super+B/N/M: telmo popups, bound in home/modules/telmo.nix.
         "$mod, E, exec, nautilus"
-        "$mod SHIFT, L, exec, ${pkgs.hyprlock}/bin/hyprlock"
         "$mod, Q, killactive"
         "$mod, F, fullscreen"
         "$mod, h, movefocus, l"
@@ -274,11 +273,6 @@ in
         "$mod, P, exec, ${pkgs.hyprpicker}/bin/hyprpicker -a"
         # Picture-in-picture toggle
         "$mod SHIFT, P, exec, ${togglePip}"
-        # Relative workspace movement
-        "$mod, period, workspace, +1"
-        "$mod, comma, workspace, -1"
-        "$mod SHIFT, period, movetoworkspace, +1"
-        "$mod SHIFT, comma, movetoworkspace, -1"
         # Hold Super + scroll wheel to cycle workspaces
         "$mod, mouse_down, workspace, e+1"
         "$mod, mouse_up, workspace, e-1"
@@ -286,6 +280,18 @@ in
         # Wallpaper cycling
         "$mod ALT, period, exec, wallpaper-cycle next"
         "$mod ALT, comma, exec, wallpaper-cycle prev"
+      ];
+
+      # `p` (dont_inhibit): these stay with mantle even while an app captures
+      # the keyboard, e.g. the Mac mini window (mac-mini-desktop.nix), where
+      # every other Super bind reaches the mac as Cmd.
+      bindp = [
+        "$mod SHIFT, L, exec, ${pkgs.hyprlock}/bin/hyprlock"
+        # Relative workspace movement
+        "$mod, period, workspace, +1"
+        "$mod, comma, workspace, -1"
+        "$mod SHIFT, period, movetoworkspace, +1"
+        "$mod SHIFT, comma, movetoworkspace, -1"
       ]
       ++ (
         # workspaces

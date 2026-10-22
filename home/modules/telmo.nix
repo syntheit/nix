@@ -58,6 +58,9 @@
       power = "SUPER, U";
       system = "SUPER, X";
       clipboard = "SUPER, C"; # matches fn+C on swift
+      # Not `bindp`: inside the Mac mini window (mac-mini-desktop.nix) the
+      # keyboard is captured, so Super+Space reaches the mac as Cmd+Space and
+      # opens its launcher instead; everywhere else it opens this one.
       launcher = "SUPER, SPACE"; # replaces rofi; matches Cmd+Space on swift
       clock = "SUPER, Z";
     };

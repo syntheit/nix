@@ -552,8 +552,11 @@ in
       pmset -a ttyskeepawake 1 || true
 ${lib.optionalString (hostName == "mini") ''
       # The mini is always-on infrastructure (aarch64 builder, ssh target), so
-      # it never system-sleeps. Display sleep and screen lock are untouched.
+      # it never system-sleeps. Its display never sleeps either: Sunshine
+      # (hosts/mini/remote-desktop.nix) gets no frames from a sleeping display
+      # and hangs at startup until it wakes. Screen lock is untouched.
       pmset -a sleep 0 || true
+      pmset -a displaysleep 0 || true
       pmset -a disksleep 0 || true
       pmset -a womp 1 || true
 ''}
