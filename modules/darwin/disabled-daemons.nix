@@ -5,7 +5,8 @@
 # postActivation script.
 {
   systemDaemons = [
-    "com.apple.adid"
+    # Not "ad ID": adid is CoreADI's anisette provider. akd needs it for any
+    # Apple ID sign-in (App Store, Xcode accounts); re-enabled in common.nix.
     "com.apple.AssetCache.builtin"
     "com.apple.AssetCacheLocatorService"
     "com.apple.AssetCacheTetheratorService"
@@ -198,12 +199,11 @@
     "com.apple.Safari.SafeBrowsing.Service"
     "com.apple.SafariLaunchAgent"
     "com.apple.Safari.PasswordBreachAgent"
-    "com.apple.commerce"
-    "com.apple.appstoreagent"
-    "com.apple.amsondevicestoraged"
+    # The App Store itself needs commerce, appstoreagent, amsaccountsd,
+    # amsondevicestoraged and storekitagent (re-enabled in common.nix).
+    # amsengagementd (marketing/engagement) and managedappdistributionagent
+    # (MDM-managed apps) are not needed for it and stay off.
     "com.apple.amsengagementd"
-    "com.apple.amsaccountsd"
-    "com.apple.storekitagent"
     "com.apple.managedappdistributionagent"
     "com.apple.WorkflowKit.ShortcutsViewService"
     "com.apple.liveactivitiesd"

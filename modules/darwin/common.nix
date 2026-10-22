@@ -659,13 +659,22 @@ ${lib.optionalString (hostName == "mini") ''
       #   - softwareupdated / mobile.softwareupdated: backs the Software Update
       #     settings pane. Without it, "Check Now" hangs and the extension
       #     process crashes ("failed to check with helper application").
+      #   - adid: CoreADI's anisette provider (not an ad ID). Without it akd
+      #     fails every Apple ID sign-in (AKAnisetteError -8025): App Store,
+      #     Xcode accounts and signing.
+      #   - commerce, appstoreagent, amsaccountsd, amsondevicestoraged,
+      #     storekitagent: the App Store's own agents. With them off it shows
+      #     a blank window ("Could not create top level dependencies": the
+      #     com.apple.commerce and com.apple.xpc.amsaccountsd lookups fail).
       # ================================================================
-      for daemon in com.apple.mediaremoted com.apple.rapportd com.apple.softwareupdated com.apple.mobile.softwareupdated; do
+      for daemon in com.apple.mediaremoted com.apple.rapportd com.apple.softwareupdated com.apple.mobile.softwareupdated com.apple.adid; do
         sudo launchctl enable system/"$daemon" 2>/dev/null || true
         sudo launchctl bootstrap system "/System/Library/LaunchDaemons/$daemon.plist" 2>/dev/null || true
       done
-      # User agents paired with softwareupdated — surface update prompts/badges.
-      for agent in com.apple.SoftwareUpdateNotificationManager com.apple.softwareupdate_notify_agent; do
+      # User agents paired with softwareupdated (update prompts/badges), then
+      # the App Store's.
+      for agent in com.apple.SoftwareUpdateNotificationManager com.apple.softwareupdate_notify_agent \
+        com.apple.commerce com.apple.appstoreagent com.apple.amsaccountsd com.apple.amsondevicestoraged com.apple.storekitagent; do
         launchctl enable "gui/$GUI_UID/$agent" 2>/dev/null || true
         launchctl bootstrap "gui/$GUI_UID" "/System/Library/LaunchAgents/$agent.plist" 2>/dev/null || true
       done
