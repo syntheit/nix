@@ -1,5 +1,10 @@
-# nix-homebrew + brew-bundle activation settings shared by swift and mini.
-# Per-host cask/brew lists stay in hosts/<host>/homebrew.nix.
+# nix-homebrew + brew-bundle settings and the casks/brews swift and mini share.
+# Per-host extras stay in hosts/<host>/homebrew.nix (the lists merge). Casks
+# are for GUI apps (signing, system extensions, kexts — things Nix can't
+# cleanly handle on macOS). Brews are kept minimal and reserved for things
+# that genuinely need Homebrew's macOS-native build (e.g. ollama for
+# Metal/GPU integration). CLI tools that have nixpkgs equivalents live in
+# home.packages, not here.
 { vars, ... }:
 
 {
@@ -18,5 +23,43 @@
       cleanup = "uninstall";
       upgrade = true;
     };
+
+    casks = [
+      "affinity"
+      "antigravity"
+      "arc"
+      "claude"
+      "cursor"
+      "dbeaver-community"
+      "iina"
+      "karabiner-elements"
+      "kiro"
+      "ghostty"
+      "lulu"
+      "marta"
+      "macwhisper"
+      "notunes"
+      "obs"
+      "obsidian"
+      "orbstack"
+      "royal-tsx"
+      "seafile-client"
+      "spotify"
+      "syncthing-app"
+      "tailscale-app"
+      "telegram"
+      "thunderbird"
+      "transmission"
+      "visual-studio-code"
+      "vnc-viewer"
+      "windows-app"
+      "windscribe"
+      "zen"
+    ];
+    brews = [
+      "awscli-local"
+      "ollama" # Kept in Homebrew for better macOS Metal/GPU integration
+      "wifi-password"
+    ];
   };
 }

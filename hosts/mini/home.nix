@@ -4,9 +4,11 @@
     ../../home/darwin.nix
   ];
 
-  # Intentionally minimal. brightness-panel is MacBook-only (drives the
-  # internal panel via pmset); the mini's external monitors don't expose
-  # software brightness through that path, so we skip it.
+  # Intentionally minimal; the shared config is home/darwin.nix. Left out
+  # from hosts/swift/home.nix: brightness-panel (drives the internal panel via
+  # pmset; the mini's external monitors don't expose software brightness
+  # through that path, telmo's display popup on fn+D uses DDC instead) and
+  # bluetooth-sleep (Bluetooth off while asleep; the mini never sleeps).
 
   # Karabiner on the mini does TWO things, both narrow:
   #
