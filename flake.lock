@@ -362,11 +362,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1792682052,
-        "narHash": "sha256-xfCJUxwHtOFYa/9sOEuPg10n0szk0kxQMefjseahhJ4=",
+        "lastModified": 1792687505,
+        "narHash": "sha256-r1ljXIzr2NstBFKtPomaaQkc/KlSOamtHM769tr6MME=",
         "ref": "refs/heads/main",
-        "rev": "9fbf67bb318f54a079825c728c2e1d6b5920f911",
-        "revCount": 3014,
+        "rev": "91d5892b3ae32b59df3ac4450e1b0266ffe15d20",
+        "revCount": 3021,
         "type": "git",
         "url": "ssh://git@github-malli-deus/NRE-Product/malli-deus.git"
       },
@@ -732,11 +732,11 @@
         "systems": "systems_4"
       },
       "locked": {
-        "lastModified": 1731533236,
-        "narHash": "sha256-l0KFg5HjrsfsO/JpG+r7fRrqm12kzFHyUHqHCVpMMbI=",
+        "lastModified": 1791914995,
+        "narHash": "sha256-Zf/xfQEAasnwnmEfHqW/4hjDE/s44yn2hD4RuVIZRjA=",
         "owner": "numtide",
         "repo": "flake-utils",
-        "rev": "11707dc2f618dd54ca8739b309ec4fc024de578b",
+        "rev": "b7a79d3fea1e214f6d668d521cecec0c01e26544",
         "type": "github"
       },
       "original": {
