@@ -94,6 +94,10 @@ in
       ls = "eza --icons=auto";
       ll = "eza -l --icons=auto";
       la = "eza -la --icons=auto";
+      # Evaluate here, build on raven: raven hands the builds to the mini
+      # (max-jobs = 0), so the phone only does the switch. Works from any host,
+      # macOS included (nixos-rebuild-ng runs on darwin).
+      deploy-raven = "${pkgs.nixos-rebuild-ng}/bin/nixos-rebuild switch --flake ~/nix#raven --target-host raven --build-host raven --sudo";
     }
     // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
       locate = "plocate";

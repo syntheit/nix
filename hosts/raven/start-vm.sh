@@ -15,10 +15,13 @@ magisk resetprop ro.debuggable 1
 TERMINAL=com.android.virtualization.terminal
 IMAGE_DIR=/data/data/$TERMINAL/files/linux
 chattr +i "$IMAGE_DIR/completed" "$IMAGE_DIR/build_id" "$IMAGE_DIR/vm_config.json" "$IMAGE_DIR"
-for c in UpgradeActivity SettingsRecoveryActivity InstallerActivity InstallerService; do
+# pm disable kills the app, so this must stay ahead of the Terminal launch.
+for c in UpgradeActivity SettingsRecoveryActivity SettingsDiskResizeActivity InstallerActivity InstallerService; do
     pm disable "$TERMINAL/.$c" >/dev/null
 done
 magisk resetprop lineage.updater.allow_major_upgrades false
+# crosvm is a "phantom process" of the Terminal app; don't let Android police it.
+settings put global settings_enable_monitor_phantom_procs false
 # Keep screen alive throughout boot — previous boot left timeout at 1s
 settings put system screen_off_timeout 120000
 settings put system screen_brightness 0
@@ -32,6 +35,14 @@ sleep 3
 am start -W -n com.termux/.HomeActivity
 sleep 5
 su 10228 -c 'export PREFIX=/data/data/com.termux/files/usr HOME=/data/data/com.termux/files/home LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib; /data/data/com.termux/files/usr/bin/sshd'
+# Every VM start, the Terminal sizes root_part to 95% of /data while the
+# read-only terminal_storage_balloon flag is on; with it off it would run
+# resize2fs -M on the image instead. If an OS update ever flips it, stay down
+# (Termux sshd is already up) rather than let the app shrink the filesystem.
+if aflags list 2>/dev/null | grep 'flags\.terminal_storage_balloon ' | grep -q ' disabled '; then
+    log -t start-vm "terminal_storage_balloon is disabled; not starting the VM"
+    exit 1
+fi
 # Launch VM terminal last so it stays in foreground
 am start -S -W -n com.android.virtualization.terminal/.MainActivity
 sleep 45
@@ -46,7 +57,9 @@ settings put system screen_off_timeout 1000
 # Watchdog — restart VM if it dies
 while true; do
     sleep 30
-    if ! ip neigh | grep -q avf_tap; then
+    # The neighbour entry can linger as INCOMPLETE after the VM dies, which
+    # still matches; the crosvm process is the direct signal.
+    if ! pidof crosvm_debian >/dev/null || ! ip neigh | grep -q avf_tap; then
         settings put system screen_off_timeout 120000
         svc power stayon true
         input keyevent KEYCODE_WAKEUP
