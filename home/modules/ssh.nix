@@ -8,7 +8,7 @@
 
 let
   ravenLanProxy = pkgs.writeShellScript "raven-lan-proxy" ''
-    exec ssh -o ControlMaster=no -o ControlPath=none raven-phone 'exec nc "$(ip -4 neigh | awk "/avf_tap/ {print \$1; exit}")" 22'
+    exec ssh -o ControlMaster=no -o ControlPath=none raven-phone 'exec nc "$(ip -4 neigh | awk "/avf_tap/ && /lladdr/ {print \$1; exit}")" 22'
   '';
 in
 {
