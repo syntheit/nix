@@ -2,6 +2,23 @@
 while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 5; done
 sleep 15
 magisk resetprop ro.debuggable 1
+
+# Guard the NixOS image against the Terminal app replacing it. Every path that
+# deletes it (Recovery "Reset", the upgrade flow, the installer) unlinks or
+# renames entries in files/linux; an immutable directory makes those fail with
+# EPERM, even for root or "Clear storage", while root_part/efi_part stay
+# writable. The small metadata files are never written outside those paths.
+# Disabling the components also keeps their screens from ever coming up under
+# the blind tap below. Undo all of this (chattr -i, pm enable) before moving
+# the VM to a new Terminal version — the Android 17 one replaces nixos-avf
+# images (nix-community/nixos-avf#42), so major LineageOS upgrades stay blocked.
+TERMINAL=com.android.virtualization.terminal
+IMAGE_DIR=/data/data/$TERMINAL/files/linux
+chattr +i "$IMAGE_DIR/completed" "$IMAGE_DIR/build_id" "$IMAGE_DIR/vm_config.json" "$IMAGE_DIR"
+for c in UpgradeActivity SettingsRecoveryActivity InstallerActivity InstallerService; do
+    pm disable "$TERMINAL/.$c" >/dev/null
+done
+magisk resetprop lineage.updater.allow_major_upgrades false
 # Keep screen alive throughout boot — previous boot left timeout at 1s
 settings put system screen_off_timeout 120000
 settings put system screen_brightness 0
