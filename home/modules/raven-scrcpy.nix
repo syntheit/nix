@@ -69,10 +69,13 @@ let
     fi
 
     # -S: turn the physical screen off once mirroring starts (it's normally
-    # off anyway — this just skips the brief wake flash). -K: turn it back
-    # off on exit too, in case something (a notification, the wake itself)
-    # lit it up during the session.
-    exec ${pkgs.scrcpy}/bin/scrcpy -s "$target" -S -K
+    # off anyway — this just skips the brief wake flash). -w: keep the phone
+    # awake while mirroring — start-vm.sh sets screen_off_timeout to 1s, so
+    # without it Android sleeps mid-session and the mirror goes black; scrcpy
+    # restores the setting on exit, so the real screen keeps its timeout.
+    # --power-off-on-close: turn it back off on exit too, in case something
+    # (a notification, the wake itself) lit it up during the session.
+    exec ${pkgs.scrcpy}/bin/scrcpy -s "$target" -S -w --power-off-on-close
   '';
 in
 lib.mkIf (hostName == "mantle") {
