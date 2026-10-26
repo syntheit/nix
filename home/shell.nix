@@ -81,6 +81,21 @@ let
       letter: target: "  ${letter} / ${letter} work        ${target} session (${if target == hostName then "local" else transportFor target})"
     ) sessionHosts
   );
+
+  # Body of `rebuild` (initContent), picked per platform at eval time.
+  # Darwin: Determinate's /etc/nix/nix.conf adds its own cache
+  # (install.determinate.systems) via extra-substituters AFTER
+  # `!include nix.custom.conf`, so config can't remove it. That cache throws
+  # flaky HTTP/2 errors and only serves Determinate's own binaries, so pass
+  # cache.nixos.org only (same as telmo's rebuild button).
+  rebuildCmd =
+    if pkgs.stdenv.hostPlatform.isDarwin then
+      ''sudo darwin-rebuild "$action" --flake "$HOME/nix#${hostName}" --substituters https://cache.nixos.org "$@"''
+    else
+      # Linux: --sudo, not `sudo nixos-rebuild`. As root, flake fetches lack the
+      # user's ssh alias for the private deus input (github-malli-deus, see
+      # home/modules/ssh.nix); --sudo evals/builds as the user, sudo only to activate.
+      ''nixos-rebuild "$action" --flake "$HOME/nix#${hostName}" --sudo "$@"'';
 in
 {
   programs.zsh = {
@@ -180,6 +195,14 @@ in
       # harbor is always mosh. The letter for the host you're on opens a local session.
       ${sessionFns}
 
+      # rebuild [switch|boot|build|...] [args] — rebuild this host from ~/nix.
+      # Default action is switch; extra args pass through to the rebuild command.
+      rebuild() {
+        local action="''${1:-switch}"
+        (( $# )) && shift
+        ${rebuildCmd}
+      }
+
       cheat() {
         cat <<'CHEAT'
   ── Remote Dev (from ${hostName}) ───────────────────
@@ -207,6 +230,9 @@ ${sessionCheat}
   ── Emergency ───────────────────────────────────────
   emergency-push              push all dirty repos
   emergency-push my-app       push one repo
+
+  ── Nix ─────────────────────────────────────────────
+  rebuild [action]            rebuild ${hostName} from ~/nix (default: switch)
 
   ── Project Setup ───────────────────────────────────
   echo "use flake" > .envrc && direnv allow
