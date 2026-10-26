@@ -31,9 +31,10 @@
         "platapool"
       ];
     };
-    # tmpfs for /tmp — reduces SSD writes
-    tmp.useTmpfs = true;
-    tmp.tmpfsSize = "16G";
+    # /tmp on the micron01 SATA SSD (fileSystems."/tmp" in hardware-configuration.nix):
+    # tmpfs pinned 11+ GB of RAM/zram; root NVMe is 91% full
+    tmp.useTmpfs = false;
+    tmp.cleanOnBoot = true;
     # Server-tuned sysctl
     kernel.sysctl = {
       "vm.min_free_kbytes" = 524288; # 512MB — start reclaiming early to avoid stalls
@@ -59,6 +60,10 @@
     # the mini is unreachable.
     # binfmt.emulatedSystems = [ "aarch64-linux" ];
   };
+
+  # Headless: a failed mount or unit must not stop boot at a console sulogin
+  # (no sshd). Boot continues degraded; check with `systemctl --failed`.
+  systemd.enableEmergencyMode = false;
 
   # GPU drivers — headless server, no X11 needed
   # nvidia driver required for container toolkit (Jellyfin GPU transcoding)

@@ -18,15 +18,36 @@
     options = [ "subvol=@" "compress=zstd" ];
   };
 
+  # nofail: the running system never reads the ESP; a bad fsck must not block
+  # boot. systemd-boot's installer refuses to run if /boot isn't mounted.
   fileSystems."/boot" = {
     device = "/dev/disk/by-uuid/0D2B-CD27";
     fsType = "vfat";
+    options = [ "nofail" "x-systemd.before=local-fs.target" ];
   };
 
+  # nofail: a dead micron01 must not block boot (emergency mode = no sshd).
+  # before= keeps the ordering nofail drops, so virt.nix's /micron01 tmpfiles
+  # rules still run after the mount; libvirt has its own RequiresMountsFor.
   fileSystems."/micron01" = {
     device = "/dev/disk/by-uuid/c4b473cb-6498-4ccb-a847-9aae7795af42";
     fsType = "btrfs";
-    options = [ "compress=zstd" ];
+    options = [ "compress=zstd" "nofail" "x-systemd.before=local-fs.target" ];
+  };
+
+  # /tmp on the micron01 SATA SSD: tmpfs pinned 11+ GB of RAM/zram; root NVMe is 91% full.
+  # nofail drops the implicit Before=local-fs.target, so re-add the ordering:
+  # systemd-tmpfiles-setup (cleanOnBoot + 1777 mode) must run after the mount.
+  # No x-systemd.device-timeout: it lands on the device unit shared with /micron01.
+  fileSystems."/tmp" = {
+    device = "/dev/disk/by-uuid/c4b473cb-6498-4ccb-a847-9aae7795af42";
+    fsType = "btrfs";
+    options = [ "subvol=@tmp" "compress=zstd" "noatime" "nosuid" "nodev" "nofail" "x-systemd.before=local-fs.target" ];
+  };
+  # nixos dbus.nix makes dbus-broker (aliased dbus.service) Require /tmp; a dead micron01 must not take down dbus → logind → docker
+  systemd.services.dbus-broker.unitConfig = {
+    RequiresMountsFor = lib.mkForce [ ];
+    WantsMountsFor = [ "/tmp" ];
   };
 
   swapDevices = [ ];
