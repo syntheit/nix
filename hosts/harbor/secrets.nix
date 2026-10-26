@@ -27,6 +27,32 @@
     owner = "matv";
     mode = "0400";
   };
+  # construct — Anthropic API for in-app agents (the "API" button; the other
+  # button runs local Claude Code). Read from /run/secrets/anthropic_key.
+  sops.secrets.anthropic_key = {
+    owner = "matv";
+    mode = "0400";
+  };
+  # construct — Basic-auth password (user "daniel") for the private F-Droid repo at /fdroid/repo.
+  sops.secrets.fdroid_password = {
+    owner = "matv";
+    mode = "0400";
+  };
+  # construct android — release signing key (PKCS12, base64) and its password; alias "construct".
+  # Losing these means the installed app can never be updated again: they live only here.
+  sops.secrets.android_keystore_b64 = {
+    owner = "matv";
+    mode = "0400";
+  };
+  sops.secrets.android_keystore_password = {
+    owner = "matv";
+    mode = "0400";
+  };
+  # construct — Seerr API key for the culture sync (watchlist + TMDB metadata).
+  sops.secrets.seerr_api_key = {
+    owner = "matv";
+    mode = "0400";
+  };
   sops.secrets.retrospend_smtp_user = { };
   sops.secrets.retrospend_smtp_password = { };
   sops.secrets.immich_db_password = { };

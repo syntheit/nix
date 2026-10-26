@@ -25,6 +25,7 @@
     ../../modules/btrbk-root.nix
     ../../modules/elliot.nix
     ../../modules/construct.nix
+    ../../modules/construct-life.nix
     ../../modules/jelly-recs.nix
     ../../modules/harborfin.nix
     ../../modules/asado-list.nix
@@ -129,6 +130,17 @@
     srcDir = "/home/matv/Projects/the_construct/construct-app";
     port = 4321;
     publicUrl = "http://harbor:4321";
+  };
+
+  # construct v2 (overhaul/IMPLEMENTATION.md). Public at construct.matv.io via the harbor tunnel; the app
+  # itself rejects tunnel requests until environment.CF_ACCESS_TEAM + CF_ACCESS_AUD are set.
+  services.constructLife = {
+    enable = true;
+    # Cloudflare Access guards only construct.matv.io/auth/login (shared Access app with downloader/sonarr).
+    environment = {
+      CF_ACCESS_TEAM = "matv";
+      CF_ACCESS_AUD = "5f8d308e0bcf4b314007375751df1e617056afb132d05690e1d5a2416a43d245";
+    };
   };
 
   # asado-list — static viewer for the asado & tech waitlist triage.
