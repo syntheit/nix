@@ -9,6 +9,7 @@
     ../../modules/numtide-cache.nix
     ./hardware-configuration.nix
     ./hardware.nix
+    ./oom.nix
     ./secrets.nix
     ./nix-builder.nix
     ./storage.nix
@@ -362,19 +363,6 @@
   services.journald.settings.Journal = {
     SystemMaxUse = "500M";
     MaxRetentionSec = "1month";
-  };
-
-  # Kill runaway processes before the system becomes unresponsive
-  services.earlyoom = {
-    enable = true;
-    freeMemThreshold = 5;
-    freeSwapThreshold = 10;
-  };
-
-  # Compressed in-memory swap — OOM protection without disk swap
-  zramSwap = {
-    enable = true;
-    memoryPercent = 25; # ~16GB compressed swap
   };
 
   # Radicale data directories (must exist before systemd mount namespacing)

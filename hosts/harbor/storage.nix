@@ -300,6 +300,16 @@
   # Underlying pools remain accessible at /<pool> directly.
   system.fsPackages = [ pkgs.mergerfs ];
 
+  # ~/Projects lives on its own ZFS dataset. Legacy mount through fileSystems,
+  # so systemd orders units under this path after it.
+  # nofail: a failed arespool import must not drop boot into emergency mode (no sshd).
+  # before= keeps the local-fs.target ordering that nofail drops.
+  fileSystems."/home/matv/Projects" = {
+    device = "arespool/projects";
+    fsType = "zfs";
+    options = [ "nofail" "x-systemd.before=local-fs.target" ];
+  };
+
   fileSystems."/media" = {
     device = builtins.concatStringsSep ":" [
       "/deltapool/media"
@@ -328,6 +338,10 @@
       "minfreespace=20G"           # don't write to nearly-full branches
       "fsname=mergerfs"
       "inodecalc=path-hash"        # stable inodes across remounts (NFS-friendly)
+      # A dead pool must not drop boot into emergency mode (no sshd);
+      # before= keeps the local-fs.target ordering that nofail drops.
+      "nofail"
+      "x-systemd.before=local-fs.target"
     ];
     depends = [
       "/deltapool"
