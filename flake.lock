@@ -2031,11 +2031,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1784441830,
-        "narHash": "sha256-Rv2C5mA/xtZcW5btGZZs3cWUsf6eF3uhdqOTvh6pg6g=",
+        "lastModified": 1793050335,
+        "narHash": "sha256-XVpIi5AQ3/cw/wH/oLIx/fyGp4vp3/FQw/fzH1kUlKU=",
         "owner": "syntheit",
         "repo": "windscribe-nix",
-        "rev": "ae9279ddd55a39c41fadc92490d53ce25e687dde",
+        "rev": "2b993853340149d63fd4ada69fc259b6773e70a5",
         "type": "github"
       },
       "original": {
