@@ -4,7 +4,7 @@
   virtualisation.oci-containers.containers = {
     # ===== RETROSPEND (shared retrospend_default network) =====
     retrospend = {
-      image = "synzeit/retrospend:latest";
+      image = "retrospend:local";
       environmentFiles = [ config.sops.templates."retrospend.env".path ];
       ports = [ "127.0.0.1:1997:1997" ];
       volumes = [
