@@ -5,6 +5,7 @@
     ./media.nix
     ./immich.nix
     ./retrospend.nix
+    ./retrospend-dev.nix
     ./utilities.nix
     ./gaming.nix
     ./registry.nix

@@ -17,6 +17,7 @@
     ./access.nix
     ./malli-overview.nix
     ./vestal-site.nix
+    ./retrospend-fdroid.nix
     ./monitoring.nix
     ./virt.nix
     ../../modules/server-safety.nix
@@ -51,6 +52,9 @@
       retrospend = { policy = "manual"; backups = [ "retrospend" ]; };
       retrospend_sidecar = { policy = "manual"; backups = [ "retrospend" ]; };
       retrospend_postgres = { policy = "manual"; backups = [ "retrospend" ]; };
+      retrospend_dev = { policy = "manual"; };
+      retrospend_dev_postgres = { policy = "manual"; };
+      retrospend_dev_sidecar = { policy = "manual"; };
       immich_server = { backups = [ "immich" ]; };
       immich_machine_learning = { backups = [ "immich" ]; };
       docmost = { backups = [ "docmost" ]; };

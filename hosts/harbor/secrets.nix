@@ -48,6 +48,26 @@
     owner = "matv";
     mode = "0400";
   };
+  # retrospend android — same trio for the private F-Droid repo "Retrospend dev" (hosts/harbor/retrospend-fdroid.nix):
+  # app signing key (PKCS12, base64, alias "retrospend") and its password, plus the repo's Basic-auth password (user "daniel").
+  # Losing the key means uninstalling the app on every phone to install a differently signed one.
+  sops.secrets.retrospend_android_keystore_b64 = {
+    owner = "matv";
+    mode = "0400";
+  };
+  sops.secrets.retrospend_android_keystore_password = {
+    owner = "matv";
+    mode = "0400";
+  };
+  sops.secrets.retrospend_fdroid_password = {
+    owner = "matv";
+    mode = "0400";
+  };
+  # retrospend: APNs auth key (.p8, base64; Key ID S8AK338R5X, team 6NHZWHQX37) for iOS push from the dev server.
+  sops.secrets.retrospend_apns_key_b64 = {
+    owner = "matv";
+    mode = "0400";
+  };
   # construct — Seerr API key for the culture sync (watchlist + TMDB metadata).
   sops.secrets.seerr_api_key = {
     owner = "matv";

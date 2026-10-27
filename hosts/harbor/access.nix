@@ -25,6 +25,8 @@
           "drivehealth.matv.io" = "http://localhost:5153";
           "sync.matv.io" = "http://localhost:8384";
           "retrospend.app" = "http://localhost:1997";
+          "dev.retrospend.app" = "http://localhost:1998";
+          "fdroid.retrospend.app" = "http://localhost:1999";
           "tracearr.matv.io" = "http://localhost:7898";
           "dav.matv.io" = "http://localhost:5232";
           "grafana.matv.io" = "http://localhost:3100";
