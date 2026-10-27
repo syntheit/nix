@@ -49,17 +49,13 @@
     mode = "0400";
   };
   # retrospend android — same trio for the private F-Droid repo "Retrospend dev" (hosts/harbor/retrospend-fdroid.nix):
-  # app signing key (PKCS12, base64, alias "retrospend") and its password, plus the repo's Basic-auth password (user "daniel").
+  # app signing key (PKCS12, base64, alias "retrospend") and its password, (the repo itself is public).
   # Losing the key means uninstalling the app on every phone to install a differently signed one.
   sops.secrets.retrospend_android_keystore_b64 = {
     owner = "matv";
     mode = "0400";
   };
   sops.secrets.retrospend_android_keystore_password = {
-    owner = "matv";
-    mode = "0400";
-  };
-  sops.secrets.retrospend_fdroid_password = {
     owner = "matv";
     mode = "0400";
   };
