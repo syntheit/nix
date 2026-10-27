@@ -7,8 +7,9 @@
 }:
 let
   # linux-t2's HID trackpad patch group no longer applies to Linux 6.18.52.
-  # Vista is headless and does not use its internal trackpad (see the note
-  # below), so retain the rest of the T2 patch series while omitting those
+  # Vista is headless and does not use its internal trackpad (it sits behind
+  # apple-bce, which vista no longer loads; see the BCE note below), so retain
+  # the rest of the T2 patch series while omitting those
   # stale trackpad-support patches.  4001 targets Asahi (Apple silicon) and
   # 4003–4005 target T2/Magic trackpads; none are needed by this headless Intel
   # T2 host.
@@ -52,20 +53,51 @@ let
   t2Kernel = t2Base.override (prev: {
     kernelPatches = map (p: if p.name == ported3001.name then ported3001 else p) prev.kernelPatches;
   });
+
+  # systemd-shutdown hook for the reboot note below. systemd-shutdown runs each
+  # executable in /etc/systemd/system-shutdown with its verb as $1, after the
+  # final unmount pass and right before it either enters the shutdown ramfs or
+  # calls reboot(2) (src/shutdown/shutdown.c, run()). On "reboot" with a kexec
+  # image loaded, kexec instead. -x skips kexec-tools' interface teardown,
+  # which systemd's own kexec() doesn't do either; kexec -e syncs first.
+  # inRealRoot: hand off to
+  # the shutdown ramfs copy when one is staged (the same check systemd uses for
+  # can_exitrd), so the kexec happens after the ramfs unmounts the old root.
+  kexecOnReboot =
+    inRealRoot:
+    pkgs.writeShellScript "kexec-on-reboot" ''
+      [ "$1" = reboot ] || exit 0
+      ${lib.optionalString inRealRoot "[ -x /run/initramfs/shutdown ] && exit 0"}
+      [ "$(< /sys/kernel/kexec_loaded)" = 1 ] || exit 0
+      echo "kexec-on-reboot: firmware reboots power this Mac off; kexec instead"
+      exec ${pkgs.kexec-tools}/bin/kexec -e -x
+    '';
+
+  # Loads the boot default for the two kexec units in the reboot note below:
+  # the same kexec --load as nixpkgs' prepare-kexec. --load replaces an image
+  # that's already loaded in one syscall, so there's never a moment with
+  # nothing loaded. On success, GC-root what's now loaded: an image left behind
+  # by a failed reload must not point at a generation nix.gc has deleted.
+  kexecLoadBootDefault = pkgs.writeShellScript "kexec-load-boot-default" ''
+    set -e
+    p=$(${pkgs.coreutils}/bin/readlink -f /nix/var/nix/profiles/system)
+    if ! [[ -d $p ]]; then
+      echo "no system profile at /nix/var/nix/profiles/system"
+      exit 1
+    fi
+    ${pkgs.kexec-tools}/bin/kexec --load "$p/kernel" --initrd="$p/initrd" \
+      --append="$(< "$p/kernel-params") init=$p/init"
+    ${pkgs.coreutils}/bin/ln -sfn "$p" /nix/var/nix/gcroots/kexec-loaded
+    echo "kexec image loaded: $p"
+  '';
 in
 {
   # ── Apple T2 (MacBookPro16,1) ────────────────────────────────────────────
-  # The nixos-hardware apple-t2 module does the heavy lifting: it pins a
-  # T2-patched kernel, loads apple-bce (keyboard/trackpad/audio bridge) in
-  # initrd, and sets the required kernel params (pcie_ports=compat,
-  # intel_iommu=on, iommu=pt).
-    # NOTE (trackpad): the internal trackpad needs the newer linux-t2 patches
-    # (6.18+ branch) to bind its multitouch HID interface correctly — on 6.12 it
-    # comes up as a relative mouse with no working click. But this nixos-hardware
-    # module only offers kernelChannel "stable" (linux_6_12) or "latest"
-    # (linux_6_19), and 6.19 was removed from our nixpkgs (EOL), so the bump
-    # can't build. Revisit when the module exposes a 6.18-based t2 kernel (then
-    # this becomes a one-line flip). Until then: USB mouse for laptop use.
+  # The nixos-hardware apple-t2 module supplies the T2 patch set (built above
+  # against our own 6.18 kernel), the T2 audio profiles, and the kernel params
+  # (intel_iommu=on, iommu=pt, pm_async=off). It also loads apple-bce
+  # (keyboard/trackpad/Touch Bar/audio bridge) in initrd, which vista undoes:
+  # see the BCE note below.
   hardware.apple-t2 = {
     kernelChannel = "stable";
 
@@ -86,6 +118,38 @@ in
 
   boot.kernelPackages = lib.mkForce (pkgs.linuxPackagesFor t2Kernel);
 
+  # ── T2 BCE bridge: never load apple-bce ───────────────────────────────────
+  # This is what reset vista every 5 days. 432000 s after the host boots, the
+  # T2 removes its internal keyboard/trackpad (bce-vhci port 5). apple-bce
+  # mishandles the removal ("bce-vhci: Possible desync, cmd cancel timed out")
+  # and ~30 s later the T2 power-cycles the Mac. With apple-bce never loaded a
+  # T2 Mac ran 10.7+ days: https://github.com/t2linux/kernel/issues/38
+  #
+  # Headless vista needs nothing behind the BCE: internal keyboard/trackpad,
+  # Touch Bar, camera, T2 audio and the T2 bridge NIC all go with it. applesmc
+  # (charge limit, battery guard) stays: it talks to the SMC over MMIO and
+  # depends only on led-class, and apple-bce exports nothing for it to need.
+  #
+  # The first boot without the module must be a COLD power-on, not a kexec:
+  # the T2's BCE state can carry across a kexec. The next 5-day reset
+  # (2026-10-31 ~15:21 -03) is a cold boot, so it does the job.
+  #
+  # nixos-hardware still lists apple-bce in boot.initrd.kernelModules (a plain
+  # list; dropping one entry would mean restating the rest in a mkForce), so
+  # the .ko ships in the initrd and systemd-modules-load asks for it. The two
+  # blacklists refuse it everywhere: the modprobe.d entry (also copied into the
+  # initrd) covers udev's PCI-alias load and modules-load, which skips it as
+  # "deny-listed (by kmod)"; module_blacklist= makes the kernel itself refuse
+  # it, which modules-load also logs as deny-listed rather than failing
+  # (src/shared/module-util.c). (A module of its own only because
+  # boot.kernelParams is also set in the panel block below.)
+  imports = [
+    {
+      boot.blacklistedKernelModules = [ "apple_bce" ];
+      boot.kernelParams = [ "module_blacklist=apple_bce" ];
+    }
+  ];
+
   # ── T2 bridge NIC: keep NetworkManager off it (prevents a kernel lockup) ───
   # The T2 exposes an internal USB "bridge" network interface (MAC
   # ac:de:48:00:11:22, enp4s0f1u1) that has nothing on the other end — our real
@@ -97,8 +161,11 @@ in
   # locks the kernel. That froze vista for hours on 2026-07-13 until it was
   # power-cycled. Marking the bridge unmanaged (by its stable Apple MAC) stops the
   # DHCP retry storm — the iface stays down, nothing transmits, the bug can't fire.
-  # apple-bce's keyboard/audio functions are unaffected; this only drops IP mgmt
-  # of that one netdev. See the panic-on-lockup sysctls below for the safety net.
+  # See the panic-on-lockup sysctls below for the safety net.
+  # The bridge is a USB device behind apple-bce, so with apple-bce gone (see
+  # above) it no longer appears, and the July lockup was very likely the same
+  # 5-day T2 event anyway. The rule is inert now; it stays in case apple-bce is
+  # ever loaded again.
   networking.networkmanager.unmanaged = [ "mac:ac:de:48:00:11:22" ];
 
   # t2linux binary cache — serves prebuilt linux-t2 kernels (and the apple-bce
@@ -136,23 +203,93 @@ in
   # t2linux project documents for T2 Macs (verified working here: a kexec reboot
   # comes back in ~2-3 s with no POST).
   #
-  # So alias `reboot` to a kexec reboot. `systemctl kexec` auto-stages the
-  # current generation's kernel via prepare-kexec.service, so this needs no extra
-  # steps and, after a `nixos-rebuild switch`, kexecs into the newly-activated
-  # kernel. Caveats:
-  #   • Run `nixos-rebuild switch` (not `boot`) before rebooting for a kernel
-  #     update — kexec boots /run/current-system/kernel, which `switch` updates
-  #     but `boot` does not.
+  # So keep a kexec image of the boot-default generation loaded at all times;
+  # with one loaded, systemd turns a reboot into a kexec by itself. `reboot`,
+  # `sudo reboot now`, `systemctl reboot` and `shutdown -r` all reach logind
+  # asking for kexec (systemctl-logind.c logind_reboot(); shutdown -r picks
+  # kexec at parse time, systemctl-compat-shutdown.c), and logind starts
+  # kexec.target when an image is loaded (logind-dbus.c). That choice is made
+  # at request time, so kexec-preload loads /nix/var/nix/profiles/system (the
+  # boot default, as prepare-kexec would) at boot, retrying if it fails.
+  # kexec-refresh then reloads it inside every kexec.target and reboot.target
+  # transaction, so the image is current at reboot time: `nixos-rebuild boot`
+  # + reboot comes up in the new generation just like `switch` + reboot. If
+  # the refresh fails, whatever is loaded stays (GC-rooted, see
+  # kexecLoadBootDefault): an older generation beats a firmware reboot. If
+  # instead the boot-time load never succeeded, logind falls back to
+  # reboot.target, which also runs kexec-refresh, and the hook below kexecs.
+  #
+  # Reboots that don't ask logind for kexec (`systemctl reboot -f`, starting
+  # reboot.target, Ctrl-Alt-Del, a bare logind Reboot() D-Bus call) still end
+  # in systemd-shutdown with verb "reboot"; the kexec-on-reboot hook (top of
+  # file) kexecs there instead. It runs from NixOS's shutdown ramfs, after that
+  # stage's unmount pass over the old root, and from the real root only when
+  # no ramfs was staged (`-f` skips the unit that builds it).
+  #
+  # Caveats:
+  #   • `reboot -f`, `reboot -ff` and `systemctl reboot -ff` call reboot(2)
+  #     directly (systemctl-util.c halt_now()), skipping systemd-shutdown, so
+  #     nothing can catch them: they power vista off. So do SysRq-b and the
+  #     panic reboot (kernel.panic below).
   #   • `poweroff` / `shutdown -h` are unaffected and correct (a clean power-off
   #     is fine). It's only *reboot* that the firmware mishandles.
-  #   • Bypasses (`sudo reboot`, `systemctl reboot`, `shutdown -r`) still hit the
-  #     firmware and will power off — use the aliased `reboot`.
-  environment.shellAliases.reboot = "sudo systemctl kexec";
+  #   • `nixos-rebuild test` doesn't touch the boot default, so a reboot after
+  #     it boots the default, same as a firmware boot would.
+  #   • A kexec image loaded by hand (`kexec -l`) is replaced by kexec-refresh
+  #     on the way down; boot it with `systemctl kexec -f` or `kexec -e`.
+  systemd.services.kexec-preload = {
+    description = "Load the boot-default generation for kexec reboots";
+    wantedBy = [ "multi-user.target" ];
+    # Bounded retries: 5 starts in 10 min, 30 s apart.
+    startLimitIntervalSec = 600;
+    startLimitBurst = 5;
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = kexecLoadBootDefault;
+      Restart = "on-failure";
+      RestartSec = 30;
+      # A hung load mustn't stall multi-user.target or nixos-rebuild switch.
+      TimeoutStartSec = "2min";
+    };
+  };
+  # Runs ahead of prepare-kexec (which then sees an image and skips) and of the
+  # final systemd-kexec/systemd-reboot step. "-" ignores a failed load, so the
+  # reboot goes on with whatever was loaded.
+  systemd.services.kexec-refresh = {
+    description = "Reload the boot-default generation for kexec before rebooting";
+    wantedBy = [
+      "kexec.target"
+      "reboot.target"
+    ];
+    before = [
+      "prepare-kexec.service"
+      "systemd-kexec.service"
+      "systemd-reboot.service"
+    ];
+    unitConfig = {
+      DefaultDependencies = false;
+      RequiresMountsFor = [
+        "/nix/store"
+        "/nix/var/nix"
+      ];
+    };
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = "-${kexecLoadBootDefault}";
+      TimeoutStartSec = "1min";
+    };
+  };
+  systemd.shutdown.kexec-on-reboot = kexecOnReboot true;
+  systemd.shutdownRamfs.contents."/etc/systemd/system-shutdown/kexec-on-reboot".source =
+    kexecOnReboot false;
+  systemd.shutdownRamfs.storePaths = [ "${pkgs.kexec-tools}/bin/kexec" ];
 
   # 2) Belt-and-suspenders: force both backlights (main gmux panel + the OLED
   #    Touch Bar) to zero at boot, in case the PWM rail stays powered even with
   #    the connector disabled. Writes defensively — the sysfs nodes may not
-  #    exist once the panel is off, so failures are ignored.
+  #    exist once the panel is off, so failures are ignored. appletb_backlight
+  #    only exists with apple-bce loaded, so it's always skipped now; the
+  #    Touch Bar is left with no host driver at all.
   systemd.services.backlight-off = {
     description = "Force internal panel + Touch Bar backlight off (headless)";
     wantedBy = [ "multi-user.target" ];
