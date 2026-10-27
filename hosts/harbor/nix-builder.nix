@@ -37,6 +37,18 @@
   nix.distributedBuilds = true;
   nix.settings.builders-use-substitutes = true;
 
+  # Build scratch trees → the micron01 SATA SSD. The root NVMe is ~89% full and
+  # has filled up before; local builds like vista's T2 kernel take 10–20 GB of
+  # scratch, and micron01 has ~430 GB free. /micron01 is nofail
+  # (hardware-configuration.nix): if that disk is missing, builds silently fall
+  # back to writing under the bare mountpoint on root. /tmp is on micron01 too
+  # (the @tmp subvol), but that's a separate mount of the same disk.
+  # 0755 root root: nix wants build-dir o+x (non-sandboxed builds traverse it)
+  # and NOT world-writable (sandbox-escape vector). The mount's
+  # x-systemd.before=local-fs.target puts it before systemd-tmpfiles-setup.
+  nix.settings.build-dir = "/micron01/nix-build";
+  systemd.tmpfiles.rules = [ "d /micron01/nix-build 0755 root root -" ];
+
   nix.buildMachines = [
     {
       hostName = "mac-linux-builder";
