@@ -8,14 +8,17 @@
 let
   # linux-t2's HID trackpad patch group no longer applies to Linux 6.18.52.
   # Vista is headless and does not use its internal trackpad (see the note
-  # below), so retain the rest of the T2 patch series while omitting only that
+  # below), so retain the rest of the T2 patch series while omitting those
   # stale trackpad-support patches.  4001 targets Asahi (Apple silicon) and
   # 4003–4005 target T2/Magic trackpads; none are needed by this headless Intel
   # T2 host.
+  # 2008 (i915 4-lane quirk) stopped applying on 6.18.58.  It targets the
+  # MacBookPro15,1's Intel iGPU; vista is a MacBookPro16,1 running with the
+  # iGPU off (enableIGPU = false below), so it is omitted too.
   t2Patchset = builtins.fromJSON (
     builtins.readFile "${inputs.nixos-hardware}/apple/t2/pkgs/linux-t2/stable.json"
   );
-  t2Kernel = (pkgs.callPackage "${inputs.nixos-hardware}/apple/t2/pkgs/linux-t2/generic.nix" { }) {
+  t2Base = (pkgs.callPackage "${inputs.nixos-hardware}/apple/t2/pkgs/linux-t2/generic.nix" { }) {
     kernel = pkgs.linux_6_18;
     patchesFile = builtins.toFile "vista-linux-t2-stable.json" (
       builtins.toJSON (
@@ -24,6 +27,7 @@ let
           patches = lib.filter (
             patch:
             !(builtins.elem patch.name [
+              "2008-i915-4-lane-quirk-for-mbp15-1.patch"
               "4001-asahi-trackpad.patch"
               "4003-HID-apple-ignore-the-trackpad-on-T2-Macs.patch"
               "4004-HID-magicmouse-Add-support-for-trackpads-found-on-T2.patch"
@@ -34,6 +38,20 @@ let
       )
     );
   };
+  # 3001 (applesmc static structures → drvdata) is carried as a local port.
+  # 6.18.53 backported upstream 5a0aacaa2d59 ("hwmon: (applesmc) fix key
+  # backlight workqueue leak on register failure"), which adds the same
+  # led_classdev_register() error path that 3001 adds, so one hunk stopped
+  # applying. The port only rebases that hunk; the patched code is unchanged.
+  # It replaces the original in place, since 3002–3009 build on it. Drop the
+  # local copy once nixos-hardware's linux-t2 patches catch up.
+  ported3001 = {
+    name = "3001-applesmc-convert-static-structures-to-drvdata.patch";
+    patch = ./kernel-patches/3001-applesmc-convert-static-structures-to-drvdata.patch;
+  };
+  t2Kernel = t2Base.override (prev: {
+    kernelPatches = map (p: if p.name == ported3001.name then ported3001 else p) prev.kernelPatches;
+  });
 in
 {
   # ── Apple T2 (MacBookPro16,1) ────────────────────────────────────────────
