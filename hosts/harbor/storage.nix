@@ -24,7 +24,9 @@
       onCalendar = "daily";
       settings = {
         snapshot_preserve_min = "2d";
-        snapshot_preserve = "7d 4w";
+        # 3 dailies only: each snapshot pins everything deleted after it, and
+        # "7d 4w" filled the 500 GB root twice in Oct 2026. Data is in restic.
+        snapshot_preserve = "3d";
         volume."/mnt/btrfs-root" = {
           subvolume."@" = { snapshot_dir = "@snapshots"; };
         };
