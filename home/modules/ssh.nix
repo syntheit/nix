@@ -48,6 +48,29 @@ in
         Port = 64829;
         ProxyCommand = "${pkgs.cloudflared}/bin/cloudflared access ssh --hostname %h";
       };
+      # Colo NUC (Malli control plane), three ways in; one HostKeyAlias so
+      # they share a known_hosts entry (SHA256:TSnV9qCZ14+jjbFHnwOcuGxjrAd9FuJ7EYdNyHH8T4Q).
+      # nuc: work Cloudflare tunnel + Access (browser login once a day).
+      "nuc" = {
+        HostName = "nuc-ssh.mallimax.net";
+        User = "daniel";
+        HostKeyAlias = "nuc";
+        ProxyCommand = "${pkgs.cloudflared}/bin/cloudflared access ssh --hostname %h";
+      };
+      # nuc.wg: WireGuard through conduit (10.100.0.5, sshd :4040).
+      "nuc.wg" = {
+        HostName = "10.100.0.5";
+        User = "daniel";
+        Port = 4040;
+        HostKeyAlias = "nuc";
+        ProxyJump = "conduit";
+      };
+      # nuc.ts: personal tailnet; goes away when the NUC joins the fleet tailnet.
+      "nuc.ts" = {
+        HostName = "100.82.158.20";
+        User = "daniel";
+        HostKeyAlias = "nuc";
+      };
       "swift" = {
         HostName = "100.78.114.100";
         IdentityFile = "~/.ssh/mainkey";
