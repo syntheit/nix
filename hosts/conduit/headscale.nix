@@ -18,11 +18,16 @@
 #          :2222 (ssh)    → vista   [public operator SSH into the nspawn]
 #          :9990          → mantle 10.100.0.3   [deus-on-vista's ADE call, hub-routed]
 
-{ pkgs, ... }:
+{ config, pkgs, ... }:
 
 let
   vista = "10.100.0.4";
   mantle = "10.100.0.3";
+
+  # Switchboard (see switchboard.nix): each service's upstream is one option,
+  # "vista" (default, 10.100.0.4) or "nuc" (malli.conduit.nucWgAddress).
+  cfgC = config.malli.conduit;
+  up = svc: if cfgC.upstream.${svc} == "nuc" then cfgC.nucWgAddress else vista;
 
   headscale-ui = pkgs.fetchzip {
     url = "https://github.com/gurucomputing/headscale-ui/releases/download/2025.01.20/headscale-ui.zip";
@@ -82,10 +87,10 @@ in
         header @options Access-Control-Allow-Headers "Authorization, Content-Type"
         header @options Access-Control-Max-Age "86400"
         respond @options 204
-        reverse_proxy ${vista}:8085
+        reverse_proxy ${up "headscale"}:8085
       }
       handle {
-        reverse_proxy ${vista}:8085
+        reverse_proxy ${up "headscale"}:8085
       }
     '';
   };
@@ -106,24 +111,24 @@ in
         file_server
       }
       handle {
-        reverse_proxy ${vista}:8085
+        reverse_proxy ${up "headscale"}:8085
       }
     '';
   };
   services.caddy.virtualHosts."bootstrap.matv.io" = {
     extraConfig = ''
       handle /ade/bootstrap-creds {
-        reverse_proxy ${vista}:8086
+        reverse_proxy ${up "deus"}:8086
       }
       handle /healthz {
-        reverse_proxy ${vista}:8086
+        reverse_proxy ${up "deus"}:8086
       }
       # Static pkg/payload serving migrated off conduit's local disk into the
       # vista headscale nspawn (2026-08). Forward /pkg/* verbatim over wg →
       # vista host DNAT → in-container Caddy :8088, which does the single
       # /pkg strip. conduit is now a pure relay for this vhost.
       handle /pkg/* {
-        reverse_proxy ${vista}:8088
+        reverse_proxy ${up "bootstrapPkg"}:8088
       }
       handle {
         respond "not found" 404
@@ -133,24 +138,24 @@ in
   # MDM stack migrated mantle → vista (2026-08). Public URLs unchanged;
   # only these relay backends flip. mantle kept as hot standby until soak.
   services.caddy.virtualHosts."mdm.matv.io".extraConfig = ''
-    reverse_proxy ${vista}:9990
+    reverse_proxy ${up "nanomdm"}:9990
   '';
   services.caddy.virtualHosts."scep.matv.io".extraConfig = ''
-    reverse_proxy ${vista}:8081
+    reverse_proxy ${up "scep"}:8081
   '';
   services.caddy.virtualHosts."enroll.matv.io".extraConfig = ''
-    reverse_proxy ${vista}:9991
+    reverse_proxy ${up "mdmenroll"}:9991
   '';
 
   # ── socat forwards to vista (and mantle) ───────────────────
   # Only Headscale fleet machines (tailscale0) + the wg mesh can reach these.
   systemd.services =
-    (socatProxy "registry-proxy" "Docker registry → vista over wg" "5000" "${vista}:5000")
-    // (socatProxy "zot-proxy" "Zot OCI registry → vista over wg" "5001" "${vista}:5001")
-    // (socatProxy "deus-proxy" "deus-server → vista (fleet + ADE webhook)" "8086" "${vista}:8086")
-    // (socatProxy "git-mirror-proxy" "git:// mirror → vista over wg" "9418" "${vista}:9418")
-    // (socatProxy "operator-ssh-proxy" "operator SSH into the nspawn → vista" "2222" "${vista}:2222")
-    // (socatProxy "nanomdm-proxy" "deus-on-vista's ADE call → vista nanomdm (hub-routed)" "9990" "${vista}:9990");
+    (socatProxy "registry-proxy" "Docker registry → vista over wg" "5000" "${up "registry"}:5000")
+    // (socatProxy "zot-proxy" "Zot OCI registry → vista over wg" "5001" "${up "zot"}:5001")
+    // (socatProxy "deus-proxy" "deus-server → vista (fleet + ADE webhook)" "8086" "${up "deus"}:8086")
+    // (socatProxy "git-mirror-proxy" "git:// mirror → vista over wg" "9418" "${up "git"}:9418")
+    // (socatProxy "operator-ssh-proxy" "operator SSH into the nspawn → vista" "2222" "${up "operatorSsh"}:2222")
+    // (socatProxy "nanomdm-proxy" "deus-on-vista's ADE call → vista nanomdm (hub-routed)" "9990" "${up "nanomdm"}:9990");
 
   # Fleet-facing tailnet ports (blocked from the internet), plus the wg0-only
   # nanomdm forward. Public :2222 for operator SSH into the moved nspawn.

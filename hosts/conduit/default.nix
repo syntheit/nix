@@ -8,12 +8,16 @@
   imports = [
     ./hardware.nix
     ./headscale.nix
+    ./switchboard.nix
     ./secrets.nix
     ./user-vpn.nix
     ./flake-cache.nix
     ../../modules/server-safety.nix
     ../../modules/foyer.nix
   ];
+
+  # Colo NUC on wg0 (10.100.0.5); its key was generated on the NUC 10-31.
+  malli.conduit.nucWgPublicKey = "f7VL/iwVGsuoJjY9Y+QnuIuEaLENk8uSdRwM3GU/pRI=";
 
   services.serverSafety = {
     enable = true;
