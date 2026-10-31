@@ -8,6 +8,7 @@
   imports = [
     ./hardware.nix
     ./headscale.nix
+    ./switchboard.nix
     ./secrets.nix
     ./user-vpn.nix
     ./flake-cache.nix
