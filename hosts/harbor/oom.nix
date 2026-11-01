@@ -2,20 +2,38 @@
 
 # Memory-exhaustion hardening. Goal: a runaway interactive/agent workload in
 # matv's session gets throttled or killed long before prod containers, sshd or
-# the box as a whole stall.
+# the box as a whole stall. Tiers + oomd policy: modules/server-safety/memory.nix.
 {
+  services.serverSafety.memory = {
+    enable = true;
+    sessionMax = "32G"; # ssh logins + tmux + agents
+    # tmux + agents. The 2026-10-30 runaway nix eval reached 27 GB.
+    agentsMax = "24G";
+    # Big local builds (vista's T2 kernel) fit; a runaway build gets OOM-killed.
+    backgroundMax = "16G";
+    # Off until zram grows to 50% (phase 1C): swap sits at ~83% of today's
+    # 15.6 GB, mostly cold production pages, so the 90% rule would kill agents
+    # for swap they don't hold.
+    swapKill = false;
+    backgroundUnits = [
+      "nix-daemon"
+      "nix-gc"
+      "nix-optimise"
+      "zfs-scrub@"
+      "zpool-trim"
+      "btrfs-scrub@"
+      "fstrim"
+      "restic-backups-offsite"
+      "restic-check-offsite"
+      "sanoid"
+      "syncoid-platapool-seafile"
+      "btrbk-default"
+      "update-locatedb"
+      "docker-prune"
+    ];
+  };
+
   systemd = {
-    # Cap everything matv runs (ssh/tmux/Claude agents, builds). user-1000.slice
-    # is created transiently by logind from user-.slice, so this must be a
-    # drop-in — a full unit file would shadow the template.
-    slices."user-1000" = {
-      overrideStrategy = "asDropin";
-      sliceConfig = {
-        MemoryHigh = "32G"; # throttle + reclaim hard above this
-        MemoryMax = "36G"; # cgroup OOM-kill inside the slice only
-        MemorySwapMax = "4G"; # don't let the session pin zram
-      };
-    };
 
     # Protect prod: system.slice holds the oci-containers scopes (docker,
     # systemd cgroup driver) and native services. Builtin unit → drop-in.
@@ -30,7 +48,7 @@
     };
 
     # Make systemd --user services (and tmux servers spawned through it) the
-    # preferred victim for earlyoom and the kernel global OOM killer. Login
+    # preferred victim for the kernel global OOM killer. Login
     # shells live in session-*.scope instead; see environment.shellInit below.
     # Takes effect next time user@1000 starts (all sessions closed, or reboot).
     services."user@1000" = {
@@ -47,25 +65,11 @@
     # before throttling stalls container plumbing. NO MemoryMax: killing
     # dockerd restarts every prod container.
     services.docker.serviceConfig.MemoryHigh = "12G";
-
-    # systemd-oomd (enabled by default) kills under sustained memory pressure in
-    # user slices only; root/system slices stay off so it never touches prod.
-    oomd.enableUserSlices = true;
   };
 
-  # Kill runaway processes before the system becomes unresponsive
-  services.earlyoom = {
-    enable = true;
-    freeMemThreshold = 5;
-    freeSwapThreshold = 10;
-    # Never pick infra/prod daemons. Matched against comm (≤15 chars), so the
-    # wildcard entries are prefixes. No --prefer: prod runs node/next-server too.
-    # [.] instead of an escaped dot: systemd's $EARLYOOM_ARGS unquoting would eat the backslash.
-    extraArgs = [
-      "--avoid"
-      "^(sshd|systemd|systemd-.*|dockerd|containerd|containerd-shim.*|postgres|mysqld|mariadbd|jellyfin|[.]qemu-system-x8.*|qemu-system-x86.*|tailscaled|cloudflared|zed|sops)$"
-    ];
-  };
+  # earlyoom removed 2026-11-01: it needs MemAvailable AND free swap low, and
+  # MemAvailable stays "healthy" during file-page thrash. It never fired in
+  # either stall. systemd-oomd (pressure-based) replaces it.
 
   # Login shells (sshd/mosh → zsh, tmux panes) sit in session-*.scope and start
   # at oom_score_adj 0, so user@1000's 500 never reaches them. Raise it for

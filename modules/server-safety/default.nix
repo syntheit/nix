@@ -6,6 +6,7 @@
   imports = [
     ./rescue.nix
     ./recovery.nix
+    ./memory.nix
   ];
 
   options.services.serverSafety = {
