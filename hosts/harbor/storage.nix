@@ -8,17 +8,61 @@
       autodetect = true;
       notifications.wall.enable = true;
     };
-    # ZFS automatic scrub — detects silent data corruption
-    zfs.autoScrub = {
+    # ZFS scrubs — detect silent data corruption. One pool at a time, spread
+    # over the month (modules/zfs-scrub.nix); autoScrub scrubbed all 8 at once
+    # and stalled the box on 2026-11-01.
+    zfs.autoScrub.enable = false;
+    zfsScrub = {
       enable = true;
-      interval = "monthly";
+      pools = [
+        "arespool"
+        "deltapool"
+        "epsilpool"
+        "iotapool"
+        "lambdapool"
+        "platapool"
+        "rhopool"
+        "thetapool"
+      ];
     };
-    # BTRFS periodic scrub on root filesystem
+    # BTRFS periodic scrub on root filesystem (~3 min). Off the 1st, where it
+    # used to pile onto the ZFS scrubs.
     btrfs.autoScrub = {
       enable = true;
-      interval = "monthly";
+      interval = "*-*-26 03:00";
       fileSystems = [ "/" ];
     };
+    # Dataset properties, enforced at boot and on switch (modules/zfs-properties.nix).
+    # atime=off: Jellyfin/*arr scans read every file; atime turns that into
+    # metadata writes on the HDDs and snapshot churn.
+    # recordsize=1M: media is large sequential files — less metadata, faster
+    # streaming, smaller scrub queues. Affects new writes only.
+    zfsProperties =
+      let
+        base = {
+          atime = "off";
+          dnodesize = "auto";
+        };
+        media = base // {
+          recordsize = "1M";
+          compression = "zstd";
+        };
+      in
+      {
+        arespool = base;
+        deltapool = media;
+        epsilpool = media;
+        iotapool = media;
+        lambdapool = media;
+        platapool = media;
+        thetapool = media;
+        # rhopool takes every torrent download: 16 KiB pieces landing in 1M
+        # records means read-modify-write against an uncached HDD
+        # (primarycache=metadata). Gets `media` once downloads move off it.
+        rhopool = base // {
+          compression = "zstd";
+        };
+      };
     # BTRFS automated snapshots on root
     btrbk.instances."default" = {
       onCalendar = "daily";
@@ -270,16 +314,6 @@
         echo "DB dumps complete."
       '';
 
-      # Verify backup integrity after each run — reads 1/20 of stored data
-      # and checks SHA-256 hashes. Full coverage over ~20 daily backups.
-      backupCleanupCommand = ''
-        echo "Verifying backup integrity (reading 1/20 of data)..."
-        ${pkgs.restic}/bin/restic check \
-          --read-data-subset=1/20 \
-          -o sftp.command='ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -i /home/matv/.ssh/mainkey daniel_backups@beta.mregirouard.com -s sftp'
-        echo "Integrity check passed."
-      '';
-
       # Retention policy: 7 daily, 4 weekly, 6 monthly
       pruneOpts = [
         "--keep-daily 7"
@@ -289,9 +323,38 @@
     };
   };
 
-  # Give the post-backup integrity check enough time to download and verify
-  # data over SFTP. The default TimeoutStopSec=90s kills it mid-check.
-  systemd.services.restic-backups-offsite.serviceConfig.TimeoutStopSec = "30min";
+  # Weekly integrity check: reads 1/10 of stored data and verifies its hashes
+  # (full coverage every ~10 weeks). It used to run after every nightly backup
+  # with a 30 min cap and overran it (2026-11-01), leaving a stale repo lock.
+  # Its own unit now: a slow check no longer fails the backup.
+  systemd.services.restic-check-offsite = {
+    description = "Verify offsite restic repository integrity";
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      TimeoutStartSec = "6h";
+    };
+    script =
+      let
+        sftp = "sftp.command='ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -i /home/matv/.ssh/mainkey daniel_backups@beta.mregirouard.com -s sftp'";
+      in
+      ''
+        ${pkgs.restic}/bin/restic unlock -o ${sftp} || true
+        ${pkgs.restic}/bin/restic check --read-data-subset=1/10 -o ${sftp}
+      '';
+    environment = {
+      RESTIC_REPOSITORY = config.services.restic.backups.offsite.repository;
+      RESTIC_PASSWORD_FILE = config.services.restic.backups.offsite.passwordFile;
+    };
+  };
+  systemd.timers.restic-check-offsite = {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnCalendar = "Sun 06:00";
+      Persistent = true;
+    };
+  };
 
   # =====================================================
   # MERGERFS — union mount across HDD pools at /media

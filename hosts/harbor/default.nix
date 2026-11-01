@@ -6,7 +6,10 @@
 
 {
   imports = [
+    ../../profiles/base.nix
     ../../modules/numtide-cache.nix
+    ../../modules/zfs-scrub.nix
+    ../../modules/zfs-properties.nix
     ./hardware-configuration.nix
     ./hardware.nix
     ./oom.nix
@@ -20,7 +23,7 @@
     ./retrospend-fdroid.nix
     ./monitoring.nix
     ./virt.nix
-    ../../modules/server-safety.nix
+    ../../modules/server-safety
     ../../modules/argus.nix
     ../../modules/foyer.nix
     ../../modules/btrbk-root.nix
@@ -35,6 +38,7 @@
   services.serverSafety = {
     enable = true;
     user = "matv";
+    recovery.enable = true;
   };
 
   # Argus — container update management (replaces Watchtower)
@@ -275,7 +279,6 @@
         "flakes"
         "pipe-operators"
       ];
-      auto-optimise-store = true;
       max-jobs = "auto";
       cores = 0;
       download-buffer-size = 134217728; # 128MB — faster downloads
@@ -375,9 +378,10 @@
   # Passwordless sudo for wheel (TEMPORARY — remove this line and rebuild to revert)
   security.sudo.wheelNeedsPassword = false;
 
-  # Cap journal size to prevent unbounded growth
+  # Cap journal size to prevent unbounded growth. 500M only held ~6 days
+  # (chatty container logs), so the 1-month retention was never reached.
   services.journald.settings.Journal = {
-    SystemMaxUse = "500M";
+    SystemMaxUse = "4G";
     MaxRetentionSec = "1month";
   };
 

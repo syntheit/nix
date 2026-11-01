@@ -24,7 +24,13 @@
     autoPrune = {
       enable = true;
       dates = "weekly";
-      flags = [ ];
+      # Also images no container uses, once a week old (76 of 116 GB were
+      # unused on 2026-11-01). Volumes are never pruned.
+      flags = [
+        "--all"
+        "--filter"
+        "until=168h"
+      ];
     };
     daemon.settings = {
       default-ulimits = {

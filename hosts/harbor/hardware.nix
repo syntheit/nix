@@ -38,7 +38,6 @@
     # Server-tuned sysctl
     kernel.sysctl = {
       "vm.min_free_kbytes" = 524288; # 512MB — start reclaiming early to avoid stalls
-      "vm.swappiness" = 10; # Low — prefer reclaiming ZFS ARC over swapping
       "vm.vfs_cache_pressure" = 50; # ZFS handles its own caching
       "vm.dirty_bytes" = 268435456; # 256MB — flush dirty pages at fixed thresholds
       "vm.dirty_background_bytes" = 67108864; # 64MB
@@ -59,6 +58,25 @@
     # and fails on mimick/tdlib). Re-enable this line only to build fajita while
     # the mini is unreachable.
     # binfmt.emulatedSystems = [ "aarch64-linux" ];
+  };
+
+  # CPU power: intel_pstate "powersave" still boosts on demand; the
+  # energy/performance preference decides how eagerly. "performance" pinned
+  # the 13600K high around the clock (~69 W package at modest load).
+  powerManagement.cpuFreqGovernor = "powersave";
+  systemd.services.cpu-epp = {
+    description = "Set CPU energy/performance preference";
+    after = [ "cpufreq.service" ];
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      for f in /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference; do
+        echo balance_performance > "$f"
+      done
+    '';
   };
 
   # Headless: a failed mount or unit must not stop boot at a console sulogin

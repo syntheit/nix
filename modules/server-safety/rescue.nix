@@ -5,18 +5,11 @@
   ...
 }:
 
+# Dead man's switch (arm-watchdog / disarm-watchdog) + rescue sshd on :64830.
 let
   cfg = config.services.serverSafety;
 in
 {
-  options.services.serverSafety = {
-    enable = lib.mkEnableOption "server safety infrastructure (watchdog + rescue SSH)";
-    user = lib.mkOption {
-      type = lib.types.str;
-      description = "Primary user account allowed rescue SSH access";
-    };
-  };
-
   config = lib.mkIf cfg.enable {
     environment.systemPackages = [
       # Dead man's switch — arm before risky rebuilds, disarm after verifying access

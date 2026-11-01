@@ -10,7 +10,7 @@
   imports = [
     ../../modules/numtide-cache.nix
     inputs.nixos-avf.nixosModules.avf
-    ../../modules/server-safety.nix
+    ../../modules/server-safety
     ../../modules/foyer.nix
     ./secrets.nix
     # Builds run on the mini's aarch64 VM, not on the phone (sets max-jobs = 0).

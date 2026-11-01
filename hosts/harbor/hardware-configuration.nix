@@ -15,7 +15,8 @@
   fileSystems."/" = {
     device = "/dev/disk/by-uuid/85545d0b-04d9-4f1c-a70e-de08b4a0cd09";
     fsType = "btrfs";
-    options = [ "subvol=@" "compress=zstd" ];
+    # noatime: with btrbk snapshots, every atime update is a CoW metadata write.
+    options = [ "subvol=@" "compress=zstd" "noatime" ];
   };
 
   # nofail: the running system never reads the ESP; a bad fsck must not block
@@ -32,7 +33,7 @@
   fileSystems."/micron01" = {
     device = "/dev/disk/by-uuid/c4b473cb-6498-4ccb-a847-9aae7795af42";
     fsType = "btrfs";
-    options = [ "compress=zstd" "nofail" "x-systemd.before=local-fs.target" ];
+    options = [ "compress=zstd" "noatime" "nofail" "x-systemd.before=local-fs.target" ];
   };
 
   # /tmp on the micron01 SATA SSD: tmpfs pinned 11+ GB of RAM/zram; root NVMe is 91% full.
@@ -61,7 +62,6 @@
   # networking.interfaces.wlp5s0.useDHCP = lib.mkDefault true;
 
   nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
-  powerManagement.cpuFreqGovernor = lib.mkDefault "performance";
   hardware.cpu.intel.updateMicrocode =
     lib.mkDefault config.hardware.enableRedistributableFirmware;
 }
