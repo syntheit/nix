@@ -18,6 +18,9 @@
 
   # Colo NUC on wg0 (10.100.0.5); its key was generated on the NUC 10-31.
   malli.conduit.nucWgPublicKey = "f7VL/iwVGsuoJjY9Y+QnuIuEaLENk8uSdRwM3GU/pRI=";
+  malli.conduit.upstream.operatorSsh = "nuc";
+  malli.conduit.upstream.deus = "nuc";
+  malli.conduit.upstream.headscale = "nuc";
   malli.conduit.upstream.mdmenroll = "nuc";
   malli.conduit.upstream.scep = "nuc";
   malli.conduit.upstream.nanomdm = "nuc";
