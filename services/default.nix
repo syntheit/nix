@@ -128,14 +128,6 @@
 
   virtualisation.oci-containers.backend = "docker";
 
-  # Virtualization (socket-activated: libvirtd starts on first use, not at boot)
-  programs.virt-manager.enable = true;
-  virtualisation.libvirtd.enable = true;
-  virtualisation.spiceUSBRedirection.enable = true;
-  systemd.services.libvirtd.wantedBy = lib.mkForce [ ];
-  systemd.sockets.libvirtd.wantedBy = [ "sockets.target" ];
-  systemd.sockets.libvirtd-admin.wantedBy = [ "sockets.target" ];
-
   # Services
   services.gvfs.enable = true;
   # gvfs volume monitors for GNOME Online Accounts, iPhones and cameras: none

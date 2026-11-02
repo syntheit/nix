@@ -72,6 +72,29 @@
   services.tailscale.enable = true;
   networking.firewall.trustedInterfaces = [ "tailscale0" "wg0" ];
 
+  # Docker-published ports (invidious :3000, zot :5001) are DNAT'd before the
+  # INPUT chain, so the rules above never see them and the LAN could reach
+  # both. Drop them in raw PREROUTING (before the DNAT) unless they come in on
+  # Tailscale, WireGuard or a docker bridge.
+  networking.firewall.extraCommands = ''
+    ip46tables -t raw -N vista-docker-ports 2>/dev/null || ip46tables -t raw -F vista-docker-ports
+    for i in lo tailscale0 wg0 docker0 br-+; do
+      ip46tables -t raw -A vista-docker-ports -i "$i" -j RETURN
+    done
+    ip46tables -t raw -A vista-docker-ports -j DROP
+    ip46tables -t raw -C PREROUTING -p tcp -m multiport --dports 3000,5001 -j vista-docker-ports 2>/dev/null \
+      || ip46tables -t raw -A PREROUTING -p tcp -m multiport --dports 3000,5001 -j vista-docker-ports
+  '';
+  networking.firewall.extraStopCommands = ''
+    ip46tables -t raw -D PREROUTING -p tcp -m multiport --dports 3000,5001 -j vista-docker-ports 2>/dev/null || true
+  '';
+
+  # oomd is on by default but monitors no cgroup here. Mask the daemon rather
+  # than `systemd.oomd.enable = false`, which also drops the slice settings and
+  # so stops every service on activation (see hosts/mantle/hardware.nix).
+  systemd.services.systemd-oomd.enable = false;
+  systemd.sockets.systemd-oomd.enable = false;
+
   # Was set by the removed headscale container NAT; kept so forwarding stays
   # on (wg0/tailscale/docker) and the running sysctl does not change.
   boot.kernel.sysctl."net.ipv4.ip_forward" = 1;
