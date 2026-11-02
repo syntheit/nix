@@ -12,6 +12,7 @@
     inputs.nixos-avf.nixosModules.avf
     ../../modules/server-safety
     ../../modules/foyer.nix
+    ../../modules/construct-life.nix
     ./secrets.nix
     # Builds run on the mini's aarch64 VM, not on the phone (sets max-jobs = 0).
     ./nix-builder.nix
@@ -37,6 +38,20 @@
     };
     # Read CPU temperature from Android host via SSH
     temperatureCommand = "ssh -p 8022 -i /var/lib/foyer/android-ssh-key -o BatchMode=yes -o ConnectTimeout=3 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $(ip route | awk '/default/ {print $3}') 'for z in /sys/class/thermal/thermal_zone*/; do t=$(cat \"$z/type\" 2>/dev/null); case \"$t\" in BIG|MID|LITTLE) echo $(( $(cat \"$z/temp\") / 1000 ));; esac; done' | sort -rn | head -1";
+  };
+
+  # construct — Daniel's life portal (moved from harbor 2026-11-02). Public at construct.matv.io via this tunnel;
+  # Cloudflare Access guards only /auth/login. Jellyfin and Seerr stay on harbor, reached over the tailnet.
+  # Android releases build on harbor and rsync the F-Droid repo here (modules/construct-android.nix).
+  services.constructLife = {
+    enable = true;
+    user = "droid";
+    seerrUrl = "http://harbor:5055";
+    jellyfinUrl = "http://harbor:8096";
+    environment = {
+      CF_ACCESS_TEAM = "matv";
+      CF_ACCESS_AUD = "5f8d308e0bcf4b314007375751df1e617056afb132d05690e1d5a2416a43d245";
+    };
   };
 
   # Copy SSH key so the foyer user can read it (SSH rejects keys not owned by the caller)
@@ -396,6 +411,7 @@
           "matv.io" = "http://localhost:3000";
           "raven.matv.io" = "http://localhost:8420";
           "raven-ssh.matv.io" = "ssh://localhost:22";
+          "construct.matv.io" = "http://localhost:4322";
         };
         default = "http_status:404";
         credentialsFile = "/etc/cloudflared/credentials.json";
@@ -413,6 +429,7 @@
     mosh
     cloudflared
     sqlite
+    rsync # harbor's construct-android-release pushes the F-Droid repo here
   ];
 
   # Shell

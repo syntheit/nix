@@ -151,24 +151,12 @@ in
       };
     };
 
-    # One-time Garmin login (email, password, MFA), run by Daniel in a terminal.
+    # The Android release lives in construct-android.nix: it builds on x86_64 only.
     environment.systemPackages = [
       rebuildScript
       linkScript
       cliScript
-      # Build, sign and publish the Android app to the private F-Droid repo.
-      (pkgs.writeShellScriptBin "construct-android-release" ''
-        set -euo pipefail
-        tmp=$(mktemp -d)
-        trap 'rm -rf "$tmp"' EXIT
-        base64 -d ${config.sops.secrets.android_keystore_b64.path} > "$tmp/construct.p12"
-        cd ${cfg.srcDir}/../android
-        export FDROID_DIR=/var/lib/construct/fdroid KEY_ALIAS=construct
-        export KEYSTORE_FILE="$tmp/construct.p12"
-        export KEYSTORE_PASSWORD_FILE=${config.sops.secrets.android_keystore_password.path}
-        export KEY_PASSWORD_FILE=${config.sops.secrets.android_keystore_password.path}
-        nix develop -c scripts/release.sh
-      '')
+      # One-time Garmin login (email, password, MFA), run by Daniel in a terminal.
       (pkgs.writeShellScriptBin "construct-garmin-login" ''
         exec sudo -u ${cfg.user} env GARMIN_TOKEN_DIR=/var/lib/construct/garmin ${garminPython}/bin/python3 ${cfg.srcDir}/garmin/garmin_login.py
       '')

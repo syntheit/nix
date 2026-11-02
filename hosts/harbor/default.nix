@@ -32,6 +32,7 @@
     ../../modules/elliot.nix
     ../../modules/construct.nix
     ../../modules/construct-life.nix
+    ../../modules/construct-android.nix
     ../../modules/jelly-recs.nix
     ../../modules/harborfin.nix
     ../../modules/asado-list.nix
@@ -144,6 +145,11 @@
 
   # construct v2 (overhaul/IMPLEMENTATION.md). Public at construct.matv.io via the harbor tunnel; the app
   # itself rejects tunnel requests until environment.CF_ACCESS_TEAM + CF_ACCESS_AUD are set.
+  programs.constructAndroidRelease = {
+    enable = true;
+    androidDir = "/home/matv/Projects/the_construct/android";
+  };
+
   services.constructLife = {
     enable = true;
     user = "matv";

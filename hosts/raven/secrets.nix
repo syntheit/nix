@@ -13,4 +13,11 @@
     owner = "droid";
     mode = "0400";
   };
+
+  # construct (services.constructLife): Anthropic API for in-app agents, Basic-auth password for the private F-Droid
+  # repo at /fdroid/repo, and the culture sync's Seerr and Jellyfin keys. Same values as harbor.yaml.
+  sops.secrets.anthropic_key = { owner = "droid"; mode = "0400"; };
+  sops.secrets.fdroid_password = { owner = "droid"; mode = "0400"; };
+  sops.secrets.seerr_api_key = { owner = "droid"; mode = "0400"; };
+  sops.secrets.jellyfin_api_key = { owner = "droid"; mode = "0400"; };
 }
