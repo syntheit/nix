@@ -65,6 +65,12 @@
     # containers running even if dockerd itself dies.
   };
 
+  # No core files: a crash-looping tsserver (Claude Code typescript-lsp
+  # across many agent worktrees) dumped ~4 GB each time, and writing every
+  # dump took 2.5-5 GB of RAM in system.slice plus a 1 GB write. Crashes are
+  # still logged with their stack trace in the journal.
+  systemd.coredump.settings.Coredump.Storage = "none";
+
   # earlyoom removed 2026-11-01: it needs MemAvailable AND free swap low, and
   # MemAvailable stays "healthy" during file-page thrash. It never fired in
   # either stall. systemd-oomd (pressure-based) replaces it.

@@ -166,6 +166,19 @@
       commands."platapool/seafile" = {
         target = "iotapool/seafile-replica";
         recvOptions = "u";
+        # Defaults + destroy, so syncoid can prune its own old sync snapshots
+        # on the target. Without it every run failed to (~936 "permission
+        # denied" per hour) and 937 snapshots piled up since 2026-09.
+        localTargetAllow = [
+          "change-key"
+          "compression"
+          "create"
+          "mount"
+          "mountpoint"
+          "receive"
+          "rollback"
+          "destroy"
+        ];
       };
     };
 

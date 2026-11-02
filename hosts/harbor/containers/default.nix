@@ -2,6 +2,7 @@
 
 {
   imports = [
+    ./log-driver.nix
     ./media.nix
     ./immich.nix
     ./retrospend.nix
