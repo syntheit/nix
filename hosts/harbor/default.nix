@@ -32,7 +32,6 @@
     ../../modules/construct-android.nix
     ../../modules/jelly-recs.nix
     ../../modules/harborfin.nix
-    ../../modules/asado-list.nix
   ];
 
   services.serverSafety = {
@@ -145,15 +144,6 @@
     enable = true;
     androidDir = "/home/matv/Projects/the_construct/android";
     publishTo = "raven:/var/lib/construct/fdroid/repo/";
-  };
-
-  # asado-list — static viewer for the asado & tech waitlist triage.
-  # Public hostname via cloudflared (asado-list.matv.io) is gated by a
-  # Cloudflare Access policy configured in the CF dashboard, NOT here.
-  services.asado-list = {
-    enable = true;
-    srcDir = "/home/matv/Projects/asado-list/static";
-    port = 4730;
   };
 
   # jelly-recs — content + collaborative recommendation rows for Jellyfin

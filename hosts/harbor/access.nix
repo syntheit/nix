@@ -35,7 +35,6 @@
           "couch.matv.io" = "http://localhost:5984";
           "map.matv.io" = "http://localhost:8100";
           "files.matv.io" = "http://localhost:4717";
-          "asado-list.matv.io" = "http://localhost:4730";
           "vestal.matv.io" = "http://localhost:8099";
           # (Mac fleet MDM moved to vista 2026-08; served via conduit Caddy, not this tunnel.)
         };
