@@ -57,7 +57,6 @@ lib.mkMerge [
       gtk.enable = true;
     };
 
-    stylix.targets.rofi.enable = false; # Disabled to use manual theme in rofi.nix
     stylix.targets.hyprland.enable = true;
     stylix.targets.gtk.enable = true;
     stylix.targets.qt.enable = true;

@@ -22,7 +22,7 @@
     ./modules/hyprland.nix
     ./modules/vestal.nix
     ./modules/telmo.nix
-    ./modules/rofi.nix
+    ./modules/power-entries.nix
     ./modules/ghostty.nix
     ./modules/thunderbird.nix
     ./modules/mime-apps.nix
