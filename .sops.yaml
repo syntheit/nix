@@ -30,11 +30,6 @@ creation_rules:
       - age:
           - *conduit
           - *daniel
-  - path_regex: secrets/swift\.yaml$
-    key_groups:
-      - age:
-          - *swift
-          - *daniel
   - path_regex: secrets/mantle\.yaml$
     key_groups:
       - age:

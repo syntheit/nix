@@ -142,9 +142,6 @@
     openssh.authorizedKeys.keys = [
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdRcH2UWe31VdU62j3Ksbb6LDyS1APNW1BQMM8mvsej daniel@matv.io"
     ];
-    # Initial console/sudo password so the box is usable on first boot. SSH is
-    # key-only regardless. Change it after install with `passwd`.
-    initialPassword = lib.mkDefault "REMOVED";
   };
 
   # ── Clock / DNS resilience (T2 RTC comes up at 1970 every boot) ────────────
