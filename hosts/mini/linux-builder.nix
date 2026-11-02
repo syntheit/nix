@@ -31,8 +31,19 @@ let
   linux-builder = pkgs.darwin.linux-builder.override (old: {
     modules = (old.modules or [ ]) ++ [
       (
-        { lib, ... }:
+        { config, lib, ... }:
         {
+          # Only reachable through the mini's own sshd (harbor and vista
+          # ProxyJump to localhost:31022); upstream binds the forward to *.
+          virtualisation.forwardPorts = lib.mkForce [
+            {
+              from = "host";
+              host.address = "127.0.0.1";
+              host.port = config.virtualisation.darwin-builder.hostPort;
+              guest.port = 22;
+            }
+          ];
+
           # the nix-builder-vm profile pins all three at normal priority
           virtualisation.cores = lib.mkForce 8;
           virtualisation.memorySize = lib.mkForce 8192;

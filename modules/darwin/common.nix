@@ -375,6 +375,10 @@ in
     # Unsigned store binaries that listen; see modules/darwin/firewall.nix.
     matv.darwin.firewallAllowedApps = [ "${pkgs.mosh}/bin/mosh-server" ];
 
+    # Apple's Remote Login (stock sshd_config: password + keyboard-interactive on
+    # every interface) stays off; sshd-tailscale below is the only SSH server.
+    services.openssh.enable = false;
+
     # SSH — Tailscale-only, key-only. AcceptEnv matches Apple's stock sshd so
     # the client's UTF-8 locale reaches the shell (else LC_CTYPE=C).
     environment.etc."ssh/sshd_tailscale_config".text = ''
