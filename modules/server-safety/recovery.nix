@@ -11,5 +11,9 @@ in
       "kernel.panic" = 10; # reboot 10s after a panic (default 0 = hang forever)
       "kernel.panic_on_oops" = 1; # don't limp on in a corrupted state
     };
+    # Hardware watchdog: if the kernel or PID 1 stops petting it for 30s, the
+    # board resets. Catches hard hangs, not userspace stalls (memory tiers and
+    # oomd cover those). Hosts without a watchdog device just log a warning.
+    systemd.settings.Manager.RuntimeWatchdogSec = "30s";
   };
 }

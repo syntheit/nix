@@ -11,10 +11,15 @@
     agentsMax = "24G";
     # Big local builds (vista's T2 kernel) fit; a runaway build gets OOM-killed.
     backgroundMax = "16G";
-    # Off until zram grows to 50% (phase 1C): swap sits at ~83% of today's
-    # 15.6 GB, mostly cold production pages, so the 90% rule would kill agents
-    # for swap they don't hold.
-    swapKill = false;
+    swapKill = true; # needs the 50% zram below: at 25% swap sat at ~83%
+    # Ways back in + the OOM handler: guaranteed RAM, last OOM victims.
+    hostcriticalUnits = [
+      "sshd"
+      "sshd-rescue"
+      "tailscaled"
+      "cloudflared-tunnel-harbor"
+      "systemd-oomd"
+    ];
     backgroundUnits = [
       "nix-daemon"
       "nix-gc"
@@ -41,9 +46,6 @@
       overrideStrategy = "asDropin";
       sliceConfig = {
         MemoryLow = "12G"; # best-effort reclaim protection
-        # memory_recursiveprot caps a child's MemoryMin by its ancestors', so
-        # sshd's 128M below only holds if system.slice guarantees at least that.
-        MemoryMin = "256M";
       };
     };
 
@@ -57,14 +59,10 @@
       serviceConfig.OOMScoreAdjust = 500;
     };
 
-    # Always keep enough RAM for sshd to let us in during a squeeze.
-    services.sshd.serviceConfig.MemoryMin = "128M";
-
-    # Throttle dockerd itself if it balloons. Baseline is ~5G unreclaimable
-    # (anon + slab across dockerd/containerd/~56 shims), so 12G leaves headroom
-    # before throttling stalls container plumbing. NO MemoryMax: killing
-    # dockerd restarts every prod container.
-    services.docker.serviceConfig.MemoryHigh = "12G";
+    # No MemoryHigh on dockerd (it was 12G): above MemoryHigh a cgroup can
+    # freeze instead of being killed (see modules/server-safety/memory.nix),
+    # and a frozen dockerd stalls every container operation. liveRestore keeps
+    # containers running even if dockerd itself dies.
   };
 
   # earlyoom removed 2026-11-01: it needs MemAvailable AND free swap low, and
@@ -89,6 +87,8 @@
   # Compressed in-memory swap — OOM protection without disk swap
   zramSwap = {
     enable = true;
-    memoryPercent = 25; # ~16GB compressed swap
+    # ~31 GB of swap space. It holds compressed pages (3.6x measured), so a
+    # full zram costs ~9 GB of RAM. 25% sat at ~83% full with cold pages.
+    memoryPercent = 50;
   };
 }

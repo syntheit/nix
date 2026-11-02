@@ -400,7 +400,9 @@
       # into parallel calls, drops library-scan wallclock dramatically.
       "func.readdir=cor"
       "category.create=pfrd"      # 2.41 default — weighted random favoring emptier branches
-      "minfreespace=20G"           # don't write to nearly-full branches
+      # Stop placing new files on a branch below 1.5 TB free (~9%): ZFS on
+      # single HDDs slows sharply past ~90% full.
+      "minfreespace=1500G"
       "fsname=mergerfs"
       "inodecalc=path-hash"        # stable inodes across remounts (NFS-friendly)
       # A dead pool must not drop boot into emergency mode (no sshd);

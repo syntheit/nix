@@ -80,6 +80,14 @@ in
       AuthorizedKeysFile /etc/ssh/authorized_keys.d/%u
       AllowUsers ${cfg.user}
       StrictModes yes
+    ''
+    # With memory tiers on: no PAM → no pam_systemd → the login shell stays in
+    # this service's cgroup (hostcritical.slice) instead of the user slice,
+    # which may be the thing that's out of memory. Without PAM, sshd refuses
+    # accounts whose password field is locked ("!"), so the user needs a real
+    # password hash (harbor's matv has one).
+    + lib.optionalString cfg.memory.enable ''
+      UsePAM no
     '';
   };
 }

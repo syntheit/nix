@@ -4,6 +4,7 @@
 # a runaway is killed inside its own space before the box stalls. Production
 # (system.slice) is never an oomd target. Plan: ~/contexts/fleet-resilience.md.
 #
+#   hostcritical.slice       sshd, tailscale, tunnel  guaranteed RAM, last OOM victim
 #   user-<uid>.slice         logins, tmux, agents     hard cap (sessionMax)
 #     user@<uid>.service     tmux + agents            hard cap (agentsMax)
 #   background.slice         builds, scrubs, backups  hard cap, lowest CPU/IO
@@ -69,6 +70,22 @@ in
         Slice= on an undefined service creates an empty unit.
       '';
     };
+    hostcriticalUnits = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      description = ''
+        Services moved into hostcritical.slice: the ways back into the box
+        (sshd, rescue sshd, tailscaled, tunnels) and systemd-oomd. Their RAM is
+        guaranteed (code pages never evicted) and the kernel OOM killer picks
+        them last. Takes effect when each unit restarts; access services are
+        restartIfChanged = false, so in practice at the next reboot.
+      '';
+    };
+    hostcriticalMin = lib.mkOption {
+      type = lib.types.str;
+      default = "1G";
+      description = "Memory guaranteed to hostcritical.slice (MemoryMin).";
+    };
   };
 
   config = lib.mkIf (cfg.enable && mem.enable) {
@@ -97,7 +114,20 @@ in
     }
     // lib.genAttrs mem.backgroundUnits (_: {
       serviceConfig.Slice = "background.slice";
+    })
+    // lib.genAttrs mem.hostcriticalUnits (_: {
+      serviceConfig = {
+        Slice = "hostcritical.slice";
+        # Children inherit this; uid-1000 shells raise themselves back to 500
+        # (hosts/harbor/oom.nix shellInit), so logins don't stay protected.
+        OOMScoreAdjust = -900;
+      };
     });
+
+    systemd.slices.hostcritical = {
+      description = "Remote access and OOM handling: guaranteed memory";
+      sliceConfig.MemoryMin = mem.hostcriticalMin;
+    };
 
     systemd.slices.background = {
       description = "Background jobs: builds, scrubs, backups, snapshots";
