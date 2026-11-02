@@ -357,7 +357,8 @@ in
     # Unsigned store binaries that listen; see modules/darwin/firewall.nix.
     matv.darwin.firewallAllowedApps = [ "${pkgs.mosh}/bin/mosh-server" ];
 
-    # SSH — Tailscale-only, key-only
+    # SSH — Tailscale-only, key-only. AcceptEnv matches Apple's stock sshd so
+    # the client's UTF-8 locale reaches the shell (else LC_CTYPE=C).
     environment.etc."ssh/sshd_tailscale_config".text = ''
       Port 22
       ListenAddress ${tailscaleIp}
@@ -367,6 +368,7 @@ in
       KbdInteractiveAuthentication no
       UsePAM no
       Subsystem sftp /usr/libexec/sftp-server
+      AcceptEnv LANG LC_*
     '';
 
     launchd.daemons.sshd-tailscale = {

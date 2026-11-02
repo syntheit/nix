@@ -139,6 +139,11 @@ in
       }
     ];
 
+    # Fallback for ssh clients that send no LANG (macOS defaults to C).
+    envExtra = lib.optionalString pkgs.stdenv.hostPlatform.isDarwin ''
+      [[ -n $LANG ]] || export LANG=en_US.UTF-8
+    '';
+
     initContent = ''
       # --- Options ---
       setopt auto_cd              # Type a directory name to cd into it
