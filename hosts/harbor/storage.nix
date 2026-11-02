@@ -241,9 +241,6 @@
         # Paperless-ngx (native NixOS service)
         "/arespool/appdata/paperless"
 
-        # Grafana (native NixOS service)
-        "/var/lib/grafana"
-
         # Seafile (file data + config + MariaDB)
         "/arespool/appdata/seafile"
         "/platapool/seafile"

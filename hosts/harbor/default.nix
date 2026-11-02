@@ -23,7 +23,6 @@
     ./malli-overview.nix
     ./vestal-site.nix
     ./retrospend-fdroid.nix
-    ./monitoring.nix
     ./virt.nix
     ../../modules/server-safety
     ../../modules/argus.nix
@@ -111,7 +110,6 @@
       "Syncthing" = { url = "https://sync.matv.io"; };
       "Tracearr" = { url = "https://tracearr.matv.io"; };
       "Radicale" = { url = "https://dav.matv.io"; };
-      "Grafana" = { url = "https://grafana.matv.io"; };
       "Paperless" = { url = "https://paperless.matv.io"; };
       "Karakeep" = { url = "https://keep.matv.io"; };
       "Docmost" = { url = "https://docs.matv.io"; };

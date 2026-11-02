@@ -537,13 +537,6 @@
         conditions:
           - "[STATUS] < 500"
 
-      - name: Grafana
-        group: harbor
-        url: https://grafana.matv.io
-        interval: 2m
-        conditions:
-          - "[STATUS] < 500"
-
       - name: Paperless
         group: harbor
         url: https://paperless.matv.io

@@ -29,7 +29,6 @@
           "fdroid.retrospend.app" = "http://localhost:1999";
           "tracearr.matv.io" = "http://localhost:7898";
           "dav.matv.io" = "http://localhost:5232";
-          "grafana.matv.io" = "http://localhost:3100";
           "paperless.matv.io" = "http://localhost:28981";
           "keep.matv.io" = "http://localhost:3030";
           "docs.matv.io" = "http://localhost:3040";

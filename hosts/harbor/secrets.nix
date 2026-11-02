@@ -97,10 +97,6 @@
   sops.secrets.elliot_telegram_token = lib.mkIf config.services.elliot.enable { owner = "elliot"; };
   sops.secrets.elliot_claude_oauth_token = lib.mkIf config.services.elliot.enable { owner = "elliot"; };
   sops.secrets.jelly_recs_jellyfin_api_key = { owner = "jelly-recs"; };
-  sops.secrets.grafana_secret_key = {
-    owner = "grafana";
-    group = "grafana";
-  };
   sops.secrets.pelican_db_root_pw = { };
   sops.secrets.pelican_db_pw = { };
   sops.secrets.seafile_mysql_root_pw = { };
