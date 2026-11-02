@@ -15,7 +15,7 @@
 #   socat  :5000 / :5001  → vista (docker + zot registries)
 #          :8086 (deus)   → vista   [fleet tailnet 100.64.0.1 + mantle ADE webhook via wg]
 #          :9418 (git://) → vista
-#          :2222 (ssh)    → vista   [public operator SSH into the nspawn]
+#          :2022 (ssh)    → NUC :2222 [public operator SSH, fleet@nuc.mallimax.net]
 #          :9990          → mantle 10.100.0.3   [deus-on-vista's ADE call, hub-routed]
 
 { config, pkgs, ... }:
@@ -154,12 +154,12 @@ in
     // (socatProxy "zot-proxy" "Zot OCI registry → vista over wg" "5001" "${up "zot"}:5001")
     // (socatProxy "deus-proxy" "deus-server → vista (fleet + ADE webhook)" "8086" "${up "deus"}:8086")
     // (socatProxy "git-mirror-proxy" "git:// mirror → vista over wg" "9418" "${up "git"}:9418")
-    // (socatProxy "operator-ssh-proxy" "operator SSH into the nspawn → vista" "2222" "${up "operatorSsh"}:2222")
+    // (socatProxy "operator-ssh-proxy" "operator SSH (fleet@nuc.mallimax.net:2022) → NUC fleet sshd :2222" "2022" "${up "operatorSsh"}:2222")
     // (socatProxy "nanomdm-proxy" "deus-on-vista's ADE call → vista nanomdm (hub-routed)" "9990" "${up "nanomdm"}:9990");
 
   # Fleet-facing tailnet ports (blocked from the internet), plus the wg0-only
   # nanomdm forward. Public :2222 for operator SSH into the moved nspawn.
   networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 5000 5001 8086 9418 ];
   networking.firewall.interfaces.wg0.allowedTCPPorts = [ 8086 9990 ];
-  networking.firewall.allowedTCPPorts = [ 2222 ];
+  networking.firewall.allowedTCPPorts = [ 2022 ]; # public operator SSH; :2222 closed 2026-11-01 (old conduit.matv.io:2222 address retired)
 }
