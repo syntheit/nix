@@ -253,13 +253,13 @@
 
     # Invidious on vista's residential IP (YouTube blocks datacenter IPs), over wg0.
     # Neutral name on purpose (scrapers grep CT logs for "invidious"). Password wall
-    # first (basic auth, bcrypt hash below; plaintext only in vista ~/.lumen-wall-password),
+    # first (basic auth, bcrypt hash below; plaintext only in vista ~/lumen-pass.txt),
     # then Invidious accounts with registration off (hosts/vista/secrets.nix).
     virtualHosts."lumen.matv.io" = {
       extraConfig = ''
         encode gzip zstd
         basic_auth {
-          daniel $2a$14$xvPY4vHyFiRUuhtEMM2pSO8xjlZ.GC79WTt3kl3p733RYOS/3yt9y
+          daniel $2a$14$STFiyaNXo65wJVP2h4cnReAkNXFDi1ZMQOFVvSEft5cfFpCWYjBhi
         }
         reverse_proxy 10.100.0.4:3000 {
           flush_interval -1
