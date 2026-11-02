@@ -25,10 +25,8 @@
     };
 
     casks = [
-      "affinity"
       "antigravity"
       "arc"
-      "claude"
       "cursor"
       "dbeaver-community"
       "iina"
@@ -37,7 +35,6 @@
       "ghostty"
       "lulu"
       "marta"
-      "macwhisper"
       "notunes"
       "obs"
       "obsidian"

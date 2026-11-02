@@ -6,6 +6,9 @@
   imports = [ ../../modules/darwin/homebrew-common.nix ];
 
   homebrew.casks = [
+    "affinity"
     "blackhole-2ch"
+    "claude"
+    "macwhisper"
   ];
 }
