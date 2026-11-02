@@ -21,6 +21,7 @@ in
     ./speaker.nix
     ./remote-desktop.nix
     ./deus-cli-release.nix
+    ./signing-keychain.nix
   ];
 
   networking.hostName = "mini";
