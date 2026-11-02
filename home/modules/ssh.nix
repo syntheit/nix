@@ -48,7 +48,7 @@ in
         Port = 64829;
         ProxyCommand = "${pkgs.cloudflared}/bin/cloudflared access ssh --hostname %h";
       };
-      # Colo NUC (Malli control plane), three ways in; one HostKeyAlias so
+      # Colo NUC (Malli control plane), two ways in (rescue sshd: -p 4041 on nuc.wg); one HostKeyAlias so
       # they share a known_hosts entry (SHA256:TSnV9qCZ14+jjbFHnwOcuGxjrAd9FuJ7EYdNyHH8T4Q).
       # nuc: work Cloudflare tunnel + Access (browser login once a day).
       "nuc" = {
@@ -64,12 +64,6 @@ in
         Port = 4040;
         HostKeyAlias = "nuc";
         ProxyJump = "conduit";
-      };
-      # nuc.ts: personal tailnet; goes away when the NUC joins the fleet tailnet.
-      "nuc.ts" = {
-        HostName = "100.82.158.20";
-        User = "daniel";
-        HostKeyAlias = "nuc";
       };
       "swift" = {
         HostName = "100.78.114.100";
