@@ -35,6 +35,16 @@
   # polkit, xdg-desktop-portal-hyprland, graphics drivers, fonts, dconf, xwayland,
   # and adds a proper Desktop Entry to the Display Manager.
   programs.hyprland.enable = true;
+  # No idle daemon runs (hypridle is off), so the GTK portal's Inhibit backend
+  # only logged "org.freedesktop.ScreenSaver without an owner" (~700 lines a
+  # boot). Same order as Hyprland's own portal config, minus Inhibit.
+  xdg.portal.config.hyprland = {
+    default = [
+      "hyprland"
+      "gtk"
+    ];
+    "org.freedesktop.impl.portal.Inhibit" = [ "none" ];
+  };
 
   programs.steam.enable = true;
 

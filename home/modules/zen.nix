@@ -80,6 +80,24 @@ EOF
             fi
           fi
 
+          # Disk-write reduction (mantle: Zen wrote ~55 GB/day). Set or replace.
+          set_pref() {
+            if grep -q "^user_pref(\"$1\"" "$USER_JS"; then
+              ${pkgs.gnused}/bin/sed -i "s|^user_pref(\"$1\".*$|user_pref(\"$1\", $2);|" "$USER_JS"
+            else
+              echo "user_pref(\"$1\", $2);" >> "$USER_JS"
+            fi
+          }
+          # Session restore: save every 5 min instead of 15 s (the 3 MB
+          # recovery file plus its backup copy was ~1/3 of Zen's writes). A
+          # crash can lose up to 5 minutes of tab changes.
+          set_pref browser.sessionstore.interval 300000
+          # HTTP cache in RAM only (512 MB): no disk cache churn; the cache
+          # starts empty after each restart.
+          set_pref browser.cache.disk.enable false
+          set_pref browser.cache.memory.enable true
+          set_pref browser.cache.memory.capacity 524288
+
           echo "Updated Zen Browser config in $profile"
         fi
       done

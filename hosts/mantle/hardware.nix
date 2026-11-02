@@ -45,8 +45,39 @@
     "vm.dirty_background_bytes" = 67108864; # 64 MB
   };
 
-  # CPU governor — plugged-in desktop, no reason not to run full speed
-  powerManagement.cpuFreqGovernor = "performance";
+  # CPU power (modules/cpu-epp.nix): powersave governor + EPP
+  # balance_performance, the kernel default. Measured here: 46 W -> 39 W
+  # package at light desktop load (~$4/yr); benchmarks show ~0-1% throughput.
+  powerManagement.energyPerformancePreference = "balance_performance";
+
+  # Root SSD (CT1000MX500, ata13): the SATA link drops and hard-resets under
+  # link power management (PHYRdyChg/DevExch, failed WRITE FPDMA QUEUED, one
+  # read I/O error), across several boots. SMART is clean, so keep the link
+  # at full power. If resets continue: reseat/replace the cable or move ports,
+  # and update firmware (M3CR023 -> M3CR046).
+  boot.kernelParams = [
+    "libata.force=13:nolpm"
+    # Don't auto-activate GPT swap partitions: sda3 would come up as plain,
+    # unencrypted swap next to the LUKS root. swapDevices below encrypts it.
+    "systemd.gpt_auto=0"
+  ];
+
+  # TRIM through LUKS: without this fstrim ran weekly but discards never
+  # reached the SSD (higher write amplification, slower writes). Leaks which
+  # blocks are free, the accepted trade-off for SSDs.
+  boot.initrd.luks.devices."luks-3e72a884-3bf1-43ba-815c-b04b5efb3e26".allowDiscards = true;
+
+  # Overflow swap behind zram, encrypted with a fresh random key every boot
+  # (no hibernation here, so nothing needs to survive a reboot).
+  swapDevices = [
+    {
+      device = "/dev/disk/by-partuuid/07120c24-716e-4a93-b292-fdae11ced08c"; # sda3
+      randomEncryption = {
+        enable = true;
+        allowDiscards = true;
+      };
+    }
+  ];
 
   # BTRFS periodic scrub — detects silent data corruption (bitrot)
   services.btrfs.autoScrub = {
@@ -77,7 +108,10 @@
     MaxRetentionSec = "1month";
   };
 
-  # Kill runaway processes before the system becomes unresponsive
+  # Kill runaway processes before the system becomes unresponsive. earlyoom,
+  # not systemd-oomd: Hyprland launches every app into session-N.scope with
+  # Hyprland itself, and oomd kills whole cgroups, so it would end the desktop
+  # session instead of killing one app.
   services.earlyoom = {
     enable = true;
     freeMemThreshold = 5;

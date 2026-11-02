@@ -60,24 +60,10 @@
     # binfmt.emulatedSystems = [ "aarch64-linux" ];
   };
 
-  # CPU power: intel_pstate "powersave" still boosts on demand; the
-  # energy/performance preference decides how eagerly. "performance" pinned
-  # the 13600K high around the clock (~69 W package at modest load).
-  powerManagement.cpuFreqGovernor = "powersave";
-  systemd.services.cpu-epp = {
-    description = "Set CPU energy/performance preference";
-    after = [ "cpufreq.service" ];
-    wantedBy = [ "multi-user.target" ];
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-    };
-    script = ''
-      for f in /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference; do
-        echo balance_performance > "$f"
-      done
-    '';
-  };
+  # CPU power (modules/cpu-epp.nix): powersave still boosts on demand.
+  # "performance" pinned the 13600K high around the clock (~69 W package at
+  # modest load).
+  powerManagement.energyPerformancePreference = "balance_performance";
 
   # Headless: a failed mount or unit must not stop boot at a console sulogin
   # (no sshd). Boot continues degraded; check with `systemctl --failed`.

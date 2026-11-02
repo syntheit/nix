@@ -28,6 +28,7 @@
     ./modules/mime-apps.nix
     ./modules/services.nix
     ./modules/zen.nix
+    ./modules/spotify-cache.nix
     ./modules/dunst.nix
     ./modules/wallpaper.nix
     ./modules/zed.nix

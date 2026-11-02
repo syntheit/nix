@@ -136,7 +136,6 @@
     gptfdisk
     cpupower-gui
     jre8
-    gvfs
     nautilus
     file-roller
     mission-center

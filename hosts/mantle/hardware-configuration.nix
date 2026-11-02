@@ -33,6 +33,7 @@
       "subvol=@"
       "compress=zstd"
       "space_cache=v2"
+      "noatime" # atime updates are CoW metadata writes, multiplied by snapshots
     ];
   };
 

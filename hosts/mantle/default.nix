@@ -1,7 +1,9 @@
 { config, vars, ... }:
 {
   imports = [
+    ../../profiles/base.nix
     ../../modules/numtide-cache.nix
+    ../../modules/cpu-epp.nix
     ./hardware-configuration.nix
     ./hardware.nix
     ../../modules/btrbk-root.nix
@@ -27,7 +29,9 @@
 
   # WireGuard tunnel to conduit (VPS gateway).
   networking.wg-quick.interfaces.wg0 = {
-    address = [ "10.100.0.3/24" ];
+    # /32: conduit is the only peer. With /24, Tailscale tried other spokes'
+    # wg0 addresses through wg0 and got ENOKEY (~1,600 log lines a day).
+    address = [ "10.100.0.3/32" ];
     privateKeyFile = config.sops.secrets.mantle_wg_private_key.path;
     peers = [{
       publicKey = "bhXOmLJsZDR0ZeF/Wnzt116Jw0tHzbfhoe2kG2+ZDAw=";

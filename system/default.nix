@@ -292,5 +292,29 @@ in
   services.locate = {
     enable = true;
     package = pkgs.plocate;
+    # nixpkgs defaults plus the btrfs top level and snapshot dirs (each holds
+    # full copies of /) and node_modules. Without them mantle's updatedb read
+    # ~20 GB, wrote a 2.4 GB index and peaked at 7.7 GB RAM every day.
+    prunePaths = [
+      "/tmp"
+      "/var/tmp"
+      "/var/cache"
+      "/var/lock"
+      "/var/run"
+      "/var/spool"
+      "/nix/store"
+      "/nix/var/log/nix"
+      "/mnt/btrfs-root"
+      "/.snapshots"
+    ];
+    pruneNames = [
+      ".bzr"
+      ".cache"
+      ".git"
+      ".hg"
+      ".svn"
+      "node_modules"
+      ".direnv"
+    ];
   };
 }

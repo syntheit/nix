@@ -111,7 +111,11 @@
 
   # Services
   services.gvfs.enable = true;
-  services.smartd.enable = true;
+  services.smartd = {
+    enable = true;
+    # -I 194: don't report every temperature change (185 log lines a boot on mantle).
+    defaults.monitored = "-a -I 194";
+  };
   services.systembus-notify.enable = lib.mkForce true;
   services.gnome.gcr-ssh-agent.enable = false;
 
@@ -148,19 +152,8 @@
     };
   };
 
-  # Configure Home Manager systemd service to overwrite existing backup files
-  # This prevents activation failures when old backup files exist
-  systemd.services."home-manager-${vars.user.name}" = {
-    environment = {
-      HOME_MANAGER_BACKUP_OVERWRITE = "1";
-    };
-    # Clean up old backup files before activation to prevent conflicts
-    serviceConfig = {
-      ExecStartPre = lib.mkForce (
-        pkgs.writeShellScript "cleanup-hm-backups" ''
-          ${pkgs.findutils}/bin/find /home/${vars.user.name} -name "*.bkp" -type f -delete 2>/dev/null || true
-        ''
-      );
-    };
-  };
+  # Overwrite existing *.bkp files instead of failing activation. (A
+  # `find ~ -name '*.bkp' -delete` pre-start used to walk the whole home dir on
+  # every boot: 53 s on mantle, with login held until it finished.)
+  systemd.services."home-manager-${vars.user.name}".environment.HOME_MANAGER_BACKUP_OVERWRITE = "1";
 }
