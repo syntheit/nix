@@ -22,6 +22,7 @@
     ./invidious.nix
     ./nix-builder.nix
     # Malli fleet control plane, migrated from conduit (2026-08).
+    ./control-plane-moved.nix # NUC cutover 2026-11-01: nothing control-plane autostarts
     ./headscale.nix # Headscale + deus nspawn (self-contained tailscale inside)
     ./deus-dedicated-identity.nix # dormant UID 3999 state-migration gate
     ./ddm-bridge.nix # dormant private NanoMDM→Deus DDM sidecar (default off)
