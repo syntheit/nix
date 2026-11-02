@@ -13,6 +13,7 @@ in
 {
   imports = [
     ../../modules/numtide-cache.nix
+    ../../modules/disk-hygiene.nix
     ../../modules/gnome-mobile.nix
     ./secrets.nix
     ./audio.nix

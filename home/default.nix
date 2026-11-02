@@ -29,6 +29,7 @@
     ./modules/services.nix
     ./modules/zen.nix
     ./modules/spotify-cache.nix
+    ./modules/dev-caches.nix
     ./modules/dunst.nix
     ./modules/wallpaper.nix
     ./modules/zed.nix

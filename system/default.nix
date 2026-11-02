@@ -103,32 +103,32 @@ let
     name = "gparted-wayland";
     dontUnpack = true;
     installPhase = ''
-      mkdir -p $out/bin $out/share/applications
-      cat > $out/bin/gparted <<'WRAPPER'
-#!/bin/sh
-${pkgs.xhost}/bin/xhost +SI:localuser:root >/dev/null 2>&1
-pkexec --disable-internal-agent ${gpartedRoot} "$@"
-status=$?
-${pkgs.xhost}/bin/xhost -SI:localuser:root >/dev/null 2>&1
-exit $status
-WRAPPER
-      chmod +x $out/bin/gparted
-      cp -r ${pkgs.gparted}/share/icons $out/share/
-      cat > $out/share/applications/gparted.desktop <<DESKTOP
-[Desktop Entry]
-Name=GParted
-Comment=GNOME Partition Editor
-Exec=$out/bin/gparted
-Icon=gparted
-Terminal=false
-Type=Application
-Categories=GNOME;System;
-DESKTOP
+            mkdir -p $out/bin $out/share/applications
+            cat > $out/bin/gparted <<'WRAPPER'
+      #!/bin/sh
+      ${pkgs.xhost}/bin/xhost +SI:localuser:root >/dev/null 2>&1
+      pkexec --disable-internal-agent ${gpartedRoot} "$@"
+      status=$?
+      ${pkgs.xhost}/bin/xhost -SI:localuser:root >/dev/null 2>&1
+      exit $status
+      WRAPPER
+            chmod +x $out/bin/gparted
+            cp -r ${pkgs.gparted}/share/icons $out/share/
+            cat > $out/share/applications/gparted.desktop <<DESKTOP
+      [Desktop Entry]
+      Name=GParted
+      Comment=GNOME Partition Editor
+      Exec=$out/bin/gparted
+      Icon=gparted
+      Terminal=false
+      Type=Application
+      Categories=GNOME;System;
+      DESKTOP
     '';
   };
 in
 {
-  imports = extraLibs.scanPaths ./.;
+  imports = extraLibs.scanPaths ./. ++ [ ../modules/disk-hygiene.nix ];
 
   networking = {
     networkmanager = {
@@ -178,12 +178,6 @@ in
     settings.download-buffer-size = 134217728;
     settings.min-free = 1073741824; # 1GB — auto-GC when free space drops below
     settings.max-free = 3221225472; # 3GB — stop GC once this much space is free
-    # Nix garbage collection
-    gc = {
-      automatic = true;
-      dates = "weekly";
-      options = "--delete-older-than 30d";
-    };
   };
 
   nixpkgs = {
@@ -193,35 +187,45 @@ in
 
   # List packages installed in system profile. To search, run:
   # $ nix search wget
-  environment.systemPackages = with pkgs; [
-    vim
-    git
-    lm_sensors
-    iw
-    libsecret # Required for NetworkManager to use secret service (gnome-keyring)
-    # Thumbnailer packages for file manager previews
-    gdk-pixbuf # Basic image formats (PNG, JPEG, BMP, GIF, TIFF, etc.)
-    libheif # HEIF and AVIF image formats
-    libheif.out # HEIF output plugin
-    rawThumbnailer # RAW image thumbnailer (replaces removed nufraw-thumbnailer)
-    ffmpegthumbnailer # Video thumbnail generation
-    poppler-utils # PDF thumbnail generation
-    android-tools
-    gpartedWayland # GParted with Wayland DISPLAY fix (replaces xhost + gparted)
-    ntfs3g # NTFS read/write support and utilities
-    cifs-utils # Samba/Windows network shares
-    nfs-utils # NFS network shares
-    hfsprogs # HFS+ support
-    apfs-fuse # APFS support (read-only)
-    sqlite
-    usbToggle
-  ]
-  # Affinity Suite — heavy creative app, workstation-only. Skipped on the
-  # headless servers (vista, nuc), which also don't load the affinity-nix
-  # overlay that defines it.
-  ++ lib.optionals (!builtins.elem hostName [ "vista" "nuc" ]) [
-    affinity-v3
-  ];
+  environment.systemPackages =
+    with pkgs;
+    [
+      vim
+      git
+      lm_sensors
+      iw
+      libsecret # Required for NetworkManager to use secret service (gnome-keyring)
+      # Thumbnailer packages for file manager previews
+      gdk-pixbuf # Basic image formats (PNG, JPEG, BMP, GIF, TIFF, etc.)
+      libheif # HEIF and AVIF image formats
+      libheif.out # HEIF output plugin
+      rawThumbnailer # RAW image thumbnailer (replaces removed nufraw-thumbnailer)
+      ffmpegthumbnailer # Video thumbnail generation
+      poppler-utils # PDF thumbnail generation
+      android-tools
+      gpartedWayland # GParted with Wayland DISPLAY fix (replaces xhost + gparted)
+      ntfs3g # NTFS read/write support and utilities
+      cifs-utils # Samba/Windows network shares
+      nfs-utils # NFS network shares
+      hfsprogs # HFS+ support
+      apfs-fuse # APFS support (read-only)
+      sqlite
+      usbToggle
+    ]
+    # Affinity Suite — heavy creative app, workstation-only. Skipped on the
+    # headless servers (vista, nuc), which also don't load the affinity-nix
+    # overlay that defines it.
+    ++
+      lib.optionals
+        (
+          !builtins.elem hostName [
+            "vista"
+            "nuc"
+          ]
+        )
+        [
+          affinity-v3
+        ];
 
   # Link thumbnailer files so file managers can find them
   environment.pathsToLink = [
@@ -292,29 +296,7 @@ in
   services.locate = {
     enable = true;
     package = pkgs.plocate;
-    # nixpkgs defaults plus the btrfs top level and snapshot dirs (each holds
-    # full copies of /) and node_modules. Without them mantle's updatedb read
-    # ~20 GB, wrote a 2.4 GB index and peaked at 7.7 GB RAM every day.
-    prunePaths = [
-      "/tmp"
-      "/var/tmp"
-      "/var/cache"
-      "/var/lock"
-      "/var/run"
-      "/var/spool"
-      "/nix/store"
-      "/nix/var/log/nix"
-      "/mnt/btrfs-root"
-      "/.snapshots"
-    ];
-    pruneNames = [
-      ".bzr"
-      ".cache"
-      ".git"
-      ".hg"
-      ".svn"
-      "node_modules"
-      ".direnv"
-    ];
   };
+  # GC, index exclusions and cache subvolumes: modules/disk-hygiene.nix.
+  diskHygiene.enable = true;
 }

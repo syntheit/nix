@@ -91,6 +91,37 @@
     fileSystems = [ "/" ];
   };
 
+  # Regenerable directories as their own subvolumes, so the daily snapshots
+  # of `@` (7d 4w) don't pin their churn (modules/disk-hygiene.nix).
+  diskHygiene.subvolumes =
+    map
+      (p: {
+        path = "/home/daniel/${p}";
+        user = "daniel";
+        group = "users";
+      })
+      [
+        ".cache"
+        "Downloads"
+        ".cargo"
+        ".npm"
+        ".local/share/pnpm"
+        "go"
+        ".ollama"
+      ]
+    ++ [
+      {
+        path = "/home/daniel/.local/share/Steam";
+        user = "daniel";
+        group = "users";
+        mode = "0700";
+      }
+      {
+        path = "/var/lib/docker";
+        mode = "0710";
+      }
+    ];
+
   # BTRFS automated snapshots
   services.btrbk.instances."default" = {
     onCalendar = "daily";
@@ -98,7 +129,9 @@
       snapshot_preserve_min = "2d";
       snapshot_preserve = "7d 4w";
       volume."/mnt/btrfs-root" = {
-        subvolume."@" = { snapshot_dir = "@snapshots"; };
+        subvolume."@" = {
+          snapshot_dir = "@snapshots";
+        };
       };
     };
   };
