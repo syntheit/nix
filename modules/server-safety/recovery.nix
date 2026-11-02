@@ -15,5 +15,8 @@ in
     # board resets. Catches hard hangs, not userspace stalls (memory tiers and
     # oomd cover those). Hosts without a watchdog device just log a warning.
     systemd.settings.Manager.RuntimeWatchdogSec = "30s";
+    # A bumped power button must not shut down a box nobody can switch back
+    # on. Holding it ~4s still forces power-off (firmware, not the OS).
+    services.logind.settings.Login.HandlePowerKey = "ignore";
   };
 }
