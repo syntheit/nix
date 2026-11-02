@@ -53,8 +53,9 @@ in
   # launchd has already started the new binary, which then runs without
   # screen capture ("No screen capture permission!"). Restart it once the
   # grants exist, only when the binary changed so open streams survive
-  # ordinary rebuilds.
-  system.activationScripts.postActivation.text = lib.mkAfter ''
+  # ordinary rebuilds. Right after the grants (mkBefore, modules/darwin/tcc.nix)
+  # and before home-manager, so a failing home-manager step can't skip it.
+  system.activationScripts.postActivation.text = lib.mkOrder 600 ''
     stamp=/var/db/nix-darwin/sunshine.path
     if [ "$(cat "$stamp" 2>/dev/null)" != "${sunshine}" ]; then
       # Its startup encoder probe hangs against a sleeping display.
