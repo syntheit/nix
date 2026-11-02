@@ -26,6 +26,10 @@
   # NVIDIA container support for Docker
   hardware.nvidia-container-toolkit.enable = true;
 
+  # The NVIDIA module turns acpid on by default; with no handlers it only
+  # logs input events (lid/power keys are logind's).
+  services.acpid.enable = false;
+
   # Compressed in-memory swap (reduces disk swap thrashing)
   zramSwap = {
     enable = true;
@@ -156,6 +160,12 @@
     freeSwapThreshold = 10;
     enableNotifications = true;
   };
+  # oomd is on by default but monitors no cgroup here (earlyoom does the job).
+  # Mask the daemon rather than `systemd.oomd.enable = false`: that also drops
+  # the generated -.slice/system.slice units, and a live switch then stops
+  # system.slice (every system service).
+  systemd.services.systemd-oomd.enable = false;
+  systemd.sockets.systemd-oomd.enable = false;
 
   # Bluetooth
   hardware.bluetooth = {

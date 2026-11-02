@@ -138,6 +138,13 @@
 
   # Services
   services.gvfs.enable = true;
+  # gvfs volume monitors for GNOME Online Accounts, iPhones and cameras: none
+  # used. MTP (Android) and udisks2 (USB drives) stay.
+  systemd.user.services = lib.genAttrs [
+    "gvfs-goa-volume-monitor"
+    "gvfs-afc-volume-monitor"
+    "gvfs-gphoto2-volume-monitor"
+  ] (_: { enable = false; });
   services.smartd = {
     enable = true;
     # -I 194: don't report every temperature change (185 log lines a boot on mantle).
