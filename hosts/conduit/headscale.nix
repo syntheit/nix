@@ -8,7 +8,7 @@
 # fleet-facing endpoint to vista (10.100.0.4) over WireGuard. `server_url` is
 # unchanged (headscale.matv.io), so the ~349 fleet nodes never re-register.
 #
-#   Caddy  headscale.matv.io / mini.themalli.ai → vista:8085 (Headscale)
+#   Caddy  headscale.matv.io → NUC:8085 (Headscale)
 #          bootstrap.matv.io  (device ADE paths) → vista:8086 (deus)
 #          bootstrap.matv.io  /pkg/*             → vista:8088 (pkg served from vista nspawn)
 #          mdm/scep/enroll.matv.io               → mantle 10.100.0.3
@@ -94,28 +94,10 @@ in
       }
     '';
   };
-  services.caddy.virtualHosts."mini.themalli.ai" = {
-    extraConfig = ''
-      handle /v1/user-vpn/redeem {
-        reverse_proxy localhost:8087
-      }
-      handle /connect* {
-        reverse_proxy localhost:8087
-      }
-      handle /Malli.dmg {
-        root * /var/lib/malli-uservpn
-        file_server
-      }
-      handle /appcast.xml {
-        root * /var/lib/malli-uservpn
-        file_server
-      }
-      handle {
-        reverse_proxy ${up "headscale"}:8085
-      }
-    '';
-  };
   services.caddy.virtualHosts."bootstrap.matv.io" = {
+    # bootstrap.mallimax.net: the work-domain name (2026-11-02); matv.io stays until the
+    # signed ADE pkg and its payload point at the new name.
+    serverAliases = [ "bootstrap.mallimax.net" ];
     extraConfig = ''
       handle /ade/bootstrap-creds {
         reverse_proxy ${up "deus"}:8086

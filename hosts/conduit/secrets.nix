@@ -20,5 +20,4 @@
   # here so the relay no longer decrypts them. Their ciphertext still sits in
   # secrets/conduit.yaml and secrets/conduit/* (harmless, unreferenced) — clean
   # those from the sops files on conduit later if desired.
-  sops.secrets.deus_operator_token.mode = "0444";
 }
