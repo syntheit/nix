@@ -189,6 +189,33 @@ in
       };
     };
 
+    # Daily GC of generations older than 7 days, like the NixOS hosts
+    # (modules/disk-hygiene.nix). nix-darwin's nix.gc needs nix.enable, which
+    # Determinate owns; Determinate's own GC only frees dead paths when the disk
+    # runs low and never deletes generations, so the store only grew (58
+    # generations on swift, 28 on mini, 2026-11-02). A run missed while asleep
+    # happens at wake.
+    launchd.daemons.nix-gc = {
+      serviceConfig = {
+        Label = "org.nixos.nix-gc";
+        ProgramArguments = [
+          "/nix/var/nix/profiles/default/bin/nix-collect-garbage"
+          "--delete-older-than"
+          "7d"
+        ];
+        StartCalendarInterval = [
+          {
+            Hour = 3;
+            Minute = 30;
+          }
+        ];
+        ProcessType = "Background";
+        LowPriorityIO = true;
+        StandardOutPath = "/var/log/nix-gc.log";
+        StandardErrorPath = "/var/log/nix-gc.log";
+      };
+    };
+
     # Keep the machine reachable for as long as someone is connected, on battery
     # too. `pmset ttyskeepawake` is not enough: it only counts sessions that own
     # a tty (so `ssh host <cmd>`, which shows up as "sshd-session: user@notty",

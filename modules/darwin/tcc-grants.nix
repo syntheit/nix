@@ -13,6 +13,7 @@
   { service = "kTCCServiceListenEvent";     package = pkgs.sketchybar;       exec = "sketchybar";       reason = "sketchybar input monitoring"; }
   { service = "kTCCServiceScreenCapture";   package = pkgs.overview;         exec = "overview";         reason = "overview ScreenCaptureKit thumbnails"; }
   { service = "kTCCServiceMicrophone";      package = pkgs.eq;               exec = "eq";               reason = "eq daemon BlackHole input"; }
+  { service = "kTCCServiceBluetoothAlways"; package = pkgs.sleepwatcher;     exec = "sleepwatcher";     reason = "bluetooth-sleep agent (blueutil on sleep/wake)"; }
   # Telmo.app is the Developer ID signed copy in ~/Applications (home/modules/telmo.nix).
   {
     service = "kTCCServiceBluetoothAlways";
