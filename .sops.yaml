@@ -57,12 +57,6 @@ creation_rules:
       - age:
           - *vista
           - *daniel
-  # mini-only: the deus-signing keychain password (hosts/mini/signing-keychain.nix).
-  - path_regex: secrets/mini\.yaml$
-    key_groups:
-      - age:
-          - *mini
-          - *daniel
   # Shared user secrets (e.g. openrouter_key for opencode) — readable on every
   # host that runs opencode. Add new hosts' keys here + run `sops updatekeys`.
   - path_regex: secrets/shared\.yaml$
