@@ -64,8 +64,6 @@
     kubernetes-helm
     devenv
     distrobox
-    code-cursor
-    antigravity
     dbeaver-bin
     vscode
     awscli2

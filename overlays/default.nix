@@ -7,8 +7,6 @@
 let
   overlays = {
     modifications = final: prev: {
-      antigravity = inputs.antigravity.packages.${final.stdenv.hostPlatform.system}.default;
-
       # AI agents from the llm-agents flake (updated daily) instead of nixpkgs,
       # which runs days behind — and a lagging claude-code cannot select a newly
       # released model (Opus 5.5 needs 2.1.280; nixpkgs has 2.1.278). The

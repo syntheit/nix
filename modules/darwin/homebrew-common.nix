@@ -25,9 +25,7 @@
     };
 
     casks = [
-      "antigravity"
       "arc"
-      "cursor"
       "dbeaver-community"
       "iina"
       "karabiner-elements"

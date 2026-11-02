@@ -14,8 +14,6 @@
       # We want: "window.titleBarStyle": "custom", "window.customTitleBarVisibility": "auto"
       APPS=(
         "$HOME/Library/Application Support/Code/User/settings.json"
-        "$HOME/Library/Application Support/Cursor/User/settings.json"
-        "$HOME/Library/Application Support/Antigravity/User/settings.json"
       )
 
       for SETTINGS_FILE in "''${APPS[@]}"; do
