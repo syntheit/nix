@@ -30,8 +30,8 @@
         host: invidious-db
         port: 5432
       check_tables: true
-      # Public at https://invidious.matv.io via conduit (2026-11-02): accounts only.
-      domain: invidious.matv.io
+      # Public at https://lumen.matv.io via conduit (password wall) (2026-11-02): accounts only.
+      domain: lumen.matv.io
       https_only: true
       external_port: 443
       registration_enabled: false
