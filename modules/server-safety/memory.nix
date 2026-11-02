@@ -5,8 +5,9 @@
 # (system.slice) is never an oomd target. Plan: ~/contexts/fleet-resilience.md.
 #
 #   hostcritical.slice       sshd, tailscale, tunnel  guaranteed RAM, last OOM victim
-#   user-<uid>.slice         logins, tmux, agents     hard cap (sessionMax)
-#     user@<uid>.service     tmux + agents            hard cap (agentsMax)
+#   user-<uid>.slice         logins, tmux, agents     last-resort cap (sessionMax)
+#     user@<uid>.service     tmux + agents            last-resort cap (agentsMax)
+#       tmux-spawn-*.scope   one tmux window/agent    cap (agentWindowMax)
 #   background.slice         builds, scrubs, backups  hard cap, lowest CPU/IO
 #
 # Hard caps only, no MemoryHigh. Above MemoryHigh with no swap left, the kernel
@@ -16,6 +17,15 @@
 # harbor 2026-11-01: 55-90% stall, pgscan frozen, no kill. Likely the 2026-10-30
 # "ssh connects but no shell" (user-1000.slice sat at its 32G MemoryHigh).
 # At MemoryMax the kernel OOM-kills the biggest task in that cgroup instead.
+#
+# Per-window caps, not one aggregate cap. A window is one agent session plus
+# everything it launches. When it hits its cap, the kernel kills the biggest
+# process in it (a compiler or build); OOMPolicy=continue keeps the rest of the
+# window, including the Claude session, alive. The aggregate caps sit high and
+# only matter if the whole box is in danger. (2026-11-02: a 24G aggregate cap
+# killed a 3 GB java build with 40 GB free, and systemd's default OOMPolicy=stop
+# then tore down the whole tmux window and the Claude session in it.)
+# No oomd on user slices: oomd kills whole cgroups, i.e. whole windows.
 #
 # Kernel memory (ZFS ARC, scrub queues) is charged to no cgroup; these limits
 # can't see it. That's bounded separately (modules/zfs-scrub.nix, ARC caps).
@@ -51,14 +61,13 @@ in
       default = "12G";
       description = "Hard cap for background.slice; a build that outgrows it gets OOM-killed, not stalled.";
     };
-    swapKill = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
+    agentWindowMax = lib.mkOption {
+      type = lib.types.str;
+      default = "16G";
       description = ''
-        Kill the user cgroup holding the most swap once system swap passes
-        oomd's SwapUsedLimit (90%). Turn off while swap sits near that limit
-        for reasons outside the user session (e.g. cold production pages in an
-        undersized zram), or it kills agents for someone else's swap.
+        Cap per tmux window (tmux-spawn-*.scope): one agent session plus
+        everything it launches. The kernel kills the biggest process in the
+        window at the cap; the window itself keeps running.
       '';
     };
     backgroundUnits = lib.mkOption {
@@ -107,8 +116,6 @@ in
         restartIfChanged = false; # as user@.service: never kill the session on switch
         serviceConfig = {
           MemoryMax = mem.agentsMax;
-          ManagedOOMMemoryPressure = "kill";
-          ManagedOOMMemoryPressureLimit = "50%";
         };
       };
     }
@@ -138,25 +145,23 @@ in
       };
     };
 
-    # oomd acts in user slices only; system.slice (prod) is never a target.
-    systemd.oomd = {
-      enableUserSlices = true;
-      settings.OOM.DefaultMemoryPressureDurationSec = "20s";
+    # An OOM kill takes out one process, never the unit around it. Defaults are
+    # "stop": one killed build would stop its whole tmux window or ssh session.
+    systemd.user.settings.Manager.DefaultOOMPolicy = "continue";
+    systemd.user.units."tmux-spawn-.scope" = {
+      overrideStrategy = "asDropin";
+      text = ''
+        [Scope]
+        MemoryMax=${mem.agentWindowMax}
+        OOMPolicy=continue
+      '';
     };
-    # enableUserSlices defaults to 80% pressure, which never fired on harbor.
-    # Upstream suggests ~40-50% for user sessions.
-    systemd.slices.user.sliceConfig = {
-      ManagedOOMMemoryPressureLimit = "50%";
-    }
-    // lib.optionalAttrs mem.swapKill {
-      # zram nearly full = no headroom left. Kill the user cgroup holding the
-      # most swap (system-wide SwapUsedLimit, default 90%).
-      ManagedOOMSwap = "kill";
+    systemd.units."session-.scope" = {
+      overrideStrategy = "asDropin";
+      text = ''
+        [Scope]
+        OOMPolicy=continue
+      '';
     };
-    systemd.user.units."slice".text = lib.mkForce ''
-      [Slice]
-      ManagedOOMMemoryPressure=kill
-      ManagedOOMMemoryPressureLimit=50%
-    '';
   };
 }

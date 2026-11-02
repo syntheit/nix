@@ -6,12 +6,14 @@
 {
   services.serverSafety.memory = {
     enable = true;
-    sessionMax = "32G"; # ssh logins + tmux + agents
-    # tmux + agents. The 2026-10-30 runaway nix eval reached 27 GB.
-    agentsMax = "24G";
+    sessionMax = "44G"; # last resort: ssh logins + tmux + agents
+    # Last resort for all agents together; per-window caps do the real work.
+    # (A 24G aggregate cap killed builds on 2026-11-02 with 40 GB free.)
+    agentsMax = "40G";
+    # One agent + its builds. The 2026-10-30 runaway nix eval reached 27 GB.
+    agentWindowMax = "16G";
     # Big local builds (vista's T2 kernel) fit; a runaway build gets OOM-killed.
     backgroundMax = "16G";
-    swapKill = true; # needs the 50% zram below: at 25% swap sat at ~83%
     # Ways back in + the OOM handler: guaranteed RAM, last OOM victims.
     hostcriticalUnits = [
       "sshd"
