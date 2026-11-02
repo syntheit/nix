@@ -118,6 +118,9 @@
     users.matv = {
       isNormalUser = true;
       extraGroups = [ "wheel" ];
+      # "*" = no password, but not locked like the default "!": the rescue sshd
+      # runs UsePAM no, and OpenSSH then refuses even key logins to a locked account.
+      hashedPassword = "*";
       openssh.authorizedKeys.keys = [
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdRcH2UWe31VdU62j3Ksbb6LDyS1APNW1BQMM8mvsej daniel@matv.io"
       ];
