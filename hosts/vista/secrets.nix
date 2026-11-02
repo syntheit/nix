@@ -30,6 +30,14 @@
         host: invidious-db
         port: 5432
       check_tables: true
+      # Public at https://invidious.matv.io via conduit (2026-11-02): accounts only.
+      domain: invidious.matv.io
+      https_only: true
+      external_port: 443
+      registration_enabled: false
+      login_enabled: true
+      popular_enabled: false
+      statistics_enabled: false
       invidious_companion:
         - private_url: "http://invidious-companion:8282/companion"
       invidious_companion_key: "${config.sops.placeholder.invidious_companion_key}"

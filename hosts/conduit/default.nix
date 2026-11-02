@@ -251,6 +251,20 @@
       '';
     };
 
+    # Invidious on vista's residential IP (YouTube blocks datacenter IPs), over wg0.
+    # Accounts only, registration off (hosts/vista/secrets.nix invidious.yml).
+    virtualHosts."invidious.matv.io" = {
+      extraConfig = ''
+        encode gzip zstd
+        reverse_proxy 10.100.0.4:3000 {
+          flush_interval -1
+          header_up X-Real-IP {remote_host}
+          header_up X-Forwarded-For {remote_host}
+          header_up X-Forwarded-Proto {scheme}
+        }
+      '';
+    };
+
     # harborfin — bespoke Jellyfin web client. Same backend as watch.matv.io,
     # but the SPA shell comes from harbor:8097 (static-web-server) and the
     # Jellyfin API + jelly-recs are reverse-proxied alongside on the same
