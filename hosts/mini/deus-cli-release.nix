@@ -25,7 +25,9 @@ let
   repoUrl = "git@github-malli-deus:NRE-Product/malli-deus.git"; # ssh alias in home/modules/ssh.nix
   # How mini reaches vista: vista's own tailscale is on the personal tailnet,
   # which mini is on (MagicDNS name). Override here if that changes.
-  publishHost = "vista";
+  # The NUC (since 2026-11-02; was vista): wg0 10.100.0.5:4040 via conduit, see the
+  # system ssh_config alias below. NUC side: malli-nix nixos/modules/control-plane/cli-release.nix.
+  publishHost = "nuc-release";
   publishUser = "deus-release";
   sshKey = "${home}/.ssh/deus-release_ed25519";
   # ACCEPTED RISK (review P2-7): the runbook stores the release key with
@@ -102,6 +104,24 @@ let
 in
 {
   environment.systemPackages = [ pipeline ];
+
+  # System-wide (launchd runs without home-manager's ~/.ssh/config): the release
+  # pipeline reaches the NUC's deus-release account through conduit. Host keys
+  # pinned; conduit's fail2ban-exempt wg0 address is what the NUC sees.
+  programs.ssh.extraConfig = ''
+    Host nuc-release
+      HostName 10.100.0.5
+      Port 4040
+      HostKeyAlias nuc
+      ProxyJump matv@192.3.203.146:64829
+    Host 192.3.203.146
+      IdentityFile ~/.ssh/mainkey
+      IdentitiesOnly yes
+  '';
+  programs.ssh.knownHosts = {
+    nuc = { hostNames = [ "nuc" ]; publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM4O7t4rRstakqso2bEFE0FD/VFy8nzeTHkXiycMTav6"; };
+    conduit = { hostNames = [ "[192.3.203.146]:64829" ]; publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOwn6Lpc+Nh+HAqbtgmThhHzayEdHi44A3l1pZk1SIWT"; };
+  };
 
   launchd.user.agents.deus-cli-release = {
     serviceConfig = {
