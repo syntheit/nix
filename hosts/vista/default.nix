@@ -28,6 +28,23 @@
     ../../services
   ];
 
+  # Agent worktrees pile up node_modules/.next and Go caches (~90 GB on
+  # 2026-11-02); prune build output from ones idle for 14 days.
+  diskHygiene.staleBuildOutput = {
+    user = vars.user.name;
+    roots = map (d: "/home/${vars.user.name}/${d}") [
+      "Projects"
+      "rs-runner"
+      "wt"
+    ];
+    goCaches = map (d: "/home/${vars.user.name}/.cache/${d}") [
+      "go-build"
+      "go-build-codex"
+      "codex-go-cache"
+      "go-build-newbot"
+    ];
+  };
+
   networking.hostName = "vista";
   networking.useDHCP = lib.mkDefault true;
 
