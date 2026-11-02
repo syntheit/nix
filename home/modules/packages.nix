@@ -72,7 +72,6 @@
     zip
     aws-sam-cli
     claude-code
-    codex
     yt-dlp
     pnpm
     nodejs

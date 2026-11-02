@@ -8,7 +8,7 @@ Write everything a fresh agent needs to continue this work into one markdown
 file, then give the user a one-line prompt to paste into the new session.
 
 The next agent starts with zero context: it has not seen this conversation,
-and it may be a different model or tool (Claude Code or Codex). It runs on
+and it may be a different model. It runs on
 this same machine, so it can read the file and the repo.
 
 ## 1. Write the file

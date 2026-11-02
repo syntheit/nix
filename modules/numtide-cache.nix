@@ -1,8 +1,7 @@
-# Binary cache for the llm-agents flake (claude-code, codex, opencode).
+# Binary cache for the llm-agents flake (claude-code, opencode).
 #
-# Without it, codex builds from Rust source on every host after every daily
-# bump. claude-code and opencode are just vendor binaries being unpacked, so
-# they cost nothing either way — this is about codex.
+# Both are vendor binaries being unpacked, so a miss costs little; the cache
+# just saves every host redoing that after each daily bump.
 #
 # Trust: substituted paths are signed by the key below, so this trusts Numtide's
 # build infrastructure not to ship something other than what the flake says.

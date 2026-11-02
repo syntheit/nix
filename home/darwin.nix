@@ -65,7 +65,6 @@
     aws-sam-cli
     btop
     claude-code
-    codex
     coreutils
     sops
     ssh-to-age

@@ -172,9 +172,12 @@ in
             stateFile = "/tmp/.privacy-mode";
           };
         };
-        # Claude and Codex plan usage: 5-hour and weekly bars. A service
-        # with no data on a host (no status line, no codex) is left out.
-        usage.type = "aiUsage";
+        # Claude plan usage: 5-hour and weekly bars, left out on a host with
+        # no data (no status line).
+        usage = {
+          type = "aiUsage";
+          show = [ "claude" ];
+        };
         # Replace the default `media` widget with the Spotify one below.
         media = null;
         spotify = {

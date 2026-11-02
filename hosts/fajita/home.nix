@@ -197,7 +197,6 @@ in
     bat
     btop
     claude-code
-    codex
     fajitaFetch
     fastfetch
     fd

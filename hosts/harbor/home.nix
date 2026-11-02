@@ -43,7 +43,6 @@
     lsof
     python3
     claude-code
-    codex
     restic
     awscli2
     aws-sam-cli

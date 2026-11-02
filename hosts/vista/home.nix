@@ -56,7 +56,6 @@
     tldr
     gh
     claude-code
-    codex
     nixfmt
     nix-output-monitor
     nodejs

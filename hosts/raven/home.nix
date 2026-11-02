@@ -251,7 +251,6 @@ in
     nodejs
     pnpm
     claude-code
-    codex
     gnumake
 
     # Android status

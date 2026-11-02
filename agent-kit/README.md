@@ -1,16 +1,14 @@
 # agent-kit
 
-Skills and global rules for Claude Code and Codex on every host. This repo is
-itself the plugin marketplace (`/.claude-plugin/marketplace.json`,
-`/.agents/plugins/marketplace.json`); both tools fetch it from GitHub
-(`syntheit/nix`), so nothing here goes through a Nix rebuild except
-`AGENTS.md`. `home/modules/agents.nix` points each host at the marketplace.
+Skills and global rules for Claude Code on every host. This repo is
+itself the plugin marketplace (`/.claude-plugin/marketplace.json`); Claude
+Code fetches it from GitHub (`syntheit/nix`), so nothing here goes through a
+Nix rebuild. `home/modules/agents.nix` points each host at the marketplace.
 
 | Path | What |
 |---|---|
-| `skills/<name>/SKILL.md` | One skill per folder. Claude: `/handoff` (or `/kit:handoff`). Codex: `$handoff`. |
+| `skills/<name>/SKILL.md` | One skill per folder. Claude: `/handoff` (or `/kit:handoff`). |
 | `rules.md` | Global rules, injected into every Claude session by `claude-hooks.json`. Max 10,000 characters. |
-| `AGENTS.md` | Global rules for Codex, linked to `~/.codex/AGENTS.md`. Needs a rebuild. |
 | `../.claude-plugin/marketplace.json` | Also lists third-party plugins (impeccable), pinned by `sha`. |
 
 ## Change something

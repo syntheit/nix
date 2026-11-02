@@ -1,6 +1,3 @@
-<!-- Linked to ~/.codex/AGENTS.md on every host by home/modules/agents.nix
-     (Codex skips plugin hooks until trusted per machine, so rules come from
-     here instead of rules.md). Changes here need a rebuild, not kit-sync. -->
 # Global rules
 
 ## Output style
