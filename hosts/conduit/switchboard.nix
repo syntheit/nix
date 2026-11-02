@@ -39,7 +39,7 @@ in
       description = "NUC's WireGuard public key. null = no NUC peer on conduit.";
     };
     upstream = {
-      headscale = svc "vista"; # :8085 headscale.matv.io, mini.themalli.ai
+      headscale = svc "vista"; # :8085 headscale.matv.io
       deus = svc "vista"; # :8086 bootstrap.matv.io /ade/* /healthz, socat 100.64.0.1 + 10.100.0.1 hairpin
       bootstrapPkg = svc "vista"; # :8088 bootstrap.matv.io /pkg/*
       git = svc "vista"; # :9418
