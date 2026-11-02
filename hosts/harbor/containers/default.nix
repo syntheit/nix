@@ -25,13 +25,12 @@
     autoPrune = {
       enable = true;
       dates = "weekly";
-      # Also images no container uses, once a week old (76 of 116 GB were
-      # unused on 2026-11-01). Volumes are never pruned.
-      flags = [
-        "--all"
-        "--filter"
-        "until=168h"
-      ];
+      # Dangling images only. NOT --all: Argus's argus/rollback/* and
+      # retrospend:rollback-pre-* images (46 on 2026-11-01) are unused by any
+      # container on purpose, and locally built images have a 1970 creation
+      # date, so an until= filter doesn't protect them either. Pruning unused
+      # images needs an explicit exclusion for rollback tags first.
+      flags = [ ];
     };
     daemon.settings = {
       default-ulimits = {
