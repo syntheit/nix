@@ -275,42 +275,50 @@
         "--retry-lock=5m"
       ];
 
-      # Dump databases before backing up
+      # Dump databases before backing up. Each dump goes to a temp file and only
+      # replaces the previous one if it succeeded and isn't empty: a failed dump
+      # used to truncate the last good one (`> file || true`), so a container
+      # that was down at 03:00 meant an empty dump in that night's snapshot.
       backupPrepareCommand = ''
         echo "Clearing any stale repo locks..."
         ${pkgs.restic}/bin/restic unlock \
           -o sftp.command='ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -i /home/matv/.ssh/mainkey daniel_backups@beta.mregirouard.com -s sftp' || true
 
-        ${pkgs.coreutils}/bin/mkdir -p /var/lib/harbor-backups/db-dumps
+        dumps=/var/lib/harbor-backups/db-dumps
+        ${pkgs.coreutils}/bin/mkdir -p "$dumps"
 
-        echo "Dumping Immich postgres..."
-        ${pkgs.docker}/bin/docker exec immich_postgres pg_dump -U postgres immich \
-          > /var/lib/harbor-backups/db-dumps/immich.sql 2>/dev/null || true
+        # dump <file> <command...>: keep the previous dump if this one fails.
+        dump() {
+          local out="$dumps/$1"; shift
+          echo "Dumping $(basename "$out")..."
+          if "$@" > "$out.tmp" 2> "$out.err" && [ -s "$out.tmp" ]; then
+            mv "$out.tmp" "$out"
+            rm -f "$out.err"
+          else
+            echo "WARNING: dump to $out failed; keeping previous dump:" >&2
+            cat "$out.err" >&2
+            rm -f "$out.tmp" "$out.err"
+          fi
+        }
 
-        echo "Dumping Retrospend postgres..."
-        ${pkgs.docker}/bin/docker exec retrospend_postgres pg_dump -U postgres retrospend \
-          > /var/lib/harbor-backups/db-dumps/retrospend.sql 2>/dev/null || true
+        dump immich.sql ${pkgs.docker}/bin/docker exec immich_postgres pg_dump -U postgres immich
+        dump retrospend.sql ${pkgs.docker}/bin/docker exec retrospend_postgres pg_dump -U postgres retrospend
+        dump docmost.sql ${pkgs.docker}/bin/docker exec docmost_postgres pg_dump -U docmost docmost
+        dump pelican.sql ${pkgs.docker}/bin/docker exec pelican_db sh -c 'mariadb-dump -u root -p"$MYSQL_ROOT_PASSWORD" --all-databases'
+        dump seafile.sql ${pkgs.docker}/bin/docker exec seafile_db sh -c 'mariadb-dump -u root -p"$MYSQL_ROOT_PASSWORD" --all-databases'
 
-        echo "Dumping Nextcloud MariaDB..."
-        ${pkgs.docker}/bin/docker exec nextcloud_db sh -c 'mariadb-dump -u root -p"$MYSQL_ROOT_PASSWORD" --all-databases' \
-          > /var/lib/harbor-backups/db-dumps/nextcloud.sql 2>/dev/null || true
+        # sqlite3 .backup writes the file itself, so it can't go through dump().
+        echo "Dumping paperless.sqlite3..."
+        if ${pkgs.sqlite}/bin/sqlite3 /arespool/appdata/paperless/db.sqlite3 \
+          ".backup '$dumps/paperless.sqlite3.tmp'"; then
+          mv "$dumps/paperless.sqlite3.tmp" "$dumps/paperless.sqlite3"
+        else
+          echo "WARNING: paperless sqlite backup failed; keeping previous" >&2
+          rm -f "$dumps/paperless.sqlite3.tmp"
+        fi
 
-        echo "Dumping Docmost postgres..."
-        ${pkgs.docker}/bin/docker exec docmost_postgres pg_dump -U docmost docmost \
-          > /var/lib/harbor-backups/db-dumps/docmost.sql 2>/dev/null || true
-
-        echo "Dumping Pelican MariaDB..."
-        ${pkgs.docker}/bin/docker exec pelican_db sh -c 'mariadb-dump -u root -p"$MYSQL_ROOT_PASSWORD" --all-databases' \
-          > /var/lib/harbor-backups/db-dumps/pelican.sql 2>/dev/null || true
-
-        echo "Dumping Seafile MariaDB..."
-        ${pkgs.docker}/bin/docker exec seafile_db sh -c 'mariadb-dump -u root -p"$MYSQL_ROOT_PASSWORD" --all-databases' \
-          > /var/lib/harbor-backups/db-dumps/seafile.sql 2>/dev/null || true
-
-        echo "Dumping Paperless SQLite..."
-        ${pkgs.sqlite}/bin/sqlite3 /arespool/appdata/paperless/db.sqlite3 \
-          ".backup '/var/lib/harbor-backups/db-dumps/paperless.sqlite3'" 2>/dev/null || true
-
+        # Nextcloud was retired (its container is gone); its last real DB copy
+        # is the raw data dir /arespool/appdata/nextcloud-mariadb, still in paths.
         echo "DB dumps complete."
       '';
 
