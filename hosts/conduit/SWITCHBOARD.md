@@ -55,4 +55,3 @@ Remove the key and redeploy to remove the peer.
 - Order for NUC wg: conduit gets the public key first, then the NUC brings up wg0 (keepalive 25 opens the path).
 - the user VPN (uservpn-server, mini.themalli.ai) was retired on 2026-11-02.
 - Currently-running conduit commit: unknown (no configurationRevision is set in the flake; not checked by SSH). 
-- Stale comments in headscale.nix header still mention mantle; left untouched on purpose.
