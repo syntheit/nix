@@ -38,7 +38,6 @@
           "files.matv.io" = "http://localhost:4717";
           "asado-list.matv.io" = "http://localhost:4730";
           "malli-overview.matv.io" = "http://localhost:8098";
-          "construct.matv.io" = "http://localhost:4322";
           "vestal.matv.io" = "http://localhost:8099";
           "malli-dev.sudoman.net" = "http://localhost:8787";
           "pro-malli-dev.sudoman.net" = "http://localhost:3000";

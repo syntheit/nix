@@ -31,7 +31,6 @@
     ../../modules/btrbk-root.nix
     ../../modules/elliot.nix
     ../../modules/construct.nix
-    ../../modules/construct-life.nix
     ../../modules/construct-android.nix
     ../../modules/jelly-recs.nix
     ../../modules/harborfin.nix
@@ -143,22 +142,12 @@
     publicUrl = "http://harbor:4321";
   };
 
-  # construct v2 (overhaul/IMPLEMENTATION.md). Public at construct.matv.io via the harbor tunnel; the app
-  # itself rejects tunnel requests until environment.CF_ACCESS_TEAM + CF_ACCESS_AUD are set.
+  # construct v2 runs on raven since 2026-11-02 (hosts/raven). Android releases still build here (the SDK's tools are
+  # x86-64 only) and rsync the F-Droid repo to raven; the fdroid working dir and repo signing key stay here.
   programs.constructAndroidRelease = {
     enable = true;
     androidDir = "/home/matv/Projects/the_construct/android";
-  };
-
-  services.constructLife = {
-    enable = true;
-    user = "matv";
-    jellyfinUrl = "http://127.0.0.1:8096";
-    # Cloudflare Access guards only construct.matv.io/auth/login (shared Access app with downloader/sonarr).
-    environment = {
-      CF_ACCESS_TEAM = "matv";
-      CF_ACCESS_AUD = "5f8d308e0bcf4b314007375751df1e617056afb132d05690e1d5a2416a43d245";
-    };
+    publishTo = "raven:/var/lib/construct/fdroid/repo/";
   };
 
   # asado-list — static viewer for the asado & tech waitlist triage.
