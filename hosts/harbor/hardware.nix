@@ -65,6 +65,12 @@
   # modest load).
   powerManagement.energyPerformancePreference = "balance_performance";
 
+  # Motherboard sensor chip (Nuvoton, ASRock Z690 Pro RS): fan RPMs and board
+  # temperatures. Not autoloaded, so harbor had no fan readings at all. For
+  # visibility first; HDD-temperature-driven fan control (services.hddfancontrol)
+  # can come later. sda/sdf peak at 59 °C.
+  boot.kernelModules = [ "nct6775" ];
+
   # Headless: a failed mount or unit must not stop boot at a console sulogin
   # (no sshd). Boot continues degraded; check with `systemctl --failed`.
   systemd.enableEmergencyMode = false;

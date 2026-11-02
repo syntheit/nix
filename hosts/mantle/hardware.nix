@@ -62,6 +62,11 @@
     "systemd.gpt_auto=0"
   ];
 
+  # Motherboard sensor chip (Nuvoton, B450-A PRO MAX): fan RPMs and board
+  # temperatures. Not autoloaded, so no fan readings existed at all. Read-only
+  # use; the BIOS fan curve still controls the fans.
+  boot.kernelModules = [ "nct6775" ];
+
   # TRIM through LUKS: without this fstrim ran weekly but discards never
   # reached the SSD (higher write amplification, slower writes). Leaks which
   # blocks are free, the accepted trade-off for SSDs.
