@@ -82,7 +82,10 @@
     };
 
     nixos-avf = {
-      url = "github:nix-community/nixos-avf";
+      # Our fork: upstream nix-community/nixos-avf is dormant (no commits since
+      # 2026-01) and still sets the removed boot.initrd.systemd.enable. The fork
+      # carries jaredmontoya's fix commit for nixos-unstable option removals.
+      url = "github:syntheit/nixos-avf";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
