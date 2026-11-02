@@ -1,8 +1,12 @@
-{ pkgs, ... }:
+{ lib, pkgs, ... }:
 {
   imports = [
     ../../home/darwin.nix
   ];
+
+  # eq needs BlackHole, which the mini doesn't have, so the agent crash-looped
+  # every 10 s. Its audio mostly arrives from mantle over roc, EQ'd there.
+  launchd.agents.eq.enable = lib.mkForce false;
 
   # Intentionally minimal; the shared config is home/darwin.nix. Left out
   # from hosts/swift/home.nix: brightness-panel (drives the internal panel via

@@ -386,6 +386,11 @@ in
       ListenAddress ${tailscaleIp}
       AuthorizedKeysCommand /bin/cat /etc/ssh/nix_authorized_keys.d/%u
       AuthorizedKeysCommandUser _sshd
+      # Drop sessions whose client vanished (lid closed, network change)
+      # after ~3 min. TCP keepalive alone takes 2+ h on macOS, and a dead
+      # session keeps ssh.keepawake holding the machine awake.
+      ClientAliveInterval 60
+      ClientAliveCountMax 3
       PasswordAuthentication no
       KbdInteractiveAuthentication no
       UsePAM no
