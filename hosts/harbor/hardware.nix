@@ -100,4 +100,8 @@
     };
     nvidia-container-toolkit.enable = true;
   };
+
+  # The NVIDIA module turns acpid on by default; with no handlers it only
+  # logs input events (the power key is logind's).
+  services.acpid.enable = false;
 }
