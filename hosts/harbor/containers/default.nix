@@ -15,8 +15,6 @@
     ./retrospend-dev.nix
     ./utilities.nix
     ./gaming.nix
-    ./registry.nix
-    ./zot.nix
     ./seafile.nix
     ./cwa.nix
     ./recyclarr.nix

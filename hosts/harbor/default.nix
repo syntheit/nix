@@ -20,7 +20,6 @@
     ./storage.nix
     ./containers
     ./access.nix
-    ./malli-overview.nix
     ./vestal-site.nix
     ./retrospend-fdroid.nix
     ./virt.nix
