@@ -21,17 +21,9 @@
     ./secrets.nix
     ./invidious.nix
     ./nix-builder.nix
-    # Malli fleet control plane, migrated from conduit (2026-08).
-    ./control-plane-moved.nix # NUC cutover 2026-11-01: nothing control-plane autostarts
-    ./headscale.nix # Headscale + deus nspawn (self-contained tailscale inside)
-    ./deus-dedicated-identity.nix # dormant UID 3999 state-migration gate
-    ./ddm-bridge.nix # dormant private NanoMDM→Deus DDM sidecar (default off)
-    ./mdm-credentials.nix # dormant private MDM/ADE credential cutover
-    ./registry.nix # docker registry:2 on :5000
+    ./deus-cli-release.nix # mini rsyncs signed deus CLI releases here (rrsync-only user)
     ./wg0-watchdog.nix # rebind wg0 when the conduit handshake goes stale (home WAN blips + double NAT)
     ./zot.nix # zot OCI registry on :5001
-    ./mdm-5fro.nix # sequence A switches (see ~/malli-5fro-m2-runbook.md)
-    ./mdm.nix # nanomdm/scep/nanodep/enroll — migrated from mantle (2026-08)
     ../../system
     ../../services
   ];
@@ -62,6 +54,16 @@
   # headscale nspawn (its own tailscaled), so the two never collide.
   services.tailscale.enable = true;
   networking.firewall.trustedInterfaces = [ "tailscale0" "wg0" ];
+
+  # Was set by the removed headscale container NAT; kept so forwarding stays
+  # on (wg0/tailscale/docker) and the running sysctl does not change.
+  boot.kernel.sysctl."net.ipv4.ip_forward" = 1;
+
+  # Leftover from the removed headscale container veth. Kept for now ONLY so the
+  # NetworkManager.conf is unchanged and activation does not restart
+  # NetworkManager (vista is reached over the network). Drop it at the next
+  # planned reboot.
+  networking.networkmanager.unmanaged = lib.mkBefore [ "interface-name:ve-headscale" ];
 
   # ── WireGuard link to conduit (fleet control-plane relay) ─────────────────
   # vista = 10.100.0.4 on the hub-and-spoke wg0 mesh (conduit = 10.100.0.1 hub,
