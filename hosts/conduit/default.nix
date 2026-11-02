@@ -74,11 +74,24 @@
       ];
       # Masquerade game traffic going to harbor via WireGuard
       # Without this, harbor would route responses via its own gateway
+      # FORWARD's policy is ACCEPT (the iptables backend has no filterForward),
+      # so a host on the RackNerd segment could route 10.100.0.0/24 via us and
+      # reach harbor/vista, which trust wg0. Only DNAT'd (game ports) and
+      # established traffic may go from the internet into wg0.
       extraCommands = ''
         iptables -t nat -A POSTROUTING -o wg0 -j MASQUERADE
+        iptables -N conduit-ens3-wg0 2>/dev/null || iptables -F conduit-ens3-wg0
+        iptables -A conduit-ens3-wg0 -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
+        iptables -A conduit-ens3-wg0 -m conntrack --ctstate DNAT -j RETURN
+        iptables -A conduit-ens3-wg0 -j DROP
+        iptables -C FORWARD -i ens3 -o wg0 -j conduit-ens3-wg0 2>/dev/null \
+          || iptables -I FORWARD -i ens3 -o wg0 -j conduit-ens3-wg0
       '';
       extraStopCommands = ''
         iptables -t nat -D POSTROUTING -o wg0 -j MASQUERADE 2>/dev/null || true
+        iptables -D FORWARD -i ens3 -o wg0 -j conduit-ens3-wg0 2>/dev/null || true
+        iptables -F conduit-ens3-wg0 2>/dev/null || true
+        iptables -X conduit-ens3-wg0 2>/dev/null || true
       '';
       trustedInterfaces = [ "wg0" "tailscale0" ];
     };
