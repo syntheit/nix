@@ -6,7 +6,8 @@
 }:
 
 # Weekly removal of Docker images nothing uses, with explicit protections.
-# docker-prune (./default.nix) only removes dangling images; `prune --all`
+# Also removes dangling images (replaces autoPrune, which ran `docker system
+# prune` and deleted unused networks too). `prune --all`
 # can't be used because it would also delete rollback images and the images
 # of configured containers that happen to be stopped (oci-containers runs
 # with --rm, so a stopped service has no container referencing its image).
@@ -63,6 +64,12 @@ let
 
       norm() { sed -E 's#^docker\.io/##; s#^library/##; s#:[^/:]*$##'; }
 
+      if [ "$dry" = 1 ]; then
+        echo "dangling images: $(docker images -qf dangling=true | wc -l) (would be pruned)"
+      else
+        docker image prune -f
+      fi
+
       removed=0
       while read -r id; do
         grep -qxF "$id" <<<"$used" && continue
@@ -104,8 +111,10 @@ in
   systemd.timers.docker-image-cleanup = {
     wantedBy = [ "timers.target" ];
     timerConfig = {
-      OnCalendar = "Mon 00:30"; # after docker-prune (Mon 00:00) removes dangling ones
-      Persistent = true;
+      OnCalendar = "Mon 00:30";
+      # No catch-up run at boot: skipping a week is harmless, and boot is when
+      # stacks are half-started.
+      Persistent = false;
     };
   };
 }

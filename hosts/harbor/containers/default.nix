@@ -1,4 +1,9 @@
-{ pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
 {
   imports = [
@@ -23,16 +28,12 @@
     enable = true;
     enableOnBoot = true;
     liveRestore = true;
-    autoPrune = {
-      enable = true;
-      dates = "weekly";
-      # Dangling images only. NOT --all: Argus's argus/rollback/* and
-      # retrospend:rollback-pre-* images (46 on 2026-11-01) are unused by any
-      # container on purpose, and locally built images have a 1970 creation
-      # date, so an until= filter doesn't protect them either. Pruning unused
-      # images needs an explicit exclusion for rollback tags first.
-      flags = [ ];
-    };
+    # Off: autoPrune runs `docker system prune`, which also deletes unused
+    # *networks*. On 2026-11-02 its boot-time catch-up ran 5 s after
+    # docker-networks created karakeep_default/pelican_default, before those
+    # stacks started, and deleted them (7 units failed). Image cleanup lives in
+    # ./image-cleanup.nix: images only, never networks or containers.
+    autoPrune.enable = false;
     daemon.settings = {
       default-ulimits = {
         nofile = {
@@ -53,6 +54,11 @@
   systemd.services.docker-networks = {
     description = "Create Docker networks for multi-container stacks";
     after = [ "docker.service" ];
+    # Every container starts after its network exists. Ordering is declared
+    # here only, so container units are unchanged (a switch doesn't restart them).
+    before = map (n: "docker-${n}.service") (
+      builtins.attrNames config.virtualisation.oci-containers.containers
+    );
     wantedBy = [ "multi-user.target" ];
     serviceConfig = {
       Type = "oneshot";
@@ -87,13 +93,19 @@
     ];
   };
 
-  systemd.services.docker-ollama.after = [ "docker-networks.service" "nvidia-container-toolkit-cdi-generator.service" ];
+  systemd.services.docker-ollama.after = [
+    "docker-networks.service"
+    "nvidia-container-toolkit-cdi-generator.service"
+  ];
   systemd.services.docker-ollama.wants = [ "nvidia-container-toolkit-cdi-generator.service" ];
 
   # Connect shared Ollama to Karakeep's network so both stacks can reach it
   systemd.services.docker-ollama-karakeep-connect = {
     description = "Connect shared Ollama to Karakeep network";
-    after = [ "docker-ollama.service" "docker-networks.service" ];
+    after = [
+      "docker-ollama.service"
+      "docker-networks.service"
+    ];
     partOf = [ "docker-ollama.service" ];
     wantedBy = [ "multi-user.target" ];
     serviceConfig = {
