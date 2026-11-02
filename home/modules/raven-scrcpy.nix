@@ -16,7 +16,7 @@ let
   # path available: SSH into the phone itself (raven-phone, Termux sshd) and
   # flip it on as root. If that SSH hop is itself down, there's currently no
   # fallback — see the note at the bottom about making this boot-persistent.
-  ip = "192.168.1.197";
+  ip = "192.168.0.197";
   port = "5555";
 
   ravenScrcpy = pkgs.writeShellScriptBin "raven-scrcpy" ''

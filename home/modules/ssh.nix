@@ -160,7 +160,7 @@ in
     # jump host for raven's LAN path — only defined on mantle
     // lib.optionalAttrs (hostName == "mantle") {
       "raven-phone" = {
-        HostName = "192.168.1.197";
+        HostName = "192.168.0.197"; # TP-Link LAN moved to .0.x when Personal (192.168.1.1) went in upstream
         Port = 8022;
         User = "droid";
         IdentityFile = "~/.ssh/mainkey";
