@@ -11,18 +11,17 @@
 #   Caddy  headscale.matv.io → NUC:8085 (Headscale)
 #          bootstrap.matv.io  (device ADE paths) → vista:8086 (deus)
 #          bootstrap.matv.io  /pkg/*             → vista:8088 (pkg served from vista nspawn)
-#          mdm/scep/enroll.matv.io               → mantle 10.100.0.3
+#          mdm/scep/enroll.matv.io               → per malli.conduit.upstream (NUC)
 #   socat  :5000 / :5001  → vista (docker + zot registries)
-#          :8086 (deus)   → vista   [fleet tailnet 100.64.0.1 + mantle ADE webhook via wg]
+#          :8086 (deus)   → vista   [fleet tailnet 100.64.0.1]
 #          :9418 (git://) → vista
 #          :2022 (ssh)    → NUC :2222 [public operator SSH, fleet@nuc.mallimax.net]
-#          :9990          → mantle 10.100.0.3   [deus-on-vista's ADE call, hub-routed]
+#          :9990          → per malli.conduit.upstream.nanomdm (NUC)
 
 { config, pkgs, ... }:
 
 let
   vista = "10.100.0.4";
-  mantle = "10.100.0.3";
 
   # Switchboard (see switchboard.nix): each service's upstream is one option,
   # "vista" (default, 10.100.0.4) or "nuc" (malli.conduit.nucWgAddress).
@@ -36,7 +35,7 @@ let
   };
 
   # A socat TCP forwarder as a systemd service. `listen` is host:port on
-  # conduit; `dest` is host:port to forward to (vista over wg, or mantle).
+  # conduit; `dest` is host:port to forward to (over wg).
   socatProxy = name: desc: listen: dest: {
     "${name}" = {
       description = desc;
@@ -117,8 +116,8 @@ in
       }
     '';
   };
-  # MDM stack migrated mantle → vista (2026-08). Public URLs unchanged;
-  # only these relay backends flip. mantle kept as hot standby until soak.
+  # MDM stack now runs on the colo NUC (2026-11-01). Public URLs unchanged;
+  # only these relay backends flip.
   services.caddy.virtualHosts."mdm.matv.io".extraConfig = ''
     reverse_proxy ${up "nanomdm"}:9990
   '';
@@ -129,7 +128,7 @@ in
     reverse_proxy ${up "mdmenroll"}:9991
   '';
 
-  # ── socat forwards to vista (and mantle) ───────────────────
+  # ── socat forwards (vista or NUC) ───────────────────
   # Only Headscale fleet machines (tailscale0) + the wg mesh can reach these.
   systemd.services =
     (socatProxy "registry-proxy" "Docker registry → vista over wg" "5000" "${up "registry"}:5000")

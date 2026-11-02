@@ -187,19 +187,9 @@
         # No endpoint — harbor connects to us
       }
       {
-        # mantle — MDM-stack standby (nanomdm/scep/enroll bind 10.100.0.3).
-        # deus-server's nanomdmURL flips to 10.100.0.3:9990 at cutover; the
-        # nanomdm webhook posts back here to 10.100.0.1:8086.
-        publicKey = "pwk8vx3pcwP2TGKsIFG+afvhD0LMxOkqj9AgLXkCDi4=";
-        allowedIPs = [ "10.100.0.3/32" ];
-        # No endpoint — mantle connects to us
-      }
-      {
-        # vista — fleet control plane (Headscale + deus nspawn + registries),
-        # migrated off conduit (2026-08). conduit forwards fleet-facing traffic
-        # to it: Caddy → :8085/:8086, socat → :8086/:9418/:5000/:5001, and the
-        # public operator ssh :2222. deus reaches nanomdm via conduit's :9990
-        # socat → mantle; the nanomdm webhook still posts to 10.100.0.1:8086.
+        # vista — registries, git mirror and other services conduit can still
+        # forward to (per malli.conduit.upstream). The control plane (Headscale,
+        # deus, nanomdm) runs on the colo NUC since 2026-11-01.
         publicKey = "IMdynalmqKH0fna9YRBw4OGOHbyMfX5Ort1NNYXbHl0=";
         allowedIPs = [ "10.100.0.4/32" ];
         # No endpoint — vista connects to us

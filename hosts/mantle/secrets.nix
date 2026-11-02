@@ -25,9 +25,4 @@
     owner = "daniel";
     mode = "0400";
   };
-
-  # WireGuard private key for the point-to-point link to conduit (mirrors
-  # harbor's wg_conduit_private_key). Lives in secrets/mantle.yaml, which is
-  # also where the MDM stack's nanomdm_api + scep_challenge live.
-  sops.secrets.mantle_wg_private_key.sopsFile = ../../secrets/mantle.yaml;
 }

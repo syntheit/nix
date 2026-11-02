@@ -1,4 +1,4 @@
-{ config, vars, ... }:
+{ vars, ... }:
 {
   imports = [
     ../../profiles/base.nix
@@ -11,8 +11,6 @@
     ./secrets.nix
     ./mac-speakers.nix
     ./brightness.nix
-    # ./mdm.nix — MDM stack migrated to vista 2026-08 (hosts/vista/mdm.nix).
-    #   /var/lib/mdm state kept here + backup ~/backups/ until retention window ends.
     ../../system
     ../../services
     ../../desktop
@@ -21,25 +19,8 @@
   networking.hostName = "mantle";
 
   services.tailscale.enable = true;
-  # wg0 = the point-to-point link to conduit (hub-and-spoke mesh, mantle =
-  # 10.100.0.3). The MDM stack that used to bind here now runs on vista
-  # (see the ./mdm.nix note above); conduit keeps mantle as its standby
-  # spoke. Trust the interface.
-  networking.firewall.trustedInterfaces = [ "tailscale0" "wg0" ];
-
-  # WireGuard tunnel to conduit (VPS gateway).
-  networking.wg-quick.interfaces.wg0 = {
-    # /32: conduit is the only peer. With /24, Tailscale tried other spokes'
-    # wg0 addresses through wg0 and got ENOKEY (~1,600 log lines a day).
-    address = [ "10.100.0.3/32" ];
-    privateKeyFile = config.sops.secrets.mantle_wg_private_key.path;
-    peers = [{
-      publicKey = "bhXOmLJsZDR0ZeF/Wnzt116Jw0tHzbfhoe2kG2+ZDAw=";
-      endpoint = "192.3.203.146:51820";
-      allowedIPs = [ "10.100.0.1/32" ];
-      persistentKeepalive = 25;
-    }];
-  };
+  # Trust the Tailscale interface.
+  networking.firewall.trustedInterfaces = [ "tailscale0" ];
 
   # SSH — Tailscale-only, key-only. trustedInterfaces above lets Tailscale
   # traffic bypass the firewall; openFirewall=false keeps port 22 closed
