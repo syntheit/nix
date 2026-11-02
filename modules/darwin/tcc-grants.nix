@@ -8,6 +8,8 @@
   { service = "kTCCServiceAccessibility";   package = pkgs.yabai;            exec = "yabai";            reason = "yabai window management"; }
   { service = "kTCCServiceAccessibility";   package = pkgs.skhd;             exec = "skhd";             reason = "skhd keybindings"; }
   { service = "kTCCServiceAccessibility";   package = pkgs.menubar-blocker;  exec = "menubar-blocker";  reason = "menubar-blocker CGEventTap"; }
+  { service = "kTCCServiceListenEvent";     package = pkgs.menubar-blocker;  exec = "menubar-blocker";  reason = "menubar-blocker fn-key flagsChanged tap"; }
+  { service = "kTCCServiceListenEvent";     package = pkgs.sketchybar;       exec = "sketchybar";       reason = "sketchybar input monitoring"; }
   { service = "kTCCServiceScreenCapture";   package = pkgs.overview;         exec = "overview";         reason = "overview ScreenCaptureKit thumbnails"; }
   { service = "kTCCServiceMicrophone";      package = pkgs.eq;               exec = "eq";               reason = "eq daemon BlackHole input"; }
 ]
