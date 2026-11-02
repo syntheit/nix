@@ -19,6 +19,7 @@
     ./cwa.nix
     ./recyclarr.nix
     ./torrent-cleaner.nix
+    ./lan-guard.nix
   ];
 
   # Docker (start at boot — this is a server)
