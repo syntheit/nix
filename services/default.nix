@@ -1,4 +1,5 @@
 {
+  config,
   pkgs,
   lib,
   vars,
@@ -95,6 +96,32 @@
   virtualisation.docker = {
     enable = true;
     enableOnBoot = false;
+  };
+
+  # dockerd never exits once something wakes it. Put it back to sleep after
+  # 30 min with no running containers and no docker client (a build in
+  # progress); the socket stays, so the next docker command starts it again.
+  systemd.services.docker-idle-stop = {
+    description = "Stop dockerd when idle";
+    path = [
+      config.virtualisation.docker.package
+      pkgs.procps
+      pkgs.systemd
+    ];
+    serviceConfig.Type = "oneshot";
+    script = ''
+      systemctl is-active -q docker.service || exit 0
+      since=$(systemctl show docker.service -p ActiveEnterTimestampMonotonic --value)
+      now=$(cut -d' ' -f1 /proc/uptime | cut -d. -f1)
+      [ $((now - since / 1000000)) -ge 1800 ] || exit 0
+      [ -z "$(docker ps -q)" ] || exit 0
+      pgrep -x 'docker|docker-buildx|docker-compose' >/dev/null && exit 0
+      systemctl stop docker.service
+    '';
+  };
+  systemd.timers.docker-idle-stop = {
+    wantedBy = [ "timers.target" ];
+    timerConfig.OnCalendar = "*:0/30";
   };
 
   # NVIDIA container support is enabled per-host (see hosts/mantle/hardware.nix)

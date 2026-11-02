@@ -11,6 +11,7 @@
     ./secrets.nix
     ./mac-speakers.nix
     ./brightness.nix
+    ./windscribe.nix
     ../../system
     ../../services
     ../../desktop

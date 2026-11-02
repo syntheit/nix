@@ -17,7 +17,6 @@
     "exfat"
     "f2fs"
     "xfs"
-    "nfs"
     "cifs"
   ];
 }

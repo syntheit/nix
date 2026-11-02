@@ -206,7 +206,6 @@ in
       gpartedWayland # GParted with Wayland DISPLAY fix (replaces xhost + gparted)
       ntfs3g # NTFS read/write support and utilities
       cifs-utils # Samba/Windows network shares
-      nfs-utils # NFS network shares
       hfsprogs # HFS+ support
       apfs-fuse # APFS support (read-only)
       sqlite
@@ -299,4 +298,8 @@ in
   };
   # GC, index exclusions and cache subvolumes: modules/disk-hygiene.nix.
   diskHygiene.enable = true;
+
+  # Text-to-speech daemon (on by default in NixOS; browsers start it with
+  # five voice modules). Not used.
+  services.speechd.enable = false;
 }
