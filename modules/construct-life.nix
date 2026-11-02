@@ -5,6 +5,7 @@
 
 let
   cfg = config.services.constructLife;
+  home = config.users.users.${cfg.user}.home;
   node = pkgs.nodejs_24;
   garminPython = pkgs.python3.withPackages (p: [ p.garminconnect ]);
 
@@ -17,17 +18,18 @@ let
   '';
 
   # `construct routes|api|capture|openapi`: the portal's API for Claude Code and scripts. Runs in-process on the
-  # production DB (no server, no session); the service's env minus Jellyfin. Seerr (TMDB lookups for culture canon/recs) reads
-  # its key from the sops file, owner matv. Needs `construct-life-rebuild` once for dist/cli.js.
+  # production DB (no server, no session) with the service's sources. Seerr and Jellyfin (culture canon/recs, sync) read their
+  # keys from the sops files, owner = the service user. Needs `construct-life-rebuild` once for dist/cli.js.
   cliScript = pkgs.writeShellScriptBin "construct" ''
     exec env \
       CONSTRUCT_DB=/var/lib/construct/construct.db \
       CONSTRUCT_LIFE=${cfg.lifeDir} \
       CONSTRUCT_BASE_URL=${baseUrl} \
       CONSTRUCT_AI_MODEL=claude-sonnet-5-5 \
-      SEERR_URL=http://localhost:5055 \
+      SEERR_URL=${cfg.seerrUrl} \
       SEERR_API_KEY_FILE=${config.sops.secrets.seerr_api_key.path} \
-      CAR_HUNT_DIR=/home/${cfg.user}/Projects/car-hunt \
+      ${lib.optionalString (cfg.jellyfinUrl != null) "JELLYFIN_URL=${cfg.jellyfinUrl} JELLYFIN_API_KEY_FILE=${config.sops.secrets.jellyfin_api_key.path} \\"}
+      CAR_HUNT_DIR=${home}/Projects/car-hunt \
       GARMIN_PYTHON=${garminPython}/bin/python3 \
       GARMIN_TOKEN_DIR=/var/lib/construct/garmin \
       GARMIN_SYNC_SCRIPT=${cfg.srcDir}/garmin/garmin_sync.py \
@@ -54,13 +56,15 @@ in
 
     srcDir = lib.mkOption {
       type = lib.types.str;
-      default = "/home/matv/Projects/the_construct/app";
+      default = "${home}/Projects/the_construct/app";
+      defaultText = lib.literalExpression ''"''${home of cfg.user}/Projects/the_construct/app"'';
       description = "Source directory; `pnpm build` writes dist/ here.";
     };
 
     lifeDir = lib.mkOption {
       type = lib.types.str;
-      default = "/home/matv/Projects/the_construct/life";
+      default = "${home}/Projects/the_construct/life";
+      defaultText = lib.literalExpression ''"''${home of cfg.user}/Projects/the_construct/life"'';
       description = "Documents (Markdown + front matter) the app reads and writes.";
     };
 
@@ -71,7 +75,19 @@ in
 
     user = lib.mkOption {
       type = lib.types.str;
-      default = "matv";
+      description = "User the service runs as; paths default to this user's home.";
+    };
+
+    seerrUrl = lib.mkOption {
+      type = lib.types.str;
+      default = "http://localhost:5055";
+      description = "Seerr base URL for culture (watchlist + TMDB lookups).";
+    };
+
+    jellyfinUrl = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Jellyfin base URL for the culture watch history (API key: sops secret jellyfin_api_key); null turns it off.";
     };
 
     environment = lib.mkOption {
@@ -95,7 +111,7 @@ in
         NODE_ENV = "production";
         HOST = "0.0.0.0"; # firewall: tailnet only; public traffic arrives via cloudflared on localhost
         PORT = toString cfg.port;
-        HOME = "/home/${cfg.user}";
+        HOME = home;
         CONSTRUCT_DB = "/var/lib/construct/construct.db";
         CONSTRUCT_LIFE = cfg.lifeDir;
         ANTHROPIC_KEY_FILE = config.sops.secrets.anthropic_key.path;
@@ -103,16 +119,18 @@ in
         ANTHROPIC_WORKSPACE_ID = "wrkspc_01LpEQYMaLkXFBGsrjGRwfYm";
         CONSTRUCT_OWNER_EMAIL = "daniel@matv.io"; # must match the Cloudflare Access login email
         CONSTRUCT_BASE_URL = baseUrl; # prefix for pairing links
-        SEERR_URL = "http://localhost:5055";
+        SEERR_URL = cfg.seerrUrl;
         SEERR_API_KEY_FILE = config.sops.secrets.seerr_api_key.path;
-        JELLYFIN_DATA = "/arespool/appdata/jellyfin_config/data/data";
-        CAR_HUNT_DIR = "/home/${cfg.user}/Projects/car-hunt";
+        CAR_HUNT_DIR = "${home}/Projects/car-hunt";
         GARMIN_PYTHON = "${garminPython}/bin/python3";
         GARMIN_TOKEN_DIR = "/var/lib/construct/garmin";
         FDROID_DIR = "/var/lib/construct/fdroid"; # android/scripts/release.sh publishes here
         FDROID_PASSWORD_FILE = config.sops.secrets.fdroid_password.path;
         GARMIN_SYNC_SCRIPT = "${cfg.srcDir}/garmin/garmin_sync.py";
         TZ = "America/Argentina/Buenos_Aires";
+      } // lib.optionalAttrs (cfg.jellyfinUrl != null) {
+        JELLYFIN_URL = cfg.jellyfinUrl;
+        JELLYFIN_API_KEY_FILE = config.sops.secrets.jellyfin_api_key.path;
       } // cfg.environment;
 
       serviceConfig = {

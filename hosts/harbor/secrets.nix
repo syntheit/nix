@@ -64,6 +64,11 @@
     owner = "matv";
     mode = "0400";
   };
+  # construct — Jellyfin API key (key name "construct") for the culture sync's watch history.
+  sops.secrets.jellyfin_api_key = {
+    owner = "matv";
+    mode = "0400";
+  };
   # construct — Seerr API key for the culture sync (watchlist + TMDB metadata).
   sops.secrets.seerr_api_key = {
     owner = "matv";

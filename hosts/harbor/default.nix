@@ -145,6 +145,8 @@
   # itself rejects tunnel requests until environment.CF_ACCESS_TEAM + CF_ACCESS_AUD are set.
   services.constructLife = {
     enable = true;
+    user = "matv";
+    jellyfinUrl = "http://127.0.0.1:8096";
     # Cloudflare Access guards only construct.matv.io/auth/login (shared Access app with downloader/sonarr).
     environment = {
       CF_ACCESS_TEAM = "matv";
