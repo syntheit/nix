@@ -11,6 +11,7 @@
     ../../modules/zfs-scrub.nix
     ../../modules/zfs-properties.nix
     ../../modules/cpu-epp.nix
+    ../../modules/disk-hygiene.nix
     ./hardware-configuration.nix
     ./hardware.nix
     ./oom.nix
@@ -290,12 +291,10 @@
       min-free = 1073741824; # 1GB — auto-GC when free space drops below
       max-free = 3221225472; # 3GB — stop GC once this much space is free
     };
-    gc = {
-      automatic = true;
-      dates = "weekly";
-      options = "--delete-older-than 30d";
-    };
   };
+
+  # Daily GC (7d) and index exclusions: modules/disk-hygiene.nix.
+  diskHygiene.enable = true;
 
   # User configuration
   users = {
@@ -377,6 +376,20 @@
     locate = {
       enable = true;
       package = pkgs.plocate;
+      # Data pools and build scratch (the 3.4 GB index was mostly these).
+      # ~/Projects (arespool/projects) stays indexed.
+      prunePaths = [
+        "/arespool"
+        "/deltapool"
+        "/epsilpool"
+        "/iotapool"
+        "/lambdapool"
+        "/platapool"
+        "/rhopool"
+        "/thetapool"
+        "/media"
+        "/micron01"
+      ];
     };
   };
 

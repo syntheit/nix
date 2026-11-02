@@ -90,6 +90,16 @@
           monthly = 12;
           recursive = true;
         };
+        # ~/Projects: agent worktrees and builds churn GBs a day, so long
+        # retention pins deleted build output (72 GB of snapshots vs 23 GB live
+        # on 2026-11-02). A week of undo for unpushed work; code is in git.
+        "arespool/projects" = {
+          autosnap = true;
+          autoprune = true;
+          hourly = 24;
+          daily = 7;
+          monthly = 0;
+        };
         # Media pools — write-once content, fewer snapshots needed
         "deltapool" = {
           autosnap = true;
@@ -249,7 +259,6 @@
         "/var/lib/docker/volumes/retrospend_uploads"
         "/var/lib/docker/volumes/retrospend_sidecar_data"
         "/var/lib/docker/volumes/retrospend_backup_data"
-        "/var/lib/docker/volumes/retrospend_ollama_data"
         "/var/lib/docker/volumes/tracearr_tracearr_postgres"
         "/var/lib/docker/volumes/tracearr_tracearr_data"
         "/var/lib/docker/volumes/tracearr_tracearr_redis"
