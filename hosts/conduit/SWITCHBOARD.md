@@ -10,7 +10,7 @@ byte-identical to main 52abc28 (`/nix/store/h4w17rzz...-nixos-system-conduit-26.
 
 | option | port | what it moves |
 |---|---|---|
-| headscale | 8085 | Caddy headscale.matv.io, mini.themalli.ai fallback |
+| headscale | 8085 | Caddy headscale.matv.io |
 | deus | 8086 | Caddy bootstrap.matv.io /ade/bootstrap-creds + /healthz; socat :8086 (100.64.0.1 fleet and the 10.100.0.1 hairpin are the same listener, so they cannot split) |
 | bootstrapPkg | 8088 | Caddy bootstrap.matv.io /pkg/* |
 | git | 9418 | socat |
@@ -53,6 +53,6 @@ Remove the key and redeploy to remove the peer.
 - Data is not moved by this; flip only after the NUC copy is verified. The NUC must be listening on the
   service ports on its wg address (10.100.0.5), and firewall trusts wg0.
 - Order for NUC wg: conduit gets the public key first, then the NUC brings up wg0 (keepalive 25 opens the path).
-- conduit's own `user-vpn` headscale lookup is already disabled; not touched.
+- the user VPN (uservpn-server, mini.themalli.ai) was retired on 2026-11-02.
 - Currently-running conduit commit: unknown (no configurationRevision is set in the flake; not checked by SSH). 
 - Stale comments in headscale.nix header still mention mantle; left untouched on purpose.
