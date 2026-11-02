@@ -88,7 +88,10 @@ let
           echo "would remove: $tags (last tagged $last)"
         else
           echo "removing: $tags"
-          docker rmi "$id" >/dev/null || echo "  skipped (in use or has dependents)"
+          # By tag, not ID: an image with several tags (all unprotected, checked
+          # above) can't be removed by ID without --force.
+          # shellcheck disable=SC2086
+          docker rmi $tags >/dev/null || echo "  skipped (in use or has dependents)"
         fi
         removed=$((removed + 1))
       done < <(docker image ls -q --no-trunc | sort -u)
