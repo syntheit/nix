@@ -1,0 +1,12 @@
+# gitleaks config for this repo: the default rules plus an allowlist for values
+# that look like secrets but are public by design.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Public values: SSH host public keys, Cloudflare Access audience tags"
+regexTarget = "line"
+regexes = [
+  '''publicHostKey\s*=\s*"''',
+  '''CF_ACCESS_AUD\s*=\s*"''',
+]

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Refuse commits whose staged changes contain secrets (gitleaks, rules + allowlist
+# in .gitleaks.toml). Enable per clone with: git config core.hooksPath .githooks
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+if command -v gitleaks >/dev/null 2>&1; then
+  gl=(gitleaks)
+else
+  gl=(nix run nixpkgs#gitleaks --)
+fi
+if ! "${gl[@]}" git --pre-commit --staged --redact --no-banner --config .gitleaks.toml . ; then
+  echo "pre-commit: gitleaks found a likely secret in the staged changes (see above)." >&2
+  echo "Put it in sops instead. False positive? Add it to .gitleaks.toml." >&2
+  exit 1
+fi
