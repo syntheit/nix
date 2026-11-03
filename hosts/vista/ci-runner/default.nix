@@ -15,7 +15,8 @@
 #     pull cache on 10.77.0.1:5050. Not vista, the LAN, the tailnet or wg0.
 #   - The slot refuses to boot a VM if that routing or firewall is missing, and
 #     the VM checks it can't reach any of it before it starts the runner.
-#   - The hypervisor runs as the unprivileged ci-vm user in a systemd sandbox.
+#   - Each slot's hypervisor runs as its own unprivileged user (ci-vm1, ci-vm2)
+#     in a systemd sandbox.
 #
 # Repo side: .github/workflows/ci.yml sends push jobs to [self-hosted, vista-ci].
 #
@@ -41,6 +42,7 @@ let
     workDiskMiB = 60 * 1024;
     cacheAddr = "10.77.0.1";
     cachePort = 5050;
+    cacheGiB = 20;
   };
 
   slots =
@@ -67,6 +69,17 @@ let
         ./guest.nix
       ];
     }).config.microvm.declaredRunner;
+
+  privateRanges = lib.concatStringsSep "," [
+    "0.0.0.0/8"
+    "10.0.0.0/8"
+    "100.64.0.0/10"
+    "127.0.0.0/8"
+    "169.254.0.0/16"
+    "172.16.0.0/12"
+    "192.168.0.0/16"
+    "224.0.0.0/3"
+  ];
 
   # What a VM must NOT reach (its self-check). The slot adds its own gateway,
   # vista's LAN address and the home router at boot.
@@ -109,12 +122,38 @@ let
   prepare = slotScript "ci-slot-prepare" ./slot-prepare.sh;
   cleanup = slotScript "ci-slot-cleanup" ./slot-cleanup.sh;
 
+  cacheDir = "/var/lib/ci-registry-cache";
+  cacheImage = "/var/lib/ci-registry-cache.img";
+  # A fixed-size image caps what jobs can make the cache store on vista's
+  # disk (it fetches whatever a VM asks for). When full, pulls fall back to
+  # Docker Hub directly.
+  cacheMount = pkgs.writeShellApplication {
+    name = "ci-cache-mount";
+    runtimeInputs = with pkgs; [
+      coreutils
+      e2fsprogs
+      util-linux
+    ];
+    text = ''
+      if [ ! -e ${cacheImage} ]; then
+        touch ${cacheImage}
+        chattr +C ${cacheImage} 2>/dev/null || true # no btrfs copy-on-write
+        truncate -s ${toString ci.cacheGiB}G ${cacheImage}
+        mkfs.ext4 -q -m 0 ${cacheImage}
+      fi
+      mkdir -p ${cacheDir}
+      mountpoint -q ${cacheDir} || mount -o loop,nodev,nosuid,noexec ${cacheImage} ${cacheDir}
+      chown ci-cache:ci-cache ${cacheDir}
+      chmod 0700 ${cacheDir}
+    '';
+  };
+
   cacheConfig = pkgs.writeText "ci-registry-cache.yml" (
     builtins.toJSON {
       version = "0.1";
       log.level = "info";
       storage = {
-        filesystem.rootdirectory = "/var/lib/ci-registry-cache";
+        filesystem.rootdirectory = cacheDir;
         delete.enabled = true;
       };
       http.addr = "${ci.cacheAddr}:${toString ci.cachePort}";
@@ -159,9 +198,12 @@ let
     requires = [ "ci-net.service" ];
     startLimitIntervalSec = 0;
     serviceConfig = sandbox // {
-      User = "ci-vm";
-      Group = "ci-vm";
+      # One user per slot: an escape from one VM can't open the other's tap,
+      # disks or hypervisor.
+      User = "ci-vm${toString s.index}";
+      Group = "ci-vm${toString s.index}";
       StateDirectory = "ci-vm/slot${toString s.index}";
+      StateDirectoryMode = "0700";
       WorkingDirectory = "/var/lib/ci-vm/slot${toString s.index}";
       ExecStartPre = "+${lib.getExe prepare} ${toString s.index}";
       ExecStart = "${guestRunner s}/bin/microvm-run";
@@ -190,12 +232,28 @@ in
   sops.secrets."windscribe_ci_${vpn}_ovpn" = { };
   sops.secrets."windscribe_ci_${vpn}_auth" = { };
 
-  users.groups.ci-vm = { };
-  users.users.ci-vm = {
-    isSystemUser = true;
-    group = "ci-vm";
-    extraGroups = [ "kvm" ];
-  };
+  users.groups =
+    lib.listToAttrs (map (s: lib.nameValuePair "ci-vm${toString s.index}" { }) slots)
+    // {
+      ci-cache = { };
+    };
+  users.users =
+    lib.listToAttrs (
+      map (
+        s:
+        lib.nameValuePair "ci-vm${toString s.index}" {
+          isSystemUser = true;
+          group = "ci-vm${toString s.index}";
+          extraGroups = [ "kvm" ];
+        }
+      ) slots
+    )
+    // {
+      ci-cache = {
+        isSystemUser = true;
+        group = "ci-cache";
+      };
+    };
 
   # ── Tunnel ────────────────────────────────────────────────────────────────
   # Takes no routes or DNS from the server, so vista's own traffic is
@@ -208,8 +266,6 @@ in
       dev tunci
       dev-type tun
       route-nopull
-      pull-filter ignore "redirect-gateway"
-      pull-filter ignore "route"
       pull-filter ignore "dhcp-option"
       pull-filter ignore "block-outside-dns"
       user nobody
@@ -246,38 +302,57 @@ in
   # ── Firewall ──────────────────────────────────────────────────────────────
   # raw PREROUTING runs before conntrack and before Docker's DNAT, so nothing
   # published by a container here is reachable from a VM either.
+  #
+  # The CI chains deliberately outlive `systemctl stop firewall` (no
+  # extraStopCommands): a VM that is running stays fenced in. A start or reload
+  # rebuilds each chain without a moment where it is empty: fill a new copy,
+  # hook it in first, then unhook and drop the old one.
   networking.firewall.extraCommands = ''
-    iptables -t raw -N ci-raw 2>/dev/null || iptables -t raw -F ci-raw
-    iptables -t raw -A ci-raw -d ${ci.cacheAddr} -p tcp --dport ${toString ci.cachePort} -j RETURN
-    iptables -t raw -A ci-raw -d 0.0.0.0/8,10.0.0.0/8,100.64.0.0/10,127.0.0.0/8,169.254.0.0/16,172.16.0.0/12,192.168.0.0/16,224.0.0.0/3 -j DROP
-    iptables -t raw -C PREROUTING -i ci+ -j ci-raw 2>/dev/null || iptables -t raw -I PREROUTING 1 -i ci+ -j ci-raw
+    ci_chain() { # table chain rules-fn hook match...
+      t=$1 c=$2 fill=$3 hook=$4
+      shift 4
+      iptables -t "$t" -N "$c-new" 2>/dev/null || iptables -t "$t" -F "$c-new"
+      "$fill" "$t" "$c-new"
+      iptables -t "$t" -I "$hook" 1 "$@" -j "$c-new"
+      while iptables -t "$t" -D "$hook" "$@" -j "$c" 2>/dev/null; do :; done
+      iptables -t "$t" -F "$c" 2>/dev/null || true
+      iptables -t "$t" -X "$c" 2>/dev/null || true
+      iptables -t "$t" -E "$c-new" "$c"
+    }
+
+    ci_raw_rules() {
+      # Each tap may only send from its own guest address: no slot can
+      # speak for the other one.
+    ${
+      lib.concatMapStrings (
+        s: "  iptables -t \"$1\" -A \"$2\" -i ${s.tap} ! -s ${s.guestIp} -j DROP\n"
+      ) slots
+    }  iptables -t "$1" -A "$2" -d ${ci.cacheAddr} -p tcp --dport ${toString ci.cachePort} -j RETURN
+      iptables -t "$1" -A "$2" -d ${privateRanges} -j DROP
+    }
+    ci_in_rules() {
+      iptables -t "$1" -A "$2" -d ${ci.cacheAddr} -p tcp --dport ${toString ci.cachePort} -j ACCEPT
+      iptables -t "$1" -A "$2" -j DROP
+    }
+    ci_fwd_rules() {
+      iptables -t "$1" -A "$2" -o tunci -j ACCEPT
+      iptables -t "$1" -A "$2" -j DROP
+    }
+    ci_fwd_in_rules() {
+      iptables -t "$1" -A "$2" -i tunci -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+      iptables -t "$1" -A "$2" -j DROP
+    }
+
+    ci_chain raw ci-raw ci_raw_rules PREROUTING -i ci+
+    ci_chain filter ci-in ci_in_rules INPUT -i ci+
+    ci_chain filter ci-fwd ci_fwd_rules FORWARD -i ci+
+    ci_chain filter ci-fwd-in ci_fwd_in_rules FORWARD -o ci+
     ip6tables -t raw -C PREROUTING -i ci+ -j DROP 2>/dev/null || ip6tables -t raw -I PREROUTING 1 -i ci+ -j DROP
-
-    iptables -N ci-in 2>/dev/null || iptables -F ci-in
-    iptables -A ci-in -d ${ci.cacheAddr} -p tcp --dport ${toString ci.cachePort} -j ACCEPT
-    iptables -A ci-in -j DROP
-    iptables -C INPUT -i ci+ -j ci-in 2>/dev/null || iptables -I INPUT 1 -i ci+ -j ci-in
-
-    iptables -N ci-fwd 2>/dev/null || iptables -F ci-fwd
-    iptables -A ci-fwd -o tunci -j ACCEPT
-    iptables -A ci-fwd -j DROP
-    iptables -C FORWARD -i ci+ -j ci-fwd 2>/dev/null || iptables -I FORWARD 1 -i ci+ -j ci-fwd
-    iptables -N ci-fwd-in 2>/dev/null || iptables -F ci-fwd-in
-    iptables -A ci-fwd-in -i tunci -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-    iptables -A ci-fwd-in -j DROP
-    iptables -C FORWARD -o ci+ -j ci-fwd-in 2>/dev/null || iptables -I FORWARD 1 -o ci+ -j ci-fwd-in
 
     iptables -t nat -C POSTROUTING -s 10.77.0.0/16 -o tunci -j MASQUERADE 2>/dev/null \
       || iptables -t nat -A POSTROUTING -s 10.77.0.0/16 -o tunci -j MASQUERADE
     iptables -t mangle -C FORWARD -o tunci -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null \
       || iptables -t mangle -A FORWARD -o tunci -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
-  '';
-  networking.firewall.extraStopCommands = ''
-    iptables -t raw -D PREROUTING -i ci+ -j ci-raw 2>/dev/null || true
-    ip6tables -t raw -D PREROUTING -i ci+ -j DROP 2>/dev/null || true
-    iptables -D INPUT -i ci+ -j ci-in 2>/dev/null || true
-    iptables -D FORWARD -i ci+ -j ci-fwd 2>/dev/null || true
-    iptables -D FORWARD -o ci+ -j ci-fwd-in 2>/dev/null || true
   '';
 
   # ── Docker Hub pull cache ─────────────────────────────────────────────────
@@ -293,9 +368,12 @@ in
     wants = [ "network-online.target" ];
     requires = [ "ci-net.service" ];
     serviceConfig = sandbox // {
+      ExecStartPre = "+${lib.getExe cacheMount}";
       ExecStart = "${pkgs.distribution}/bin/registry serve ${cacheConfig}";
-      DynamicUser = true;
-      StateDirectory = "ci-registry-cache";
+      ExecStopPost = "+${pkgs.util-linux}/bin/umount ${cacheDir}";
+      User = "ci-cache";
+      Group = "ci-cache";
+      ReadWritePaths = [ cacheDir ];
       RestrictAddressFamilies = [
         "AF_INET"
         "AF_INET6"

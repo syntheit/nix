@@ -13,18 +13,27 @@ die() {
   exit 1
 }
 
+rule() { "$@" 2>/dev/null || die "firewall rule missing: $*"; }
 ip rule show | grep -q "iif $tap lookup $TABLE" || die "policy routing rule missing"
 ip route show table "$TABLE" | grep -q '^unreachable default' || die "killswitch route missing"
-iptables -t raw -C PREROUTING -i ci+ -j ci-raw 2>/dev/null || die "raw firewall missing"
-iptables -C INPUT -i ci+ -j ci-in 2>/dev/null || die "input firewall missing"
-iptables -C FORWARD -i ci+ -j ci-fwd 2>/dev/null || die "forward firewall missing"
-ip6tables -t raw -C PREROUTING -i ci+ -j DROP 2>/dev/null || die "ipv6 drop missing"
+rule iptables -t raw -C PREROUTING -i ci+ -j ci-raw
+rule iptables -t raw -C ci-raw -i "$tap" ! -s "10.77.$n.2" -j DROP
+for range in 10.0.0.0/8 100.64.0.0/10 172.16.0.0/12 192.168.0.0/16; do
+  rule iptables -t raw -C ci-raw -d "$range" -j DROP
+done
+rule ip6tables -t raw -C PREROUTING -i ci+ -j DROP
+rule iptables -C INPUT -i ci+ -j ci-in
+rule iptables -C ci-in -j DROP
+rule iptables -C FORWARD -i ci+ -j ci-fwd
+rule iptables -C ci-fwd -j DROP
+rule iptables -C FORWARD -o ci+ -j ci-fwd-in
+rule iptables -C ci-fwd-in -j DROP
 
 install -d -m 0700 "$run"
 rm -f "$dir/work.img" "$dir/jit.img"
 
 ip link del "$tap" 2>/dev/null || true
-ip tuntap add name "$tap" mode tap user ci-vm vnet_hdr multi_queue
+ip tuntap add name "$tap" mode tap user "ci-vm$n" vnet_hdr multi_queue
 echo 1 >"/proc/sys/net/ipv6/conf/$tap/disable_ipv6"
 ip addr add "10.77.$n.1/30" dev "$tap"
 ip link set "$tap" up
@@ -58,5 +67,5 @@ jq -r .runner.id <<<"$resp" >"$run/runner-id"
 
 truncate -s 16M "$dir/jit.img"
 mkfs.ext4 -q -L cijit -d "$stage" "$dir/jit.img"
-chown ci-vm:ci-vm "$dir/jit.img"
+chown "ci-vm$n:ci-vm$n" "$dir/jit.img"
 chmod 0400 "$dir/jit.img"
