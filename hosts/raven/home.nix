@@ -251,6 +251,7 @@ in
     nodejs
     pnpm
     claude-code
+    awscli2
     gnumake
 
     # Android status

@@ -56,6 +56,7 @@
     tldr
     gh
     claude-code
+    awscli2
     nixfmt
     nix-output-monitor
     nodejs
