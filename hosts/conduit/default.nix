@@ -1,5 +1,6 @@
 {
   config,
+  lib,
   pkgs,
   ...
 }:
@@ -231,8 +232,23 @@
         protocols h1 h2 h3
       }
     '';
+    # Shared response hardening for the personal sites (fleet vhosts in
+    # switchboard.nix are left alone). No CSP / X-Frame-Options: those break
+    # Jellyfin casting and app embeds.
+    extraConfig = ''
+      (hardening) {
+        header {
+          Strict-Transport-Security "max-age=31536000"
+          X-Content-Type-Options "nosniff"
+          Referrer-Policy "strict-origin-when-cross-origin"
+          -Server
+          -X-Powered-By
+        }
+      }
+    '';
     virtualHosts."watch.matv.io" = {
       extraConfig = ''
+        import hardening
         encode gzip zstd
 
         # jelly-recs — recommendation rows API + injected JS/CSS.
@@ -262,6 +278,7 @@
     # then Invidious accounts with registration off (hosts/vista/secrets.nix).
     virtualHosts."lumen.matv.io" = {
       extraConfig = ''
+        import hardening
         encode gzip zstd
         basic_auth {
           daniel $2a$14$STFiyaNXo65wJVP2h4cnReAkNXFDi1ZMQOFVvSEft5cfFpCWYjBhi
@@ -281,6 +298,7 @@
     # origin so cookies/tokens flow naturally.
     virtualHosts."watch2.matv.io" = {
       extraConfig = ''
+        import hardening
         encode gzip zstd
 
         # 1. jelly-recs API — must come before JF so paths win.
@@ -327,11 +345,13 @@
     };
     virtualHosts."status.matv.io" = {
       extraConfig = ''
+        import hardening
         reverse_proxy localhost:3001
       '';
     };
     virtualHosts."photos.matv.io" = {
       extraConfig = ''
+        import hardening
         encode gzip zstd
         reverse_proxy 10.100.0.2:2283 {
           flush_interval -1
@@ -346,6 +366,7 @@
     };
     virtualHosts."library.matv.io" = {
       extraConfig = ''
+        import hardening
         encode gzip zstd
         reverse_proxy 10.100.0.2:8083 {
           flush_interval -1
@@ -365,6 +386,7 @@
     };
     virtualHosts."harbor.matv.io" = {
       extraConfig = ''
+        import hardening
         encode gzip zstd
         reverse_proxy 10.100.0.2:8420 {
           flush_interval -1
@@ -376,11 +398,13 @@
     };
     virtualHosts."conduit.matv.io" = {
       extraConfig = ''
+        import hardening
         reverse_proxy localhost:8420
       '';
     };
     virtualHosts."games.matv.io" = {
       extraConfig = ''
+        import hardening
         encode gzip zstd
         reverse_proxy 10.100.0.2:2080 {
           header_up X-Real-IP {remote_host}
@@ -392,6 +416,7 @@
     # Wings API + WebSocket on separate port (game console, file manager)
     virtualHosts."games.matv.io:8443" = {
       extraConfig = ''
+        import hardening
         reverse_proxy 10.100.0.2:8080 {
           flush_interval -1
           header_up X-Real-IP {remote_host}
@@ -406,11 +431,33 @@
   services.fail2ban = {
     enable = true;
     maxretry = 3;
+    # Never ban the tailnet, wg0 peers, harbor's site, or the work fleet's colo NAT.
+    ignoreIP = [ "100.64.0.0/10" "10.100.0.0/24" "38.49.65.0/24" "38.123.20.192/28" ];
     bantime = "1h";
     bantime-increment = {
       enable = true;
       maxtime = "168h"; # Max 1 week ban
       factor = "4";
+    };
+    # Scanner probes on the personal sites (/.env, /.git/, WordPress, phpMyAdmin...).
+    # Nothing legitimate requests these; a dry run on 2026-11-02 matched 1,095 IPs
+    # and none of ours. Fleet vhost logs are deliberately not watched.
+    jails.caddy-scanners = {
+      settings = {
+        enabled = true;
+        backend = "auto";
+        port = "http,https,8443";
+        maxretry = 3;
+        findtime = "10m";
+        logpath = lib.concatMapStringsSep "\n          " (h: "/var/log/caddy/access-${h}.log") [
+          "watch.matv.io" "watch2.matv.io" "photos.matv.io" "library.matv.io" "harbor.matv.io"
+          "conduit.matv.io" "games.matv.io" "games.matv.io:8443" "lumen.matv.io" "status.matv.io"
+        ];
+      };
+      filter.Definition = {
+        failregex = ''^\{.*"request":\{"remote_ip":"[^"]*","remote_port":"[^"]*","client_ip":"<HOST>","proto":"[^"]*","method":"[A-Z]+","host":"[^"]*","uri":"/+(?:\.env|\.git/|\.aws/|\.ssh/|\.DS_Store|wp-login\.php|wp-admin|wp-content|wp-includes|xmlrpc\.php|phpmyadmin|pma/|myadmin|admin\.php|config\.php|server-status|cgi-bin/|vendor/phpunit|actuator/|boaform|HNAP1)'';
+        datepattern = ''"ts":{EPOCH}'';
+      };
     };
     jails.sshd = {
       settings = {
