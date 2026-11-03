@@ -125,8 +125,7 @@ let
   cacheDir = "/var/lib/ci-registry-cache";
   cacheImage = "/var/lib/ci-registry-cache.img";
   # A fixed-size image caps what jobs can make the cache store on vista's
-  # disk (it fetches whatever a VM asks for). When full, pulls fall back to
-  # Docker Hub directly.
+  # disk (it fetches whatever a VM asks for).
   cacheMount = pkgs.writeShellApplication {
     name = "ci-cache-mount";
     runtimeInputs = with pkgs; [
