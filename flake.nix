@@ -102,6 +102,13 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # vista's CI runner VMs (hosts/vista/ci-runner). Only the guest module is
+    # used; vista runs the VMs from its own units, not microvm's host module.
+    microvm = {
+      url = "github:microvm-nix/microvm.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     nixos-hardware = {
       url = "github:NixOS/nixos-hardware";
       inputs.nixpkgs.follows = "nixpkgs";
