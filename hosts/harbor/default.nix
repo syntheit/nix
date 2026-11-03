@@ -20,6 +20,7 @@
     ./storage.nix
     ./containers
     ./access.nix
+    ./secret-perms.nix
     ./vestal-site.nix
     ./retrospend-fdroid.nix
     ./virt.nix

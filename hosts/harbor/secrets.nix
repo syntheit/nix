@@ -86,9 +86,8 @@
   sops.secrets.vpn_wireguard_preshared_key = { };
   sops.secrets.restic_backup_password = { };
   sops.secrets.wg_conduit_private_key = { };
-  sops.secrets.paperless_admin_password = {
-    mode = "0444"; # readable by paperless service user
-  };
+  # Read by paperless-scheduler via LoadCredential (as root), so the default 0400 works.
+  sops.secrets.paperless_admin_password = { };
   sops.secrets.karakeep_nextauth_secret = { };
   sops.secrets.karakeep_meili_master_key = { };
   sops.secrets.docmost_app_secret = { };
