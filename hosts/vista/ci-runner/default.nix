@@ -240,174 +240,178 @@ let
   };
 in
 {
-  sops.secrets.ci_runner_github_token = { };
-  sops.secrets."windscribe_ci_${vpn}_ovpn" = { };
-  sops.secrets."windscribe_ci_${vpn}_auth" = { };
+  options.retrospendCi.enable = lib.mkEnableOption "the retrospend CI runner VMs, tunnel and pull cache";
 
-  users.groups =
-    lib.listToAttrs (map (s: lib.nameValuePair "ci-vm${toString s.index}" { }) slots)
-    // {
-      ci-cache = { };
-    };
-  users.users =
-    lib.listToAttrs (
-      map (
-        s:
-        lib.nameValuePair "ci-vm${toString s.index}" {
+  config = lib.mkIf config.retrospendCi.enable {
+    sops.secrets.ci_runner_github_token = { };
+    sops.secrets."windscribe_ci_${vpn}_ovpn" = { };
+    sops.secrets."windscribe_ci_${vpn}_auth" = { };
+
+    users.groups =
+      lib.listToAttrs (map (s: lib.nameValuePair "ci-vm${toString s.index}" { }) slots)
+      // {
+        ci-cache = { };
+      };
+    users.users =
+      lib.listToAttrs (
+        map (
+          s:
+          lib.nameValuePair "ci-vm${toString s.index}" {
+            isSystemUser = true;
+            group = "ci-vm${toString s.index}";
+            extraGroups = [ "kvm" ];
+          }
+        ) slots
+      )
+      // {
+        ci-cache = {
           isSystemUser = true;
-          group = "ci-vm${toString s.index}";
-          extraGroups = [ "kvm" ];
-        }
-      ) slots
-    )
-    // {
-      ci-cache = {
-        isSystemUser = true;
-        group = "ci-cache";
+          group = "ci-cache";
+        };
+      };
+
+    # ── Tunnel ────────────────────────────────────────────────────────────────
+    # Takes no routes or DNS from the server, so vista's own traffic is
+    # untouched; the up script puts the tunnel in table 177 only.
+    services.openvpn.servers.ci = {
+      autoStart = true;
+      updateResolvConf = false;
+      config = ''
+        config ${config.sops.secrets."windscribe_ci_${vpn}_ovpn".path}
+        dev tunci
+        dev-type tun
+        route-nopull
+        pull-filter ignore "dhcp-option"
+        pull-filter ignore "block-outside-dns"
+        user nobody
+        group nogroup
+      '';
+      authUserPass = config.sops.secrets."windscribe_ci_${vpn}_auth".path;
+      up = "ip route replace default dev $dev table ${toString table}";
+    };
+
+    # Table 177 for everything the VMs send, ending in the killswitch. Rules
+    # match by incoming tap, so the host's own traffic never uses the table.
+    systemd.services.ci-net = {
+      description = "CI VM routing: table ${toString table} and the cache address";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network.target" ];
+      path = [ pkgs.iproute2 ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+      };
+      script = ''
+        ip addr replace ${ci.cacheAddr}/32 dev lo
+        ip route replace unreachable default metric 4294967295 table ${toString table}
+      ''
+      + lib.concatMapStrings (s: ''
+        ip rule del iif ${s.tap} lookup ${toString table} 2>/dev/null || true
+        ip rule add iif ${s.tap} lookup ${toString table} priority 100
+      '') slots;
+      preStop = lib.concatMapStrings (s: ''
+        ip rule del iif ${s.tap} lookup ${toString table} 2>/dev/null || true
+      '') slots;
+    };
+
+    # ── Firewall ──────────────────────────────────────────────────────────────
+    # raw PREROUTING runs before conntrack and before Docker's DNAT, so nothing
+    # published by a container here is reachable from a VM either.
+    #
+    # The CI chains deliberately outlive `systemctl stop firewall` (no
+    # extraStopCommands): a VM that is running stays fenced in. A start or reload
+    # rebuilds each chain without a moment where it is empty: fill a new copy,
+    # hook it in first, then unhook and drop the old one.
+    networking.firewall.extraCommands = ''
+      ci_chain() { # table chain rules-fn hook match...
+        t=$1 c=$2 fill=$3 hook=$4
+        shift 4
+        iptables -t "$t" -N "$c-new" 2>/dev/null || iptables -t "$t" -F "$c-new"
+        "$fill" "$t" "$c-new"
+        iptables -t "$t" -I "$hook" 1 "$@" -j "$c-new"
+        while iptables -t "$t" -D "$hook" "$@" -j "$c" 2>/dev/null; do :; done
+        iptables -t "$t" -F "$c" 2>/dev/null || true
+        iptables -t "$t" -X "$c" 2>/dev/null || true
+        iptables -t "$t" -E "$c-new" "$c"
+      }
+
+      ci_raw_rules() {
+        # Each tap may only send from its own guest address: no slot can
+        # speak for the other one.
+      ${
+        lib.concatMapStrings (
+          s: "  iptables -t \"$1\" -A \"$2\" -i ${s.tap} ! -s ${s.guestIp} -j DROP\n"
+        ) slots
+      }  iptables -t "$1" -A "$2" -d ${ci.cacheAddr} -p tcp --dport ${toString ci.cachePort} -j RETURN
+        iptables -t "$1" -A "$2" -d ${privateRanges} -j DROP
+      }
+      ci_in_rules() {
+        iptables -t "$1" -A "$2" -d ${ci.cacheAddr} -p tcp --dport ${toString ci.cachePort} -j ACCEPT
+        iptables -t "$1" -A "$2" -j DROP
+      }
+      ci_fwd_rules() {
+        iptables -t "$1" -A "$2" -o tunci -j ACCEPT
+        iptables -t "$1" -A "$2" -j DROP
+      }
+      ci_fwd_in_rules() {
+        iptables -t "$1" -A "$2" -i tunci -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+        iptables -t "$1" -A "$2" -j DROP
+      }
+
+      ci_chain raw ci-raw ci_raw_rules PREROUTING -i ci+
+      ci_chain filter ci-in ci_in_rules INPUT -i ci+
+      ci_chain filter ci-fwd ci_fwd_rules FORWARD -i ci+
+      ci_chain filter ci-fwd-in ci_fwd_in_rules FORWARD -o ci+
+      ip6tables -t raw -C PREROUTING -i ci+ -j DROP 2>/dev/null || ip6tables -t raw -I PREROUTING 1 -i ci+ -j DROP
+
+      iptables -t nat -C POSTROUTING -s 10.77.0.0/16 -o tunci -j MASQUERADE 2>/dev/null \
+        || iptables -t nat -A POSTROUTING -s 10.77.0.0/16 -o tunci -j MASQUERADE
+      iptables -t mangle -C FORWARD -o tunci -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null \
+        || iptables -t mangle -A FORWARD -o tunci -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+    '';
+
+    # ── Docker Hub pull cache ─────────────────────────────────────────────────
+    # Pull-only (a proxy registry refuses pushes), so a job can't poison it. It
+    # fetches over vista's own line; only the VMs' traffic uses the tunnel.
+    # The mountpoint has to exist before systemd builds the cache's sandbox, and
+    # the mount has to be made outside that sandbox: its own unit, not an
+    # ExecStartPre (a "+" ExecStartPre's mount did not reach the registry).
+    systemd.tmpfiles.rules = [ "d ${cacheDir} 0700 ci-cache ci-cache -" ];
+    systemd.services.ci-registry-cache-mount = {
+      description = "Fixed-size disk for the CI Docker Hub cache";
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = lib.getExe cacheMount;
+        ExecStop = "${pkgs.util-linux}/bin/umount ${cacheDir}";
+      };
+    };
+    systemd.services.ci-registry-cache = {
+      description = "Docker Hub pull cache for the CI VMs";
+      wantedBy = [ "multi-user.target" ];
+      after = [
+        "ci-net.service"
+        "network-online.target"
+      ];
+      wants = [ "network-online.target" ];
+      requires = [ "ci-net.service" ];
+      bindsTo = [ "ci-registry-cache-mount.service" ];
+      serviceConfig = sandbox // {
+        ExecStart = "${pkgs.distribution}/bin/registry serve ${cacheConfig}";
+        User = "ci-cache";
+        Group = "ci-cache";
+        ReadWritePaths = [ cacheDir ];
+        RestrictAddressFamilies = [
+          "AF_INET"
+          "AF_INET6"
+          "AF_UNIX"
+        ];
+        Restart = "on-failure";
       };
     };
 
-  # ── Tunnel ────────────────────────────────────────────────────────────────
-  # Takes no routes or DNS from the server, so vista's own traffic is
-  # untouched; the up script puts the tunnel in table 177 only.
-  services.openvpn.servers.ci = {
-    autoStart = true;
-    updateResolvConf = false;
-    config = ''
-      config ${config.sops.secrets."windscribe_ci_${vpn}_ovpn".path}
-      dev tunci
-      dev-type tun
-      route-nopull
-      pull-filter ignore "dhcp-option"
-      pull-filter ignore "block-outside-dns"
-      user nobody
-      group nogroup
-    '';
-    authUserPass = config.sops.secrets."windscribe_ci_${vpn}_auth".path;
-    up = "ip route replace default dev $dev table ${toString table}";
+    # ── Job slots ─────────────────────────────────────────────────────────────
+    systemd.services.ci-slot1 = slotUnit (builtins.elemAt slots 0);
+    systemd.services.ci-slot2 = slotUnit (builtins.elemAt slots 1);
   };
-
-  # Table 177 for everything the VMs send, ending in the killswitch. Rules
-  # match by incoming tap, so the host's own traffic never uses the table.
-  systemd.services.ci-net = {
-    description = "CI VM routing: table ${toString table} and the cache address";
-    wantedBy = [ "multi-user.target" ];
-    after = [ "network.target" ];
-    path = [ pkgs.iproute2 ];
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-    };
-    script = ''
-      ip addr replace ${ci.cacheAddr}/32 dev lo
-      ip route replace unreachable default metric 4294967295 table ${toString table}
-    ''
-    + lib.concatMapStrings (s: ''
-      ip rule del iif ${s.tap} lookup ${toString table} 2>/dev/null || true
-      ip rule add iif ${s.tap} lookup ${toString table} priority 100
-    '') slots;
-    preStop = lib.concatMapStrings (s: ''
-      ip rule del iif ${s.tap} lookup ${toString table} 2>/dev/null || true
-    '') slots;
-  };
-
-  # ── Firewall ──────────────────────────────────────────────────────────────
-  # raw PREROUTING runs before conntrack and before Docker's DNAT, so nothing
-  # published by a container here is reachable from a VM either.
-  #
-  # The CI chains deliberately outlive `systemctl stop firewall` (no
-  # extraStopCommands): a VM that is running stays fenced in. A start or reload
-  # rebuilds each chain without a moment where it is empty: fill a new copy,
-  # hook it in first, then unhook and drop the old one.
-  networking.firewall.extraCommands = ''
-    ci_chain() { # table chain rules-fn hook match...
-      t=$1 c=$2 fill=$3 hook=$4
-      shift 4
-      iptables -t "$t" -N "$c-new" 2>/dev/null || iptables -t "$t" -F "$c-new"
-      "$fill" "$t" "$c-new"
-      iptables -t "$t" -I "$hook" 1 "$@" -j "$c-new"
-      while iptables -t "$t" -D "$hook" "$@" -j "$c" 2>/dev/null; do :; done
-      iptables -t "$t" -F "$c" 2>/dev/null || true
-      iptables -t "$t" -X "$c" 2>/dev/null || true
-      iptables -t "$t" -E "$c-new" "$c"
-    }
-
-    ci_raw_rules() {
-      # Each tap may only send from its own guest address: no slot can
-      # speak for the other one.
-    ${
-      lib.concatMapStrings (
-        s: "  iptables -t \"$1\" -A \"$2\" -i ${s.tap} ! -s ${s.guestIp} -j DROP\n"
-      ) slots
-    }  iptables -t "$1" -A "$2" -d ${ci.cacheAddr} -p tcp --dport ${toString ci.cachePort} -j RETURN
-      iptables -t "$1" -A "$2" -d ${privateRanges} -j DROP
-    }
-    ci_in_rules() {
-      iptables -t "$1" -A "$2" -d ${ci.cacheAddr} -p tcp --dport ${toString ci.cachePort} -j ACCEPT
-      iptables -t "$1" -A "$2" -j DROP
-    }
-    ci_fwd_rules() {
-      iptables -t "$1" -A "$2" -o tunci -j ACCEPT
-      iptables -t "$1" -A "$2" -j DROP
-    }
-    ci_fwd_in_rules() {
-      iptables -t "$1" -A "$2" -i tunci -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-      iptables -t "$1" -A "$2" -j DROP
-    }
-
-    ci_chain raw ci-raw ci_raw_rules PREROUTING -i ci+
-    ci_chain filter ci-in ci_in_rules INPUT -i ci+
-    ci_chain filter ci-fwd ci_fwd_rules FORWARD -i ci+
-    ci_chain filter ci-fwd-in ci_fwd_in_rules FORWARD -o ci+
-    ip6tables -t raw -C PREROUTING -i ci+ -j DROP 2>/dev/null || ip6tables -t raw -I PREROUTING 1 -i ci+ -j DROP
-
-    iptables -t nat -C POSTROUTING -s 10.77.0.0/16 -o tunci -j MASQUERADE 2>/dev/null \
-      || iptables -t nat -A POSTROUTING -s 10.77.0.0/16 -o tunci -j MASQUERADE
-    iptables -t mangle -C FORWARD -o tunci -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null \
-      || iptables -t mangle -A FORWARD -o tunci -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
-  '';
-
-  # ── Docker Hub pull cache ─────────────────────────────────────────────────
-  # Pull-only (a proxy registry refuses pushes), so a job can't poison it. It
-  # fetches over vista's own line; only the VMs' traffic uses the tunnel.
-  # The mountpoint has to exist before systemd builds the cache's sandbox, and
-  # the mount has to be made outside that sandbox: its own unit, not an
-  # ExecStartPre (a "+" ExecStartPre's mount did not reach the registry).
-  systemd.tmpfiles.rules = [ "d ${cacheDir} 0700 ci-cache ci-cache -" ];
-  systemd.services.ci-registry-cache-mount = {
-    description = "Fixed-size disk for the CI Docker Hub cache";
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-      ExecStart = lib.getExe cacheMount;
-      ExecStop = "${pkgs.util-linux}/bin/umount ${cacheDir}";
-    };
-  };
-  systemd.services.ci-registry-cache = {
-    description = "Docker Hub pull cache for the CI VMs";
-    wantedBy = [ "multi-user.target" ];
-    after = [
-      "ci-net.service"
-      "network-online.target"
-    ];
-    wants = [ "network-online.target" ];
-    requires = [ "ci-net.service" ];
-    bindsTo = [ "ci-registry-cache-mount.service" ];
-    serviceConfig = sandbox // {
-      ExecStart = "${pkgs.distribution}/bin/registry serve ${cacheConfig}";
-      User = "ci-cache";
-      Group = "ci-cache";
-      ReadWritePaths = [ cacheDir ];
-      RestrictAddressFamilies = [
-        "AF_INET"
-        "AF_INET6"
-        "AF_UNIX"
-      ];
-      Restart = "on-failure";
-    };
-  };
-
-  # ── Job slots ─────────────────────────────────────────────────────────────
-  systemd.services.ci-slot1 = slotUnit (builtins.elemAt slots 0);
-  systemd.services.ci-slot2 = slotUnit (builtins.elemAt slots 1);
 }

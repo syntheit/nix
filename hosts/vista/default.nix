@@ -24,7 +24,7 @@
     ./deus-cli-release.nix # mini rsyncs signed deus CLI releases here (rrsync-only user)
     ./wg0-watchdog.nix # rebind wg0 when the conduit handshake goes stale (home WAN blips + double NAT)
     ./zot.nix # zot OCI registry on :5001
-    ./ci-runner # retrospend CI: one throwaway microVM per GitHub Actions job
+    ./ci-runner # retrospend CI: one throwaway microVM per GitHub Actions job (parked, see below)
     ./ssd-write-cache.nix # no flushes to the slow Apple SSD; clean poweroff on low battery
     ../../system
     ../../services
@@ -46,6 +46,13 @@
       "go-build-newbot"
     ];
   };
+
+  # Parked 2026-11-04: retrospend is public, so GitHub's runners are free and
+  # beat vista on its mostly single-threaded suite. Kept ready in case the repo
+  # goes private or GitHub's terms change. Enabling it also needs the ci.yml
+  # runs-on change (git history: "Run pg, e2e and visual pushes on the
+  # self-hosted vista runner").
+  retrospendCi.enable = false;
 
   networking.hostName = "vista";
   networking.useDHCP = lib.mkDefault true;
