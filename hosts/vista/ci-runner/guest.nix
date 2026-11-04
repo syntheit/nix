@@ -20,6 +20,8 @@
     hypervisor = "cloud-hypervisor";
     inherit (ci) vcpu;
     mem = ci.memMiB;
+    # Free page reporting: memory the guest frees goes back to vista.
+    balloon = true;
     shares = [ ];
     storeOnDisk = true;
     storeDiskType = "erofs";

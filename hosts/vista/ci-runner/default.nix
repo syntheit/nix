@@ -43,6 +43,8 @@ let
     cacheAddr = "10.77.0.1";
     cachePort = 5050;
     cacheGiB = 20;
+    # Free memory vista keeps for everything else when a VM boots.
+    headroomMiB = 3072;
   };
 
   slots =
@@ -99,6 +101,9 @@ let
     TABLE = toString table;
     TOKEN_FILE = config.sops.secrets.ci_runner_github_token.path;
     BLOCKED = lib.concatStringsSep "\n" blocked;
+    VM_MIB = toString ci.memMiB;
+    HEADROOM_MIB = toString ci.headroomMiB;
+    SLOTS = lib.concatMapStringsSep " " (s: toString s.index) slots;
   };
 
   slotScript =
@@ -226,6 +231,9 @@ let
       MemoryMax = "${toString (ci.memMiB + 1024)}M";
       # Swapped-out guest memory stalls the job; keep the VM in RAM.
       MemorySwapMax = 0;
+      # Under memory pressure the OOM killer takes a CI VM (the job fails and
+      # is re-run) before anything else on vista.
+      OOMScoreAdjust = 800;
       CPUWeight = 50;
       IOWeight = 50;
     };

@@ -30,6 +30,19 @@ rule iptables -C ci-fwd -j DROP
 rule iptables -C FORWARD -o ci+ -j ci-fwd-in
 rule iptables -C ci-fwd-in -j DROP
 
+# Only boot when vista can spare the whole VM plus headroom. Guest memory is
+# claimed lazily, so also count what running VMs can still grow into. Until
+# then the slot retries every 30 s and the GitHub job stays queued.
+avail=$(awk '/^MemAvailable:/ {print int($2 / 1024)}' /proc/meminfo)
+need=$((VM_MIB + HEADROOM_MIB))
+for other in $SLOTS; do
+  [ "$other" = "$n" ] && continue
+  systemctl -q is-active "ci-slot$other" || continue
+  used=$(($(systemctl show -p MemoryCurrent --value "ci-slot$other") / 1048576))
+  [ "$used" -lt "$VM_MIB" ] && need=$((need + VM_MIB - used))
+done
+[ "$avail" -ge "$need" ] || die "waiting for memory: $avail MiB available, $need needed"
+
 install -d -m 0700 "$run"
 rm -f "$dir/work.img" "$dir/jit.img"
 

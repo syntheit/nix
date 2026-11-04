@@ -51,6 +51,11 @@ for _ in 1 2 3; do
   sleep 5
 done
 
+# Hand the pull's page cache back to vista (balloon free page reporting), so
+# a VM waiting for a job stays small.
+sync
+echo 3 >/proc/sys/vm/drop_caches
+
 ACTIONS_RUNNER_INPUT_JITCONFIG=$(cat /run/jit/jitconfig)
 export ACTIONS_RUNNER_INPUT_JITCONFIG
 docker run --rm --name runner --network host --shm-size 2g \
