@@ -27,4 +27,6 @@
     percentageAction = 8;
     criticalPowerAction = "PowerOff";
   };
+  # Otherwise it only starts on D-Bus demand; headless, nothing asks.
+  systemd.services.upower.wantedBy = [ "multi-user.target" ];
 }
