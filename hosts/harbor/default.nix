@@ -15,6 +15,7 @@
     ./hardware-configuration.nix
     ./hardware.nix
     ./oom.nix
+    ./power-restore.nix
     ./secrets.nix
     ./nix-builder.nix
     ./storage.nix
