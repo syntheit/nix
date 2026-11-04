@@ -114,7 +114,7 @@ in
     #   sudo mkdir -p /var/root/.ssh
     #   sudo ln -sf /Users/daniel/.ssh/mainkey /var/root/.ssh/mainkey
     #
-    # mainkey (the github account key) has access to NRE-Product/malli-deus and malli-nix.
+    # mainkey (the github account key) has access to NR-Product/deus and malli-nix.
     # Switched away from PAT+netrc because PATs expire silently; SSH
     # deploy keys don't. (See flake.nix:102-110 for the rationale.)
 
@@ -141,6 +141,11 @@ in
       install -d -m 0700 /var/root/.ssh
       cat > /var/root/.ssh/config <<'SSHCFG'
       Host github-malli-deus
+        User git
+        HostName github.com
+        IdentityFile /var/root/.ssh/mainkey
+        IdentitiesOnly yes
+      Host github-deus
         User git
         HostName github.com
         IdentityFile /var/root/.ssh/mainkey

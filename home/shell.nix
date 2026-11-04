@@ -93,7 +93,7 @@ let
       ''sudo darwin-rebuild "$action" --flake "$HOME/nix#${hostName}" --substituters https://cache.nixos.org "$@"''
     else
       # Linux: --sudo, not `sudo nixos-rebuild`. As root, flake fetches lack the
-      # user's ssh alias for the private deus input (github-malli-deus, see
+      # user's ssh alias for the private deus input (github-deus, see
       # home/modules/ssh.nix); --sudo evals/builds as the user, sudo only to activate.
       ''nixos-rebuild "$action" --flake "$HOME/nix#${hostName}" --sudo "$@"'';
 in

@@ -19,7 +19,7 @@ set -euo pipefail
 
 export PATH="${PATH:-}:/usr/bin:/bin:/usr/sbin:/sbin:/nix/var/nix/profiles/default/bin"
 
-: "${DCR_REPO_URL:=git@github-malli-deus:NRE-Product/malli-deus.git}"
+: "${DCR_REPO_URL:=git@github-malli-deus:NR-Product/deus.git}"
 : "${DCR_STATE_DIR:=$HOME/Library/Application Support/deus-cli-release}"
 : "${DCR_LOG:=$HOME/Library/Logs/deus-cli-release.log}"
 : "${DCR_PUBLISH_HOST:=vista}"
@@ -180,7 +180,7 @@ make_manifest() {
 
 # verify_release DIR PUBKEY: checks signature, sizes and hashes the way a client
 # would, with the pinned signer, before anything is published (review P2-3).
-# Mandatory: the pinned deus input has `deus-release verify` (malli-deus #271).
+# Mandatory: the pinned deus input has `deus-release verify` (deus #271).
 verify_release() {
   [ "$("$DCR_RELEASE_BIN" verify -pubkey "$2" -dir "$1" 2>/dev/null | head -n1)" = "ok $(jq -r .version "$1/manifest.json")" ]
 }
@@ -205,7 +205,7 @@ read_key() {
 # lock_ok FILE: every non-root flake.lock node is pinned by narHash and fetched
 # from github (or git over https/ssh from github.com). Anything else (path:,
 # file, tarball, git+file, other hosts) could pull local files such as ~/.ssh
-# into the store as daniel (review P1-2). malli-deus's lock uses only `github`.
+# into the store as daniel (review P1-2). deus's lock uses only `github`.
 lock_ok() {
   jq -e '
     .root as $r

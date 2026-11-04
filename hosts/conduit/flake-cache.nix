@@ -26,7 +26,7 @@
 #      GitHub, then publishes the resulting store-path list as a
 #      manifest the fleet can fetch over HTTP.
 #
-# The consumer is malli-deus's PreseedFlakeInputs bootstrap step
+# The consumer is deus's PreseedFlakeInputs bootstrap step
 # (internal/bootstrap/steps/preseed.go): it fetches the manifest, then
 # runs `nix copy --from http://conduit:<cachePort> --no-check-sigs
 # <paths...>` immediately before DarwinRebuildFleet. That step is

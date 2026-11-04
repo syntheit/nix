@@ -1,4 +1,4 @@
-# Automated deus CLI release (see docs/runbooks/cli-release.md in malli-deus).
+# Automated deus CLI release (see docs/runbooks/cli-release.md in deus).
 #
 # A launchd user agent (daniel's login session: the release key and the notary
 # profile live in daniel's Keychains) polls GitHub every 5 minutes for a new
@@ -9,7 +9,7 @@
 # manifest signer are pinned HERE, built from this flake's locked inputs.deus,
 # not from the release tag. Tag code only runs inside `nix build`.
 #
-# One-time setup on mini: see "Automated (mini)" in malli-deus
+# One-time setup on mini: see "Automated (mini)" in deus
 # docs/runbooks/cli-release.md.
 {
   pkgs,
@@ -22,7 +22,7 @@
 let
   # --- config ---------------------------------------------------------------
   home = "/Users/${vars.user.name}";
-  repoUrl = "git@github-malli-deus:NRE-Product/malli-deus.git"; # ssh alias in home/modules/ssh.nix
+  repoUrl = "git@github-malli-deus:NR-Product/deus.git"; # ssh alias in home/modules/ssh.nix
   # How mini reaches vista: vista's own tailscale is on the personal tailnet,
   # which mini is on (MagicDNS name). Override here if that changes.
   # The NUC (since 2026-11-02; was vista): wg0 10.100.0.5:4040 via conduit, see the

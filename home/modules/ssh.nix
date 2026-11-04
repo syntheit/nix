@@ -156,6 +156,13 @@ in
         User = "git";
         IdentityFile = "~/.ssh/mainkey";
       };
+      # New name after the NR-Product/deus rename; same key. Drop the
+      # old alias once nothing references it.
+      "github-deus" = {
+        HostName = "github.com";
+        User = "git";
+        IdentityFile = "~/.ssh/mainkey";
+      };
     }
     # jump host for raven's LAN path — only defined on mantle
     // lib.optionalAttrs (hostName == "mantle") {

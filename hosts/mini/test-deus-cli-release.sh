@@ -5,11 +5,11 @@
 # result is checked by `deus-release verify`, which uses the same
 # internal/cli/release code as the CLI and the web console.
 #
-# Usage: test-deus-cli-release.sh <malli-deus checkout>
+# Usage: test-deus-cli-release.sh <deus checkout>
 # Needs: go, jq, coreutils. Run on Linux or macOS.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repo="${1:?usage: $0 <malli-deus checkout>}"
+repo="${1:?usage: $0 <deus checkout>}"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
@@ -91,7 +91,7 @@ jq 'del(.nodes.a.locked.narHash)' "$work/lock-ok.json" >"$work/lock-nh.json"
 lock_ok "$work/lock-nh.json" && fail "missing narHash accepted"
 jq '.nodes.c={}' "$work/lock-ok.json" >"$work/lock-nl.json"
 lock_ok "$work/lock-nl.json" && fail "node without locked accepted"
-lock_ok "$repo/flake.lock" || fail "the real malli-deus flake.lock is refused"
+lock_ok "$repo/flake.lock" || fail "the real deus flake.lock is refused"
 
 # --- unexpected exits still log, notify and record (review P2-1)
 : >"$DCR_LOG"

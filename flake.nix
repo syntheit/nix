@@ -137,12 +137,12 @@
     };
 
     deus = {
-      # git+ssh via the github-malli-deus alias defined in
+      # git+ssh via the github-deus alias defined in
       # home/modules/ssh.nix → github.com + ~/.ssh/mainkey, which has
-      # a deploy key on the malli-deus repo. SSH keys don't expire,
+      # a deploy key on the deus repo. SSH keys don't expire,
       # unlike PATs — the previous git+https + /etc/nix/netrc path
       # silently broke whenever the GitHub PAT rotated out.
-      url = "git+ssh://git@github-malli-deus/NRE-Product/malli-deus.git";
+      url = "git+ssh://git@github-malli-deus/NR-Product/deus.git";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
