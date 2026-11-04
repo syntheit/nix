@@ -31,8 +31,8 @@
 }:
 let
   repo = "syntheit/retrospend";
-  # "ba": Buenos Aires, shared exit IP, ~6 ms. "dc": Washington DC static IP
-  # 82.29.92.28, +160 ms. Both configs are in secrets/vista.yaml.
+  # "ba": Buenos Aires, shared exit IP, ~6 ms. "dc": Washington DC static IP,
+  # +160 ms. Both configs are in secrets/vista.yaml.
   vpn = "ba";
   table = 177;
 
