@@ -196,6 +196,9 @@ let
     wants = [ "network-online.target" ];
     requires = [ "ci-net.service" ];
     startLimitIntervalSec = 0;
+    # A rebuild must not kill a running job. Restart=always boots the next VM
+    # from the new unit anyway, once the current job ends.
+    restartIfChanged = false;
     serviceConfig = sandbox // {
       # One user per slot: an escape from one VM can't open the other's tap,
       # disks or hypervisor.
@@ -221,6 +224,8 @@ let
       RestrictAddressFamilies = [ "AF_UNIX" ];
       # Below the agents and services that already live here.
       MemoryMax = "${toString (ci.memMiB + 1024)}M";
+      # Swapped-out guest memory stalls the job; keep the VM in RAM.
+      MemorySwapMax = 0;
       CPUWeight = 50;
       IOWeight = 50;
     };
