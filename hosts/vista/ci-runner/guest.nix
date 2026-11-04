@@ -39,6 +39,9 @@
         label = "ciwork";
         mountPoint = "/var/lib/ci";
         size = ci.workDiskMiB;
+        # O_DIRECT: the job's writes don't fill vista's page cache, which
+        # counts against the slot's MemoryMax and pushed the VM into swap.
+        direct = true;
       }
       {
         # Written by the slot before boot: runner config and self-check targets.
