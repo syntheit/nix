@@ -25,6 +25,7 @@
     ./wg0-watchdog.nix # rebind wg0 when the conduit handshake goes stale (home WAN blips + double NAT)
     ./zot.nix # zot OCI registry on :5001
     ./ci-runner # retrospend CI: one throwaway microVM per GitHub Actions job
+    ./ssd-write-cache.nix # no flushes to the slow Apple SSD; clean poweroff on low battery
     ../../system
     ../../services
   ];
