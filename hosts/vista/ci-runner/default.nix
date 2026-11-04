@@ -357,8 +357,19 @@ in
   # ── Docker Hub pull cache ─────────────────────────────────────────────────
   # Pull-only (a proxy registry refuses pushes), so a job can't poison it. It
   # fetches over vista's own line; only the VMs' traffic uses the tunnel.
-  # The mountpoint has to exist before systemd builds the unit's sandbox.
+  # The mountpoint has to exist before systemd builds the cache's sandbox, and
+  # the mount has to be made outside that sandbox: its own unit, not an
+  # ExecStartPre (a "+" ExecStartPre's mount did not reach the registry).
   systemd.tmpfiles.rules = [ "d ${cacheDir} 0700 ci-cache ci-cache -" ];
+  systemd.services.ci-registry-cache-mount = {
+    description = "Fixed-size disk for the CI Docker Hub cache";
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = lib.getExe cacheMount;
+      ExecStop = "${pkgs.util-linux}/bin/umount ${cacheDir}";
+    };
+  };
   systemd.services.ci-registry-cache = {
     description = "Docker Hub pull cache for the CI VMs";
     wantedBy = [ "multi-user.target" ];
@@ -368,10 +379,9 @@ in
     ];
     wants = [ "network-online.target" ];
     requires = [ "ci-net.service" ];
+    bindsTo = [ "ci-registry-cache-mount.service" ];
     serviceConfig = sandbox // {
-      ExecStartPre = "+${lib.getExe cacheMount}";
       ExecStart = "${pkgs.distribution}/bin/registry serve ${cacheConfig}";
-      ExecStopPost = "+${pkgs.util-linux}/bin/umount ${cacheDir}";
       User = "ci-cache";
       Group = "ci-cache";
       ReadWritePaths = [ cacheDir ];
