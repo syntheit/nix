@@ -101,6 +101,13 @@
     };
   };
   systemd.services.docker.unitConfig.RequiresMountsFor = [ "/var/lib/ci" ];
+  # The work disk is thrown away after the job, so skip the device flushes:
+  # vista's Apple SSD takes ~30 ms per flush, and Postgres flushes on every
+  # commit (the serial pg suite ran 2x slower than on GitHub).
+  fileSystems."/var/lib/ci".options = [
+    "noatime"
+    "barrier=0"
+  ];
 
   systemd.services.ci-job = {
     description = "Isolation self-check, then one GitHub Actions job";
