@@ -140,11 +140,6 @@ in
 
       install -d -m 0700 /var/root/.ssh
       cat > /var/root/.ssh/config <<'SSHCFG'
-      Host github-malli-deus
-        User git
-        HostName github.com
-        IdentityFile /var/root/.ssh/mainkey
-        IdentitiesOnly yes
       Host github-deus
         User git
         HostName github.com

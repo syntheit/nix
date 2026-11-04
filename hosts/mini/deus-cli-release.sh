@@ -19,7 +19,7 @@ set -euo pipefail
 
 export PATH="${PATH:-}:/usr/bin:/bin:/usr/sbin:/sbin:/nix/var/nix/profiles/default/bin"
 
-: "${DCR_REPO_URL:=git@github-malli-deus:NR-Product/deus.git}"
+: "${DCR_REPO_URL:=git@github-deus:NR-Product/deus.git}"
 : "${DCR_STATE_DIR:=$HOME/Library/Application Support/deus-cli-release}"
 : "${DCR_LOG:=$HOME/Library/Logs/deus-cli-release.log}"
 : "${DCR_PUBLISH_HOST:=vista}"

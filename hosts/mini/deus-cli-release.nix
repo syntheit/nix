@@ -22,7 +22,7 @@
 let
   # --- config ---------------------------------------------------------------
   home = "/Users/${vars.user.name}";
-  repoUrl = "git@github-malli-deus:NR-Product/deus.git"; # ssh alias in home/modules/ssh.nix
+  repoUrl = "git@github-deus:NR-Product/deus.git"; # ssh alias in home/modules/ssh.nix
   # How mini reaches vista: vista's own tailscale is on the personal tailnet,
   # which mini is on (MagicDNS name). Override here if that changes.
   # The NUC (since 2026-11-02; was vista): wg0 10.100.0.5:4040 via conduit, see the

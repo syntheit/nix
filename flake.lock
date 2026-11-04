@@ -347,11 +347,11 @@
         "rev": "de913f05bbbcaa3355cb8d5aaac4bf53daa83dd5",
         "revCount": 3072,
         "type": "git",
-        "url": "ssh://git@github-malli-deus/NR-Product/deus.git"
+        "url": "ssh://git@github-deus/NR-Product/deus.git"
       },
       "original": {
         "type": "git",
-        "url": "ssh://git@github-malli-deus/NR-Product/deus.git"
+        "url": "ssh://git@github-deus/NR-Product/deus.git"
       }
     },
     "deus_2": {

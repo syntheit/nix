@@ -149,7 +149,7 @@
       # a deploy key on the deus repo. SSH keys don't expire,
       # unlike PATs — the previous git+https + /etc/nix/netrc path
       # silently broke whenever the GitHub PAT rotated out.
-      url = "git+ssh://git@github-malli-deus/NR-Product/deus.git";
+      url = "git+ssh://git@github-deus/NR-Product/deus.git";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 

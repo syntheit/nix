@@ -148,16 +148,8 @@ in
         User = "git";
         IdentityFile = "~/.ssh/mainkey";
       };
-      # Alias matching the deploy-key-pinned alias used inside the
-      # headscale container. Points at the same github.com host with
-      # daniel's mainkey so flake updates work from harbor too.
-      "github-malli-deus" = {
-        HostName = "github.com";
-        User = "git";
-        IdentityFile = "~/.ssh/mainkey";
-      };
-      # New name after the NR-Product/deus rename; same key. Drop the
-      # old alias once nothing references it.
+      # Alias for the NR-Product/deus repo (flake input, CLI release);
+      # daniel's mainkey has access.
       "github-deus" = {
         HostName = "github.com";
         User = "git";

@@ -145,7 +145,7 @@ in
       # whole job that talks to live GitHub (nixpkgs, home-manager,
       # nix-darwin, disko, sops-nix, ... — public repos, fetched over
       # https, no credentials needed). The flake's own "deus" input
-      # (git://conduit/malli-deus.git) is already conduit-local; the
+      # (git://conduit/deus.git) is already conduit-local; the
       # networking.hosts entry below pins "conduit" to 127.0.0.1 on
       # this host so that resolves without depending on MagicDNS
       # self-resolution.
@@ -196,7 +196,7 @@ in
   };
 
   # conduit's own copy of malli-nix's flake.lock resolves the "deus"
-  # input to git://conduit/malli-deus.git. Whether "conduit" resolves
+  # input to git://conduit/deus.git. Whether "conduit" resolves
   # to *itself* via headscale's MagicDNS isn't a given (self-lookups
   # aren't guaranteed the same way a peer-to-peer lookup is), so pin it
   # explicitly here — the exact same fix deus's pinConduitHost applies
