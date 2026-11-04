@@ -357,6 +357,8 @@ in
   # ── Docker Hub pull cache ─────────────────────────────────────────────────
   # Pull-only (a proxy registry refuses pushes), so a job can't poison it. It
   # fetches over vista's own line; only the VMs' traffic uses the tunnel.
+  # The mountpoint has to exist before systemd builds the unit's sandbox.
+  systemd.tmpfiles.rules = [ "d ${cacheDir} 0700 ci-cache ci-cache -" ];
   systemd.services.ci-registry-cache = {
     description = "Docker Hub pull cache for the CI VMs";
     wantedBy = [ "multi-user.target" ];

@@ -14,7 +14,8 @@ die() {
 }
 
 rule() { "$@" 2>/dev/null || die "firewall rule missing: $*"; }
-ip rule show | grep -q "iif $tap lookup $TABLE" || die "policy routing rule missing"
+# Shows "[detached]" while the tap does not exist yet.
+ip rule show | grep -qE "iif $tap( \[detached\])? lookup $TABLE" || die "policy routing rule missing"
 ip route show table "$TABLE" | grep -q '^unreachable default' || die "killswitch route missing"
 rule iptables -t raw -C PREROUTING -i ci+ -j ci-raw
 rule iptables -t raw -C ci-raw -i "$tap" ! -s "10.77.$n.2" -j DROP
