@@ -2014,11 +2014,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1793050335,
-        "narHash": "sha256-XVpIi5AQ3/cw/wH/oLIx/fyGp4vp3/FQw/fzH1kUlKU=",
+        "lastModified": 1793064397,
+        "narHash": "sha256-BDHPKpCZmL0HxHvBQDyNKvfmsuWuQ3lfa5CjlaiyLP8=",
         "owner": "syntheit",
         "repo": "windscribe-nix",
-        "rev": "2b993853340149d63fd4ada69fc259b6773e70a5",
+        "rev": "6c2b836f34a5ca17b87bdb1861a97024248a6e98",
         "type": "github"
       },
       "original": {
