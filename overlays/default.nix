@@ -15,6 +15,18 @@ let
         inputs.llm-agents.packages.${final.stdenv.hostPlatform.system}.claude-code or prev.claude-code;
       opencode =
         inputs.llm-agents.packages.${final.stdenv.hostPlatform.system}.opencode or prev.opencode;
+      # Hyprland 0.57 runs its main thread SCHED_RR via rtkit under RLIMIT_RTTIME
+      # (150 ms soft / 200 ms hard). A single kernel call that busy-runs past the
+      # soft limit, like an NVIDIA DisplayPort modeset when the monitors power back
+      # on, never returns to userspace for the SIGXCPU handler, so the kernel
+      # SIGKILLs the compositor at 200 ms: no crash report, no core, and
+      # start-hyprland restarts it in safe mode (mantle, 2026-11-07 19:52).
+      # Backports hyprwm/Hyprland#16843 ("Remove RT requesting", 64bde62), which
+      # also makes start-hyprland log the signal that ended Hyprland. Upstream's
+      # test-only CMake/test files are left out. Drop after the next release.
+      hyprland = prev.hyprland.overrideAttrs (old: {
+        patches = (old.patches or [ ]) ++ [ ./patches/hyprland-no-realtime.patch ];
+      });
       # yabai's scripting addition is pattern-matched against Dock's binary per
       # macOS build, and upstream only knows macOS 11-15 and 26. On macOS 27
       # (build 26A428) the payload rejects the OS version before hooking Dock,
