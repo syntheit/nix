@@ -365,6 +365,11 @@ in
       };
       misc = {
         disable_hyprland_logo = true;
+      }
+      # mantle: both M2763s do FreeSync 48-180 Hz. VRR only for fullscreen
+      # games/video (3): always-on VRR on NVIDIA flickers on the desktop.
+      // lib.optionalAttrs (hostName == "mantle") {
+        vrr = 3;
       };
       input = {
         touchpad = {
