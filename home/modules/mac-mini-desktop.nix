@@ -16,7 +16,7 @@
 # - H.264, no 4:4:4: Sunshine's macOS capture can't feed 4:4:4 yet.
 # - Keyboard is captured, so Super reaches the mac as Cmd (Super+C copies,
 #   Super+Space opens the mac's launcher). Binds that must stay with mantle
-#   (workspaces, lock) are `bindp` in hyprland.nix.
+#   (workspaces, lock) are `dont_inhibit` binds (`bindp`) in hyprland.nix.
 # - Audio stays on the mini's speakers; Moonlight addresses the host by name
 #   and prefers its LAN address over the tailnet one.
 let
@@ -57,8 +57,11 @@ lib.mkIf (hostName == "mantle") {
     Categories=Network;RemoteAccess;
   '';
 
-  wayland.windowManager.hyprland.settings.windowrule = [
-    "fullscreen 1, match:class ${moonlightClass}"
-    "idle_inhibit focus, match:class ${moonlightClass}"
+  wayland.windowManager.hyprland.settings.window_rule = [
+    {
+      match.class = moonlightClass;
+      fullscreen = true;
+      idle_inhibit = "focus";
+    }
   ];
 }
