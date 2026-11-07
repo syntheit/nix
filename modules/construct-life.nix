@@ -30,6 +30,7 @@ let
       SEERR_API_KEY_FILE=${config.sops.secrets.seerr_api_key.path} \
       ${lib.optionalString (cfg.jellyfinUrl != null) "JELLYFIN_URL=${cfg.jellyfinUrl} JELLYFIN_API_KEY_FILE=${config.sops.secrets.jellyfin_api_key.path} \\"}
       CAR_HUNT_DIR=${home}/Projects/car-hunt \
+      APARTMENT_HUNT_EXPORT=${cfg.apartmentExport} \
       GARMIN_PYTHON=${garminPython}/bin/python3 \
       GARMIN_TOKEN_DIR=/var/lib/construct/garmin \
       GARMIN_SYNC_SCRIPT=${cfg.srcDir}/garmin/garmin_sync.py \
@@ -90,6 +91,15 @@ in
       description = "Jellyfin base URL for the culture watch history (API key: sops secret jellyfin_api_key); null turns it off.";
     };
 
+    apartmentExport = lib.mkOption {
+      type = lib.types.str;
+      default = "/var/lib/construct/hunt/apartments.json";
+      description = ''
+        The apartment hunt engine's export (github.com/syntheit/hunt). The engine's host pushes it with
+        `rsync apartments.json raven:/var/lib/construct/hunt/apartments.json` (atomic: rsync renames into place).
+      '';
+    };
+
     environment = lib.mkOption {
       type = lib.types.attrsOf lib.types.str;
       default = { };
@@ -122,6 +132,7 @@ in
         SEERR_URL = cfg.seerrUrl;
         SEERR_API_KEY_FILE = config.sops.secrets.seerr_api_key.path;
         CAR_HUNT_DIR = "${home}/Projects/car-hunt";
+        APARTMENT_HUNT_EXPORT = cfg.apartmentExport;
         GARMIN_PYTHON = "${garminPython}/bin/python3";
         GARMIN_TOKEN_DIR = "/var/lib/construct/garmin";
         FDROID_DIR = "/var/lib/construct/fdroid"; # android/scripts/release.sh publishes here
@@ -150,6 +161,9 @@ in
         LockPersonality = true;
       };
     };
+
+    # Landing dir for the hunt engine's rsync push (the service user owns it; the export is world-readable).
+    systemd.tmpfiles.rules = [ "d ${builtins.dirOf cfg.apartmentExport} 0755 ${cfg.user} users -" ];
 
     # The Android release lives in construct-android.nix: it builds on x86_64 only.
     environment.systemPackages = [
