@@ -46,6 +46,10 @@
   systemd.services.cloudflared-tunnel-harbor.restartIfChanged = false;
 
   services.tailscale.enable = true;
+  # Tailscale SSH: a fifth way in that doesn't depend on sshd at all. It was
+  # switched on by hand; declaring it means every boot and rebuild re-applies
+  # it (tailscaled-set runs `tailscale set --ssh`, no daemon restart).
+  services.tailscale.extraSetFlags = [ "--ssh" ];
   networking.firewall.trustedInterfaces = [ "tailscale0" ];
   systemd.services.tailscaled.restartIfChanged = false;
 
