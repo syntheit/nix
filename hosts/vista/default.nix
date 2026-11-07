@@ -24,6 +24,7 @@
     ./deus-cli-release.nix # mini rsyncs signed deus CLI releases here (rrsync-only user)
     ./wg0-watchdog.nix # rebind wg0 when the conduit handshake goes stale (home WAN blips + double NAT)
     ./zot.nix # zot OCI registry on :5001
+    ./flaresolverr.nix # challenge solver for the hunt engine (~/Projects/hunt), localhost:8191
     ./ci-runner # retrospend CI: one throwaway microVM per GitHub Actions job (parked, see below)
     ./ssd-write-cache.nix # no flushes to the slow Apple SSD; clean poweroff on low battery
     ../../system
