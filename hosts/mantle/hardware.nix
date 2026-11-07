@@ -26,6 +26,9 @@
   # NVIDIA container support for Docker
   hardware.nvidia-container-toolkit.enable = true;
 
+  # GPU usage per process (compute and graphics), VRAM, clocks, power.
+  environment.systemPackages = [ pkgs.nvtopPackages.nvidia ];
+
   # The NVIDIA module turns acpid on by default; with no handlers it only
   # logs input events (lid/power keys are logind's).
   services.acpid.enable = false;

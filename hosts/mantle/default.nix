@@ -3,6 +3,7 @@
   imports = [
     ../../profiles/base.nix
     ../../modules/numtide-cache.nix
+    ../../modules/cuda-cache.nix
     ../../modules/cpu-epp.nix
     ./hardware-configuration.nix
     ./hardware.nix
