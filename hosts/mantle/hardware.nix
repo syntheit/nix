@@ -18,13 +18,14 @@
     open = true;
     nvidiaSettings = true;
     package = config.boot.kernelPackages.nvidiaPackages.stable;
-    # Installs nvidia-suspend/nvidia-hibernate/nvidia-resume systemd units and
-    # sets NVreg_PreserveVideoMemoryAllocations=1, so the driver actually saves
-    # and restores VRAM/GPU state across suspend. Without this, the proprietary
-    # driver has no suspend/resume hooks at all (confirmed on this host: no
-    # nvidia-suspend/resume/hibernate units exist, `systemctl cat` finds none) —
-    # a well-documented cause of black-screen/hang-on-resume with NVIDIA +
-    # Wayland. Requires a reboot to take effect (changes kernel module params).
+    # Saves and restores VRAM/GPU state across suspend
+    # (NVreg_PreserveVideoMemoryAllocations=1); without it, black screen or
+    # hang on resume with NVIDIA + Wayland. With the open module on 595+,
+    # nixpkgs drives this through the kernel's suspend notifiers
+    # (NVreg_UseKernelSuspendNotifiers=1) instead of the old
+    # nvidia-suspend/resume/hibernate systemd units, which are no longer
+    # installed. VRAM is saved to /tmp (tmpfs) by default; mantle doesn't
+    # hibernate, so RAM is fine.
     powerManagement.enable = true;
   };
 
@@ -33,6 +34,15 @@
 
   # GPU usage per process (compute and graphics), VRAM, clocks, power.
   environment.systemPackages = [ pkgs.nvtopPackages.nvidia ];
+
+  # NVIDIA's shader cache caps at ~1 GB and cleans itself, so DXVK/vkd3d games
+  # recompile shaders (stutter on launch). Per-game Steam launch options
+  # reportedly don't help; it has to be in the session env. Cache lives in
+  # ~/.cache/nvidia (its own subvolume, outside snapshots).
+  environment.sessionVariables = {
+    __GL_SHADER_DISK_CACHE_SIZE = "10737418240"; # 10 GiB
+    __GL_SHADER_DISK_CACHE_SKIP_CLEANUP = "1";
+  };
 
   # The NVIDIA module turns acpid on by default; with no handlers it only
   # logs input events (lid/power keys are logind's).

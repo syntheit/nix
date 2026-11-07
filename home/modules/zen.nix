@@ -1,4 +1,4 @@
-{ pkgs, lib, config, inputs, ... }:
+{ pkgs, lib, config, inputs, hostName, ... }:
 
 let
   # The CSS content to apply the font
@@ -97,6 +97,14 @@ EOF
           set_pref browser.cache.disk.enable false
           set_pref browser.cache.memory.enable true
           set_pref browser.cache.memory.capacity 524288
+        ${lib.optionalString (hostName == "mantle") ''
+          # Video decode on the GPU through nvidia-vaapi-driver (installed by
+          # hardware.nvidia.videoAcceleration). Firefox 137+ needs only
+          # force-enabled. The 2070S (Turing) has no AV1 decoder, so turn AV1
+          # off and sites serve VP9/H.264, which it does decode.
+          set_pref media.hardware-video-decoding.force-enabled true
+          set_pref media.av1.enabled false
+        ''}
 
           echo "Updated Zen Browser config in $profile"
         fi

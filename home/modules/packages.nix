@@ -1,4 +1,4 @@
-{ pkgs, inputs, ... }:
+{ pkgs, inputs, hostName, ... }:
 
 {
   # Prisma engines - use nixpkgs engines system-wide instead of per-project flakes
@@ -79,7 +79,9 @@
     # Media
     imagemagick
     ffmpeg-full
-    obs-studio
+    # mantle: cudaSupport only adds the driver runpath to OBS's NVENC probe;
+    # without it the NVENC encoders stay hidden. Cached on cache.nixos-cuda.org.
+    (if hostName == "mantle" then obs-studio.override { cudaSupport = true; } else obs-studio)
     spotify
     playerctl
     vlc
