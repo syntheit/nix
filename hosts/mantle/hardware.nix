@@ -10,7 +10,12 @@
   hardware.graphics.enable = true;
   hardware.nvidia = {
     modesetting.enable = true;
-    open = false;
+    # NVIDIA's open kernel module: same driver and userspace (GL/Vulkan/CUDA),
+    # only the kernel part is open. NVIDIA's default for Turing+ since 560;
+    # the proprietary module is being dropped upstream. GSP firmware was
+    # already running here under the proprietary module, so little changes.
+    # Rollback: set false, or pick the previous generation at boot.
+    open = true;
     nvidiaSettings = true;
     package = config.boot.kernelPackages.nvidiaPackages.stable;
     # Installs nvidia-suspend/nvidia-hibernate/nvidia-resume systemd units and
