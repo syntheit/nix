@@ -39,7 +39,7 @@ in
       WorkingDirectory = repo;
       ExecStart = "${pkgs.bash}/bin/bash ${repo}/scripts/daily.sh";
       Nice = 10;
-      TimeoutStartSec = "infinity";
+      TimeoutStartSec = "10h"; # daily.sh has per-step timeouts; this is the backstop so a wedged run frees data/daily.lock
     };
   };
   systemd.timers.hunt-daily = {
