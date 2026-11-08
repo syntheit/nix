@@ -29,7 +29,7 @@ let
       SEERR_URL=${cfg.seerrUrl} \
       SEERR_API_KEY_FILE=${config.sops.secrets.seerr_api_key.path} \
       ${lib.optionalString (cfg.jellyfinUrl != null) "JELLYFIN_URL=${cfg.jellyfinUrl} JELLYFIN_API_KEY_FILE=${config.sops.secrets.jellyfin_api_key.path} \\"}
-      CAR_HUNT_DIR=${home}/Projects/car-hunt \
+      CAR_HUNT_DIR=${cfg.carHuntDir} \
       APARTMENT_HUNT_EXPORT=${cfg.apartmentExport} \
       GARMIN_PYTHON=${garminPython}/bin/python3 \
       GARMIN_TOKEN_DIR=/var/lib/construct/garmin \
@@ -100,6 +100,16 @@ in
       '';
     };
 
+    carHuntDir = lib.mkOption {
+      type = lib.types.str;
+      default = "/var/lib/construct/car-hunt";
+      description = ''
+        Where construct reads car-hunt's output: `app/static/deals.json` and `db/car.db` under this directory (car-hunt's own layout).
+        Car-hunt lives on harbor; its scripts/refresh.sh pushes both files here with
+        `rsync -R app/static/deals.json db/car.db raven:/var/lib/construct/car-hunt/`.
+      '';
+    };
+
     environment = lib.mkOption {
       type = lib.types.attrsOf lib.types.str;
       default = { };
@@ -131,7 +141,7 @@ in
         CONSTRUCT_BASE_URL = baseUrl; # prefix for pairing links
         SEERR_URL = cfg.seerrUrl;
         SEERR_API_KEY_FILE = config.sops.secrets.seerr_api_key.path;
-        CAR_HUNT_DIR = "${home}/Projects/car-hunt";
+        CAR_HUNT_DIR = cfg.carHuntDir;
         APARTMENT_HUNT_EXPORT = cfg.apartmentExport;
         GARMIN_PYTHON = "${garminPython}/bin/python3";
         GARMIN_TOKEN_DIR = "/var/lib/construct/garmin";
@@ -162,8 +172,14 @@ in
       };
     };
 
-    # Landing dir for the hunt engine's rsync push (the service user owns it; the export is world-readable).
-    systemd.tmpfiles.rules = [ "d ${builtins.dirOf cfg.apartmentExport} 0755 ${cfg.user} users -" ];
+    # Landing dirs for the hunt engine's and car-hunt's rsync pushes (the service user owns them; the files are world-readable).
+    systemd.tmpfiles.rules = [
+      "d ${builtins.dirOf cfg.apartmentExport} 0755 ${cfg.user} users -"
+      "d ${cfg.carHuntDir} 0755 ${cfg.user} users -"
+      "d ${cfg.carHuntDir}/app 0755 ${cfg.user} users -"
+      "d ${cfg.carHuntDir}/app/static 0755 ${cfg.user} users -"
+      "d ${cfg.carHuntDir}/db 0755 ${cfg.user} users -"
+    ];
 
     # The Android release lives in construct-android.nix: it builds on x86_64 only.
     environment.systemPackages = [
