@@ -341,11 +341,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1793334307,
-        "narHash": "sha256-C0KyEKIxxa7ql6vkusN9baTTIif2hT2P2U39Eb1dtVY=",
+        "lastModified": 1794242763,
+        "narHash": "sha256-tKYZOuboC2QwHXkdnLFtAiFNmjGJa/DxlMk6YkAgJtU=",
         "ref": "refs/heads/main",
-        "rev": "de913f05bbbcaa3355cb8d5aaac4bf53daa83dd5",
-        "revCount": 3072,
+        "rev": "b7c0da4857ccbfe78708a1757daa91ee8b4d26f2",
+        "revCount": 3287,
         "type": "git",
         "url": "ssh://git@github-deus/NR-Product/deus.git"
       },
