@@ -50,4 +50,30 @@ in
       Persistent = true;
     };
   };
+
+  # Afternoon window: detail pages only (no search pass, no cars), then the same enrich/score/export/rsync tail as the
+  # morning run. `daily.sh --details-only` takes the same data/daily.lock (a morning run still going makes this one exit).
+  # Per-window caps live in hunt.toml (details_per_run: Zonaprop 750, MercadoLibre 300, Argenprop 0).
+  systemd.services.hunt-details = {
+    description = "hunt apartments details-only window";
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
+    path = with pkgs; [ bash coreutils git nix openssh curl rsync util-linux gnugrep gnused procps findutils ];
+    serviceConfig = {
+      Type = "oneshot";
+      User = user;
+      WorkingDirectory = repo;
+      ExecStart = "${pkgs.bash}/bin/bash ${repo}/scripts/daily.sh --details-only";
+      Nice = 10;
+      TimeoutStartSec = "10h";
+    };
+  };
+  systemd.timers.hunt-details = {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnCalendar = "*-*-* 15:00:00 America/Argentina/Buenos_Aires";
+      RandomizedDelaySec = "20m";
+      Persistent = true;
+    };
+  };
 }
