@@ -111,6 +111,11 @@ in
       handle /pkg/* {
         reverse_proxy ${up "bootstrapPkg"}:8088
       }
+      # Member Mac invite pages (malli-nix #152): the NUC's bootstrap Caddy serves only
+      # /join/<43-char token>; everything else there is 404. Relay verbatim.
+      handle /join/* {
+        reverse_proxy ${up "bootstrapPkg"}:8088
+      }
       handle {
         respond "not found" 404
       }
