@@ -185,11 +185,22 @@ in
   # Headless server, lid shut → the built-in Retina panel must never light
   # (burn-in / image-persistence risk, esp. the OLED Touch Bar). Two layers:
   #
-  # 1) Disable the eDP connector at the DRM level. `video=eDP-1:d` tells amdgpu
-  #    to bring the internal panel up disabled, so no compositor or console
+  # 1) Disable the eDP connector at the DRM level, so no compositor or console
   #    framebuffer can ever scan out to it. (External HDMI/DP connectors are
   #    untouched — plug a monitor in for recovery if ever needed.)
-  boot.kernelParams = [ "video=eDP-1:d" ];
+  #    Connector names are global across GPUs and follow probe order: i915
+  #    (iGPU, card0) also registers an eDP and grabs eDP-1, so the real panel
+  #    on amdgpu (card1) comes up as eDP-2. Disabling only eDP-1 left the panel
+  #    lit (found 2026-11-12). Name both; whichever one is the panel goes off.
+  #    Live, without a reboot: echo off > /sys/class/drm/card1-eDP-2/status
+  #    (status may say "disconnected" while "enabled" stays set; the console
+  #    can additionally be blanked with echo 4 > /sys/class/graphics/fb0/blank).
+  #    Trade-off: an initrd failure is then only visible on the panel until
+  #    amdgpu takes over (~7 s); later messages need an external monitor.
+  boot.kernelParams = [
+    "video=eDP-1:d"
+    "video=eDP-2:d"
+  ];
 
   # ── Reboots must go through kexec, not firmware ───────────────────────────
   # This Mac's iBridge firmware treats EVERY CPU/chipset reset method — ACPI (the
