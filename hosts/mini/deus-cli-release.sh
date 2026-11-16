@@ -338,6 +338,9 @@ main() {
   stage="clone"
   repo="$DCR_STATE_DIR/work/repo"
   if [ -d "$repo/.git" ]; then
+    # Keep origin on DCR_REPO_URL: a clone cached from before a repo rename
+    # would otherwise fetch from a dead URL forever.
+    git -C "$repo" remote set-url origin "$DCR_REPO_URL" || fail "git remote set-url failed"
     git -C "$repo" fetch -q --force --tags origin '+refs/heads/main:refs/remotes/origin/main' || fail "git fetch failed"
   else
     rm -rf "$repo"
