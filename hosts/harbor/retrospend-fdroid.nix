@@ -52,7 +52,7 @@ in
       # No exec: the trap removes the decoded keystore afterwards.
       ${pkgs.util-linux}/bin/flock /tmp/retrospend-heavy.lock \
         nix develop .#android -c bash -c '
-          pnpm install --frozen-lockfile --ignore-scripts --filter "@retrospend/mobile..."
+          pnpm install --frozen-lockfile --filter "@retrospend/mobile..."
           bash apps/mobile/scripts/android-release.sh'
     '')
   ];

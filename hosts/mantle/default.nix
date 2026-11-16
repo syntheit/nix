@@ -13,6 +13,7 @@
     ./mac-speakers.nix
     ./brightness.nix
     ./windscribe.nix
+    ./whisper.nix
     ../../system
     ../../services
     ../../desktop
