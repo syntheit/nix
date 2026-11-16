@@ -190,6 +190,16 @@
           ANDROID_V_CPUFREQ_VIRT = yes;
         };
       }
+      # 6.1.167 backported the mballoc folio conversion (29897d75d649), which
+      # expects 6.4+'s ERR_PTR-returning __filemap_get_folio; 6.1's returns NULL,
+      # so an evicted buddy-cache page oopses in ext4_mb_load_buddy_gfp and the
+      # dead writeback worker wedges jbd2 (raven hung 2026-11-16). Still unfixed
+      # in 6.1.192. If 6.1.y reverts or fixes it, this stops applying: drop it.
+      # Moot once raven boots Google's 6.12 kernel on Android 17.
+      {
+        name = "ext4-mballoc-null-folio";
+        patch = ./ext4-mballoc-null-folio.patch;
+      }
     ];
 
   # Network tunables — BBR congestion control + larger buffers for tunnel traffic
