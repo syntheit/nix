@@ -47,9 +47,12 @@ let
 
   # --- pinned signer: cmd/deus-release from the locked deus input -------------
   # Same source and vendor hash as the deus flake's own Go packages, so no hash
-  # of ours to keep in sync.
+  # of ours to keep in sync. Built with the deus flake's exported Go: its go.mod
+  # can require a newer Go than our nixpkgs' default (go 1.27 vs 1.26 at
+  # 0.125.13), and GOTOOLCHAIN=local means buildGoModule won't fetch one.
   common = import "${inputs.deus}/nix/go-common.nix" { inherit lib; };
-  deus-release = pkgs.buildGoModule {
+  deusGo = inputs.deus.packages.${pkgs.stdenv.hostPlatform.system}.go;
+  deus-release = (pkgs.buildGoModule.override { go = deusGo; }) {
     pname = "deus-release";
     inherit (common) version src vendorHash;
     subPackages = [ "cmd/deus-release" ];
