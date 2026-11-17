@@ -9,6 +9,7 @@
 
 let
   cfg = config.programs.constructAndroidRelease;
+  keepRn = 3; # construct RN builds kept in the repo
   lock = ''
     mkdir -p ${cfg.fdroidDir}
     exec 9>>${cfg.fdroidDir}/.release.lock
@@ -88,8 +89,11 @@ in
         [ -f "$fdroid/config.yml" ] || { echo "no F-Droid repo in $fdroid: run construct-android-release once first" >&2; exit 1; }
         n=$(git -C "$src" rev-list --count HEAD)
         app_id=io.matv.construct.rn
-        if [ -f "$fdroid/repo/''${app_id}_$n.apk" ]; then
-          echo "build $n ($app_id) is already in the repo: pull or commit in $src first" >&2
+        # Published builds, by versionCode (the commit count), oldest first.
+        published() { find "$fdroid/repo" -maxdepth 1 -name "''${app_id}_*.apk" -printf '%f\n' | sed -n "s/^''${app_id}_\([0-9]*\)\.apk$/\1/p" | sort -n; }
+        newest=$(published | tail -n 1)
+        if [ -n "$newest" ] && [ "$n" -le "$newest" ]; then
+          echo "build $n ($app_id) is not newer than the published $newest: pull or commit in $src first" >&2
           exit 1
         fi
         echo "→ build $app_id $n from $src ($(git -C "$src" log -1 --format='%h %s'))"
@@ -107,6 +111,11 @@ in
 
         umask 022 # the served repo stays readable by construct
         install -m 644 "$out/''${app_id}_$n.apk" "$fdroid/repo/''${app_id}_$n.apk"
+        # Keep the newest ${toString keepRn} builds, so the repo (and raven's copy, rsync --delete) stays small.
+        published | head -n -${toString keepRn} | while read -r old; do
+          echo "pruning $app_id build $old"
+          rm -f "$fdroid/repo/''${app_id}_$old.apk"
+        done
         if [ ! -f "$fdroid/metadata/$app_id.yml" ]; then
           cat > "$fdroid/metadata/$app_id.yml" <<'YML'
         Categories:

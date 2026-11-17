@@ -10,6 +10,13 @@
 # Dry run (no construct):
 #   wardrobe-cutout --file shirt.jpg --out shirt.png
 #
+# SWITCH-OVER: until this lands, the worker ran as a hand-installed *user*
+# unit (wardrobe-cutout, files in ~daniel/construct-worker/). Right after the
+# first switch with this module, disable it, or both claim jobs:
+#   systemctl --user disable --now wardrobe-cutout
+#   rm -r ~/construct-worker ~/.config/systemd/user/wardrobe-cutout.service \
+#     ~/.config/construct/worker-token && systemctl --user daemon-reload
+#
 # Token: `construct worker-token vista` on raven (replaces vista's old one),
 # stored as construct_worker_token in secrets/vista/construct-worker.yaml
 # (vista + daniel), handed to the unit with LoadCredential.
