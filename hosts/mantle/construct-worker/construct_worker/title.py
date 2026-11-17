@@ -19,16 +19,26 @@ from . import Stopped
 
 log = logging.getLogger(__name__)
 
-MAX_WORDS = 8
-MAX_CHARS = 8000  # ~2k tokens of transcript is plenty for a title
-TIMEOUT_S = 90
+MAX_WORDS = 12
+MAX_CHARS = 16000  # construct sends ≤ ~1,800 words (6 excerpts of 300); this is only a guard
+TIMEOUT_S = 120
 SYSTEM = (
-    "You title voice memos. Reply with the title only: at most 8 words, sentence case (capitalise only the first word "
-    "and proper nouns), no quotes, no trailing period, no preamble. Use the memo's language."
+    "You title voice memos. Reply with the title only: at most 12 words that name the memo's main topics (join two or "
+    "three with commas or 'and' when it covers several), sentence case (capitalise only the first word and proper "
+    "nouns), no quotes, no trailing period, no preamble. Use the memo's language. A long memo comes as excerpts from "
+    "across it, each line starting with its [mm:ss]: title the whole memo, not its first excerpt, and never put a time "
+    "in the title."
 )
+EXCERPTS = "Excerpts from across a long memo:\n"
 EXAMPLES = [
     ("ok so the plan for saturday is the asado at fede's place, I need to buy the meat friday and charcoal", "Saturday asado at Fede's: meat and charcoal"),
-    ("reminder to call the bank about the transfer limit before the end of the month", "Call the bank about the transfer limit"),
+    (
+        EXCERPTS
+        + "[00:00] right so first thing, the saddle is still too high, my knee hurts after the long ride\n"
+        + "[12:40] and for the portfolio I want to move the cash from the brokerage into the bond fund this month\n"
+        + "[25:10] then the trip to Tbilisi, I should check whether the car can stay in Georgia past the visa",
+        "Saddle height, moving cash into bonds and the Tbilisi car question",
+    ),
 ]
 
 
@@ -37,11 +47,14 @@ class TitleError(Exception):
 
 
 def clean(raw: str) -> str:
-    """The first line of a model reply, as a title: no think block, quotes, label or trailing period; ≤ 8 words."""
+    """The first line of a model reply, as a title: no think block, time stamp, quotes, label or trailing period; ≤ 12 words."""
     raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.S)
     line = next((l for l in (x.strip() for x in raw.splitlines()) if l), "")
+    junk = " \t\"'`*#“”‘’«»"
+    line = line.strip(junk)
     line = re.sub(r"^(title\s*:\s*)", "", line, flags=re.I)
-    line = line.strip(" \t\"'`*#“”‘’«»").rstrip(".").strip()
+    line = re.sub(r"^\[\d+(?::\d{2}){1,2}\]\s*", "", line)
+    line = line.strip(junk).rstrip(".").strip()
     words = line.split()
     if len(words) > MAX_WORDS:
         line = " ".join(words[:MAX_WORDS]).rstrip(",;:-–—")
@@ -54,11 +67,11 @@ class Ollama:
         self.model = model
         self.http = requests.Session()
 
-    def title(self, text: str) -> str:
+    def title(self, text: str, excerpts: bool = False) -> str:
         messages = [{"role": "system", "content": SYSTEM}]
         for memo, title in EXAMPLES:
             messages += [{"role": "user", "content": memo}, {"role": "assistant", "content": title}]
-        messages.append({"role": "user", "content": text[:MAX_CHARS]})
+        messages.append({"role": "user", "content": (EXCERPTS if excerpts else "") + text[:MAX_CHARS]})
         r = self.http.post(
             f"{self.url}/api/chat",
             json={
@@ -66,7 +79,7 @@ class Ollama:
                 "messages": messages,
                 "stream": False,
                 "keep_alive": 0,
-                "options": {"temperature": 0.2, "num_predict": 40, "num_ctx": 4096},
+                "options": {"temperature": 0.2, "num_predict": 64, "num_ctx": 8192},
             },
             timeout=(10, TIMEOUT_S),
         )
@@ -75,8 +88,9 @@ class Ollama:
         return clean(r.json()["message"]["content"])
 
 
-def make_title(text: str, ollama: Ollama | None, tick: Callable[[float, str], bool]) -> dict:
-    """The job result `{title}` (plus `model`). Raises TitleError on failure, Stopped when tick says stop."""
+def make_title(text: str, ollama: Ollama | None, tick: Callable[[float, str], bool], excerpts: bool = False) -> dict:
+    """The job result `{title}` (plus `model`). `excerpts`: the text is construct's sample of a long memo (one
+    [mm:ss]-stamped excerpt per line), not the whole memo. Raises TitleError on failure, Stopped when tick says stop."""
     if not text.strip():
         return {"title": ""}
     if not ollama:
@@ -87,7 +101,7 @@ def make_title(text: str, ollama: Ollama | None, tick: Callable[[float, str], bo
 
     def call() -> None:
         try:
-            box["title"] = ollama.title(text)
+            box["title"] = ollama.title(text, excerpts)
         except Exception as e:  # noqa: BLE001 - handed to the job thread below
             box["error"] = e
 
