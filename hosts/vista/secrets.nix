@@ -65,6 +65,16 @@
     mode = "0400";
   };
 
+  # Meta app + permanent Page token for the hunt events pack (Instagram Business
+  # Discovery as matv.events; ~/Projects/hunt src/hunt/hunts/events/graph.py reads
+  # /run/secrets/events_meta_<key>). secrets/events-meta.yaml is shared with raven.
+  # The token's data access lapses ~90 days after the last re-authorisation
+  # (data_access_expires_at 2027-02-15); `hunt events token` checks it daily and
+  # construct shows "Instagram key expires in N days" from 14 days out.
+  sops.secrets.events_meta_page_token = { sopsFile = ../../secrets/events-meta.yaml; key = "page_token"; owner = "daniel"; mode = "0400"; };
+  sops.secrets.events_meta_app_id = { sopsFile = ../../secrets/events-meta.yaml; key = "app_id"; owner = "daniel"; mode = "0400"; };
+  sops.secrets.events_meta_app_secret = { sopsFile = ../../secrets/events-meta.yaml; key = "app_secret"; owner = "daniel"; mode = "0400"; };
+
   # WireGuard private key for the wg0 link to conduit (vista = 10.100.0.4).
   sops.secrets.vista_wg_private_key = { sopsFile = ../../secrets/vista-deus.yaml; mode = "0400"; };
 }
