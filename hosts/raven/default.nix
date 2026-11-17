@@ -255,6 +255,9 @@
   # User — avf module creates droid, we just add docker group
   users.users."droid".extraGroups = [ "docker" ];
   users.users."droid".shell = pkgs.zsh;
+  # Keep droid's user manager running without a login: construct's "Start now" launches agent sessions in
+  # tmux via systemd-run --user, outside the construct-life service (app/server/modules/agents/start.ts).
+  users.users."droid".linger = true;
 
   # Firewall
   networking.firewall.allowedTCPPorts = [ 22 80 443 ];
