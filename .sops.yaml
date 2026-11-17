@@ -10,6 +10,12 @@ keys:
   - &daniel age179l0hwpm4h40raspjng5hscgfnl4ycng8sragp9kfsyu8ej849mqn4797w
 
 creation_rules:
+  - path_regex: secrets/events-meta\.yaml$
+    key_groups:
+      - age:
+          - *vista
+          - *raven
+          - *daniel
   - path_regex: secrets/harbor\.yaml$
     key_groups:
       - age:
