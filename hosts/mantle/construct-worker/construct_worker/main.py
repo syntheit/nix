@@ -125,9 +125,9 @@ class Worker:
             log.info("job %s: lost (%s), dropped", job.id, e)
             return
         except Shutdown:
-            # A worker can't release a job without an attempt: hold/later are owner-only, and a lease left to run out
-            # also counts one (expireLeases). Reporting now at least requeues it at once.
-            body = {"ok": False, "error": f"the worker on {self.host} stopped", "retry": True}
+            # Release: back to the queue without using an attempt. No `error` on purpose: an older construct then
+            # answers 400 (error is required there) instead of failing the job, and we fall back to retry below.
+            body = {"ok": False, "release": True}
         except TranscribeError as e:
             log.warning("job %s: %s", job.id, e)
             body = {"ok": False, "error": str(e), "retry": e.retry}
@@ -137,7 +137,13 @@ class Worker:
         finally:
             self.gpu.resume()
         try:
-            state = self.api.result(job.id, body).get("state")
+            try:
+                state = self.api.result(job.id, body).get("state")
+            except requests.HTTPError as e:
+                if not (body.get("release") and e.response is not None and e.response.status_code == 400):
+                    raise
+                log.info("job %s: construct can't release jobs yet; reporting a retryable stop", job.id)
+                state = self.api.result(job.id, {"ok": False, "error": f"the worker on {self.host} stopped", "retry": True}).get("state")
             log.info("job %s: reported, now %s", job.id, state)
         except Lost as e:
             log.info("job %s: result not taken (%s)", job.id, e)
