@@ -13,6 +13,7 @@
     ../../modules/server-safety
     ../../modules/foyer.nix
     ../../modules/construct-life.nix
+    ../../modules/construct-backup.nix
     ./secrets.nix
     # Builds run on the mini's aarch64 VM, not on the phone (sets max-jobs = 0).
     ./nix-builder.nix
@@ -53,6 +54,9 @@
       CF_ACCESS_AUD = "5f8d308e0bcf4b314007375751df1e617056afb132d05690e1d5a2416a43d245";
     };
   };
+
+  # Nightly push of /var/lib/construct (DB via VACUUM INTO, blobs incremental) to harbor; restore notes in the module.
+  services.constructBackup.push.enable = true;
 
   # Copy SSH key so the foyer user can read it (SSH rejects keys not owned by the caller)
   systemd.services.foyer.serviceConfig.ExecStartPre = [

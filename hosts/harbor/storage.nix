@@ -248,6 +248,9 @@
         # Pelican game servers (panel config, MariaDB, Wings config + game data)
         "/arespool/appdata/pelican"
 
+        # construct (raven's nightly push: DB snapshot, blobs, memo audio)
+        "/arespool/backups/construct"
+
         # DB dumps (created by pre-backup hook)
         "/var/lib/harbor-backups/db-dumps"
 
