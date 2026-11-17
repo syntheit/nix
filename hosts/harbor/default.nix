@@ -143,16 +143,12 @@
 
   # construct v2 runs on raven since 2026-11-02 (hosts/raven). Android releases still build here (the SDK's tools are
   # x86-64 only) and rsync the F-Droid repo to raven; the fdroid working dir and repo signing key stay here.
+  # The app is the Expo app (app/mobile), built from a clean checkout used only for releases:
+  # `git -C ~/construct-android/src pull --ff-only && construct-android-release`.
   programs.constructAndroidRelease = {
     enable = true;
-    androidDir = "/home/matv/Projects/the_construct/android";
+    srcDir = "/home/matv/construct-android/src";
     publishTo = "raven:/var/lib/construct/fdroid/repo/";
-    # construct RN (Expo, io.matv.construct.rn) in the same repo: `git -C ~/construct-rn/src pull && construct-rn-release`.
-    rn = {
-      enable = true;
-      srcDir = "/home/matv/construct-rn/src";
-      signingDir = "/home/matv/construct-rn/signing"; # backed up offsite (storage.nix)
-    };
   };
 
   # raven pushes /var/lib/construct here nightly (modules/construct-backup.nix, restore notes there). History: sanoid's

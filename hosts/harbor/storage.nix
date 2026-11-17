@@ -251,9 +251,6 @@
         # construct (raven's nightly push: DB snapshot, blobs, memo audio)
         "/arespool/backups/construct"
 
-        # construct RN Android signing key (app/mobile/scripts/android-release.sh); losing it blocks in-place updates
-        "/home/matv/construct-rn/signing"
-
         # DB dumps (created by pre-backup hook)
         "/var/lib/harbor-backups/db-dumps"
 

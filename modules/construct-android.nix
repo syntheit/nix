@@ -1,32 +1,27 @@
-# construct Android release: build, sign and publish the app to the private F-Droid repo that construct serves at
-# /fdroid/repo. Builds need an x86_64 host (the SDK's aapt2 and zipalign are x86-64 only), so when construct runs on
-# another machine the release copies repo/ there; the fdroid working dir (config, repo signing key) stays here.
+# construct Android release: build the app (the Expo app in app/mobile, io.matv.construct), sign it with the app key
+# and publish it to the private F-Droid repo that construct serves at /fdroid/repo. Builds need an x86_64 host (the
+# SDK's aapt2 and zipalign are x86-64 only), so when construct runs on another machine the release copies repo/ there;
+# the fdroid working dir (config, repo signing key) stays here.
 #
-# Two apps share the one repo: the Kotlin app (io.matv.construct, construct-android-release) and, until the Expo
-# cutover, "construct RN" (io.matv.construct.rn, construct-rn-release). Each adds its APK to fdroidDir/repo and runs
-# `fdroid update` over all of them; a lock keeps two releases from interleaving.
+#   git -C <srcDir> pull --ff-only && construct-android-release
+#
+# The build and the repo update live in the construct repo (app/mobile/scripts/fdroid-release.sh); this adds the key,
+# a lock and the copy to raven. The Expo app replaced the Kotlin app in place in November 2026 (same package and key,
+# a higher versionCode); the side-by-side build "construct RN" (io.matv.construct.rn, construct-rn-release) is retired
+# and the release drops its APKs from the repo.
 { config, lib, pkgs, ... }:
 
 let
   cfg = config.programs.constructAndroidRelease;
-  keepRn = 3; # construct RN builds kept in the repo
-  lock = ''
-    mkdir -p ${cfg.fdroidDir}
-    exec 9>>${cfg.fdroidDir}/.release.lock
-    ${pkgs.util-linux}/bin/flock -n 9 || { echo "another F-Droid release is running (lock ${cfg.fdroidDir}/.release.lock)" >&2; exit 1; }
-  '';
-  publish = lib.optionalString (cfg.publishTo != null) ''
-    echo "→ publish repo/ to ${cfg.publishTo}"
-    ${pkgs.rsync}/bin/rsync -a --delete ${cfg.fdroidDir}/repo/ ${cfg.publishTo}
-  '';
 in
 {
   options.programs.constructAndroidRelease = {
     enable = lib.mkEnableOption "the construct-android-release command";
 
-    androidDir = lib.mkOption {
+    srcDir = lib.mkOption {
       type = lib.types.str;
-      description = "The android/ project in the construct repo (its dev shell also runs fdroid for construct RN).";
+      example = "/home/matv/construct-android/src";
+      description = "A checkout of the construct repo; the release builds its app/mobile as checked out (pull it first).";
     };
 
     fdroidDir = lib.mkOption {
@@ -42,20 +37,11 @@ in
       description = "rsync target for repo/ when construct runs on another host; null when construct serves fdroidDir here.";
     };
 
-    rn = {
-      enable = lib.mkEnableOption "the construct-rn-release command (the Expo app, io.matv.construct.rn)";
-
-      srcDir = lib.mkOption {
-        type = lib.types.str;
-        example = "/home/matv/construct-rn/src";
-        description = "A checkout of the construct repo; the release builds its app/mobile as checked out (pull it first).";
-      };
-
-      signingDir = lib.mkOption {
-        type = lib.types.str;
-        example = "/home/matv/construct-rn/signing";
-        description = "Holds construct-rn.p12 and password (app/mobile/scripts/android-keystore.sh); outside the checkout.";
-      };
+    signerSha256 = lib.mkOption {
+      type = lib.types.str;
+      # The app certificate (sops android_keystore_b64, alias "construct"), as F-Droid's index lists it.
+      default = "f6128da57407424eba60ebca9b1d41fa74e0be198314b03bbd199f93430e38df";
+      description = "SHA-256 of the app signing certificate; an APK signed otherwise is refused (it could not update the app).";
     };
   };
 
@@ -63,75 +49,34 @@ in
     environment.systemPackages = [
       (pkgs.writeShellScriptBin "construct-android-release" ''
         set -euo pipefail
-        ${lock}
+        set +o xtrace
+        mkdir -p ${cfg.fdroidDir}
+        exec 9>>${cfg.fdroidDir}/.release.lock
+        ${pkgs.util-linux}/bin/flock -n 9 || { echo "another F-Droid release is running (lock ${cfg.fdroidDir}/.release.lock)" >&2; exit 1; }
         tmp=$(mktemp -d)
         trap 'rm -rf "$tmp"' EXIT
-        base64 -d ${config.sops.secrets.android_keystore_b64.path} > "$tmp/construct.p12"
-        cd ${cfg.androidDir}
-        export FDROID_DIR=${cfg.fdroidDir} KEY_ALIAS=construct
-        export KEYSTORE_FILE="$tmp/construct.p12"
-        export KEYSTORE_PASSWORD_FILE=${config.sops.secrets.android_keystore_password.path}
-        export KEY_PASSWORD_FILE=${config.sops.secrets.android_keystore_password.path}
-        nix develop -c scripts/release.sh
-        ${publish}
+        (umask 077; base64 -d ${config.sops.secrets.android_keystore_b64.path} > "$tmp/construct.p12")
+        cd ${cfg.srcDir}
+        # The APK also stays in ~/construct-android/apk for Taildrop.
+        FDROID_DIR=${cfg.fdroidDir} \
+        OUT_DIR=$HOME/construct-android/apk \
+        KEYSTORE_FILE="$tmp/construct.p12" \
+        KEYSTORE_PASSWORD_FILE=${config.sops.secrets.android_keystore_password.path} \
+        KEY_PASSWORD_FILE=${config.sops.secrets.android_keystore_password.path} \
+        KEY_ALIAS=construct \
+        EXPECT_SIGNER_SHA256=${cfg.signerSha256} \
+          nix develop ./app/mobile#android -c bash app/mobile/scripts/fdroid-release.sh
+        ${lib.optionalString (cfg.publishTo != null) ''
+          echo "→ publish repo/ to ${cfg.publishTo}"
+          ${pkgs.rsync}/bin/rsync -a --delete ${cfg.fdroidDir}/repo/ ${cfg.publishTo}
+        ''}
       '')
-    ]
-    ++ lib.optional cfg.rn.enable (
-      pkgs.writeShellScriptBin "construct-rn-release" ''
-        # Builds construct RN from ${cfg.rn.srcDir} (app/mobile/scripts/android-release.sh, signed with the RN key in
-        # ${cfg.rn.signingDir}), adds the APK to the F-Droid repo beside the Kotlin app and publishes the repo.
-        # The APK also stays in ~/construct-rn/apk (the script's default OUT_DIR) for Taildrop.
-        set -euo pipefail
-        set +o xtrace
-        ${lock}
-        src=${cfg.rn.srcDir}
-        fdroid=${cfg.fdroidDir}
-        [ -f "$fdroid/config.yml" ] || { echo "no F-Droid repo in $fdroid: run construct-android-release once first" >&2; exit 1; }
-        n=$(git -C "$src" rev-list --count HEAD)
-        app_id=io.matv.construct.rn
-        # Published builds, by versionCode (the commit count), oldest first.
-        published() { find "$fdroid/repo" -maxdepth 1 -name "''${app_id}_*.apk" -printf '%f\n' | sed -n "s/^''${app_id}_\([0-9]*\)\.apk$/\1/p" | sort -n; }
-        newest=$(published | tail -n 1)
-        if [ -n "$newest" ] && [ "$n" -le "$newest" ]; then
-          echo "build $n ($app_id) is not newer than the published $newest: pull or commit in $src first" >&2
-          exit 1
-        fi
-        echo "→ build $app_id $n from $src ($(git -C "$src" log -1 --format='%h %s'))"
-        [ -z "$(git -C "$src" status --porcelain)" ] || echo "warning: $src has uncommitted changes; they ship in build $n" >&2
-        out=$HOME/construct-rn/apk
-        cd "$src"
-        KEYSTORE_FILE=${cfg.rn.signingDir}/construct-rn.p12 \
-        KEYSTORE_PASSWORD_FILE=${cfg.rn.signingDir}/password \
-        KEY_PASSWORD_FILE=${cfg.rn.signingDir}/password \
-        KEY_ALIAS=construct-rn \
-        CONSTRUCT_APP_VARIANT=rn \
-        CONSTRUCT_BUILD_NUMBER=$n \
-        OUT_DIR=$out \
-          nix develop ./app/mobile#android -c bash app/mobile/scripts/android-release.sh
-
-        umask 022 # the served repo stays readable by construct
-        install -m 644 "$out/''${app_id}_$n.apk" "$fdroid/repo/''${app_id}_$n.apk"
-        # Keep the newest ${toString keepRn} builds, so the repo (and raven's copy, rsync --delete) stays small.
-        published | head -n -${toString keepRn} | while read -r old; do
-          echo "pruning $app_id build $old"
-          rm -f "$fdroid/repo/''${app_id}_$old.apk"
-        done
-        if [ ! -f "$fdroid/metadata/$app_id.yml" ]; then
-          cat > "$fdroid/metadata/$app_id.yml" <<'YML'
-        Categories:
-          - Internet
-        License: Unknown
-        Name: construct RN
-        Summary: The Expo build of construct, beside the Kotlin app
-        Description: |-
-          The React Native (Expo) client of construct, installed beside the Kotlin app until it replaces it.
-        YML
-        fi
-        # fdroid (and the SDK tools it calls) from the Kotlin app's dev shell, as construct-android-release runs it.
-        (cd ${cfg.androidDir} && nix develop -c sh -c 'cd "$1" && fdroid update' sh "$fdroid")
-        echo "published $app_id build $n"
-        ${publish}
-      ''
-    );
+      # Retired with the cutover; kept a while so the old command says where it went.
+      (pkgs.writeShellScriptBin "construct-rn-release" ''
+        echo "construct-rn-release is retired: construct-android-release builds the Expo app as io.matv.construct" >&2
+        echo "  git -C ${cfg.srcDir} pull --ff-only && construct-android-release" >&2
+        exit 1
+      '')
+    ];
   };
 }
