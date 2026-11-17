@@ -68,7 +68,7 @@ let
       rsync -a --delete --partial-dir=.rsync-partial --info=stats1 -e "$ssh_cmd" \
         --exclude=/construct.db --exclude=/construct.db-wal --exclude=/construct.db-shm --exclude=/construct.db-journal \
         --exclude=/fdroid/ --exclude='*.tmp' \
-        "$src/" "$remote:./"
+        "$src/" "$remote:."   # "." not "./": rrsync rejects "./" as an unsafe path
 
       # Last, so its mtime on harbor marks a complete run (harbor's staleness check reads it).
       echo "→ push snapshot"
