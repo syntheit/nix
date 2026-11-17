@@ -1,14 +1,15 @@
-"""memos.title: a short title from the transcript, by a small local model on Ollama, else the first sentence.
+"""memos.title: a short title from the transcript, by a small local model on Ollama.
 
-The model is pulled on first use and unloaded right after each request (keep_alive 0), so it never sits in VRAM
-next to whisper or a game, and Ollama counts as a foreign GPU user only while someone else uses it.
+The model is pulled by services.ollama.loadModels (construct-worker.nix) and unloaded right after each request
+(keep_alive 0), so it never sits in VRAM next to whisper or a game. An Ollama failure is a retryable job error; until a
+title arrives construct shows the memo's first sentence. Empty text gets an empty title (construct keeps its own).
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import re
+import threading
 import time
 from collections.abc import Callable
 
@@ -20,6 +21,7 @@ log = logging.getLogger(__name__)
 
 MAX_WORDS = 8
 MAX_CHARS = 8000  # ~2k tokens of transcript is plenty for a title
+TIMEOUT_S = 90
 SYSTEM = (
     "You title voice memos. Reply with the title only: at most 8 words, sentence case (capitalise only the first word "
     "and proper nouns), no quotes, no trailing period, no preamble. Use the memo's language."
@@ -28,6 +30,10 @@ EXAMPLES = [
     ("ok so the plan for saturday is the asado at fede's place, I need to buy the meat friday and charcoal", "Saturday asado at Fede's: meat and charcoal"),
     ("reminder to call the bank about the transfer limit before the end of the month", "Call the bank about the transfer limit"),
 ]
+
+
+class TitleError(Exception):
+    """Ollama failed or answered nothing usable: worth another attempt."""
 
 
 def clean(raw: str) -> str:
@@ -42,41 +48,11 @@ def clean(raw: str) -> str:
     return line[:1].upper() + line[1:]
 
 
-def fallback(text: str) -> str:
-    """The first sentence, trimmed to 8 words."""
-    first = re.split(r"(?<=[.!?…])\s+|\n", text.strip(), maxsplit=1)[0] if text.strip() else ""
-    return clean(first) or "Voice memo"
-
-
 class Ollama:
     def __init__(self, url: str, model: str):
         self.url = url.rstrip("/")
         self.model = model
         self.http = requests.Session()
-
-    def has_model(self) -> bool:
-        r = self.http.post(f"{self.url}/api/show", json={"model": self.model}, timeout=10)
-        if r.status_code == 404:
-            return False
-        r.raise_for_status()
-        return True
-
-    def pull(self, tick: Callable[[float, str], bool]) -> None:
-        """Downloads the model (~2.5 GB), reporting progress through tick; Stopped when tick says stop."""
-        log.info("pulling %s", self.model)
-        with self.http.post(f"{self.url}/api/pull", json={"model": self.model, "stream": True}, stream=True, timeout=(10, 120)) as r:
-            r.raise_for_status()
-            for line in r.iter_lines():
-                if not line:
-                    continue
-                msg = json.loads(line)
-                if msg.get("error"):
-                    raise RuntimeError(f"pull: {msg['error']}")
-                done, total = msg.get("completed") or 0, msg.get("total") or 0
-                if not tick(done / total * 0.9 if total else 0.0, f"downloading {self.model}"):
-                    raise Stopped()
-                if msg.get("status") == "success":
-                    return
 
     def title(self, text: str) -> str:
         messages = [{"role": "system", "content": SYSTEM}]
@@ -92,26 +68,42 @@ class Ollama:
                 "keep_alive": 0,
                 "options": {"temperature": 0.2, "num_predict": 40, "num_ctx": 4096},
             },
-            timeout=180,
+            timeout=(10, TIMEOUT_S),
         )
-        r.raise_for_status()
+        if r.status_code >= 400:
+            raise TitleError(f"ollama {r.status_code}: {r.text[:200]}")
         return clean(r.json()["message"]["content"])
 
 
 def make_title(text: str, ollama: Ollama | None, tick: Callable[[float, str], bool]) -> dict:
-    """The job result `{title}`, plus how it was made (`source`, `model`)."""
-    if ollama and text.strip():
+    """The job result `{title}` (plus `model`). Raises TitleError on failure, Stopped when tick says stop."""
+    if not text.strip():
+        return {"title": ""}
+    if not ollama:
+        raise TitleError("no Ollama configured")
+    t0 = time.monotonic()
+    # The request runs in a (daemon) thread so progress, the lease and shutdown keep ticking while the model loads.
+    box: dict = {}
+
+    def call() -> None:
         try:
-            if not ollama.has_model():
-                ollama.pull(tick)
-            if not tick(0.9, "titling"):
-                raise Stopped()
-            t0 = time.monotonic()
-            title = ollama.title(text)
-            if title:
-                log.info("title in %.1fs: %s", time.monotonic() - t0, title)
-                return {"title": title, "source": "ollama", "model": ollama.model}
-            log.warning("empty title from %s; using the first sentence", ollama.model)
-        except (requests.RequestException, RuntimeError, KeyError, ValueError) as e:
-            log.warning("ollama failed (%s); using the first sentence", e)
-    return {"title": fallback(text), "source": "first-sentence"}
+            box["title"] = ollama.title(text)
+        except Exception as e:  # noqa: BLE001 - handed to the job thread below
+            box["error"] = e
+
+    worker = threading.Thread(target=call, name="ollama", daemon=True)
+    worker.start()
+    while worker.is_alive():
+        worker.join(1)
+        if worker.is_alive() and not tick(0.5, "titling"):
+            raise Stopped()
+    if "error" in box:
+        e = box["error"]
+        if isinstance(e, TitleError):
+            raise e
+        raise TitleError(f"ollama: {type(e).__name__}: {e}") from e
+    title = box["title"]
+    if not title:
+        raise TitleError(f"{ollama.model} answered no title")
+    log.info("title in %.1fs: %s", time.monotonic() - t0, title)
+    return {"title": title, "model": ollama.model}

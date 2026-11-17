@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import multiprocessing as mp
 import re
+import signal
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -29,9 +30,13 @@ MAX_REPEATS = 3
 
 
 class TranscribeError(Exception):
-    def __init__(self, message: str, retry: bool):
+    """`retry`: worth another attempt. `release`: not this job's fault (CUDA out of memory: the GPU filled up), hand it
+    back without using an attempt."""
+
+    def __init__(self, message: str, retry: bool, release: bool = False):
         super().__init__(message)
         self.retry = retry
+        self.release = release
 
 
 # ── the child ───────────────────────────────────────────────────────
@@ -87,6 +92,10 @@ def _pass(model, audio, duration: float, language: str | None, condition: bool, 
 
 
 def _child(path: str, language: str | None, out) -> None:
+    # SIGTERM (systemd stopping the service) and Ctrl-C reach the whole process group; only the parent decides when the
+    # child stops (it kills it), so a stopping worker can release the job instead of failing it.
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     try:
         from faster_whisper import WhisperModel, decode_audio
 
@@ -145,8 +154,9 @@ def _child(path: str, language: str | None, out) -> None:
                 },
             )
         )
-    except Exception as e:  # noqa: BLE001 - CUDA OOM, model download: worth another attempt
-        out.send(("error", (f"{type(e).__name__}: {e}", True)))
+    except Exception as e:  # noqa: BLE001 - model download, CUDA errors: worth another attempt
+        oom = "out of memory" in str(e).lower()
+        out.send(("error", (f"{type(e).__name__}: {e}", True, oom)))
 
 
 # ── the parent ──────────────────────────────────────────────────────
@@ -169,6 +179,9 @@ def transcribe(path: Path, language: str | None, tick: Callable[[float, str], bo
                 try:
                     kind, value = inbox.recv()
                 except EOFError:
+                    # Died: first see whether we are stopping (shutdown raises, cancel returns False), else it's an error.
+                    if not tick(progress, reason):
+                        raise Stopped() from None
                     child.join(5)
                     raise TranscribeError(f"the transcriber died (exit code {child.exitcode})", retry=True) from None
                 if kind == "progress":

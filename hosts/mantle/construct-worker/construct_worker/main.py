@@ -23,8 +23,8 @@ import requests
 
 from . import Stopped
 from .api import Construct, Lost, Unauthorized
-from .gpu import GpuMonitor
-from .title import Ollama, make_title
+from .gpu import gpu_state
+from .title import Ollama, TitleError, make_title
 from .transcribe import TranscribeError, transcribe
 
 log = logging.getLogger("construct_worker")
@@ -32,6 +32,9 @@ log = logging.getLogger("construct_worker")
 KINDS = ["memos.transcribe", "memos.title"]
 CLAIM_S = 15
 PROGRESS_S = 20
+# After a failed or released run, no claims for this long (then the longer one while failures keep coming), so a broken
+# job or a full GPU doesn't burn the three attempts within a minute.
+BACKOFF_S = [120, 600]
 
 
 class Shutdown(Exception):
@@ -80,11 +83,15 @@ class Worker:
         self.args = args
         self.host = args.host
         self.api = Construct(args.url, Path(args.token_file)) if args.token_file else None
-        self.gpu = GpuMonitor(args.nvidia_smi)
         self.ollama = Ollama(args.ollama_url, args.ollama_model) if args.ollama_url else None
         self.shutdown = False
         self.next_job: dict | None = None
+        self.failures = 0
+        self.pause_until = 0.0
         self._last_busy: str | None = None
+
+    def gpu(self, own: set[int] | None = None) -> dict:
+        return gpu_state(self.args.nvidia_smi, own)
 
     # ── jobs ─────────────────────────────────────────────────────────
 
@@ -95,9 +102,7 @@ class Worker:
             raise TranscribeError(f"job has no audio blob ({sha})", retry=False)
         with tempfile.TemporaryDirectory(prefix="construct-worker-") as tmp:
             path = Path(tmp) / f"audio.{blob.get('ext') or 'bin'}"
-            if not job.tick(0.0, "downloading"):
-                raise Stopped()
-            self.api.download(blob["url"], path)
+            self.api.download(blob["url"], path, lambda: job.tick(0.0, "downloading"))
             log.info("job %s: %s, %.1f MB", job.id, path.name, path.stat().st_size / 1e6)
             return transcribe(path, job.payload.get("language") or None, job.tick, job.child_pids.add)
 
@@ -108,7 +113,6 @@ class Worker:
         job = Job(self, raw)
         log.info("job %s: %s claimed", job.id, job.kind)
         t0 = time.monotonic()
-        self.gpu.pause()
         try:
             if job.kind == "memos.transcribe":
                 result = self.run_transcribe(job)
@@ -125,17 +129,33 @@ class Worker:
             log.info("job %s: lost (%s), dropped", job.id, e)
             return
         except Shutdown:
-            # Release: back to the queue without using an attempt. No `error` on purpose: an older construct then
-            # answers 400 (error is required there) instead of failing the job, and we fall back to retry below.
+            log.info("job %s: stopping, handing it back", job.id)
             body = {"ok": False, "release": True}
         except TranscribeError as e:
             log.warning("job %s: %s", job.id, e)
-            body = {"ok": False, "error": str(e), "retry": e.retry}
+            body = {"ok": False, "release": True} if e.release else {"ok": False, "error": str(e), "retry": e.retry}
+            self.back_off(str(e))
+        except TitleError as e:
+            log.warning("job %s: %s", job.id, e)
+            body = {"ok": False, "error": str(e), "retry": True}
+            self.back_off(str(e))
         except Exception as e:  # noqa: BLE001 - report anything else as retryable rather than leave the lease to run out
             log.exception("job %s failed", job.id)
             body = {"ok": False, "error": f"{type(e).__name__}: {e}", "retry": True}
-        finally:
-            self.gpu.resume()
+            self.back_off(str(e))
+        if body["ok"]:
+            self.failures = 0
+        self.report(job, body)
+
+    def back_off(self, why: str) -> None:
+        wait = BACKOFF_S[min(self.failures, len(BACKOFF_S) - 1)]
+        self.failures += 1
+        self.pause_until = time.monotonic() + wait
+        log.info("no claims for %d min after: %s", wait // 60, why[:200])
+
+    def report(self, job: Job, body: dict) -> None:
+        """Posts the result. A release (no attempt used) needs a construct that knows it: an older one answers 400 (its
+        error field is required, so `release` is sent without one), and then it goes as a retryable error."""
         try:
             try:
                 state = self.api.result(job.id, body).get("state")
@@ -143,7 +163,7 @@ class Worker:
                 if not (body.get("release") and e.response is not None and e.response.status_code == 400):
                     raise
                 log.info("job %s: construct can't release jobs yet; reporting a retryable stop", job.id)
-                state = self.api.result(job.id, {"ok": False, "error": f"the worker on {self.host} stopped", "retry": True}).get("state")
+                state = self.api.result(job.id, {"ok": False, "error": f"the worker on {self.host} handed it back", "retry": True}).get("state")
             log.info("job %s: reported, now %s", job.id, state)
         except Lost as e:
             log.info("job %s: result not taken (%s)", job.id, e)
@@ -152,23 +172,12 @@ class Worker:
 
     # ── the loop ─────────────────────────────────────────────────────
 
-    def gpu_state(self, own: set[int] | None = None) -> dict:
-        state = self.gpu.state(own)
-        busy = state.get("detail") if state["busy"] else None
-        if busy != self._last_busy:
-            if busy:
-                log.info("GPU busy (%s): not claiming", busy)
-            else:
-                log.info("GPU free")
-            self._last_busy = busy
-        return state
-
     def heartbeat(self, job: Job) -> None:
         """A claim while a job runs: keeps the host online in construct. It hands out no job while we hold one, unless our
         lease ran out meanwhile; a job it does hand out runs next."""
         try:
-            got = self.api.claim(self.host, KINDS, {**self.gpu.state(job.child_pids), "busy": False})
-        except (requests.RequestException, Unauthorized, Lost) as e:
+            got = self.api.claim(self.host, KINDS, {**self.gpu(job.child_pids), "busy": False})
+        except (requests.RequestException, Unauthorized, Lost, ValueError) as e:
             log.warning("heartbeat failed: %s", e)
             return
         if got.get("job") and not self.next_job:
@@ -179,8 +188,20 @@ class Worker:
         if self.next_job:
             job, self.next_job = self.next_job, None
             return job
+        gpu = self.gpu()
+        left = self.pause_until - time.monotonic()
+        if left > 0 and not gpu["busy"]:
+            # Still a heartbeat; busy keeps construct from handing out a job and says why.
+            gpu = {**gpu, "busy": True, "reason": f"pausing {max(1, round(left / 60))} min after a failed job"}
+        busy = gpu.get("reason") if gpu["busy"] else None
+        if busy != self._last_busy:
+            if busy:
+                log.info("not claiming: %s", busy)
+            else:
+                log.info("claiming")
+            self._last_busy = busy
         try:
-            got = self.api.claim(self.host, KINDS, self.gpu_state())
+            got = self.api.claim(self.host, KINDS, gpu)
         except Unauthorized as e:
             log.error("%s", e)
             return None
@@ -190,8 +211,6 @@ class Worker:
         return got.get("job")
 
     def loop(self, once: bool) -> None:
-        self.gpu.start()
-        time.sleep(0.5)  # the first sample
         log.info("worker %s: %s at %s", self.host, ", ".join(KINDS), self.args.url)
         while not self.shutdown:
             job = self.claim()
@@ -224,7 +243,11 @@ def dry_run(args: argparse.Namespace) -> int:
         log.info("wall %.1fs, load %.1fs, transcribe %.1fs, rtf %s", time.monotonic() - t0, result["params"]["load_s"], result["params"]["transcribe_s"], result["rtf"])
     else:
         ollama = Ollama(args.ollama_url, args.ollama_model) if args.ollama_url else None
-        result = make_title(args.title, ollama, tick)
+        try:
+            result = make_title(args.title, ollama, tick)
+        except TitleError as e:
+            log.error("%s", e)
+            return 1
     json.dump(result, sys.stdout, ensure_ascii=False, indent=None if args.file else 2)
     sys.stdout.write("\n")
     return 0
@@ -236,7 +259,7 @@ def main() -> None:
     p.add_argument("--url", default=env("CONSTRUCT_URL", "http://raven:4322"), help="construct's base URL")
     p.add_argument("--token-file", default=env("CONSTRUCT_TOKEN_FILE"), help="file holding the worker token (cw_…)")
     p.add_argument("--host", default=env("WORKER_HOST", socket.gethostname()))
-    p.add_argument("--ollama-url", default=env("OLLAMA_URL", "http://127.0.0.1:11434"), help="empty: titles from the first sentence only")
+    p.add_argument("--ollama-url", default=env("OLLAMA_URL", "http://127.0.0.1:11434"))
     p.add_argument("--ollama-model", default=env("OLLAMA_MODEL", "qwen3:4b-instruct-2507-q4_K_M"))
     p.add_argument("--nvidia-smi", default=env("NVIDIA_SMI", "nvidia-smi"))
     p.add_argument("--once", action="store_true", help="one claim (or, with --file/--title, a local dry run), then exit")

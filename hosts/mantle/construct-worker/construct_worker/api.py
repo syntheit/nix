@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import logging
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 import requests
+
+from . import Stopped
 
 log = logging.getLogger(__name__)
 
@@ -63,11 +67,18 @@ class Construct:
     def result(self, job_id: int, body: dict) -> dict:
         return self._post(f"/api/jobs/{job_id}/result", body, LOST)
 
-    def download(self, url: str, dest: Path) -> None:
+    def download(self, url: str, dest: Path, tick: Callable[[], bool], limit_s: float = 600) -> None:
+        """Streams a blob to `dest`, calling tick() per chunk (progress, lease, shutdown); False from it raises Stopped.
+        Each read times out after `timeout`, the whole download after `limit_s`."""
+        deadline = time.monotonic() + limit_s
         with self.http.get(self.base + url, headers=self._auth(), timeout=self.timeout, stream=True) as r:
             if r.status_code in (403, 404):
                 raise Lost(f"{url}: {r.status_code}")
             r.raise_for_status()
             with dest.open("wb") as f:
-                for chunk in r.iter_content(1 << 20):
+                for chunk in r.iter_content(256 << 10):
                     f.write(chunk)
+                    if not tick():
+                        raise Stopped()
+                    if time.monotonic() > deadline:
+                        raise requests.Timeout(f"downloading {url} took over {limit_s:.0f}s")
