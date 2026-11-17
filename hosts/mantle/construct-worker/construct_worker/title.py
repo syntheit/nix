@@ -20,16 +20,17 @@ from . import Stopped
 log = logging.getLogger(__name__)
 
 MAX_WORDS = 12
-MAX_CHARS = 16000  # construct sends ≤ ~1,800 words (6 excerpts of 300); this is only a guard
+MAX_CHARS = 16000  # a guard: construct's sample is at most ~9,100 characters (6 excerpts with stamps), all of it read
 TIMEOUT_S = 120
 SYSTEM = (
     "You title voice memos. Reply with the title only: at most 12 words that name the memo's main topics (join two or "
     "three with commas or 'and' when it covers several), sentence case (capitalise only the first word and proper "
-    "nouns), no quotes, no trailing period, no preamble. Use the memo's language. A long memo comes as excerpts from "
-    "across it, each line starting with its [mm:ss]: title the whole memo, not its first excerpt, and never put a time "
-    "in the title."
+    "nouns), no quotes, no trailing period, no preamble. Use the memo's language. A long memo comes as disjoint "
+    "excerpts taken evenly from its start to its end, one per line, each starting with the [mm:ss] where it begins; "
+    "the gaps between them are not shown. Title the whole memo from all the excerpts, not the first one, and never put "
+    "a time in the title."
 )
-EXCERPTS = "Excerpts from across a long memo:\n"
+EXCERPTS = "Disjoint excerpts from start to end of a long memo, each with the [mm:ss] where it begins:\n"
 EXAMPLES = [
     ("ok so the plan for saturday is the asado at fede's place, I need to buy the meat friday and charcoal", "Saturday asado at Fede's: meat and charcoal"),
     (
@@ -40,6 +41,11 @@ EXAMPLES = [
         "Saddle height, moving cash into bonds and the Tbilisi car question",
     ),
 ]
+
+
+# A leading time stamp copied from the excerpts: "[00:00] …", "(1:02:03) …", "00:00 – …" (same as construct's
+# LEADING_STAMP; a bare "10:30 meeting" is kept).
+STAMP = re.compile(r"^(?:[\[(]\d{1,2}(?::\d{2}){1,2}[\])]\s*[-–—:]?\s*|\d{1,2}(?::\d{2}){1,2}\s*[-–—]\s*)")
 
 
 class TitleError(Exception):
@@ -53,7 +59,7 @@ def clean(raw: str) -> str:
     junk = " \t\"'`*#“”‘’«»"
     line = line.strip(junk)
     line = re.sub(r"^(title\s*:\s*)", "", line, flags=re.I)
-    line = re.sub(r"^\[\d+(?::\d{2}){1,2}\]\s*", "", line)
+    line = STAMP.sub("", line)
     line = line.strip(junk).rstrip(".").strip()
     words = line.split()
     if len(words) > MAX_WORDS:
