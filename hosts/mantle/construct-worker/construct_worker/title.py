@@ -19,17 +19,32 @@ from . import Stopped
 
 log = logging.getLogger(__name__)
 
-MAX_WORDS = 8
-MAX_CHARS = 8000  # ~2k tokens of transcript is plenty for a title
-TIMEOUT_S = 90
+MAX_WORDS = 12
+MAX_CHARS = 16000  # a guard: construct's sample is at most ~9,100 characters (6 excerpts with stamps), all of it read
+TIMEOUT_S = 120
 SYSTEM = (
-    "You title voice memos. Reply with the title only: at most 8 words, sentence case (capitalise only the first word "
-    "and proper nouns), no quotes, no trailing period, no preamble. Use the memo's language."
+    "You title voice memos. Reply with the title only: at most 12 words that name the memo's main topics (join two or "
+    "three with commas or 'and' when it covers several), sentence case (capitalise only the first word and proper "
+    "nouns), no quotes, no trailing period, no preamble. Write the title in the memo's own language (a Spanish memo "
+    "gets a Spanish title, a Russian one a Russian title), whatever the language of these instructions. A long memo "
+    "comes as disjoint excerpts taken evenly from its start to its end, one per line, each starting with the [mm:ss] "
+    "where it begins; the gaps between them are not shown. Title the whole memo from all the excerpts, not the first "
+    "one, and never put a time in the title."
 )
 EXAMPLES = [
     ("ok so the plan for saturday is the asado at fede's place, I need to buy the meat friday and charcoal", "Saturday asado at Fede's: meat and charcoal"),
-    ("reminder to call the bank about the transfer limit before the end of the month", "Call the bank about the transfer limit"),
+    (
+        "[00:00] bueno, primero lo del asiento de la bici, sigue muy alto y me duele la rodilla después de la salida larga\n"
+        "[12:40] y con la cartera quiero pasar la plata del broker al fondo de bonos este mes\n"
+        "[25:10] después el viaje a Tiflis, tengo que ver si el auto puede quedarse en Georgia después de la visa",
+        "Altura del asiento, pasar la plata a bonos y el auto en Tiflis",
+    ),
 ]
+
+
+# A leading time stamp copied from the excerpts: "[00:00] …", "(1:02:03) …", "00:00 – …" (same as construct's
+# LEADING_STAMP; a bare "10:30 meeting" is kept).
+STAMP = re.compile(r"^(?:[\[(]\d{1,2}(?::\d{2}){1,2}[\])]\s*[-–—:]?\s*|\d{1,2}(?::\d{2}){1,2}\s*[-–—]\s*)")
 
 
 class TitleError(Exception):
@@ -37,11 +52,14 @@ class TitleError(Exception):
 
 
 def clean(raw: str) -> str:
-    """The first line of a model reply, as a title: no think block, quotes, label or trailing period; ≤ 8 words."""
+    """The first line of a model reply, as a title: no think block, time stamp, quotes, label or trailing period; ≤ 12 words."""
     raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.S)
     line = next((l for l in (x.strip() for x in raw.splitlines()) if l), "")
+    junk = " \t\"'`*#“”‘’«»"
+    line = line.strip(junk)
     line = re.sub(r"^(title\s*:\s*)", "", line, flags=re.I)
-    line = line.strip(" \t\"'`*#“”‘’«»").rstrip(".").strip()
+    line = STAMP.sub("", line)
+    line = line.strip(junk).rstrip(".").strip()
     words = line.split()
     if len(words) > MAX_WORDS:
         line = " ".join(words[:MAX_WORDS]).rstrip(",;:-–—")
@@ -58,6 +76,8 @@ class Ollama:
         messages = [{"role": "system", "content": SYSTEM}]
         for memo, title in EXAMPLES:
             messages += [{"role": "user", "content": memo}, {"role": "assistant", "content": title}]
+        # The system prompt explains the excerpt form; the user turn is the memo alone, so nothing in it is English
+        # but the memo (an English header pulled Spanish and Russian titles into English).
         messages.append({"role": "user", "content": text[:MAX_CHARS]})
         r = self.http.post(
             f"{self.url}/api/chat",
@@ -66,7 +86,7 @@ class Ollama:
                 "messages": messages,
                 "stream": False,
                 "keep_alive": 0,
-                "options": {"temperature": 0.2, "num_predict": 40, "num_ctx": 4096},
+                "options": {"temperature": 0.2, "num_predict": 64, "num_ctx": 8192},
             },
             timeout=(10, TIMEOUT_S),
         )
@@ -75,8 +95,9 @@ class Ollama:
         return clean(r.json()["message"]["content"])
 
 
-def make_title(text: str, ollama: Ollama | None, tick: Callable[[float, str], bool]) -> dict:
-    """The job result `{title}` (plus `model`). Raises TitleError on failure, Stopped when tick says stop."""
+def make_title(text: str, ollama: Ollama | None, tick: Callable[[float, str], bool], excerpts: bool = False) -> dict:
+    """The job result `{title}` (plus `model`). `excerpts`: the text is construct's sample of a long memo (one
+    [mm:ss]-stamped excerpt per line), not the whole memo. Raises TitleError on failure, Stopped when tick says stop."""
     if not text.strip():
         return {"title": ""}
     if not ollama:
@@ -105,5 +126,5 @@ def make_title(text: str, ollama: Ollama | None, tick: Callable[[float, str], bo
     title = box["title"]
     if not title:
         raise TitleError(f"{ollama.model} answered no title")
-    log.info("title in %.1fs: %s", time.monotonic() - t0, title)
+    log.info("title in %.1fs%s: %s", time.monotonic() - t0, " (excerpts)" if excerpts else "", title)
     return {"title": title, "model": ollama.model}

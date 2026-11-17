@@ -107,7 +107,7 @@ class Worker:
             return transcribe(path, job.payload.get("language") or None, job.tick, job.child_pids.add)
 
     def run_title(self, job: Job) -> dict:
-        return make_title(str(job.payload.get("text") or ""), self.ollama, job.tick)
+        return make_title(str(job.payload.get("text") or ""), self.ollama, job.tick, bool(job.payload.get("excerpts")))
 
     def run(self, raw: dict) -> None:
         job = Job(self, raw)
