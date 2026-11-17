@@ -25,4 +25,16 @@
     owner = "daniel";
     mode = "0400";
   };
+
+  # construct's worker token for construct-worker.nix (`construct worker-token
+  # mantle` on raven prints it; issuing a new one revokes the old). Its own
+  # file, mantle + vista + daniel (.sops.yaml), not shared.yaml: it can read
+  # the voice memos of the jobs mantle runs. Set it with
+  # `sops secrets/mantle.yaml` (key construct_worker_token).
+  sops.secrets.construct_worker_token = {
+    sopsFile = ../../secrets/mantle.yaml;
+    owner = "daniel";
+    mode = "0400";
+    restartUnits = [ "construct-worker.service" ];
+  };
 }
