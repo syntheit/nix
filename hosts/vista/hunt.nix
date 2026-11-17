@@ -3,6 +3,30 @@ let
   user = vars.user.name;
   repo = "/home/${user}/Projects/hunt";
   tailscaleAddr = "100.96.21.56"; # vista on the syntheit tailnet
+
+  # hunt events steps: ~/Projects/hunt/scripts/events.sh <step> (see the timers at the end)
+  eventsUnit = step: {
+    description = "hunt events ${step}";
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
+    path = with pkgs; [ bash coreutils git nix openssh rsync util-linux gnugrep gnused findutils ];
+    serviceConfig = {
+      Type = "oneshot";
+      User = user;
+      WorkingDirectory = repo;
+      ExecStart = "${pkgs.bash}/bin/bash ${repo}/scripts/events.sh ${step}";
+      Nice = 10;
+      TimeoutStartSec = "3h";
+    };
+  };
+  eventsTimer = times: {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnCalendar = map (t: "*-*-* ${t} America/Argentina/Buenos_Aires") times;
+      RandomizedDelaySec = "20m";
+      Persistent = true;
+    };
+  };
 in
 {
   # ntfy for hunt alerts (scripts/daily.sh posts to topic `hunt` when a new listing enters the top 10).
@@ -76,4 +100,19 @@ in
       Persistent = true;
     };
   };
+
+  # hunt events (Instagram venues → raw posts → events.json on raven), the_construct events-spec.md. Each run pulls
+  # Daniel's approved watch list from construct (ssh raven construct api GET /api/events/watch), runs one step, exports
+  # data/events/export/events.json and rsyncs it to raven:/var/lib/construct/hunt/. Its own lock (data/events.lock),
+  # never touches git (daily.sh updates and gates the checkout). Credentials: /run/secrets/events_meta_* (secrets.nix).
+  # Switch: [daily] enabled in src/hunt/hunts/events/hunt.toml. By hand: systemctl start hunt-events-sweep.
+  #   sweep  Business Discovery for watched business/creator accounts, 4x a day (~10/14/19/23 ART, jittered)
+  #   embed  logged-out profile embed for watched personal accounts, 2x a day
+  #   token  debug_token → data-access expiry → construct's "Instagram key expires in N days" at ≤ 14 days
+  systemd.services.hunt-events-sweep = eventsUnit "sweep";
+  systemd.timers.hunt-events-sweep = eventsTimer [ "09:50:00" "13:50:00" "18:50:00" "22:50:00" ];
+  systemd.services.hunt-events-embed = eventsUnit "embed";
+  systemd.timers.hunt-events-embed = eventsTimer [ "11:30:00" "20:30:00" ];
+  systemd.services.hunt-events-token = eventsUnit "token";
+  systemd.timers.hunt-events-token = eventsTimer [ "08:30:00" ];
 }
