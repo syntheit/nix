@@ -9,6 +9,12 @@
 # a lock and the copy to raven. The Expo app replaced the Kotlin app in place in November 2026 (same package and key,
 # a higher versionCode); the side-by-side build "construct RN" (io.matv.construct.rn, construct-rn-release) is retired
 # and the release drops its APKs from the repo.
+#
+# Before publishing, the release starts the build on a headless emulator here (app/mobile/scripts/android-smoke.sh, its
+# own AVD in ~/.cache/construct-smoke-avd) and stops if it does not survive start: nothing reaches the repo or raven.
+# Logs and a screenshot per build in ~/construct-android/smoke. The emulator waits its turn on /tmp/retrospend-heavy.lock,
+# so do not run the release itself under that lock. `SKIP_SMOKE=1 construct-android-release` publishes without the test
+# (only when the emulator is broken and the build is known to start).
 { config, lib, pkgs, ... }:
 
 let
@@ -57,9 +63,12 @@ in
         trap 'rm -rf "$tmp"' EXIT
         (umask 077; base64 -d ${config.sops.secrets.android_keystore_b64.path} > "$tmp/construct.p12")
         cd ${cfg.srcDir}
-        # The APK also stays in ~/construct-android/apk for Taildrop.
+        # The APK also stays in ~/construct-android/apk for Taildrop; the smoke test's logs go to ~/construct-android/smoke.
+        # SKIP_SMOKE passes through from the caller's environment.
         FDROID_DIR=${cfg.fdroidDir} \
         OUT_DIR=$HOME/construct-android/apk \
+        SMOKE_DIR=$HOME/construct-android/smoke \
+        SKIP_SMOKE=''${SKIP_SMOKE:-} \
         KEYSTORE_FILE="$tmp/construct.p12" \
         KEYSTORE_PASSWORD_FILE=${config.sops.secrets.android_keystore_password.path} \
         KEY_PASSWORD_FILE=${config.sops.secrets.android_keystore_password.path} \
