@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Wardrobe cut-out worker: claims `wardrobe.cutout` jobs from construct and measures each garment photo.
 
-Per photo (flat on a white sheet, daylight): background removal with rembg; white balance from the removed background
-(the sheet is the white reference); k-means (k = 3) in CIELAB (D65) over the garment pixels, clusters over 15 % kept as
+Per photo (flat on a white sheet or any neutral, evenly lit surface such as gray floor tiles; daylight): background
+removal with rembg; white balance by chromaticity only, from the removed background: per-channel gains make it neutral
+and keep its luminance, so the photo's exposure stands (a gray tile stays gray and a dark tee stays dark; a white sheet
+stays as bright as the camera made it). Grout lines and shadows are left out of the reference by a luminance band; a
+background with a real colour (C* over 15 at mid-gray) is balanced less, and from C* 30 not at all, so a coloured backdrop
+does not tint the garment. Then k-means (k = 3) in CIELAB (D65) over the garment pixels, clusters over 15 % kept as
 L*, a*, b*, hex and share. The cut-out PNG is uploaded as a blob; the colours are the job's result.
+Test the colour maths offline (synthetic garments on sheet and tiles): python3 test_balance.py [--rembg]
 
 Runs on vista (raven is a phone), as a pull worker over the tailnet:
     construct worker-token vista > ~/.config/construct/worker-token     # on raven, once
@@ -29,7 +34,8 @@ KIND = "wardrobe.cutout"
 POLL_S = 15
 MAX_SIDE = 1600  # measured at this size: plenty for colour, fast on a CPU
 CUT_SIDE = 768  # the cut-out the pages show
-SHEET = 0.9  # linear reflectance the sheet is balanced to (L* about 96, a white paper or sheet)
+CAST_FULL, CAST_NONE = 15, 30  # background C*ab (at L* 50): a cast is removed in full up to here, not at all from here
+MAX_GAIN = 1.6  # per-channel white-balance gains stay within [1/1.6, 1.6]
 MIN_SHARE = 0.15
 D65 = np.array([0.95047, 1.0, 1.08883])
 RGB2XYZ = np.array([[0.4124564, 0.3575761, 0.1804375], [0.2126729, 0.7151522, 0.0721750], [0.0193339, 0.1191920, 0.9503041]])
@@ -79,6 +85,44 @@ def finv(l):
     return np.where(f**3 > 216 / 24389, f**3, (116 * f - 16) / (24389 / 27))
 
 
+def background(lin, sheet):
+    """The background's colour (linear RGB): the median of the sheet pixels inside a luminance band around their median,
+    so grout lines, shadows at the garment's edge and glare do not count. Brightest 1 % when little background is left."""
+    if sheet.sum() < 500:
+        return np.percentile(lin.reshape(-1, 3), 99, axis=0)
+    px = lin[sheet]
+    y = px @ RGB2XYZ[1]
+    m = np.median(y)
+    band = px[(y > 0.6 * m) & (y < 1.6 * m)]
+    return np.median(band if len(band) >= 500 else px, axis=0)
+
+
+def balance(lin, sheet):
+    """White balance by chromaticity only: gains that make the background neutral at its own luminance. Returns the
+    balanced image (linear RGB) and the gains."""
+    white = np.maximum(background(lin, sheet), 1e-4)
+    y = white @ RGB2XYZ[1]
+    cast = np.hypot(*lab((white * 0.18 / y)[None])[0, 1:])  # the background's chroma, seen at mid-gray
+    strength = np.clip((CAST_NONE - cast) / (CAST_NONE - CAST_FULL), 0, 1)
+    gains = np.clip((white.mean() / white) ** strength, 1 / MAX_GAIN, MAX_GAIN)
+    gains *= y / ((white * gains) @ RGB2XYZ[1])  # the background keeps its luminance
+    return np.clip(lin * gains, 0, 1), gains
+
+
+def colours(balanced, garment):
+    """k-means (k = 3) in CIELAB over the garment pixels: clusters over 15 %, largest first."""
+    px = lab(balanced[garment])
+    if len(px) > 20000:
+        px = px[np.random.default_rng(0).choice(len(px), 20000, replace=False)]
+    centers, counts = kmeans(px)
+    shares = counts / counts.sum()
+    return [
+        {"L": round(float(c[0]), 2), "a": round(float(c[1]), 2), "b": round(float(c[2]), 2), "hex": hexof(c), "share": round(float(s), 3)}
+        for c, s in sorted(zip(centers, shares), key=lambda cs: -cs[1])
+        if s > MIN_SHARE
+    ]
+
+
 def measure(data, session):
     """Photo bytes → (cut-out PNG bytes, colour clusters over 15 %)."""
     from rembg import remove
@@ -90,18 +134,8 @@ def measure(data, session):
     garment, sheet = alpha >= 200, alpha <= 20
     if garment.sum() < 500:
         raise ValueError("no garment found in the photo")
-    white = np.median(lin[sheet], axis=0) if sheet.sum() >= 500 else np.percentile(lin.reshape(-1, 3), 99, axis=0)
-    balanced = np.clip(lin * (SHEET / np.maximum(white, 1e-4)), 0, 1)
-    px = lab(balanced[garment])
-    if len(px) > 20000:
-        px = px[np.random.default_rng(0).choice(len(px), 20000, replace=False)]
-    centers, counts = kmeans(px)
-    shares = counts / counts.sum()
-    colors = [
-        {"L": round(float(c[0]), 2), "a": round(float(c[1]), 2), "b": round(float(c[2]), 2), "hex": hexof(c), "share": round(float(s), 3)}
-        for c, s in sorted(zip(centers, shares), key=lambda cs: -cs[1])
-        if s > MIN_SHARE
-    ]
+    balanced, _ = balance(lin, sheet)
+    colors = colours(balanced, garment)
     ys, xs = np.nonzero(alpha > 20)
     pad = int(0.04 * max(alpha.shape))
     box = (max(0, xs.min() - pad), max(0, ys.min() - pad), min(alpha.shape[1], xs.max() + pad + 1), min(alpha.shape[0], ys.max() + pad + 1))
