@@ -3,9 +3,14 @@
 # each garment photo's background (rembg, u2net, CPU onnxruntime), measures its
 # colours (CIELAB k-means) and uploads the cut-out PNG. raven is a phone, so
 # this runs here. ./wardrobe-cutout/cutout.py is a copy of construct's
-# app/server/modules/wardrobe/worker/cutout.py (copied at b805911); that
-# folder's env.nix pins the same u2net, so `--file` dry runs there and here
-# measure alike. Copy it again when construct changes it.
+# app/server/modules/wardrobe/worker/cutout.py (b805911 plus the gray-tile
+# white balance, PR docs/wardrobe-tiles); that folder's env.nix pins the same
+# u2net, so `--file` dry runs there and here measure alike. Copy it again when
+# construct changes it.
+# White balance is chromaticity-only (gray floor tiles work as well as a white
+# sheet). Offline check, in ./wardrobe-cutout, with the worker's own Python:
+#   W=$(readlink -f $(which wardrobe-cutout)); eval "$(grep REMBG_HOME $W)"
+#   $(grep -o '/nix/store/[^ ]*/bin/python3' $W) test_balance.py [--rembg]
 #   journalctl -u wardrobe-cutout -f
 # Dry run (no construct):
 #   wardrobe-cutout --file shirt.jpg --out shirt.png
