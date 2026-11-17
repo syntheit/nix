@@ -25,20 +25,19 @@ TIMEOUT_S = 120
 SYSTEM = (
     "You title voice memos. Reply with the title only: at most 12 words that name the memo's main topics (join two or "
     "three with commas or 'and' when it covers several), sentence case (capitalise only the first word and proper "
-    "nouns), no quotes, no trailing period, no preamble. Use the memo's language. A long memo comes as disjoint "
-    "excerpts taken evenly from its start to its end, one per line, each starting with the [mm:ss] where it begins; "
-    "the gaps between them are not shown. Title the whole memo from all the excerpts, not the first one, and never put "
-    "a time in the title."
+    "nouns), no quotes, no trailing period, no preamble. Write the title in the memo's own language (a Spanish memo "
+    "gets a Spanish title, a Russian one a Russian title), whatever the language of these instructions. A long memo "
+    "comes as disjoint excerpts taken evenly from its start to its end, one per line, each starting with the [mm:ss] "
+    "where it begins; the gaps between them are not shown. Title the whole memo from all the excerpts, not the first "
+    "one, and never put a time in the title."
 )
-EXCERPTS = "Disjoint excerpts from start to end of a long memo, each with the [mm:ss] where it begins:\n"
 EXAMPLES = [
     ("ok so the plan for saturday is the asado at fede's place, I need to buy the meat friday and charcoal", "Saturday asado at Fede's: meat and charcoal"),
     (
-        EXCERPTS
-        + "[00:00] right so first thing, the saddle is still too high, my knee hurts after the long ride\n"
-        + "[12:40] and for the portfolio I want to move the cash from the brokerage into the bond fund this month\n"
-        + "[25:10] then the trip to Tbilisi, I should check whether the car can stay in Georgia past the visa",
-        "Saddle height, moving cash into bonds and the Tbilisi car question",
+        "[00:00] bueno, primero lo del asiento de la bici, sigue muy alto y me duele la rodilla después de la salida larga\n"
+        "[12:40] y con la cartera quiero pasar la plata del broker al fondo de bonos este mes\n"
+        "[25:10] después el viaje a Tiflis, tengo que ver si el auto puede quedarse en Georgia después de la visa",
+        "Altura del asiento, pasar la plata a bonos y el auto en Tiflis",
     ),
 ]
 
@@ -73,11 +72,13 @@ class Ollama:
         self.model = model
         self.http = requests.Session()
 
-    def title(self, text: str, excerpts: bool = False) -> str:
+    def title(self, text: str) -> str:
         messages = [{"role": "system", "content": SYSTEM}]
         for memo, title in EXAMPLES:
             messages += [{"role": "user", "content": memo}, {"role": "assistant", "content": title}]
-        messages.append({"role": "user", "content": (EXCERPTS if excerpts else "") + text[:MAX_CHARS]})
+        # The system prompt explains the excerpt form; the user turn is the memo alone, so nothing in it is English
+        # but the memo (an English header pulled Spanish and Russian titles into English).
+        messages.append({"role": "user", "content": text[:MAX_CHARS]})
         r = self.http.post(
             f"{self.url}/api/chat",
             json={
@@ -107,7 +108,7 @@ def make_title(text: str, ollama: Ollama | None, tick: Callable[[float, str], bo
 
     def call() -> None:
         try:
-            box["title"] = ollama.title(text, excerpts)
+            box["title"] = ollama.title(text)
         except Exception as e:  # noqa: BLE001 - handed to the job thread below
             box["error"] = e
 
@@ -125,5 +126,5 @@ def make_title(text: str, ollama: Ollama | None, tick: Callable[[float, str], bo
     title = box["title"]
     if not title:
         raise TitleError(f"{ollama.model} answered no title")
-    log.info("title in %.1fs: %s", time.monotonic() - t0, title)
+    log.info("title in %.1fs%s: %s", time.monotonic() - t0, " (excerpts)" if excerpts else "", title)
     return {"title": title, "model": ollama.model}
