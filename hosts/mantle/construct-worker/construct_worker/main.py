@@ -125,6 +125,8 @@ class Worker:
             log.info("job %s: lost (%s), dropped", job.id, e)
             return
         except Shutdown:
+            # A worker can't release a job without an attempt: hold/later are owner-only, and a lease left to run out
+            # also counts one (expireLeases). Reporting now at least requeues it at once.
             body = {"ok": False, "error": f"the worker on {self.host} stopped", "retry": True}
         except TranscribeError as e:
             log.warning("job %s: %s", job.id, e)

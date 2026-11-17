@@ -7,9 +7,10 @@
 #   memos.title: a small model on the Ollama below, pulled on first use and
 #     unloaded after each request; falls back to the memo's first sentence.
 #
-# It stays off the GPU while it's someone else's: a foreign compute process
-# over 1 GB of VRAM, or >30% utilisation over the last minute, and the claim
-# says busy (construct shows "mantle busy (GPU in use)"). No GPU priority
+# It stays off the GPU while it's someone else's: a foreign compute (CUDA)
+# process over 1 GB of VRAM, and the claim says busy (construct shows "mantle
+# busy (GPU in use)"). Utilisation doesn't count: desktop graphics alone run
+# 10-46%, and they aren't compute contexts. No GPU priority
 # tricks: the CUDA timeslice stays at Default (see whisper.nix). Logs:
 #   journalctl -u construct-worker -f
 # Dry runs (no construct):

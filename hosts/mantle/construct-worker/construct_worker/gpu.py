@@ -1,6 +1,7 @@
-"""Is the GPU someone else's right now? The rule: a foreign compute process holding more than 1 GB of VRAM, or GPU
-utilisation averaging over 30% across the last 60 s, means busy (no claim). Samples taken while this worker runs a job
-are dropped, so its own work never makes it look busy afterwards."""
+"""Is the GPU someone else's right now? The rule: a foreign compute (CUDA) process holding more than 1 GB of VRAM means
+busy (no claim). nvidia-smi --query-compute-apps lists compute contexts only, so the compositor and games' graphics
+don't count; utilisation doesn't either (the desktop alone runs 10-46%). Utilisation averaged over the last 60 s and
+memory in use are still sent for display. Samples taken while this worker runs a job are dropped."""
 
 from __future__ import annotations
 
@@ -14,7 +15,6 @@ import time
 log = logging.getLogger(__name__)
 
 FOREIGN_MB = 1024
-UTIL_PCT = 30
 WINDOW_S = 60
 SAMPLE_S = 5
 
@@ -99,9 +99,8 @@ class GpuMonitor:
             util = sum(u for _, u in self.samples) / len(self.samples) if self.samples else 0.0
             mem = self.mem_used_mb
         heavy = [a for a in apps if a["memMb"] > FOREIGN_MB]
-        busy = bool(heavy) or util > UTIL_PCT
-        out = {"busy": busy, "util": round(util), "memUsedMb": mem, "foreignApps": apps}
-        if busy:
+        out = {"busy": bool(heavy), "util": round(util), "memUsedMb": mem, "foreignApps": apps}
+        if heavy:
             out["reason"] = "GPU in use"
-            out["detail"] = ", ".join(f"{a['name']} {a['memMb']} MB" for a in heavy) or f"utilisation {round(util)}% over {WINDOW_S}s"
+            out["detail"] = ", ".join(f"{a['name']} {a['memMb']} MB" for a in heavy)
         return out
