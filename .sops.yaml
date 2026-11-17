@@ -15,6 +15,11 @@ creation_rules:
       - age:
           - *harbor
           - *daniel
+  - path_regex: secrets/construct-backup\.yaml$
+    key_groups:
+      - age:
+          - *raven
+          - *daniel
   - path_regex: secrets/raven\.yaml$
     key_groups:
       - age:

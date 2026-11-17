@@ -23,5 +23,9 @@
 
   # construct backup (modules/construct-backup.nix): private ed25519 key that pushes to harbor's construct-backup
   # account (rrsync -wo); its public half is services.constructBackup.receive.authorizedKey in hosts/harbor.
-  sops.secrets.construct_backup_ssh_key = { owner = "droid"; mode = "0400"; };
+  sops.secrets.construct_backup_ssh_key = {
+    sopsFile = ../../secrets/construct-backup.yaml; # own file (raven + daniel), so adding it didn't need to reopen raven.yaml
+    owner = "droid";
+    mode = "0400";
+  };
 }

@@ -153,8 +153,8 @@
   # arespool snapshots; offsite: the restic path in storage.nix.
   services.constructBackup.receive = {
     enable = true;
-    # Public half of raven's sops construct_backup_ssh_key. Until it's set nobody can push (eval warns).
-    authorizedKey = null;
+    # Public half of raven's construct_backup_ssh_key (secrets/construct-backup.yaml).
+    authorizedKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILewe1rPtrpgeAyq1DwzTNKLbPQryMiVZrTshrMDixJM construct-backup@raven";
   };
 
   # jelly-recs — content + collaborative recommendation rows for Jellyfin
