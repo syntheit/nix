@@ -20,4 +20,8 @@
   sops.secrets.fdroid_password = { owner = "droid"; mode = "0400"; };
   sops.secrets.seerr_api_key = { owner = "droid"; mode = "0400"; };
   sops.secrets.jellyfin_api_key = { owner = "droid"; mode = "0400"; };
+
+  # construct backup (modules/construct-backup.nix): private ed25519 key that pushes to harbor's construct-backup
+  # account (rrsync -wo); its public half is services.constructBackup.receive.authorizedKey in hosts/harbor.
+  sops.secrets.construct_backup_ssh_key = { owner = "droid"; mode = "0400"; };
 }

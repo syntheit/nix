@@ -32,6 +32,7 @@
     ../../modules/elliot.nix
     ../../modules/construct.nix
     ../../modules/construct-android.nix
+    ../../modules/construct-backup.nix
     ../../modules/jelly-recs.nix
     ../../modules/harborfin.nix
   ];
@@ -146,6 +147,14 @@
     enable = true;
     androidDir = "/home/matv/Projects/the_construct/android";
     publishTo = "raven:/var/lib/construct/fdroid/repo/";
+  };
+
+  # raven pushes /var/lib/construct here nightly (modules/construct-backup.nix, restore notes there). History: sanoid's
+  # arespool snapshots; offsite: the restic path in storage.nix.
+  services.constructBackup.receive = {
+    enable = true;
+    # Public half of raven's sops construct_backup_ssh_key. Until it's set nobody can push (eval warns).
+    authorizedKey = null;
   };
 
   # jelly-recs — content + collaborative recommendation rows for Jellyfin
