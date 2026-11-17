@@ -147,6 +147,12 @@
     enable = true;
     androidDir = "/home/matv/Projects/the_construct/android";
     publishTo = "raven:/var/lib/construct/fdroid/repo/";
+    # construct RN (Expo, io.matv.construct.rn) in the same repo: `git -C ~/construct-rn/src pull && construct-rn-release`.
+    rn = {
+      enable = true;
+      srcDir = "/home/matv/construct-rn/src";
+      signingDir = "/home/matv/construct-rn/signing"; # backed up offsite (storage.nix)
+    };
   };
 
   # raven pushes /var/lib/construct here nightly (modules/construct-backup.nix, restore notes there). History: sanoid's
