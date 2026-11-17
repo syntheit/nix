@@ -14,6 +14,7 @@
     ./brightness.nix
     ./windscribe.nix
     ./whisper.nix
+    ./construct-worker.nix
     ../../system
     ../../services
     ../../desktop
