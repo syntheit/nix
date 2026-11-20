@@ -22,7 +22,10 @@ log = logging.getLogger(__name__)
 MODEL = "large-v3"
 SAMPLE_RATE = 16000
 PARAMS = {"beam_size": 5, "vad_filter": True, "word_timestamps": True}
-COMPUTE = {"device": "cuda", "compute_type": "float16"}
+DEVICE = "cuda"
+# Full precision first; when the GPU is short (Daniel's desktop shares the 8 GB card) the same job reruns at once in int8,
+# about half the memory (~2-2.5 GB peak for large-v3) at a negligible accuracy cost. The result's params say which ran.
+COMPUTE_TYPES = ("float16", "int8_float16")
 # Loud enough to be speech: 0.5 s worth of 100 ms frames above -40 dBFS.
 LOUD_DBFS = -40.0
 LOUD_SECONDS = 0.5
@@ -91,7 +94,7 @@ def _pass(model, audio, duration: float, language: str | None, condition: bool, 
     return segments, words, "".join(raw).strip(), info
 
 
-def _child(path: str, language: str | None, out) -> None:
+def _child(path: str, language: str | None, out, compute_type: str = COMPUTE_TYPES[0]) -> None:
     # SIGTERM (systemd stopping the service) and Ctrl-C reach the whole process group; only the parent decides when the
     # child stops (it kills it), so a stopping worker can release the job instead of failing it.
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
@@ -113,7 +116,7 @@ def _child(path: str, language: str | None, out) -> None:
 
         out.send(("progress", (0.0, "loading model")))
         t0 = time.monotonic()
-        model = WhisperModel(MODEL, **COMPUTE)
+        model = WhisperModel(MODEL, device=DEVICE, compute_type=compute_type)
         load_s = time.monotonic() - t0
 
         t1 = time.monotonic()
@@ -141,7 +144,8 @@ def _child(path: str, language: str | None, out) -> None:
                     "model": MODEL,
                     "params": {
                         **PARAMS,
-                        **COMPUTE,
+                        "device": DEVICE,
+                        "compute_type": compute_type,
                         "language": language,
                         "condition_on_previous_text": condition,
                         "language_probability": round(info.language_probability, 4),
@@ -163,10 +167,24 @@ def _child(path: str, language: str | None, out) -> None:
 
 
 def transcribe(path: Path, language: str | None, tick: Callable[[float, str], bool], on_start: Callable[[int], None] | None = None) -> dict:
-    """Runs the child and returns the job result. Raises Stopped when tick() says stop, TranscribeError on failure."""
+    """Runs the child and returns the job result. Raises Stopped when tick() says stop, TranscribeError on failure.
+    CUDA out of memory at full precision reruns the job straight away in int8 (a fresh child, so the GPU is freed)."""
+    for i, compute_type in enumerate(COMPUTE_TYPES):
+        try:
+            return _run(path, language, tick, on_start, compute_type)
+        except TranscribeError as e:
+            if not e.release or i == len(COMPUTE_TYPES) - 1:
+                raise
+            log.warning("CUDA out of memory at %s: retrying in %s", compute_type, COMPUTE_TYPES[i + 1])
+            if not tick(0.0, "retrying with less GPU memory"):
+                raise Stopped() from None
+    raise AssertionError("unreachable")
+
+
+def _run(path: Path, language: str | None, tick: Callable[[float, str], bool], on_start: Callable[[int], None] | None, compute_type: str) -> dict:
     ctx = mp.get_context("spawn")
     inbox, out = ctx.Pipe(duplex=False)
-    child = ctx.Process(target=_child, args=(str(path), language, out), name="transcribe", daemon=True)
+    child = ctx.Process(target=_child, args=(str(path), language, out, compute_type), name="transcribe", daemon=True)
     child.start()
     out.close()  # the child holds the only write end now: EOF means it died
     if on_start and child.pid:
