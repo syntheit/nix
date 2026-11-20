@@ -15,6 +15,7 @@
     ../../modules/construct-life.nix
     ../../modules/construct-backup.nix
     ./secrets.nix
+    ./oom.nix
     # Builds run on the mini's aarch64 VM, not on the phone (sets max-jobs = 0).
     ./nix-builder.nix
   ];
