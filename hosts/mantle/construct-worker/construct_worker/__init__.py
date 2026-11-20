@@ -1,4 +1,4 @@
-"""Pull worker for construct's job queue (memos.transcribe, memos.title)."""
+"""Pull worker for construct's job queue (memos.transcribe, memos.title, memos.tag)."""
 
 
 class Stopped(Exception):

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "construct-worker"
-version = "0.1.0"
-description = "Pull worker for construct's job queue on mantle: memo transcription (faster-whisper) and titles (Ollama)"
+version = "0.2.0"
+description = "Pull worker for construct's job queue on mantle: memo transcription (faster-whisper), titles, chapters and tags (Ollama)"
 requires-python = ">=3.11"
 dependencies = ["faster-whisper", "requests"]
 
