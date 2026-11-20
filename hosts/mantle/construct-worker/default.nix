@@ -5,7 +5,7 @@
 
 python3Packages.buildPythonApplication {
   pname = "construct-worker";
-  version = "0.1.0";
+  version = "0.2.0";
   pyproject = true;
 
   src = lib.fileset.toSource {
@@ -13,6 +13,7 @@ python3Packages.buildPythonApplication {
     fileset = lib.fileset.unions [
       ./pyproject.toml
       ./construct_worker
+      ./tests
     ];
   };
 
@@ -22,10 +23,17 @@ python3Packages.buildPythonApplication {
     requests
   ];
 
+  # Offline tests (canned Ollama answers): python3 -m unittest discover -s tests
+  nativeCheckInputs = [ python3Packages.unittestCheckHook ];
+  unittestFlags = [
+    "-s"
+    "tests"
+  ];
+
   pythonImportsCheck = [ "construct_worker.main" ];
 
   meta = {
-    description = "construct job worker: memo transcription (faster-whisper) and titles (Ollama)";
+    description = "construct job worker: memo transcription (faster-whisper), titles, chapters and tags (Ollama)";
     mainProgram = "construct-worker";
     platforms = lib.platforms.linux;
   };

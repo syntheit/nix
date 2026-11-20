@@ -1,11 +1,15 @@
-# construct's job worker (Memos): claims memos.transcribe and memos.title jobs
-# from construct on raven (http://raven:4322 over the tailnet), every 15 s.
+# construct's job worker (Memos): claims memos.transcribe, memos.title and
+# memos.tag jobs from construct on raven (http://raven:4322 over the tailnet),
+# every 15 s.
 #   memos.transcribe: faster-whisper large-v3, float16, beam 5, VAD, word
 #     timestamps, in a child process per job (the ~4.5 GB of VRAM is held only
 #     while a memo transcribes; cancel = kill). Same CUDA package set as
 #     whisper.nix, so the model in ~/.cache/huggingface is shared.
 #   memos.title: a small model on the Ollama below, unloaded after each
 #     request; an Ollama failure is a retryable job error.
+#   memos.tag: the same model splits the transcript into chapters (in ~6-minute
+#     windows) and tags them from construct's vocabulary (structured output);
+#     kept loaded between its calls, unloaded when the job ends (tag.py).
 #
 # It stays off the GPU while it's someone else's: a foreign compute (CUDA)
 # process over 1 GB of VRAM, or under ~5 GB of VRAM free (games are graphics,
@@ -17,6 +21,7 @@
 # Dry runs (no construct):
 #   construct-worker --once --file memo.m4a       (prints the result JSON)
 #   construct-worker --once --title "some transcript"
+#   construct-worker --once --chapters payload.json   (a memos.tag payload)
 #
 # Token: `construct worker-token mantle` on raven, stored as
 # construct_worker_token (secrets.nix).
@@ -44,7 +49,7 @@ in
   environment.systemPackages = [ worker ];
 
   systemd.services.construct-worker = {
-    description = "construct job worker (memos: transcribe, title)";
+    description = "construct job worker (memos: transcribe, title, tag)";
     wantedBy = [ "multi-user.target" ];
     wants = [ "network-online.target" ];
     after = [

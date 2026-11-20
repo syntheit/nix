@@ -4,6 +4,7 @@
     construct-worker --once                            # claim one job (if any), run it, exit
     construct-worker --once --file memo.m4a [--language es]   # dry run: transcribe locally, print the result JSON
     construct-worker --once --title "transcript text"         # dry run: title it, print the result JSON
+    construct-worker --once --chapters payload.json           # dry run: chapters and tags for a memos.tag payload
 """
 
 from __future__ import annotations
@@ -24,12 +25,13 @@ import requests
 from . import Stopped
 from .api import Construct, Lost, Unauthorized
 from .gpu import gpu_state
+from .tag import make_chapters
 from .title import Ollama, TitleError, make_title
 from .transcribe import TranscribeError, transcribe
 
 log = logging.getLogger("construct_worker")
 
-KINDS = ["memos.transcribe", "memos.title"]
+KINDS = ["memos.transcribe", "memos.title", "memos.tag"]
 CLAIM_S = 15
 PROGRESS_S = 20
 # After a failed or released run, no claims for this long (then the longer one while failures keep coming), so a broken
@@ -109,6 +111,9 @@ class Worker:
     def run_title(self, job: Job) -> dict:
         return make_title(str(job.payload.get("text") or ""), self.ollama, job.tick, bool(job.payload.get("excerpts")))
 
+    def run_tag(self, job: Job) -> dict:
+        return make_chapters(job.payload, self.ollama, job.tick)
+
     def run(self, raw: dict) -> None:
         job = Job(self, raw)
         log.info("job %s: %s claimed", job.id, job.kind)
@@ -118,6 +123,8 @@ class Worker:
                 result = self.run_transcribe(job)
             elif job.kind == "memos.title":
                 result = self.run_title(job)
+            elif job.kind == "memos.tag":
+                result = self.run_tag(job)
             else:
                 raise TranscribeError(f"this worker does not run {job.kind}", retry=False)
             body = {"ok": True, "result": result}
@@ -244,7 +251,10 @@ def dry_run(args: argparse.Namespace) -> int:
     else:
         ollama = Ollama(args.ollama_url, args.ollama_model) if args.ollama_url else None
         try:
-            result = make_title(args.title, ollama, tick)
+            if args.chapters:
+                result = make_chapters(json.loads(Path(args.chapters).read_text()), ollama, tick)
+            else:
+                result = make_title(args.title, ollama, tick)
         except TitleError as e:
             log.error("%s", e)
             return 1
@@ -266,6 +276,7 @@ def main() -> None:
     p.add_argument("--file", help="with --once: transcribe this file locally and print the result; construct is not contacted")
     p.add_argument("--language", default=None, help="with --file: language code (default: detect)")
     p.add_argument("--title", help="with --once: title this text locally and print the result")
+    p.add_argument("--chapters", help="with --once: chapters and tags for this memos.tag payload (JSON file), printed")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args()
 
@@ -278,9 +289,9 @@ def main() -> None:
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("faster_whisper").setLevel(logging.WARNING)
 
-    if args.file or args.title is not None:
+    if args.file or args.title is not None or args.chapters:
         if not args.once:
-            p.error("--file and --title are dry runs: add --once")
+            p.error("--file, --title and --chapters are dry runs: add --once")
         sys.exit(dry_run(args))
     if not args.token_file:
         p.error("no token file: set CONSTRUCT_TOKEN_FILE or --token-file")
