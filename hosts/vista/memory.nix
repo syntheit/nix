@@ -8,8 +8,10 @@
 # (it needs MemAvailable under 5%, which file-page thrash does not cause). Nothing was capped, so nothing was killed.
 #
 # 32 GB box; zram plus kernel take ~5 GB, system.slice ~5 GB. Caps leave that room:
-#   window 10G (largest window seen: 10.3G peak incl. file cache), all windows 14G, whole login session 16G,
-#   background 10G (nix-daemon peaked at 6.8G; hunt apartments run at 6.4G).
+#   window 12G (largest window seen: 10.9G peak incl. file cache), all windows 14G, whole login session 16G,
+#   background 12G (nix-daemon peaked at 8.2G incl. build scratch in tmpfs /tmp; hunt apartments run at 6.4G and,
+#   at OOMScoreAdjust 500, die first if the two overlap). A build that needs more belongs on harbor.
+# The caps sum above RAM on purpose: they bound each space, they do not reserve it.
 # Not used: hostcriticalUnits. It sets oom_score_adj -900 on sshd/tailscaled, which every login shell inherits
 # (harbor needs a shellInit shim to undo that); with these caps the login path keeps its RAM without it.
 {
@@ -19,8 +21,12 @@
     enable = true;
     sessionMax = "16G";
     agentsMax = "14G";
-    agentWindowMax = "10G";
-    backgroundMax = "10G";
+    agentWindowMax = "12G";
+    backgroundMax = "12G";
     backgroundUnits = [ "nix-daemon" ]; # hunt-daily/-details join in hunt.nix
   };
+
+  # MemoryMax only bounds resident pages: without this a runaway build swaps out to zram until it is full,
+  # which is the state the box was in on 2026-11-19. Same budget as the login session's.
+  systemd.slices.background.sliceConfig.MemorySwapMax = "4G";
 }

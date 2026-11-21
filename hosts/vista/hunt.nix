@@ -64,7 +64,7 @@ in
       WorkingDirectory = repo;
       ExecStart = "${pkgs.bash}/bin/bash ${repo}/scripts/daily.sh";
       Nice = 10;
-      Slice = "background.slice"; # memory cap (10G, apartments peaked at 6.4G), low CPU/IO weight; see memory.nix
+      Slice = "background.slice"; # memory cap (12G, apartments peaked at 6.4G), low CPU/IO weight; see memory.nix
       OOMScoreAdjust = 500; # first victim if the cap is hit
       TimeoutStartSec = "10h"; # daily.sh has per-step timeouts; this is the backstop so a wedged run frees data/daily.lock
     };
