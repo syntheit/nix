@@ -30,6 +30,11 @@ def _num(s: str) -> float:
         return 0.0
 
 
+def ollama_path(argv0: str) -> bool:
+    """Ollama's server (…/bin/ollama) or its model runner (…-ollama-0.40.13/lib/ollama/llama-server)."""
+    return "ollama" in argv0.lower()
+
+
 def _is_ollama(pid: int) -> bool:
     """Ollama's server and runners (a DynamicUser + PrivateUsers service, so nvidia-smi names them "[No data]")."""
     try:
@@ -37,7 +42,7 @@ def _is_ollama(pid: int) -> bool:
             argv0 = f.read().split(b"\0", 1)[0].decode(errors="replace")
     except OSError:
         return False
-    return "ollama" in os.path.basename(argv0).lower()
+    return ollama_path(argv0)
 
 
 def gpu_state(nvidia_smi: str = "nvidia-smi", own_pids: set[int] | None = None, own_ollama: bool = False) -> dict:
