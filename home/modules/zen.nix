@@ -97,6 +97,17 @@ EOF
           set_pref browser.cache.disk.enable false
           set_pref browser.cache.memory.enable true
           set_pref browser.cache.memory.capacity 524288
+          # Unload background tabs under memory pressure (mantle: 48 tab
+          # processes reached ~25 GB incl. swap within 4 days). Firefox ships
+          # this off on Linux. Its Linux watcher polls MemAvailable in
+          # /proc/meminfo and, below the threshold, unloads the least recently
+          # used tab idle for 10+ min (not ones playing audio or in a call),
+          # one per tick, until memory recovers. 15% = ~4.8 GB on mantle's
+          # 32 GB; the default 5% only fires once zram swap is already full.
+          # Zen 1.22's zen.tab-unloader.timeout-minutes is a dead settings-UI
+          # pref: nothing reads it.
+          set_pref browser.tabs.unloadOnLowMemory true
+          set_pref browser.low_commit_space_threshold_percent 15
         ${lib.optionalString (hostName == "mantle") ''
           # Video decode on the GPU through nvidia-vaapi-driver (installed by
           # hardware.nvidia.videoAcceleration). Firefox 137+ needs only
