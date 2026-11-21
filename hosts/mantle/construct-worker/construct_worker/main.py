@@ -32,6 +32,9 @@ from .transcribe import TranscribeError, transcribe
 log = logging.getLogger("construct_worker")
 
 KINDS = ["memos.transcribe", "memos.title", "memos.tag"]
+# Jobs that load Ollama's model, and how long after one its VRAM still counts as ours (keep_alive 0 unloads in seconds).
+OLLAMA_KINDS = ("memos.title", "memos.tag")
+OLLAMA_GRACE_S = 60
 CLAIM_S = 15
 PROGRESS_S = 20
 # After a failed or released run, no claims for this long (then the longer one while failures keep coming), so a broken
@@ -91,9 +94,11 @@ class Worker:
         self.failures = 0
         self.pause_until = 0.0
         self._last_busy: str | None = None
+        # Until then Ollama's VRAM counts as ours: the model of the title/tag job that just ended is still unloading.
+        self.ollama_until = 0.0
 
     def gpu(self, own: set[int] | None = None) -> dict:
-        return gpu_state(self.args.nvidia_smi, own)
+        return gpu_state(self.args.nvidia_smi, own, own_ollama=time.monotonic() < self.ollama_until)
 
     # ── jobs ─────────────────────────────────────────────────────────
 
@@ -115,6 +120,13 @@ class Worker:
         return make_chapters(job.payload, self.ollama, job.tick)
 
     def run(self, raw: dict) -> None:
+        try:
+            self._run(raw)
+        finally:
+            if raw.get("kind") in OLLAMA_KINDS:
+                self.ollama_until = time.monotonic() + OLLAMA_GRACE_S
+
+    def _run(self, raw: dict) -> None:
         job = Job(self, raw)
         log.info("job %s: %s claimed", job.id, job.kind)
         t0 = time.monotonic()

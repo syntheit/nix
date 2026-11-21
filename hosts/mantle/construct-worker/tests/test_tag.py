@@ -85,7 +85,9 @@ class Merge(unittest.TestCase):
 class Checks(unittest.TestCase):
     def test_chapters(self):
         self.assertEqual(tag.check_chapters(chapters((3, "first"), (5, '  "Second." ')), 6)["chapters"], [(0, "First", "about first"), (4, "Second", 'about "Second."')])
-        for bad, why in ((("not json"), "no JSON"), (json.dumps({"chapters": []}), "no chapters"), (chapters((1, "a"), (1, "b")), "starts at line 1"), (chapters((1, "a"), (9, "b")), "of 6"), (chapters((1, "")), "no title")):
+        # A chapter out of order or past the window is dropped; its lines stay in the chapter before.
+        self.assertEqual(tag.check_chapters(chapters((1, "a"), (4, "b"), (3, "c"), (9, "d"), (5, "e")), 6)["chapters"], [(0, "A", "about a"), (3, "B", "about b"), (4, "E", "about e")])
+        for bad, why in ((("not json"), "no JSON"), (json.dumps({"chapters": []}), "no chapters"), (chapters((1, "")), "no title")):
             with self.assertRaises(tag.Garbage) as e:
                 tag.check_chapters(bad, 6)
             self.assertIn(why, str(e.exception))

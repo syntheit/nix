@@ -30,14 +30,28 @@ def _num(s: str) -> float:
         return 0.0
 
 
-def gpu_state(nvidia_smi: str = "nvidia-smi", own_pids: set[int] | None = None) -> dict:
-    """The claim body's `gpu` (construct's GpuSchema): `{busy, reason?, util, memUsedMb, foreignApps}`."""
+def _is_ollama(pid: int) -> bool:
+    """Ollama's server and runners (a DynamicUser + PrivateUsers service, so nvidia-smi names them "[No data]")."""
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            argv0 = f.read().split(b"\0", 1)[0].decode(errors="replace")
+    except OSError:
+        return False
+    return "ollama" in os.path.basename(argv0).lower()
+
+
+def gpu_state(nvidia_smi: str = "nvidia-smi", own_pids: set[int] | None = None, own_ollama: bool = False) -> dict:
+    """The claim body's `gpu` (construct's GpuSchema): `{busy, reason?, util, memUsedMb, foreignApps}`.
+    `own_ollama`: right after our own title/tag job, Ollama's model is still leaving VRAM (keep_alive 0 takes a few
+    seconds); count it as ours then, so the next job doesn't wait a poll on our own model."""
     own = {os.getpid(), *(own_pids or ())}
     try:
         util, used, total = (_num(v) for v in _smi(nvidia_smi, "--query-gpu=utilization.gpu,memory.used,memory.total")[0][:3])
         apps = [(int(_num(r[0])), os.path.basename(r[1]) or r[1], int(_num(r[2]))) for r in _smi(nvidia_smi, "--query-compute-apps=pid,process_name,used_memory") if len(r) >= 3]
     except (OSError, subprocess.SubprocessError, IndexError, ValueError) as e:
         return {"busy": True, "reason": f"GPU unreadable: {e}"[:120]}
+    if own_ollama:
+        own |= {pid for pid, _, _ in apps if _is_ollama(pid)}
     ours = sum(mb for pid, _, mb in apps if pid in own)
     heavy = sorted(((name, mb) for pid, name, mb in apps if pid not in own and mb > FOREIGN_MB), key=lambda a: -a[1])
     free = total - used + ours

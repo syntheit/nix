@@ -169,7 +169,9 @@ def check_chapters(raw: str, n_lines: int) -> dict:
         if k == 1:
             line = 1  # the first chapter starts the window, whatever it says
         if line <= last or line > n_lines:
-            raise Garbage(f"chapter {k} starts at line {line} (after {last}, of {n_lines})")
+            # Out of order or past the window (a small model on a long memo, 21 Nov 2026): its lines stay in the chapter
+            # before, instead of failing the whole memo's chapters.
+            continue
         last = line
         title = clean_title(c.get("title") or "")
         if not title:
