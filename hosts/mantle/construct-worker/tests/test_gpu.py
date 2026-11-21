@@ -32,13 +32,14 @@ class GpuState(unittest.TestCase):
             self.assertTrue(s["busy"])
             self.assertEqual(s["foreignApps"], [{"name": "game", "memMb": 2000}])
 
-    def test_ollama_paths(self):
-        self.assertTrue(gpu.ollama_path("/nix/store/hnvw5axa594vqaqhd8rclsqy1jzf7mk9-ollama-0.40.13/lib/ollama/llama-server"))
-        self.assertTrue(gpu.ollama_path("/nix/store/x-ollama-0.40.13/bin/.ollama-wrapped"))
-        self.assertFalse(gpu.ollama_path("/nix/store/x-python3-3.14.8/bin/python3.14"))
-        self.assertFalse(gpu.ollama_path("/nix/store/x-vestal-0.5.0/libexec/vestal/vestal"))
+    def test_ollama_names(self):
+        # Seen on mantle 21 Nov 2026 while the title model unloaded: zombies with an empty cmdline, comm intact.
+        self.assertTrue(gpu.ollama_name("llama-server\n"))
+        self.assertTrue(gpu.ollama_name(".ollama-wrapped\n"))
+        self.assertFalse(gpu.ollama_name("python3.14\n"))
+        self.assertFalse(gpu.ollama_name("vestal\n"))
 
-    def test_is_ollama_reads_argv0(self):
+    def test_is_ollama_reads_comm(self):
         self.assertFalse(gpu._is_ollama(os.getpid()))
         self.assertFalse(gpu._is_ollama(2**22 + 12345))  # no such process
 

@@ -30,19 +30,20 @@ def _num(s: str) -> float:
         return 0.0
 
 
-def ollama_path(argv0: str) -> bool:
-    """Ollama's server (…/bin/ollama) or its model runner (…-ollama-0.40.13/lib/ollama/llama-server)."""
-    return "ollama" in argv0.lower()
+def ollama_name(comm: str) -> bool:
+    """Ollama's server (`.ollama-wrapped`) or its model runner (`llama-server`), by /proc/<pid>/comm."""
+    comm = comm.strip().lower()
+    return "ollama" in comm or comm == "llama-server"
 
 
 def _is_ollama(pid: int) -> bool:
-    """Ollama's server and runners (a DynamicUser + PrivateUsers service, so nvidia-smi names them "[No data]")."""
+    """Ollama's server and runners. comm, not cmdline: a runner unloading its model (keep_alive 0) is a zombie still
+    holding VRAM for a few seconds, with an empty cmdline (so nvidia-smi names it "[No data]") but its comm intact."""
     try:
-        with open(f"/proc/{pid}/cmdline", "rb") as f:
-            argv0 = f.read().split(b"\0", 1)[0].decode(errors="replace")
+        with open(f"/proc/{pid}/comm", encoding="utf-8", errors="replace") as f:
+            return ollama_name(f.read())
     except OSError:
         return False
-    return ollama_path(argv0)
 
 
 def gpu_state(nvidia_smi: str = "nvidia-smi", own_pids: set[int] | None = None, own_ollama: bool = False) -> dict:
