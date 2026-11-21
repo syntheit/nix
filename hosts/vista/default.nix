@@ -26,6 +26,7 @@
     ./zot.nix # zot OCI registry on :5001
     ./flaresolverr.nix # challenge solver for the hunt engine (~/Projects/hunt), localhost:8191
     ./hunt.nix # hunt daily timer + ntfy alerts on the tailnet (:2586)
+    ./memory.nix # memory tiers: agents, builds and hunt get hard caps
     ./wardrobe-cutout.nix # construct wardrobe cut-out worker (rembg), pulls jobs from raven
     ./ci-runner # retrospend CI: one throwaway microVM per GitHub Actions job (parked, see below)
     ./ssd-write-cache.nix # why SSD cache flushes must stay on; clean poweroff on low battery

@@ -51,7 +51,8 @@ in
 
   # hunt apartments daily pipeline (~/Projects/hunt/scripts/daily.sh): collect → enrich → score → export → raven.
   # The script holds data/daily.lock, so a run still going (e.g. a manual `hunt-run`) makes this one exit.
-  # 09:00 rather than earlier: a block found in an evening run keeps its site in a 12 h cooldown past dawn.
+  # 04:00 (+ up to 20 min), while nobody is working on the box. The 15:00 details window's blocks clear their 12 h
+  # cooldown by ~03:40. Persistent: a night with the box off runs it once at the next boot.
   systemd.services.hunt-daily = {
     description = "hunt apartments daily pipeline";
     after = [ "network-online.target" ];
@@ -63,13 +64,15 @@ in
       WorkingDirectory = repo;
       ExecStart = "${pkgs.bash}/bin/bash ${repo}/scripts/daily.sh";
       Nice = 10;
+      Slice = "background.slice"; # memory cap (12G, apartments peaked at 6.4G), low CPU/IO weight; see memory.nix
+      OOMScoreAdjust = 500; # first victim if the cap is hit
       TimeoutStartSec = "10h"; # daily.sh has per-step timeouts; this is the backstop so a wedged run frees data/daily.lock
     };
   };
   systemd.timers.hunt-daily = {
     wantedBy = [ "timers.target" ];
     timerConfig = {
-      OnCalendar = "*-*-* 09:00:00 America/Argentina/Buenos_Aires";
+      OnCalendar = "*-*-* 04:00:00 America/Argentina/Buenos_Aires";
       RandomizedDelaySec = "20m";
       Persistent = true;
     };
@@ -89,6 +92,8 @@ in
       WorkingDirectory = repo;
       ExecStart = "${pkgs.bash}/bin/bash ${repo}/scripts/daily.sh --details-only";
       Nice = 10;
+      Slice = "background.slice";
+      OOMScoreAdjust = 500;
       TimeoutStartSec = "10h";
     };
   };

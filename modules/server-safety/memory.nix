@@ -36,6 +36,7 @@ let
 in
 {
   options.services.serverSafety.memory = {
+    # Independent of services.serverSafety.enable (watchdog + rescue SSH), so a host can take the tiers alone.
     enable = lib.mkEnableOption "memory tiers + oomd policy";
     uid = lib.mkOption {
       type = lib.types.int;
@@ -97,7 +98,7 @@ in
     };
   };
 
-  config = lib.mkIf (cfg.enable && mem.enable) {
+  config = lib.mkIf mem.enable {
     systemd.slices."user-${uid}" = {
       # Created transiently by logind from user-.slice: must be a drop-in, a
       # full unit file would shadow the template.
