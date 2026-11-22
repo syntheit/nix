@@ -113,11 +113,14 @@ in
   # Switch: [daily] enabled in src/hunt/hunts/events/hunt.toml. By hand: systemctl start hunt-events-sweep.
   #   sweep  Business Discovery for watched business/creator accounts, 4x a day (~10/14/19/23 ART, jittered)
   #   embed  logged-out profile embed for watched personal accounts, 2x a day
+  #   sites  ticket and agenda websites (hunts/events/sites/, one file per source), once a day
   #   token  debug_token → data-access expiry → construct's "Instagram key expires in N days" at ≤ 14 days
   systemd.services.hunt-events-sweep = eventsUnit "sweep";
   systemd.timers.hunt-events-sweep = eventsTimer [ "09:50:00" "13:50:00" "18:50:00" "22:50:00" ];
   systemd.services.hunt-events-embed = eventsUnit "embed";
   systemd.timers.hunt-events-embed = eventsTimer [ "11:30:00" "20:30:00" ];
+  systemd.services.hunt-events-sites = eventsUnit "sites";
+  systemd.timers.hunt-events-sites = eventsTimer [ "07:30:00" ];
   systemd.services.hunt-events-token = eventsUnit "token";
   systemd.timers.hunt-events-token = eventsTimer [ "08:30:00" ];
 }
