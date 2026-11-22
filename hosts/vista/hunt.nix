@@ -118,7 +118,7 @@ in
   systemd.services.hunt-events-sweep = eventsUnit "sweep";
   systemd.timers.hunt-events-sweep = eventsTimer [ "09:50:00" "13:50:00" "18:50:00" "22:50:00" ];
   systemd.services.hunt-events-embed = eventsUnit "embed";
-  systemd.timers.hunt-events-embed = eventsTimer [ "11:30:00" "20:30:00" ];
+  systemd.timers.hunt-events-embed = eventsTimer [ "12:00:00" "21:00:00" ]; # after a sweep (up to ~2 h), which holds the events lock
   systemd.services.hunt-events-sites = eventsUnit "sites";
   systemd.timers.hunt-events-sites = eventsTimer [ "07:30:00" ];
   systemd.services.hunt-events-token = eventsUnit "token";
