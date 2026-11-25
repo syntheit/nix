@@ -90,6 +90,7 @@
 
     # Graphics & documents
     libreoffice
+    sweethome3d.application  # floor plans + furniture layout (Loyola apartment)
     ghostscript
     pdftk
     loupe
