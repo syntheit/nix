@@ -52,6 +52,22 @@ let
     "raven"
     "fajita"
   ];
+  # Note to another Claude session's tmux pane on any host (SendMessage can't
+  # see sessions on other hosts without Remote Control). `tmux-msg` for usage.
+  tmux-msg = pkgs.writeShellApplication {
+    name = "tmux-msg";
+    runtimeInputs = with pkgs; [
+      tmux
+      openssh
+      gawk
+      gnugrep
+      gnused
+      coreutils
+      util-linux # column
+    ];
+    text = builtins.readFile ./tmux-msg.sh;
+  };
+
   kit-sync = pkgs.writeShellApplication {
     name = "kit-sync";
     runtimeInputs = [ pkgs.coreutils ];
@@ -96,7 +112,10 @@ let
   };
 in
 {
-  home.packages = [ kit-sync ];
+  home.packages = [
+    kit-sync
+    tmux-msg
+  ];
 
   home.activation.agentsConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     claude_settings="$HOME/.claude/settings.json"
