@@ -90,7 +90,23 @@
 
     # Graphics & documents
     libreoffice
-    sweethome3d.application  # floor plans + furniture layout (Loyola apartment)
+    # Sweet Home 3D (floor plans, Loyola apartment). The stock launcher breaks on
+    # NixOS + Hyprland + NVIDIA: JOGL cannot find libGL (black window), Swing
+    # copies the dark GTK theme, and "-cp ... -d64" land in the app's own args,
+    # so a file argument is never opened. Rewrite the launcher.
+    (pkgs.symlinkJoin {
+      name = "sweethome3d-fixed";
+      paths = [ sweethome3d.application ];
+      postBuild = ''
+        rm $out/bin/sweethome3d
+        sed -e 's#-Dsun.java2d.opengl=true#-Dsun.java2d.opengl=false -Dswing.defaultlaf=javax.swing.plaf.nimbus.NimbusLookAndFeel -Dawt.useSystemAAFontSettings=on -Dswing.aatext=true#' \
+            -e 's# -cp [^ ]*Help.jar##' \
+            -e 's# -d64 "\$@"# ''${1:+-open} "\$@"#' \
+            -e '/^exec /i export _JAVA_AWT_WM_NONREPARENTING=1\nexport LD_LIBRARY_PATH=${pkgs.libglvnd}/lib:/run/opengl-driver/lib' \
+            ${sweethome3d.application}/bin/sweethome3d > $out/bin/sweethome3d
+        chmod +x $out/bin/sweethome3d
+      '';
+    })
     ghostscript
     pdftk
     loupe
